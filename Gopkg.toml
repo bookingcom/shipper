@@ -1,0 +1,7 @@
+# Refer to https://github.com/golang/dep/blob/master/docs/Gopkg.toml.md
+# for detailed Gopkg.toml documentation.
+
+
+[[constraint]]
+  name = "github.com/go-ozzo/ozzo-routing"
+  version = "2.1.3"
