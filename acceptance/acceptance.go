@@ -25,29 +25,29 @@ spec:
 
 // ShipmentStrategy is...
 type ShipmentStrategy struct {
-	Name string
-	Spec map[string]interface{}
+	Name string                 `json:"name"`
+	Spec map[string]interface{} `json:"spec,omitempty"`
 }
 
 // Chart is...
 type Chart struct {
-	Name    string
-	Version string
+	Name    string `json:"name"`
+	Version string `json:"version"`
 }
 
 // ShipmentRequestMeta is...
 type ShipmentRequestMeta struct {
-	ClusterSelectors []string
-	Chart            Chart
-	Strategy         ShipmentStrategy
+	ClusterSelectors []string         `json:"clusterSelectors"`
+	Chart            Chart            `json:"chart"`
+	Strategy         ShipmentStrategy `json:"strategy"`
 }
 
 // ShipmentRequest is...
 type ShipmentRequest struct {
-	APIVersion string
-	Kind       string
-	Meta       ShipmentRequestMeta
-	Spec       map[string]interface{}
+	APIVersion string                 `json:"apiVersion"`
+	Kind       string                 `json:"kind"`
+	Meta       ShipmentRequestMeta    `json:"meta"`
+	Spec       map[string]interface{} `json:"spec,omitempty"`
 }
 
 // CanAccessTokenShipApplication does...
