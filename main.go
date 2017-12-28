@@ -11,6 +11,9 @@ import (
 	"github.com/bookingcom/gopath/src/booking/tell"
 )
 
+// AccessTokenHeader is the header name where the Passport access token is expected
+const AccessTokenHeader = "X-Access-Token"
+
 func init() {
 	flag.Parse()
 }

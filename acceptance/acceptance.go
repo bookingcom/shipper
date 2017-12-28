@@ -47,11 +47,12 @@ type ShipmentRequest struct {
 	APIVersion string
 	Kind       string
 	Meta       ShipmentRequestMeta
+	Spec       map[string]interface{}
 }
 
 // CanAccessTokenShipApplication does...
-func CanAccessTokenShipApplication(appName string, accessToken string) bool {
-	return false
+func CanAccessTokenShipApplication(accessToken string, appName string) bool {
+	return accessToken == "FOOBARBAZ"
 }
 
 // IsAppRegisteredInServiceDirectory does...
