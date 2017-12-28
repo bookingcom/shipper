@@ -7,9 +7,14 @@
   revision = "bd886380e6a7fe8d842c68b595fadae2dcc3bee8"
   version = "v2.1.3"
 
+[[projects]]
+  name = "github.com/bookingcom/gopath"
+  packages = ["src/booking/tell"]
+  revision = "150535404419a872b7affa54017fd87d52a129f0"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "d22cf6956d5e6d6b051c77e9fea1fbb005e3a8a3c858134a1f8983be935867f9"
+  inputs-digest = "1c77d76a51f8b5c9584a6ae59b70ec5e57e601499cb508f2bd9b25d326e6c7f6"
   solver-name = "gps-cdcl"
   solver-version = 1
