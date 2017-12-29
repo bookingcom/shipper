@@ -69,6 +69,9 @@ func Ship(appName string, shipmentRequest *ShipmentRequest, accessToken string) 
 		ValidateImage: func(repository string, label string) error {
 			return nil
 		},
+		PersistShipment: func(request *ShipmentRequest) error {
+			return nil
+		},
 		FilterClusters: func(selectors []string) []models.Cluster {
 			return []models.Cluster{
 				{

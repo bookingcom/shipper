@@ -9,6 +9,7 @@ type ValidateAccessTokenFunc func(accessToken string, appName string) error
 type ValidateAppFunc func(appName string) error
 type ValidateChartFunc func(chart Chart) error
 type ValidateImageFunc func(repository string, label string) error
+type PersistShipmentFunc func(request *ShipmentRequest) error
 type FilterClustersFunc func(selectors []string) []models.Cluster
 
 type Shipper struct {
@@ -17,6 +18,7 @@ type Shipper struct {
 	ValidateChart       ValidateChartFunc
 	ValidateImage       ValidateImageFunc
 	FilterClusters      FilterClustersFunc
+	PersistShipment     PersistShipmentFunc
 }
 
 func (s *Shipper) Ship(appName string, shipmentRequest *ShipmentRequest, accessToken string) error {
@@ -54,5 +56,11 @@ func (s *Shipper) Ship(appName string, shipmentRequest *ShipmentRequest, accessT
 		return fmt.Errorf("could not find clusters matching cluster selectors")
 	}
 
-	return fmt.Errorf("not implemented")
+	// TODO: Add selectedClusters to shipment request
+
+	if err := s.PersistShipment(shipmentRequest); err != nil {
+		return err
+	}
+
+	return nil
 }
