@@ -5,12 +5,37 @@ import (
 	"github.com/bookingcom/shipper/models"
 )
 
+// ValidateAccessTokenFunc validates if the given accessToken can ship the given
+// application name. If the given accessToken is not valid, or in the case it is
+// but doesn't have the right permissions on the given application name, should
+// return an error.
 type ValidateAccessTokenFunc func(accessToken string, appName string) error
+
+// ValidateAppFunc validates the given application name according to some
+// parameters, return an error if the application is not valid (for example, the
+// application doesn't exist in a central repository or can't be currently
+// shipped).
 type ValidateAppFunc func(appName string) error
+
+// ValidateChartFunc validates the given chart according to some parameters,
+// returning an error if the chart is not valid.
 type ValidateChartFunc func(chart Chart) error
+
+// ValidateImageFunc validates the image repository and label according to some
+// parameters, returning an error if the image is not valid.
 type ValidateImageFunc func(repository string, label string) error
+
+// PersistShipmentFunc persists the augmented ShipmentRequest object, returning
+// an error if there were any problems while persisting the object.
 type PersistShipmentFunc func(request *ShipmentRequest) error
+
+// FilterClustersFunc returns a list of Cluster objects based on the given
+// cluster selectors.
 type FilterClustersFunc func(selectors []string) []models.Cluster
+
+// RenderChartFunc renders the chart specified by the ShipmentRequest, and
+// returns a list of rendered Kubernetes manifests, or an error in the case the
+// chart couldn't be rendered by some reason.
 type RenderChartFunc func(request *ShipmentRequest, clusterName string) ([]string, error)
 
 type Shipper struct {
