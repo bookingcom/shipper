@@ -9,6 +9,7 @@ import (
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/bookingcom/gopath/src/booking/tell"
+	"github.com/bookingcom/shipper/adapters"
 )
 
 func init() {
@@ -31,7 +32,9 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func createServer(h http.Handler) *http.Server {
-	recoveryHandler := handlers.RecoveryHandler()
+	tell := &adapters.Tell{}
+	recoveryHandler := handlers.RecoveryHandler(handlers.RecoveryLogger(tell), handlers.PrintRecoveryStack(true))
+
 	return &http.Server{
 		Addr:              ":8080",
 		Handler:           recoveryHandler(h),
