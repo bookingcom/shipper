@@ -1,6 +1,9 @@
 package shipping
 
-import "testing"
+import (
+	"github.com/bookingcom/shipper/models"
+	"testing"
+)
 
 func TestShip(t *testing.T) {
 	s := &Shipper{
@@ -16,10 +19,20 @@ func TestShip(t *testing.T) {
 		ValidateImage: func(repository string, label string) error {
 			return nil
 		},
+		FilterClusters: func(selectors []string) []models.Cluster {
+			return []models.Cluster{
+				{
+					Name: "cluster-1",
+				},
+			}
+		},
 	}
 
 	appName := "my-app"
 	accessToken := "Access Token"
 	request := &ShipmentRequest{}
-	s.Ship(appName, request, accessToken)
+	err := s.Ship(appName, request, accessToken)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
 }
