@@ -155,8 +155,13 @@ func TestSuccessfulShipment(t *testing.T) {
 		ValidateApp:         validApp,
 		ValidateChart:       validChart,
 		ValidateImage:       validImage,
-		PersistShipment:     persistedShipment,
 		FilterClusters:      oneCluster,
+		PersistShipment: func(request *ShipmentRequest) error {
+			if len(request.Status.SelectedClusters) == 0 {
+				t.Errorf("request should have a selected cluster")
+			}
+			return nil
+		},
 	}
 
 	appName := "my-app"

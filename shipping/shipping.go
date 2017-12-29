@@ -19,6 +19,9 @@ metadata:
 	spec:
 	  stepCount: '10%'
 	  initialReplicas: 5
+status:
+  selectedClusters:
+  - cluster-1
 spec:
   perl:
 	image:
@@ -46,11 +49,16 @@ type ShipmentRequestMeta struct {
 	Strategy         ShipmentStrategy `json:"strategy"`
 }
 
+type ShipmentRequestStatus struct {
+	SelectedClusters []string `json:"selectedClusters"`
+}
+
 // ShipmentRequest is...
 type ShipmentRequest struct {
 	APIVersion string                 `json:"apiVersion"`
 	Kind       string                 `json:"kind"`
 	Meta       ShipmentRequestMeta    `json:"meta"`
+	Status     ShipmentRequestStatus  `json:"status,omitempty"`
 	Spec       map[string]interface{} `json:"spec,omitempty"`
 }
 

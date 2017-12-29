@@ -51,13 +51,18 @@ func (s *Shipper) Ship(appName string, shipmentRequest *ShipmentRequest, accessT
 		return err
 	}
 
-	selectedClusters := s.FilterClusters(shipmentRequest.Meta.ClusterSelectors)
-	if len(selectedClusters) == 0 {
+	// Collect the names of all the matching clusters. If no names have been
+	// collected, return an error
+	var selectedClusterNames []string
+	for _, e := range s.FilterClusters(shipmentRequest.Meta.ClusterSelectors) {
+		selectedClusterNames = append(selectedClusterNames, e.Name)
+	}
+	if len(selectedClusterNames) == 0 {
 		return fmt.Errorf("could not find clusters matching cluster selectors")
 	}
 
-	// TODO: Add selectedClusters to shipment request
-
+	// Add the clusters to the request's status, and persist it
+	shipmentRequest.Status.SelectedClusters = selectedClusterNames
 	if err := s.PersistShipment(shipmentRequest); err != nil {
 		return err
 	}
