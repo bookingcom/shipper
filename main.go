@@ -12,6 +12,7 @@ import (
 	"github.com/bookingcom/gopath/src/booking/tell"
 	"github.com/bookingcom/shipper/shipping"
 	"io/ioutil"
+	"github.com/bookingcom/shipper/adapters"
 )
 
 // AccessTokenHeader is the header name where the Passport access token is expected
@@ -71,7 +72,9 @@ func shipHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func createServer(h http.Handler) *http.Server {
-	recoveryHandler := handlers.RecoveryHandler()
+	tell := &adapters.Tell{}
+	recoveryHandler := handlers.RecoveryHandler(handlers.RecoveryLogger(tell), handlers.PrintRecoveryStack(true))
+
 	return &http.Server{
 		Addr:              ":8080",
 		Handler:           recoveryHandler(h),
