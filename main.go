@@ -2,10 +2,12 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"net/http"
+	"time"
 
-	"github.com/go-ozzo/ozzo-routing"
-	"github.com/go-ozzo/ozzo-routing/fault"
+	"github.com/gorilla/handlers"
+	"github.com/gorilla/mux"
 	"github.com/bookingcom/gopath/src/booking/tell"
 )
 
@@ -14,13 +16,26 @@ func init() {
 }
 
 func main() {
-	router := routing.New()
-	router.Use(
-		fault.Recovery(tell.Errorf),
-	)
+	router := mux.NewRouter()
+	router.HandleFunc("/", indexHandler)
 
-	err := http.ListenAndServe(":8080", router)
+	server := createServer(router)
+	err := server.ListenAndServe()
 	if err != nil {
 		tell.Fatalln(err)
+	}
+}
+
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "Shipped!")
+}
+
+func createServer(h http.Handler) *http.Server {
+	recoveryHandler := handlers.RecoveryHandler()
+	return &http.Server{
+		Addr:              ":8080",
+		Handler:           recoveryHandler(h),
+		ReadHeaderTimeout: 30 * time.Second,
+		WriteTimeout:      30 * time.Second,
 	}
 }
