@@ -11,6 +11,7 @@ type ValidateChartFunc func(chart Chart) error
 type ValidateImageFunc func(repository string, label string) error
 type PersistShipmentFunc func(request *ShipmentRequest) error
 type FilterClustersFunc func(selectors []string) []models.Cluster
+type RenderChartFunc func(request *ShipmentRequest, clusterName string) ([]string, error)
 
 type Shipper struct {
 	ValidateAccessToken ValidateAccessTokenFunc
@@ -19,6 +20,7 @@ type Shipper struct {
 	ValidateImage       ValidateImageFunc
 	FilterClusters      FilterClustersFunc
 	PersistShipment     PersistShipmentFunc
+	RenderChart         RenderChartFunc
 }
 
 func (s *Shipper) Ship(appName string, shipmentRequest *ShipmentRequest, accessToken string) error {
@@ -59,6 +61,15 @@ func (s *Shipper) Ship(appName string, shipmentRequest *ShipmentRequest, accessT
 	}
 	if len(selectedClusterNames) == 0 {
 		return fmt.Errorf("could not find clusters matching cluster selectors")
+	}
+
+	var objectsPerCluster = make(map[string][]string)
+	for _, e := range selectedClusterNames {
+		objects, err := s.RenderChart(shipmentRequest, e)
+		if err != nil {
+			return fmt.Errorf("couldn't render chart for '%s': %s", e, err)
+		}
+		objectsPerCluster[e] = objects
 	}
 
 	// Add the clusters to the request's status, and persist it
