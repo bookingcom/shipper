@@ -8,3 +8,7 @@ version = "1.6.0"
 [[constraint]]
   name = "github.com/bookingcom/gopath"
   revision = "150535404419a872b7affa54017fd87d52a129f0"
+
+[[constraint]]
+  name = "github.com/kubernetes/helm"
+  version = "2.0.0-alpha.2"
