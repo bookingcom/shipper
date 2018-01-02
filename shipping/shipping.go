@@ -90,6 +90,12 @@ func filterClusters(selectors []string) []models.Cluster {
 	}
 }
 
+func renderChart(request *ShipmentRequest, clusterName string) ([]string, error) {
+	return []string{
+		"Kubernetes Object",
+	}, nil
+}
+
 func Ship(appName string, shipmentRequest *ShipmentRequest, accessToken string) error {
 
 	s := &Shipper{
@@ -99,6 +105,7 @@ func Ship(appName string, shipmentRequest *ShipmentRequest, accessToken string) 
 		ValidateImage:       validateImage,
 		PersistShipment:     persistShipment,
 		FilterClusters:      filterClusters,
+		RenderChart:         renderChart,
 	}
 
 	return s.Ship(appName, shipmentRequest, accessToken)
