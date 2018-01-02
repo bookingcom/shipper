@@ -62,31 +62,43 @@ type ShipmentRequest struct {
 	Spec       map[string]interface{} `json:"spec,omitempty"`
 }
 
+func validateAccessToken(accessToken string, appName string) error {
+	return nil
+}
+
+func validateChart(chart Chart) error {
+	return nil
+}
+
+func validateApp(appName string) error {
+	return nil
+}
+
+func validateImage(repository string, label string) error {
+	return nil
+}
+
+func persistShipment(request *ShipmentRequest) error {
+	return nil
+}
+
+func filterClusters(selectors []string) []models.Cluster {
+	return []models.Cluster{
+		{
+			Name: "cluster-1",
+		},
+	}
+}
+
 func Ship(appName string, shipmentRequest *ShipmentRequest, accessToken string) error {
 
 	s := &Shipper{
-		ValidateAccessToken: func(accessToken string, appName string) error {
-			return nil
-		},
-		ValidateApp: func(appName string) error {
-			return nil
-		},
-		ValidateChart: func(chart Chart) error {
-			return nil
-		},
-		ValidateImage: func(repository string, label string) error {
-			return nil
-		},
-		PersistShipment: func(request *ShipmentRequest) error {
-			return nil
-		},
-		FilterClusters: func(selectors []string) []models.Cluster {
-			return []models.Cluster{
-				{
-					Name: "cluster-1",
-				},
-			}
-		},
+		ValidateAccessToken: validateAccessToken,
+		ValidateApp:         validateApp,
+		ValidateChart:       validateChart,
+		ValidateImage:       validateImage,
+		PersistShipment:     persistShipment,
+		FilterClusters:      filterClusters,
 	}
 
 	return s.Ship(appName, shipmentRequest, accessToken)
