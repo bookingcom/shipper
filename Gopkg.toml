@@ -1,5 +1,6 @@
 # Refer to https://github.com/golang/dep/blob/master/docs/Gopkg.toml.md
 # for detailed Gopkg.toml documentation.
+required = ["k8s.io/code-generator/cmd/client-gen"]
 
 [[constraint]]
 name = "github.com/gorilla/mux"
@@ -12,3 +13,23 @@ version = "1.6.0"
 [[constraint]]
   name = "github.com/kubernetes/helm"
   version = "2.0.0-alpha.2"
+
+[[constraint]]
+  name = "k8s.io/apimachinery"
+  branch = "release-1.9"
+
+[[constraint]]
+  name = "k8s.io/client-go"
+  branch = "release-6.0"
+
+[[constraint]]
+  name = "k8s.io/code-generator"
+  branch = "release-1.9"
+
+# goland/dep does not follow k8s.io/code-generator's Godeps.json and gengo's master
+# version does not work with release-1.8 k8s.io/code-generator. So we have to
+# override it.
+[[override]]
+  name = "k8s.io/gengo"
+revision = "1ef560bbde5195c01629039ad3b337ce63e7b321"
+

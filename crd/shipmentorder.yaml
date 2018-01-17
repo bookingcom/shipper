@@ -1,0 +1,17 @@
+apiVersion: stable.shipper/v1
+kind: ShipmentOrder
+metadata:
+  name: ship-it
+spec:
+  clusterSelectors:
+  - regions:
+    - foo
+    - bar
+    capabilities:
+    - gpu
+    - pci
+  chart:
+    name: reviewsapi
+    version: 0.0.1
+  strategy: vanguard
+  values: asfasfasdfs
