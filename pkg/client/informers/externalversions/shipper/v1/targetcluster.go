@@ -31,59 +31,58 @@ import (
 	cache "k8s.io/client-go/tools/cache"
 )
 
-// ShipmentInformer provides access to a shared informer and lister for
-// Shipments.
-type ShipmentInformer interface {
+// TargetClusterInformer provides access to a shared informer and lister for
+// TargetClusters.
+type TargetClusterInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.ShipmentLister
+	Lister() v1.TargetClusterLister
 }
 
-type shipmentInformer struct {
+type targetClusterInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
 	tweakListOptions internalinterfaces.TweakListOptionsFunc
-	namespace        string
 }
 
-// NewShipmentInformer constructs a new informer for Shipment type.
+// NewTargetClusterInformer constructs a new informer for TargetCluster type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewShipmentInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
-	return NewFilteredShipmentInformer(client, namespace, resyncPeriod, indexers, nil)
+func NewTargetClusterInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
+	return NewFilteredTargetClusterInformer(client, resyncPeriod, indexers, nil)
 }
 
-// NewFilteredShipmentInformer constructs a new informer for Shipment type.
+// NewFilteredTargetClusterInformer constructs a new informer for TargetCluster type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewFilteredShipmentInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
+func NewFilteredTargetClusterInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options meta_v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.ShipperV1().Shipments(namespace).List(options)
+				return client.ShipperV1().TargetClusters().List(options)
 			},
 			WatchFunc: func(options meta_v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.ShipperV1().Shipments(namespace).Watch(options)
+				return client.ShipperV1().TargetClusters().Watch(options)
 			},
 		},
-		&shipper_v1.Shipment{},
+		&shipper_v1.TargetCluster{},
 		resyncPeriod,
 		indexers,
 	)
 }
 
-func (f *shipmentInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewFilteredShipmentInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+func (f *targetClusterInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+	return NewFilteredTargetClusterInformer(client, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
 }
 
-func (f *shipmentInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&shipper_v1.Shipment{}, f.defaultInformer)
+func (f *targetClusterInformer) Informer() cache.SharedIndexInformer {
+	return f.factory.InformerFor(&shipper_v1.TargetCluster{}, f.defaultInformer)
 }
 
-func (f *shipmentInformer) Lister() v1.ShipmentLister {
-	return v1.NewShipmentLister(f.Informer().GetIndexer())
+func (f *targetClusterInformer) Lister() v1.TargetClusterLister {
+	return v1.NewTargetClusterLister(f.Informer().GetIndexer())
 }

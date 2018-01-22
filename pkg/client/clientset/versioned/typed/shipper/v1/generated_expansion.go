@@ -16,14 +16,14 @@ limitations under the License.
 
 package v1
 
-type ApplicationClusterExpansion interface{}
-
 type CapacityTargetExpansion interface{}
 
-type ShipmentExpansion interface{}
+type ReleaseExpansion interface{}
 
 type ShipmentOrderExpansion interface{}
 
 type StrategyExpansion interface{}
+
+type TargetClusterExpansion interface{}
 
 type TrafficTargetExpansion interface{}

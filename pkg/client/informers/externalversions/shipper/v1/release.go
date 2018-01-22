@@ -31,58 +31,59 @@ import (
 	cache "k8s.io/client-go/tools/cache"
 )
 
-// ApplicationClusterInformer provides access to a shared informer and lister for
-// ApplicationClusters.
-type ApplicationClusterInformer interface {
+// ReleaseInformer provides access to a shared informer and lister for
+// Releases.
+type ReleaseInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.ApplicationClusterLister
+	Lister() v1.ReleaseLister
 }
 
-type applicationClusterInformer struct {
+type releaseInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
 	tweakListOptions internalinterfaces.TweakListOptionsFunc
+	namespace        string
 }
 
-// NewApplicationClusterInformer constructs a new informer for ApplicationCluster type.
+// NewReleaseInformer constructs a new informer for Release type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewApplicationClusterInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
-	return NewFilteredApplicationClusterInformer(client, resyncPeriod, indexers, nil)
+func NewReleaseInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
+	return NewFilteredReleaseInformer(client, namespace, resyncPeriod, indexers, nil)
 }
 
-// NewFilteredApplicationClusterInformer constructs a new informer for ApplicationCluster type.
+// NewFilteredReleaseInformer constructs a new informer for Release type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewFilteredApplicationClusterInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
+func NewFilteredReleaseInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options meta_v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.ShipperV1().ApplicationClusters().List(options)
+				return client.ShipperV1().Releases(namespace).List(options)
 			},
 			WatchFunc: func(options meta_v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.ShipperV1().ApplicationClusters().Watch(options)
+				return client.ShipperV1().Releases(namespace).Watch(options)
 			},
 		},
-		&shipper_v1.ApplicationCluster{},
+		&shipper_v1.Release{},
 		resyncPeriod,
 		indexers,
 	)
 }
 
-func (f *applicationClusterInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewFilteredApplicationClusterInformer(client, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+func (f *releaseInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+	return NewFilteredReleaseInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
 }
 
-func (f *applicationClusterInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&shipper_v1.ApplicationCluster{}, f.defaultInformer)
+func (f *releaseInformer) Informer() cache.SharedIndexInformer {
+	return f.factory.InformerFor(&shipper_v1.Release{}, f.defaultInformer)
 }
 
-func (f *applicationClusterInformer) Lister() v1.ApplicationClusterLister {
-	return v1.NewApplicationClusterLister(f.Informer().GetIndexer())
+func (f *releaseInformer) Lister() v1.ReleaseLister {
+	return v1.NewReleaseLister(f.Informer().GetIndexer())
 }

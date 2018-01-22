@@ -42,7 +42,7 @@ type ShipmentOrderSpec struct {
 	Strategy ReleaseStrategy `json:"strategy"`
 
 	// the inlined "values.yaml" to apply to the chart when rendering it
-	Values ChartValues `json:"values"`
+	Values string `json:"values"`
 }
 
 type ClusterSelector struct {
@@ -95,77 +95,68 @@ type StrategyStep struct {
 // +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// An ApplicationCluster is a cluster we're deploying to.
-type ApplicationCluster struct {
+// An TargetCluster is a cluster we're deploying to.
+type TargetCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec ApplicationClusterSpec `json:"spec"`
+	Spec TargetClusterSpec `json:"spec"`
 
 	// Most recently observed status of the order
 	/// +optional
-	Status ApplicationClusterStatus `json:"status"`
+	Status TargetClusterStatus `json:"status"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-type ApplicationClusterList struct {
+type TargetClusterList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata"`
 
-	Items []ApplicationCluster `json:"items"`
+	Items []TargetCluster `json:"items"`
 }
 
-type ApplicationClusterSpec struct {
+type TargetClusterSpec struct {
 	Capabilities []string `json:"capabilities"`
 	Region       string   `json:"region"`
 
-	//Capacity ApplicationClusterCapacity
+	//Capacity TargetClusterCapacity
 }
 
-type ApplicationClusterStatus struct {
+type TargetClusterStatus struct {
 	InService bool `json:"in_service"`
 }
 
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// A Shipment is the  defines the goal state for # of pods for incumbent and
+// A Release is the  defines the goal state for # of pods for incumbent and
 // contender versions. This is used by the StrategyController to change the
 // state of the cluster to satisfy a single step of a Strategy.
-type Shipment struct {
+type Release struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ShipmentSpec   `json:"spec"`
-	Status ShipmentStatus `json:"status"`
+	Spec   ReleaseSpec   `json:"spec"`
+	Status ReleaseStatus `json:"status"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-type ShipmentList struct {
+type ReleaseList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata"`
 
-	Items []Shipment `json:"items"`
+	Items []Release `json:"items"`
 }
 
-type ShipmentSpec struct {
+type ReleaseSpec struct {
 	// better indicated with labels?
-	Cluster string `json:"cluster"`
-
-	// The full set of objects that are going to be deployed. Often the
-	// result of the shipmentorder controller rendering a chart.
-	RenderedObjects string `json:"rendered_objects"`
-
-	// in theory you could want different strategies per cluster...
-	// although we're going to have to ponder how to manage multi-cluster
-	// waypointing
-	Strategy string `json:"strategy"`
+	TargetStep int `json:"targetstep"`
 }
 
 // this will likely grow into a struct with interesting fields
-type ShipmentStatus string
+type ReleaseStatus string
 
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

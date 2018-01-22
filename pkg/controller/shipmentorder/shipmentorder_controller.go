@@ -33,7 +33,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	//shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
@@ -240,7 +240,7 @@ func (c *Controller) syncHandler(key string) error {
 	// update the Status block of the ShipmentOrder resource. UpdateStatus will not
 	// allow changes to the Spec of the resource, which is ideal for ensuring
 	// nothing other than resource status has been updated.
-	_, err := c.shipperclientset.ShipperV1().ShipmentOrders(so.Namespace).Update(soCopy)
+	_, err = c.shipperclientset.ShipperV1().ShipmentOrders(so.Namespace).Update(soCopy)
 
 	if err != nil {
 		return err

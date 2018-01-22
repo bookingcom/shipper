@@ -24,16 +24,16 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
-	// ApplicationClusters returns a ApplicationClusterInformer.
-	ApplicationClusters() ApplicationClusterInformer
 	// CapacityTargets returns a CapacityTargetInformer.
 	CapacityTargets() CapacityTargetInformer
-	// Shipments returns a ShipmentInformer.
-	Shipments() ShipmentInformer
+	// Releases returns a ReleaseInformer.
+	Releases() ReleaseInformer
 	// ShipmentOrders returns a ShipmentOrderInformer.
 	ShipmentOrders() ShipmentOrderInformer
 	// Strategies returns a StrategyInformer.
 	Strategies() StrategyInformer
+	// TargetClusters returns a TargetClusterInformer.
+	TargetClusters() TargetClusterInformer
 	// TrafficTargets returns a TrafficTargetInformer.
 	TrafficTargets() TrafficTargetInformer
 }
@@ -49,19 +49,14 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
 }
 
-// ApplicationClusters returns a ApplicationClusterInformer.
-func (v *version) ApplicationClusters() ApplicationClusterInformer {
-	return &applicationClusterInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
-}
-
 // CapacityTargets returns a CapacityTargetInformer.
 func (v *version) CapacityTargets() CapacityTargetInformer {
 	return &capacityTargetInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
-// Shipments returns a ShipmentInformer.
-func (v *version) Shipments() ShipmentInformer {
-	return &shipmentInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+// Releases returns a ReleaseInformer.
+func (v *version) Releases() ReleaseInformer {
+	return &releaseInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // ShipmentOrders returns a ShipmentOrderInformer.
@@ -72,6 +67,11 @@ func (v *version) ShipmentOrders() ShipmentOrderInformer {
 // Strategies returns a StrategyInformer.
 func (v *version) Strategies() StrategyInformer {
 	return &strategyInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// TargetClusters returns a TargetClusterInformer.
+func (v *version) TargetClusters() TargetClusterInformer {
+	return &targetClusterInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // TrafficTargets returns a TrafficTargetInformer.
