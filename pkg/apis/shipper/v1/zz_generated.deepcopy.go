@@ -337,6 +337,15 @@ func (in *ShipmentOrderSpec) DeepCopyInto(out *ShipmentOrderSpec) {
 		}
 	}
 	out.Chart = in.Chart
+	if in.Values != nil {
+		in, out := &in.Values, &out.Values
+		if *in == nil {
+			*out = nil
+		} else {
+			*out = new(ChartValues)
+			(*in).DeepCopyInto(*out)
+		}
+	}
 	return
 }
 

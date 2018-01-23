@@ -2,6 +2,7 @@ package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
 // +genclient
@@ -42,7 +43,7 @@ type ShipmentOrderSpec struct {
 	Strategy ReleaseStrategy `json:"strategy"`
 
 	// the inlined "values.yaml" to apply to the chart when rendering it
-	Values string `json:"values"`
+	Values *ChartValues `json:"values"`
 }
 
 type ClusterSelector struct {
@@ -56,7 +57,16 @@ type Chart struct {
 }
 
 type ReleaseStrategy string
+
 type ChartValues map[string]interface{}
+
+func (in *ChartValues) DeepCopyInto(out *ChartValues) {
+	*out = ChartValues(
+		runtime.DeepCopyJSON(
+			map[string]interface{}(*in),
+		),
+	)
+}
 
 // +genclient
 // +genclient:noStatus
