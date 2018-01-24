@@ -2,10 +2,13 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/golang/glog"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/controller/schedulecontroller"
+	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"os"
@@ -17,6 +20,11 @@ import (
 var (
 	masterURL  string
 	kubeconfig string
+)
+
+const (
+	PhaseLabel           = "phase"
+	WaitingForScheduling = "WaitingForScheduling"
 )
 
 func main() {
@@ -39,7 +47,12 @@ func main() {
 		glog.Fatalf("Error building shipper clientset: %s", err.Error())
 	}
 
-	shipperInformerFactory := informers.NewSharedInformerFactory(shipperclientset, time.Second*30)
+	tweakListOptions := func(options *metav1.ListOptions) {
+		// Is there anything other than Sprintf to compose LabelSelectors?
+		options.LabelSelector = fmt.Sprintf("%s=%s", PhaseLabel, WaitingForScheduling)
+	}
+
+	shipperInformerFactory := informers.NewFilteredSharedInformerFactory(shipperclientset, time.Second*30, v1.NamespaceAll, tweakListOptions)
 
 	controller := schedulecontroller.NewController(kubeclientset, shipperclientset, shipperInformerFactory)
 
