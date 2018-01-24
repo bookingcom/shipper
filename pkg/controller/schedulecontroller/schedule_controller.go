@@ -3,6 +3,7 @@ package schedulecontroller
 import (
 	"fmt"
 	"github.com/golang/glog"
+	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
@@ -25,6 +26,8 @@ const (
 	controllerAgentName   = "schedule-controller"
 	SuccessSynced         = "Synced"
 	MessageResourceSynced = "Release synced successfully"
+	WaitingForStrategy    = "WaitingForStrategy" // TODO: Move to another package
+	PhaseLabel            = "phase"
 )
 
 type Controller struct {
@@ -154,10 +157,10 @@ func (c *Controller) syncHandler(key string) error {
 	releaseCopy := release.DeepCopy()
 
 	// Update releaseCopy with the computed target clusters
-	releaseCopy.Environment.Clusters = []string{
-		"eu-ams-a",
-		"eu-ams-b",
-	}
+	releaseCopy.Environment.Clusters = targetClusters(release.Environment.ShipmentOrder.ClusterSelectors)
+
+	// Update phase label to "WaitingForStrategy"
+	releaseCopy.Labels[PhaseLabel] = WaitingForStrategy
 
 	// Store releaseCopy
 	_, err = c.shipperclientset.ShipperV1().Releases(releaseCopy.Namespace).Update(releaseCopy)
@@ -167,6 +170,14 @@ func (c *Controller) syncHandler(key string) error {
 
 	c.recorder.Event(releaseCopy, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
 	return nil
+}
+
+//noinspection GoUnusedParameter
+func targetClusters(clusterSelectors []v1.ClusterSelector) []string {
+	return []string{
+		"eu-ams-a",
+		"eu-ams-b",
+	}
 }
 
 func (c *Controller) enqueueRelease(obj interface{}) {
