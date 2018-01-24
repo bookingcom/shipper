@@ -57,7 +57,7 @@ func (in *CapacityTarget) DeepCopyObject() runtime.Object {
 func (in *CapacityTargetList) DeepCopyInto(out *CapacityTargetList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	out.ListMeta = in.ListMeta
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]CapacityTarget, len(*in))
@@ -284,7 +284,7 @@ func (in *InstallationTarget) DeepCopyObject() runtime.Object {
 func (in *InstallationTargetList) DeepCopyInto(out *InstallationTargetList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	out.ListMeta = in.ListMeta
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]InstallationTarget, len(*in))
@@ -761,7 +761,7 @@ func (in *TrafficTarget) DeepCopyObject() runtime.Object {
 func (in *TrafficTargetList) DeepCopyInto(out *TrafficTargetList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	out.ListMeta = in.ListMeta
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]TrafficTarget, len(*in))
