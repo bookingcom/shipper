@@ -26,6 +26,7 @@ import (
 type ShipperV1Interface interface {
 	RESTClient() rest.Interface
 	CapacityTargetsGetter
+	InstallationTargetsGetter
 	ReleasesGetter
 	ShipmentOrdersGetter
 	StrategiesGetter
@@ -40,6 +41,10 @@ type ShipperV1Client struct {
 
 func (c *ShipperV1Client) CapacityTargets(namespace string) CapacityTargetInterface {
 	return newCapacityTargets(c, namespace)
+}
+
+func (c *ShipperV1Client) InstallationTargets(namespace string) InstallationTargetInterface {
+	return newInstallationTargets(c, namespace)
 }
 
 func (c *ShipperV1Client) Releases(namespace string) ReleaseInterface {

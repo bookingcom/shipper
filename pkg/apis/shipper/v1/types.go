@@ -94,11 +94,11 @@ type StrategySpec struct {
 }
 
 type StrategyStep struct {
-	IncumbentCapacity string `json:"incumbent_capacity"`
-	IncumbentTraffic  string `json:"incumbent_traffic"`
+	IncumbentCapacity string `json:"incumbentCapacity"`
+	IncumbentTraffic  string `json:"incumbentTraffic"`
 
-	ContenderCapacity string `json:"contender_capacity"`
-	ContenderTraffic  string `json:"contender_traffic"`
+	ContenderCapacity string `json:"contenderCapacity"`
+	ContenderTraffic  string `json:"contenderTraffic"`
 }
 
 // +genclient
@@ -134,7 +134,7 @@ type TargetClusterSpec struct {
 }
 
 type TargetClusterStatus struct {
-	InService bool `json:"in_service"`
+	InService bool `json:"inService"`
 }
 
 // +genclient
@@ -171,6 +171,43 @@ type ReleaseStatus string
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
+// An InstallationTarget defines the goal state for # of pods for incumbent and
+// contender versions. This is used by the StrategyController to change the
+// state of the cluster to satisfy a single step of a Strategy.
+type InstallationTarget struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   InstallationTargetSpec   `json:"spec"`
+	Status InstallationTargetStatus `json:"status"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type InstallationTargetList struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Items []InstallationTarget `json:"items"`
+}
+
+type InstallationTargetStatus struct {
+	Clusters []ClusterInstallationStatus
+}
+
+type ClusterInstallationStatus struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	// Conditions []Condition
+}
+
+type InstallationTargetSpec struct {
+	Clusters []string `json:"clusters"`
+}
+
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
 // A CapacityTarget defines the goal state for # of pods for incumbent and
 // contender versions. This is used by the StrategyController to change the
 // state of the cluster to satisfy a single step of a Strategy.
@@ -191,21 +228,28 @@ type CapacityTargetList struct {
 	Items []CapacityTarget `json:"items"`
 }
 
-type CapacityTargetStatus string
+type CapacityTargetStatus struct {
+	Clusters []ClusterCapacityStatus
+}
+
+type ClusterCapacityStatus struct {
+	Name             string `json:"name"`
+	AchievedReplicas uint   `json:"achievedReplicas"`
+	Status           string `json:"status"`
+}
+
+// the capacity and traffic controllers need context to pick the right
+// things to target for traffic. These labels need to end up on the
+// pods, since that's what service mesh impls will mostly care about.
+//	Selectors []string                `json:"selectors"`
 
 type CapacityTargetSpec struct {
-	// the capacity and traffic controllers need context to pick the right
-	// things to target for traffic. These labels need to end up on the
-	// pods, since that's what service mesh impls will mostly care about.
-	Selectors []string                `json:"selectors"`
-	Clusters  []ClusterCapacityTarget `json:"clusters"`
+	Clusters []ClusterCapacityTarget `json:"clusters"`
 }
 
 type ClusterCapacityTarget struct {
-	Name              string `json:"name"`
-	IncumbentReplicas uint   `json:"incumbent_replicas"`
-	ContenderReplicas uint   `json:"contender_replicas"`
-	Status            string `json:"status"`
+	Name     string `json:"name"`
+	Replicas uint   `json:"replicas"`
 }
 
 // +genclient
@@ -232,19 +276,22 @@ type TrafficTargetList struct {
 	Items []TrafficTarget `json:"items"`
 }
 
-type TrafficTargetStatus string
+type TrafficTargetStatus struct {
+	Clusters []ClusterTrafficStatus
+}
+
+type ClusterTrafficStatus struct {
+	Name            string `json:"name"`
+	AchievedTraffic uint   `json:"achievedTraffic"`
+	Status          string `json:"status"`
+}
 
 type TrafficTargetSpec struct {
-	// the capacity and traffic controllers need context to pick the right things to modify
-	Selectors []string               `json:"selectors"`
-	Clusters  []ClusterTrafficTarget `json:"clusters"`
+	Clusters []ClusterTrafficTarget `json:"clusters"`
 }
 
 type ClusterTrafficTarget struct {
 	Name string `json:"name"`
 	// apimachinery intstr for percentages?
-	IncumbentTraffic uint `json:"incumbent_traffic"`
-	ContenderTraffic uint `json:"contender_traffic"`
-
-	Status string `json:"status"`
+	TargetTraffic uint `json:"targetTraffic"`
 }

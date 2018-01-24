@@ -26,6 +26,14 @@ type CapacityTargetListerExpansion interface{}
 // CapacityTargetNamespaceLister.
 type CapacityTargetNamespaceListerExpansion interface{}
 
+// InstallationTargetListerExpansion allows custom methods to be added to
+// InstallationTargetLister.
+type InstallationTargetListerExpansion interface{}
+
+// InstallationTargetNamespaceListerExpansion allows custom methods to be added to
+// InstallationTargetNamespaceLister.
+type InstallationTargetNamespaceListerExpansion interface{}
+
 // ReleaseListerExpansion allows custom methods to be added to
 // ReleaseLister.
 type ReleaseListerExpansion interface{}

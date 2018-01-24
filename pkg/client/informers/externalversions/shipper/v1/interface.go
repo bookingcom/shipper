@@ -26,6 +26,8 @@ import (
 type Interface interface {
 	// CapacityTargets returns a CapacityTargetInformer.
 	CapacityTargets() CapacityTargetInformer
+	// InstallationTargets returns a InstallationTargetInformer.
+	InstallationTargets() InstallationTargetInformer
 	// Releases returns a ReleaseInformer.
 	Releases() ReleaseInformer
 	// ShipmentOrders returns a ShipmentOrderInformer.
@@ -52,6 +54,11 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 // CapacityTargets returns a CapacityTargetInformer.
 func (v *version) CapacityTargets() CapacityTargetInformer {
 	return &capacityTargetInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// InstallationTargets returns a InstallationTargetInformer.
+func (v *version) InstallationTargets() InstallationTargetInformer {
+	return &installationTargetInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // Releases returns a ReleaseInformer.

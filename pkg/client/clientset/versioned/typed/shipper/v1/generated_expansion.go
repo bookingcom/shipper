@@ -18,6 +18,8 @@ package v1
 
 type CapacityTargetExpansion interface{}
 
+type InstallationTargetExpansion interface{}
+
 type ReleaseExpansion interface{}
 
 type ShipmentOrderExpansion interface{}

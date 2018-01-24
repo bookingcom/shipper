@@ -41,6 +41,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&StrategyList{},
 		&TargetCluster{},
 		&TargetClusterList{},
+		&InstallationTarget{},
+		&InstallationTargetList{},
 		&CapacityTarget{},
 		&CapacityTargetList{},
 		&TrafficTarget{},

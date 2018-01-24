@@ -55,6 +55,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 	// Group=shipper, Version=v1
 	case v1.SchemeGroupVersion.WithResource("capacitytargets"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().CapacityTargets().Informer()}, nil
+	case v1.SchemeGroupVersion.WithResource("installationtargets"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().InstallationTargets().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("releases"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().Releases().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("shipmentorders"):

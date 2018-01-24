@@ -30,6 +30,10 @@ func (c *FakeShipperV1) CapacityTargets(namespace string) v1.CapacityTargetInter
 	return &FakeCapacityTargets{c, namespace}
 }
 
+func (c *FakeShipperV1) InstallationTargets(namespace string) v1.InstallationTargetInterface {
+	return &FakeInstallationTargets{c, namespace}
+}
+
 func (c *FakeShipperV1) Releases(namespace string) v1.ReleaseInterface {
 	return &FakeReleases{c, namespace}
 }
