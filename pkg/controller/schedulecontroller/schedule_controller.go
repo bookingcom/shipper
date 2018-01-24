@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/golang/glog"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -11,6 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -41,12 +44,20 @@ func NewController(
 
 	releaseInformer := shipperInformerFactory.Shipper().V1().Releases()
 
+	shipperscheme.AddToScheme(scheme.Scheme)
+	glog.V(4).Info("Creating event broadcaster")
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartLogging(glog.Infof)
+	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeclientset.CoreV1().Events("")})
+	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
+
 	controller := &Controller{
 		kubeclientset:    kubeclientset,
 		shipperclientset: shipperclientset,
 		releasesLister:   releaseInformer.Lister(),
 		releasesSynced:   releaseInformer.Informer().HasSynced,
 		workqueue:        workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Releases"),
+		recorder:         recorder,
 	}
 
 	glog.Info("Setting up event handlers")
@@ -143,7 +154,10 @@ func (c *Controller) syncHandler(key string) error {
 	releaseCopy := release.DeepCopy()
 
 	// Update releaseCopy with the computed target clusters
-	releaseCopy.Status = "foo"
+	releaseCopy.Environment.Clusters = []string{
+		"eu-ams-a",
+		"eu-ams-b",
+	}
 
 	// Store releaseCopy
 	_, err = c.shipperclientset.ShipperV1().Releases(releaseCopy.Namespace).Update(releaseCopy)
