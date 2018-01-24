@@ -46,6 +46,7 @@ const (
 	// SuccessSynced is used as part of the Event 'reason' when a ShipmentOrder is synced
 	SuccessSynced = "Synced"
 
+	// MessageResourceSynced is used as part of the 'Event' message when a ShipmentOrder is synced
 	MessageResourceSynced = "ShipmentOrder synced successfully"
 )
 

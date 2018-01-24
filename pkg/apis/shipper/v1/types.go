@@ -147,8 +147,9 @@ type Release struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ReleaseSpec   `json:"spec"`
-	Status ReleaseStatus `json:"status"`
+	Spec        ReleaseSpec        `json:"spec"`
+	Status      ReleaseStatus      `json:"status"`
+	Environment ReleaseEnvironment `json:"environment"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -162,11 +163,35 @@ type ReleaseList struct {
 
 type ReleaseSpec struct {
 	// better indicated with labels?
-	TargetStep int `json:"targetstep"`
+	TargetStep int `json:"targetStep"`
 }
 
 // this will likely grow into a struct with interesting fields
 type ReleaseStatus string
+
+type ReleaseEnvironment struct {
+	Clusters      []string              `json:"clusters"`
+	Chart         EmbeddedChart         `json:"chart"`
+	ShipmentOrder EmbeddedShipmentOrder `json:"shipmentOrder"`
+	Sidecars      []Sidecar             `json:"sidecars"`
+}
+
+type EmbeddedChart struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Tarball string `json:"tarball"`
+}
+
+type EmbeddedShipmentOrder struct {
+	ClusterSelectors []ClusterSelector `json:"clusterSelectors"`
+	Strategy         string            `json:"strategy"`
+	Values           *ChartValues      `json:"values"`
+}
+
+type Sidecar struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
 
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -185,8 +210,8 @@ type InstallationTarget struct {
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 type InstallationTargetList struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
 
 	Items []InstallationTarget `json:"items"`
 }
@@ -222,8 +247,8 @@ type CapacityTarget struct {
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 type CapacityTargetList struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
 
 	Items []CapacityTarget `json:"items"`
 }
@@ -270,8 +295,8 @@ type TrafficTarget struct {
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 type TrafficTargetList struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
 
 	Items []TrafficTarget `json:"items"`
 }
