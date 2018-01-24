@@ -49,7 +49,7 @@ func main() {
 		}
 
 		for _, item := range list.Items {
-			fmt.Printf("%s %q with this spec: %+v\n", item.Kind, item.Name, item.Spec)
+			fmt.Printf("%s %q with this spec: %+v and this environment: %+v\n", item.Kind, item.Name, item.Spec, item.Environment)
 		}
 	case "clusters":
 		list, err := shipperClient.ShipperV1().TargetClusters().List(metav1.ListOptions{})
