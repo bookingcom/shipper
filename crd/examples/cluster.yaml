@@ -1,0 +1,8 @@
+apiVersion: stable.shipper/v1
+kind: TargetCluster
+spec:
+  name: local
+  region: local
+  apiMaster: https://127.0.0.1
+  schedulable: true
+  capabilities: []
