@@ -3,15 +3,12 @@ kind: Release
 metadata:
   name: release-v0.0.1 # a SHA1 or git tag from the CI/CD pipeline
   labels:
-    phase: WaitingForStrategy
+    phase: WaitingForScheduling
     release: reviewsapi-4
 spec:
   targetStep: 1
 environment:
-  clusters:
-  - eu-ams-a
-  - eu-ams-b
-  - us-las-a
+  clusters: []
   chart:
     name: reviewsapi
     version: 0.0.1
