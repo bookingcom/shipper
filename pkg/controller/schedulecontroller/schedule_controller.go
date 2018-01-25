@@ -10,6 +10,8 @@ import (
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -31,12 +33,13 @@ const (
 )
 
 type Controller struct {
-	kubeclientset    kubernetes.Interface
-	shipperclientset clientset.Interface
-	releasesLister   listers.ReleaseLister
-	releasesSynced   cache.InformerSynced
-	workqueue        workqueue.RateLimitingInterface
-	recorder         record.EventRecorder
+	kubeclientset        kubernetes.Interface
+	shipperclientset     clientset.Interface
+	releasesLister       listers.ReleaseLister
+	targetClustersLister listers.TargetClusterLister
+	releasesSynced       cache.InformerSynced
+	workqueue            workqueue.RateLimitingInterface
+	recorder             record.EventRecorder
 }
 
 func NewController(
@@ -46,6 +49,7 @@ func NewController(
 ) *Controller {
 
 	releaseInformer := shipperInformerFactory.Shipper().V1().Releases()
+	targetClusterInformer := shipperInformerFactory.Shipper().V1().TargetClusters()
 
 	shipperscheme.AddToScheme(scheme.Scheme)
 	glog.V(4).Info("Creating event broadcaster")
@@ -55,21 +59,32 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
 
 	controller := &Controller{
-		kubeclientset:    kubeclientset,
-		shipperclientset: shipperclientset,
-		releasesLister:   releaseInformer.Lister(),
-		releasesSynced:   releaseInformer.Informer().HasSynced,
-		workqueue:        workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Releases"),
-		recorder:         recorder,
+		kubeclientset:        kubeclientset,
+		shipperclientset:     shipperclientset,
+		releasesLister:       releaseInformer.Lister(),
+		targetClustersLister: targetClusterInformer.Lister(),
+		releasesSynced:       releaseInformer.Informer().HasSynced,
+		workqueue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Releases"),
+		recorder:             recorder,
 	}
 
 	glog.Info("Setting up event handlers")
-	releaseInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: controller.enqueueRelease,
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			controller.enqueueRelease(newObj)
-		},
-	})
+	releaseInformer.Informer().AddEventHandler(
+		cache.FilteringResourceEventHandler{
+			FilterFunc: func(obj interface{}) bool {
+				release := obj.(*v1.Release)
+				if val, ok := release.ObjectMeta.Labels[PhaseLabel]; ok {
+					return val == "WaitingForScheduling" // TODO: Magical strings
+				}
+				return false
+			},
+			Handler: cache.ResourceEventHandlerFuncs{
+				AddFunc: controller.enqueueRelease,
+				UpdateFunc: func(oldObj, newObj interface{}) {
+					controller.enqueueRelease(newObj)
+				},
+			},
+		})
 
 	return controller
 }
@@ -156,11 +171,10 @@ func (c *Controller) syncHandler(key string) error {
 
 	releaseCopy := release.DeepCopy()
 
-	// Update releaseCopy with the computed target clusters
-	releaseCopy.Environment.Clusters = targetClusters(release.Environment.ShipmentOrder.ClusterSelectors)
-
-	// Update phase label to "WaitingForStrategy"
-	releaseCopy.Labels[PhaseLabel] = WaitingForStrategy
+	err = c.businessLogic(releaseCopy)
+	if err != nil {
+		return err
+	}
 
 	// Store releaseCopy
 	_, err = c.shipperclientset.ShipperV1().Releases(releaseCopy.Namespace).Update(releaseCopy)
@@ -172,12 +186,134 @@ func (c *Controller) syncHandler(key string) error {
 	return nil
 }
 
-//noinspection GoUnusedParameter
-func targetClusters(clusterSelectors []v1.ClusterSelector) []string {
-	return []string{
-		"eu-ams-a",
-		"eu-ams-b",
+func (c *Controller) businessLogic(release *v1.Release) error {
+
+	targetClustersNames, err := c.computeTargetClusters(release.Environment.ShipmentOrder.ClusterSelectors)
+	if err != nil {
+		return err
 	}
+	release.Environment.Clusters = targetClustersNames
+
+	err = c.generateInstallationTarget(release, targetClustersNames)
+	if err != nil {
+		return err
+	}
+
+	err = c.generateTrafficTarget(release, targetClustersNames)
+	if err != nil {
+		return err
+	}
+
+	err = c.generateCapacityTarget(release, targetClustersNames)
+	if err != nil {
+		return err
+	}
+
+	release.Labels[PhaseLabel] = WaitingForStrategy
+
+	return nil
+}
+
+func (c *Controller) generateCapacityTarget(release *v1.Release, targetClustersNames []string) error {
+
+	targetClustersCount := len(targetClustersNames)
+	clusterCapacityStatuses := make([]v1.ClusterCapacityStatus, targetClustersCount)
+	clusterCapacityTargets := make([]v1.ClusterCapacityTarget, targetClustersCount)
+
+	for i, v := range targetClustersNames {
+		clusterCapacityStatuses[i] = v1.ClusterCapacityStatus{Name: v, Status: "unknown", AchievedReplicas: 0}
+		clusterCapacityTargets[i] = v1.ClusterCapacityTarget{Name: v, Replicas: 0}
+	}
+
+	// TODO: Encapsulate this in NewCapacityTarget()
+	target := &v1.CapacityTarget{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "stable.shipper/v1", // TODO: Magical string
+			Kind:       "CapacityTarget",
+		},
+		ObjectMeta: metav1.ObjectMeta{Name: release.Name},
+		Spec:       v1.CapacityTargetSpec{Clusters: clusterCapacityTargets},
+		Status:     v1.CapacityTargetStatus{Clusters: clusterCapacityStatuses},
+	}
+
+	_, err := c.shipperclientset.ShipperV1().CapacityTargets(release.Namespace).Create(target)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Controller) generateTrafficTarget(release *v1.Release, targetClustersNames []string) error {
+
+	targetClustersCount := len(targetClustersNames)
+	clusterTrafficStatuses := make([]v1.ClusterTrafficStatus, targetClustersCount)
+	clusterTrafficTargets := make([]v1.ClusterTrafficTarget, targetClustersCount)
+
+	for i, v := range targetClustersNames {
+		clusterTrafficStatuses[i] = v1.ClusterTrafficStatus{Name: v, Status: "unknown", AchievedTraffic: 0}
+		clusterTrafficTargets[i] = v1.ClusterTrafficTarget{Name: v, TargetTraffic: 0}
+	}
+
+	// TODO: Encapsulate this in NewTrafficTarget()
+	target := &v1.TrafficTarget{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "stable.shipper/v1", // TODO: Magical strings
+			Kind:       "TrafficTarget",
+		},
+		ObjectMeta: metav1.ObjectMeta{Name: release.Name},
+		Status:     v1.TrafficTargetStatus{Clusters: clusterTrafficStatuses},
+		Spec:       v1.TrafficTargetSpec{Clusters: clusterTrafficTargets},
+	}
+
+	_, err := c.shipperclientset.ShipperV1().TrafficTargets(release.Namespace).Create(target)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Controller) generateInstallationTarget(release *v1.Release, targetClustersNames []string) error {
+
+	targetClustersCount := len(targetClustersNames)
+	clusterInstallationStatuses := make([]v1.ClusterInstallationStatus, targetClustersCount)
+	for i, v := range targetClustersNames {
+		clusterInstallationStatuses[i] = v1.ClusterInstallationStatus{Name: v, Status: "unknown"}
+	}
+
+	target := &v1.InstallationTarget{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "stable.shipper/v1", // TODO: Magical strings
+			Kind:       "InstallationTarget",
+		},
+		ObjectMeta: metav1.ObjectMeta{Name: release.Name},
+		Status: v1.InstallationTargetStatus{
+			Clusters: clusterInstallationStatuses,
+		},
+		Spec: v1.InstallationTargetSpec{
+			Clusters: targetClustersNames,
+		},
+	}
+
+	_, err := c.shipperclientset.ShipperV1().InstallationTargets(release.Namespace).Create(target)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+//noinspection GoUnusedParameter
+func (c *Controller) computeTargetClusters(clusterSelectors []v1.ClusterSelector) ([]string, error) {
+	targetClusters, err := c.targetClustersLister.List(labels.NewSelector()) // TODO: Add cluster label selector (only schedule-able clusters, for example)
+	if err != nil {
+		return nil, err
+	}
+
+	targetClustersNames := make([]string, 0)
+	for _, v := range targetClusters {
+		targetClustersNames = append(targetClustersNames, v.Name)
+	}
+
+	return targetClustersNames, nil
 }
 
 func (c *Controller) enqueueRelease(obj interface{}) {
