@@ -254,7 +254,7 @@ type CapacityTargetList struct {
 }
 
 type CapacityTargetStatus struct {
-	Clusters []ClusterCapacityStatus
+	Clusters []ClusterCapacityStatus `json:"clusters"`
 }
 
 type ClusterCapacityStatus struct {

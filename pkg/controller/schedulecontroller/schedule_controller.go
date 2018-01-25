@@ -29,17 +29,26 @@ const (
 	SuccessSynced         = "Synced"
 	MessageResourceSynced = "Release synced successfully"
 	WaitingForStrategy    = "WaitingForStrategy" // TODO: Move to another package
-	PhaseLabel            = "phase"
+
+	PhaseLabel   = "phase"
+	ReleaseLabel = "release"
+
+	WaitingForSchedulingPhase = "WaitingForScheduling"
+
+	ShipperAPIVersion      = "stable.shipper/v1"
+	CapacityTargetKind     = "CapacityTarget"
+	InstallationTargetKind = "InstallationTarget"
+	TrafficTargetKind      = "TrafficTarget"
 )
 
 type Controller struct {
-	kubeclientset        kubernetes.Interface
-	shipperclientset     clientset.Interface
-	releasesLister       listers.ReleaseLister
-	targetClustersLister listers.TargetClusterLister
-	releasesSynced       cache.InformerSynced
-	workqueue            workqueue.RateLimitingInterface
-	recorder             record.EventRecorder
+	kubeclientset    kubernetes.Interface
+	shipperclientset clientset.Interface
+	releasesLister   listers.ReleaseLister
+	clustersLister   listers.ClusterLister
+	releasesSynced   cache.InformerSynced
+	workqueue        workqueue.RateLimitingInterface
+	recorder         record.EventRecorder
 }
 
 func NewController(
@@ -49,7 +58,7 @@ func NewController(
 ) *Controller {
 
 	releaseInformer := shipperInformerFactory.Shipper().V1().Releases()
-	targetClusterInformer := shipperInformerFactory.Shipper().V1().TargetClusters()
+	clusterInformer := shipperInformerFactory.Shipper().V1().Clusters()
 
 	shipperscheme.AddToScheme(scheme.Scheme)
 	glog.V(4).Info("Creating event broadcaster")
@@ -59,13 +68,13 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
 
 	controller := &Controller{
-		kubeclientset:        kubeclientset,
-		shipperclientset:     shipperclientset,
-		releasesLister:       releaseInformer.Lister(),
-		targetClustersLister: targetClusterInformer.Lister(),
-		releasesSynced:       releaseInformer.Informer().HasSynced,
-		workqueue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Releases"),
-		recorder:             recorder,
+		kubeclientset:    kubeclientset,
+		shipperclientset: shipperclientset,
+		releasesLister:   releaseInformer.Lister(),
+		clustersLister:   clusterInformer.Lister(),
+		releasesSynced:   releaseInformer.Informer().HasSynced,
+		workqueue:        workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Releases"),
+		recorder:         recorder,
 	}
 
 	glog.Info("Setting up event handlers")
@@ -74,7 +83,7 @@ func NewController(
 			FilterFunc: func(obj interface{}) bool {
 				release := obj.(*v1.Release)
 				if val, ok := release.ObjectMeta.Labels[PhaseLabel]; ok {
-					return val == "WaitingForScheduling" // TODO: Magical strings
+					return val == WaitingForSchedulingPhase // TODO: Magical strings
 				}
 				return false
 			},
@@ -188,104 +197,120 @@ func (c *Controller) syncHandler(key string) error {
 
 func (c *Controller) businessLogic(release *v1.Release) error {
 
+	// TODO: Clarify how we'll build the releaseId
+	releaseId := fmt.Sprintf("%s-%d", release.Namespace, 0)
+
 	targetClustersNames, err := c.computeTargetClusters(release.Environment.ShipmentOrder.ClusterSelectors)
 	if err != nil {
 		return err
 	}
+
+	installationTarget := NewInstallationTarget(release, releaseId, targetClustersNames)
+	_, err = c.shipperclientset.ShipperV1().InstallationTargets(release.Namespace).Create(installationTarget)
+	if err != nil {
+		return err
+	}
+
+	trafficTarget := NewTrafficTarget(targetClustersNames, release, releaseId)
+	_, err = c.shipperclientset.ShipperV1().TrafficTargets(release.Namespace).Create(trafficTarget)
+	if err != nil {
+		return err
+	}
+
+	capacityTarget := NewCapacityTarget(targetClustersNames, release, releaseId)
+	_, err = c.shipperclientset.ShipperV1().CapacityTargets(release.Namespace).Create(capacityTarget)
+	if err != nil {
+		return err
+	}
+
 	release.Environment.Clusters = targetClustersNames
-
-	err = c.generateInstallationTarget(release, targetClustersNames)
-	if err != nil {
-		return err
-	}
-
-	err = c.generateTrafficTarget(release, targetClustersNames)
-	if err != nil {
-		return err
-	}
-
-	err = c.generateCapacityTarget(release, targetClustersNames)
-	if err != nil {
-		return err
-	}
-
 	release.Labels[PhaseLabel] = WaitingForStrategy
 
 	return nil
 }
 
-func (c *Controller) generateCapacityTarget(release *v1.Release, targetClustersNames []string) error {
+func NewCapacityTarget(
+	targetClustersNames []string,
+	release *v1.Release,
+	releaseId string,
+) *v1.CapacityTarget {
 
 	targetClustersCount := len(targetClustersNames)
 	clusterCapacityStatuses := make([]v1.ClusterCapacityStatus, targetClustersCount)
 	clusterCapacityTargets := make([]v1.ClusterCapacityTarget, targetClustersCount)
-
 	for i, v := range targetClustersNames {
 		clusterCapacityStatuses[i] = v1.ClusterCapacityStatus{Name: v, Status: "unknown", AchievedReplicas: 0}
 		clusterCapacityTargets[i] = v1.ClusterCapacityTarget{Name: v, Replicas: 0}
 	}
-
-	// TODO: Encapsulate this in NewCapacityTarget()
 	target := &v1.CapacityTarget{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "stable.shipper/v1", // TODO: Magical string
-			Kind:       "CapacityTarget",
+			APIVersion: ShipperAPIVersion,
+			Kind:       CapacityTargetKind,
 		},
-		ObjectMeta: metav1.ObjectMeta{Name: release.Name},
-		Spec:       v1.CapacityTargetSpec{Clusters: clusterCapacityTargets},
-		Status:     v1.CapacityTargetStatus{Clusters: clusterCapacityStatuses},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: release.Name,
+			Labels: map[string]string{
+				ReleaseLabel: releaseId,
+			},
+		},
+		Spec:   v1.CapacityTargetSpec{Clusters: clusterCapacityTargets},
+		Status: v1.CapacityTargetStatus{Clusters: clusterCapacityStatuses},
 	}
-
-	_, err := c.shipperclientset.ShipperV1().CapacityTargets(release.Namespace).Create(target)
-	if err != nil {
-		return err
-	}
-	return nil
+	return target
 }
 
-func (c *Controller) generateTrafficTarget(release *v1.Release, targetClustersNames []string) error {
+func NewTrafficTarget(
+	targetClustersNames []string,
+	release *v1.Release,
+	releaseId string,
+) *v1.TrafficTarget {
 
 	targetClustersCount := len(targetClustersNames)
 	clusterTrafficStatuses := make([]v1.ClusterTrafficStatus, targetClustersCount)
 	clusterTrafficTargets := make([]v1.ClusterTrafficTarget, targetClustersCount)
-
 	for i, v := range targetClustersNames {
 		clusterTrafficStatuses[i] = v1.ClusterTrafficStatus{Name: v, Status: "unknown", AchievedTraffic: 0}
 		clusterTrafficTargets[i] = v1.ClusterTrafficTarget{Name: v, TargetTraffic: 0}
 	}
 
-	// TODO: Encapsulate this in NewTrafficTarget()
 	target := &v1.TrafficTarget{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "stable.shipper/v1", // TODO: Magical strings
-			Kind:       "TrafficTarget",
+			APIVersion: ShipperAPIVersion,
+			Kind:       TrafficTargetKind,
 		},
-		ObjectMeta: metav1.ObjectMeta{Name: release.Name},
-		Status:     v1.TrafficTargetStatus{Clusters: clusterTrafficStatuses},
-		Spec:       v1.TrafficTargetSpec{Clusters: clusterTrafficTargets},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: release.Name,
+			Labels: map[string]string{
+				ReleaseLabel: releaseId,
+			},
+		},
+		Status: v1.TrafficTargetStatus{Clusters: clusterTrafficStatuses},
+		Spec:   v1.TrafficTargetSpec{Clusters: clusterTrafficTargets},
 	}
-
-	_, err := c.shipperclientset.ShipperV1().TrafficTargets(release.Namespace).Create(target)
-	if err != nil {
-		return err
-	}
-	return nil
+	return target
 }
 
-func (c *Controller) generateInstallationTarget(release *v1.Release, targetClustersNames []string) error {
-
+func NewInstallationTarget(
+	release *v1.Release,
+	releaseId string,
+	targetClustersNames []string,
+) *v1.InstallationTarget {
 	targetClustersCount := len(targetClustersNames)
 	clusterInstallationStatuses := make([]v1.ClusterInstallationStatus, targetClustersCount)
 	for i, v := range targetClustersNames {
 		clusterInstallationStatuses[i] = v1.ClusterInstallationStatus{Name: v, Status: "unknown"}
 	}
-
 	target := &v1.InstallationTarget{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "stable.shipper/v1", // TODO: Magical strings
-			Kind:       "InstallationTarget",
+			APIVersion: ShipperAPIVersion,
+			Kind:       InstallationTargetKind,
 		},
-		ObjectMeta: metav1.ObjectMeta{Name: release.Name},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: release.Name,
+			Labels: map[string]string{
+				ReleaseLabel: releaseId,
+			},
+		},
 		Status: v1.InstallationTargetStatus{
 			Clusters: clusterInstallationStatuses,
 		},
@@ -293,17 +318,12 @@ func (c *Controller) generateInstallationTarget(release *v1.Release, targetClust
 			Clusters: targetClustersNames,
 		},
 	}
-
-	_, err := c.shipperclientset.ShipperV1().InstallationTargets(release.Namespace).Create(target)
-	if err != nil {
-		return err
-	}
-	return nil
+	return target
 }
 
 //noinspection GoUnusedParameter
 func (c *Controller) computeTargetClusters(clusterSelectors []v1.ClusterSelector) ([]string, error) {
-	targetClusters, err := c.targetClustersLister.List(labels.NewSelector()) // TODO: Add cluster label selector (only schedule-able clusters, for example)
+	targetClusters, err := c.clustersLister.List(labels.NewSelector()) // TODO: Add cluster label selector (only schedule-able clusters, for example)
 	if err != nil {
 		return nil, err
 	}
