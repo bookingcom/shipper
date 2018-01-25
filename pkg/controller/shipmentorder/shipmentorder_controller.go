@@ -33,7 +33,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	//shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
@@ -236,7 +236,14 @@ func (c *Controller) syncHandler(key string) error {
 	// You can use DeepCopy() to make a deep copy of original object and modify this copy
 	// Or create a copy manually for better performance
 	soCopy := so.DeepCopy()
-	soCopy.Status = "touched by the controller"
+	switch so.Status.Phase {
+	case shipperv1.ShipmentOrderPhasePending:
+		soCopy.Status.Phase = shipperv1.ShipmentOrderPhaseShipping
+		c.recorder.Eventf(so, corev1.EventTypeNormal, "PhaseTransition", "Transitioned to %s", shipperv1.ShipmentOrderPhaseShipping)
+	case shipperv1.ShipmentOrderPhaseShipping:
+		soCopy.Status.Phase = shipperv1.ShipmentOrderPhaseShipped
+		c.recorder.Eventf(so, corev1.EventTypeNormal, "PhaseTransition", "Transitioned to %s", shipperv1.ShipmentOrderPhaseShipped)
+	}
 	// Until #38113 is merged, we must use Update instead of UpdateStatus to
 	// update the Status block of the ShipmentOrder resource. UpdateStatus will not
 	// allow changes to the Spec of the resource, which is ideal for ensuring
