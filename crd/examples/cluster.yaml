@@ -1,5 +1,5 @@
 apiVersion: stable.shipper/v1
-kind: TargetCluster
+kind: Cluster
 metadata:
   name: eu-ams-b
 spec:

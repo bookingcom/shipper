@@ -55,6 +55,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 	// Group=shipper, Version=v1
 	case v1.SchemeGroupVersion.WithResource("capacitytargets"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().CapacityTargets().Informer()}, nil
+	case v1.SchemeGroupVersion.WithResource("clusters"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().Clusters().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("installationtargets"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().InstallationTargets().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("releases"):
@@ -63,8 +65,6 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().ShipmentOrders().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("strategies"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().Strategies().Informer()}, nil
-	case v1.SchemeGroupVersion.WithResource("targetclusters"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().TargetClusters().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("traffictargets"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().TrafficTargets().Informer()}, nil
 

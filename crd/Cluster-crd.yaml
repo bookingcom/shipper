@@ -2,7 +2,7 @@ apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
   # name must match the spec fields below, and be in the form: <plural>.<group>
-  name: targetclusters.stable.shipper
+  name: clusters.stable.shipper
 spec:
   # group name to use for REST API: /apis/<group>/<version>
   group: stable.shipper
@@ -12,11 +12,11 @@ spec:
   scope: Cluster
   names:
     # plural name to be used in the URL: /apis/<group>/<version>/<plural>
-    plural: targetclusters
+    plural: clusters
     # singular name to be used as an alias on the CLI and for display
-    singular: targetcluster
+    singular: cluster
     # kind is normally the CamelCased singular type. Your resource manifests use this.
-    kind: TargetCluster
+    kind: Cluster
     # shortNames allow shorter string to match your resource on the CLI
     shortNames:
-    - tc
+    - cl

@@ -26,6 +26,10 @@ type CapacityTargetListerExpansion interface{}
 // CapacityTargetNamespaceLister.
 type CapacityTargetNamespaceListerExpansion interface{}
 
+// ClusterListerExpansion allows custom methods to be added to
+// ClusterLister.
+type ClusterListerExpansion interface{}
+
 // InstallationTargetListerExpansion allows custom methods to be added to
 // InstallationTargetLister.
 type InstallationTargetListerExpansion interface{}
@@ -57,10 +61,6 @@ type StrategyListerExpansion interface{}
 // StrategyNamespaceListerExpansion allows custom methods to be added to
 // StrategyNamespaceLister.
 type StrategyNamespaceListerExpansion interface{}
-
-// TargetClusterListerExpansion allows custom methods to be added to
-// TargetClusterLister.
-type TargetClusterListerExpansion interface{}
 
 // TrafficTargetListerExpansion allows custom methods to be added to
 // TrafficTargetLister.
