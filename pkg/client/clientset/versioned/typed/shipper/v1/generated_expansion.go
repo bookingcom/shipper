@@ -18,6 +18,8 @@ package v1
 
 type CapacityTargetExpansion interface{}
 
+type ClusterExpansion interface{}
+
 type InstallationTargetExpansion interface{}
 
 type ReleaseExpansion interface{}
@@ -25,7 +27,5 @@ type ReleaseExpansion interface{}
 type ShipmentOrderExpansion interface{}
 
 type StrategyExpansion interface{}
-
-type TargetClusterExpansion interface{}
 
 type TrafficTargetExpansion interface{}

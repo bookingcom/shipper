@@ -30,6 +30,10 @@ func (c *FakeShipperV1) CapacityTargets(namespace string) v1.CapacityTargetInter
 	return &FakeCapacityTargets{c, namespace}
 }
 
+func (c *FakeShipperV1) Clusters() v1.ClusterInterface {
+	return &FakeClusters{c}
+}
+
 func (c *FakeShipperV1) InstallationTargets(namespace string) v1.InstallationTargetInterface {
 	return &FakeInstallationTargets{c, namespace}
 }
@@ -44,10 +48,6 @@ func (c *FakeShipperV1) ShipmentOrders(namespace string) v1.ShipmentOrderInterfa
 
 func (c *FakeShipperV1) Strategies(namespace string) v1.StrategyInterface {
 	return &FakeStrategies{c, namespace}
-}
-
-func (c *FakeShipperV1) TargetClusters() v1.TargetClusterInterface {
-	return &FakeTargetClusters{c}
 }
 
 func (c *FakeShipperV1) TrafficTargets(namespace string) v1.TrafficTargetInterface {

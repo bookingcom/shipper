@@ -26,6 +26,8 @@ import (
 type Interface interface {
 	// CapacityTargets returns a CapacityTargetInformer.
 	CapacityTargets() CapacityTargetInformer
+	// Clusters returns a ClusterInformer.
+	Clusters() ClusterInformer
 	// InstallationTargets returns a InstallationTargetInformer.
 	InstallationTargets() InstallationTargetInformer
 	// Releases returns a ReleaseInformer.
@@ -34,8 +36,6 @@ type Interface interface {
 	ShipmentOrders() ShipmentOrderInformer
 	// Strategies returns a StrategyInformer.
 	Strategies() StrategyInformer
-	// TargetClusters returns a TargetClusterInformer.
-	TargetClusters() TargetClusterInformer
 	// TrafficTargets returns a TrafficTargetInformer.
 	TrafficTargets() TrafficTargetInformer
 }
@@ -56,6 +56,11 @@ func (v *version) CapacityTargets() CapacityTargetInformer {
 	return &capacityTargetInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
+// Clusters returns a ClusterInformer.
+func (v *version) Clusters() ClusterInformer {
+	return &clusterInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
 // InstallationTargets returns a InstallationTargetInformer.
 func (v *version) InstallationTargets() InstallationTargetInformer {
 	return &installationTargetInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
@@ -74,11 +79,6 @@ func (v *version) ShipmentOrders() ShipmentOrderInformer {
 // Strategies returns a StrategyInformer.
 func (v *version) Strategies() StrategyInformer {
 	return &strategyInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
-}
-
-// TargetClusters returns a TargetClusterInformer.
-func (v *version) TargetClusters() TargetClusterInformer {
-	return &targetClusterInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
 
 // TrafficTargets returns a TrafficTargetInformer.

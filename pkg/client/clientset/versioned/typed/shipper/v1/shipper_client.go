@@ -26,11 +26,11 @@ import (
 type ShipperV1Interface interface {
 	RESTClient() rest.Interface
 	CapacityTargetsGetter
+	ClustersGetter
 	InstallationTargetsGetter
 	ReleasesGetter
 	ShipmentOrdersGetter
 	StrategiesGetter
-	TargetClustersGetter
 	TrafficTargetsGetter
 }
 
@@ -41,6 +41,10 @@ type ShipperV1Client struct {
 
 func (c *ShipperV1Client) CapacityTargets(namespace string) CapacityTargetInterface {
 	return newCapacityTargets(c, namespace)
+}
+
+func (c *ShipperV1Client) Clusters() ClusterInterface {
+	return newClusters(c)
 }
 
 func (c *ShipperV1Client) InstallationTargets(namespace string) InstallationTargetInterface {
@@ -57,10 +61,6 @@ func (c *ShipperV1Client) ShipmentOrders(namespace string) ShipmentOrderInterfac
 
 func (c *ShipperV1Client) Strategies(namespace string) StrategyInterface {
 	return newStrategies(c, namespace)
-}
-
-func (c *ShipperV1Client) TargetClusters() TargetClusterInterface {
-	return newTargetClusters(c)
 }
 
 func (c *ShipperV1Client) TrafficTargets(namespace string) TrafficTargetInterface {

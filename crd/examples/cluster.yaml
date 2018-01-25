@@ -1,5 +1,5 @@
 apiVersion: stable.shipper/v1
-kind: TargetCluster
+kind: Cluster
 spec:
   name: local
   region: local
