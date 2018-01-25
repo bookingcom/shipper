@@ -1,7 +1,9 @@
 apiVersion: stable.shipper/v1
 kind: TargetCluster
+metadata:
+  name: eu-ams-b
 spec:
-  name: local
+  name: eu-ams-b
   region: local
   apiMaster: https://127.0.0.1
   schedulable: true
