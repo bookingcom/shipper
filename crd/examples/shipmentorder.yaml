@@ -13,6 +13,7 @@ spec:
   chart:
     name: reviewsapi
     version: 0.0.1
+    repourl: http://helm-chart-museum.booking.com
   strategy: vanguard
   values:
     perl:

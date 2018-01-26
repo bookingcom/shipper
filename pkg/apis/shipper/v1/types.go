@@ -80,6 +80,7 @@ type ClusterSelector struct {
 type Chart struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
+	RepoURL string `json:"repoUrl"`
 }
 
 type ReleaseStrategy string
