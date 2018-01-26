@@ -5,6 +5,15 @@ import (
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
+const (
+	PhaseLabel     = "phase"
+	ReleaseLabel   = "release"
+	ReleaseLinkAnn = "releaseLink"
+
+	WaitingForSchedulingPhase = "WaitingForScheduling"
+	WaitingForStrategyPhase   = "WaitingForStrategy"
+)
+
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
