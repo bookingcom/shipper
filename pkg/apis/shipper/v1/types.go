@@ -2,7 +2,16 @@ package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	runtime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime"
+)
+
+const (
+	PhaseLabel     = "phase"
+	ReleaseLabel   = "release"
+	ReleaseLinkAnn = "releaseLink"
+
+	WaitingForSchedulingPhase = "WaitingForScheduling"
+	WaitingForStrategyPhase   = "WaitingForStrategy"
 )
 
 // +genclient
@@ -105,35 +114,35 @@ type StrategyStep struct {
 // +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// An TargetCluster is a cluster we're deploying to.
-type TargetCluster struct {
+// An Cluster is a cluster we're deploying to.
+type Cluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec TargetClusterSpec `json:"spec"`
+	Spec ClusterSpec `json:"spec"`
 
 	// Most recently observed status of the order
 	/// +optional
-	Status TargetClusterStatus `json:"status"`
+	Status ClusterStatus `json:"status"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-type TargetClusterList struct {
+type ClusterList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata"`
 
-	Items []TargetCluster `json:"items"`
+	Items []Cluster `json:"items"`
 }
 
-type TargetClusterSpec struct {
+type ClusterSpec struct {
 	Capabilities []string `json:"capabilities"`
 	Region       string   `json:"region"`
 
-	//Capacity TargetClusterCapacity
+	//Capacity ClusterCapacity
 }
 
-type TargetClusterStatus struct {
+type ClusterStatus struct {
 	InService bool `json:"inService"`
 }
 
@@ -144,11 +153,16 @@ type TargetClusterStatus struct {
 // contender versions. This is used by the StrategyController to change the
 // state of the cluster to satisfy a single step of a Strategy.
 type Release struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.TypeMeta `json:",inline"`
+	ReleaseMeta     `json:"metadata,omitempty"`
 
 	Spec   ReleaseSpec   `json:"spec"`
 	Status ReleaseStatus `json:"status"`
+}
+
+type ReleaseMeta struct {
+	metav1.ObjectMeta `json:",inline"`
+	Environment       ReleaseEnvironment `json:"environment"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -162,11 +176,35 @@ type ReleaseList struct {
 
 type ReleaseSpec struct {
 	// better indicated with labels?
-	TargetStep int `json:"targetstep"`
+	TargetStep int `json:"targetStep"`
 }
 
 // this will likely grow into a struct with interesting fields
 type ReleaseStatus string
+
+type ReleaseEnvironment struct {
+	Clusters      []string              `json:"clusters"`
+	Chart         EmbeddedChart         `json:"chart"`
+	ShipmentOrder EmbeddedShipmentOrder `json:"shipmentOrder"`
+	Sidecars      []Sidecar             `json:"sidecars"`
+}
+
+type EmbeddedChart struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Tarball string `json:"tarball"`
+}
+
+type EmbeddedShipmentOrder struct {
+	ClusterSelectors []ClusterSelector `json:"clusterSelectors"`
+	Strategy         string            `json:"strategy"`
+	Values           *ChartValues      `json:"values"`
+}
+
+type Sidecar struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
 
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -179,20 +217,20 @@ type InstallationTarget struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   InstallationTargetSpec   `json:"spec"`
-	Status InstallationTargetStatus `json:"status"`
+	Status InstallationTargetStatus `json:"status,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 type InstallationTargetList struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
 
 	Items []InstallationTarget `json:"items"`
 }
 
 type InstallationTargetStatus struct {
-	Clusters []ClusterInstallationStatus
+	Clusters []ClusterInstallationStatus `json:"clusters,omitempty"`
 }
 
 type ClusterInstallationStatus struct {
@@ -216,20 +254,20 @@ type CapacityTarget struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   CapacityTargetSpec   `json:"spec"`
-	Status CapacityTargetStatus `json:"status"`
+	Status CapacityTargetStatus `json:"status,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 type CapacityTargetList struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
 
 	Items []CapacityTarget `json:"items"`
 }
 
 type CapacityTargetStatus struct {
-	Clusters []ClusterCapacityStatus
+	Clusters []ClusterCapacityStatus `json:"clusters,omitempty"`
 }
 
 type ClusterCapacityStatus struct {
@@ -264,20 +302,20 @@ type TrafficTarget struct {
 
 	Spec TrafficTargetSpec `json:"spec"`
 
-	Status TrafficTargetStatus `json:"status"`
+	Status TrafficTargetStatus `json:"status,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 type TrafficTargetList struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
 
 	Items []TrafficTarget `json:"items"`
 }
 
 type TrafficTargetStatus struct {
-	Clusters []ClusterTrafficStatus
+	Clusters []ClusterTrafficStatus `json:"clusters,omitempty"`
 }
 
 type ClusterTrafficStatus struct {
@@ -287,7 +325,7 @@ type ClusterTrafficStatus struct {
 }
 
 type TrafficTargetSpec struct {
-	Clusters []ClusterTrafficTarget `json:"clusters"`
+	Clusters []ClusterTrafficTarget `json:"clusters,omitempty"`
 }
 
 type ClusterTrafficTarget struct {
