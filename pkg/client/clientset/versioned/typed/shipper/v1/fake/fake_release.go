@@ -19,7 +19,6 @@ package fake
 import (
 	shipper_v1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -55,18 +54,7 @@ func (c *FakeReleases) List(opts v1.ListOptions) (result *shipper_v1.ReleaseList
 	if obj == nil {
 		return nil, err
 	}
-
-	label, _, _ := testing.ExtractFromListOptions(opts)
-	if label == nil {
-		label = labels.Everything()
-	}
-	list := &shipper_v1.ReleaseList{}
-	for _, item := range obj.(*shipper_v1.ReleaseList).Items {
-		if label.Matches(labels.Set(item.Labels)) {
-			list.Items = append(list.Items, item)
-		}
-	}
-	return list, err
+	return obj.(*shipper_v1.ReleaseList), err
 }
 
 // Watch returns a watch.Interface that watches the requested releases.
