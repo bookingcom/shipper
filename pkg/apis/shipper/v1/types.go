@@ -83,7 +83,13 @@ type Chart struct {
 	RepoURL string `json:"repoUrl"`
 }
 
+// ReleaseStrategy is how deployments are executed.
 type ReleaseStrategy string
+
+const (
+	// ReleaseStrategyVanguard is a gradual deployment strategy with custom steps.
+	ReleaseStrategyVanguard ReleaseStrategy = "vanguard"
+)
 
 type ChartValues map[string]interface{}
 
