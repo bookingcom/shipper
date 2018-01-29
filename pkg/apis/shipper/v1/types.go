@@ -39,7 +39,24 @@ type ShipmentOrderList struct {
 	Items []ShipmentOrder `json:"items"`
 }
 
-type ShipmentOrderStatus string
+// ShipmentOrderPhase is what's happening with a ShipmentOrder.
+type ShipmentOrderPhase string
+
+const (
+	// ShipmentOrderPhasePending indicates ShipmentOrders that are yet to be picked
+	// by the ShipmentOrder controller.
+	ShipmentOrderPhasePending ShipmentOrderPhase = "Pending"
+	// ShipmentOrderPhaseShipping indicates ShipmentOrders that are being processed
+	// by the ShipmentOrder controller.
+	ShipmentOrderPhaseShipping ShipmentOrderPhase = "Shipping"
+	// ShipmentOrderPhaseShipped indicates ShipmentOrders that have been already
+	// processed by the ShipmentOrder controller.
+	ShipmentOrderPhaseShipped ShipmentOrderPhase = "Shipped"
+)
+
+type ShipmentOrderStatus struct {
+	Phase ShipmentOrderPhase `json:"phase"`
+}
 
 type ShipmentOrderSpec struct {
 	// selectors for target clusters for the deployment
