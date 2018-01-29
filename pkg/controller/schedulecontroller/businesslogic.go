@@ -167,16 +167,16 @@ func NewInstallationTarget(
 //noinspection GoUnusedParameter
 func (c *Controller) computeTargetClusters(selectors []v1.ClusterSelector) ([]string, error) {
 
-	// TODO: Add cluster label selector (only schedule-able clusters, for example)
 	clusters, err := c.clustersLister.List(labels.NewSelector())
 	if err != nil {
 		return nil, err
 	}
 
-	count := len(clusters)
-	names := make([]string, count)
-	for i, v := range clusters {
-		names[i] = v.Name
+	names := make([]string, 0)
+	for _, v := range clusters {
+		if !v.Spec.Unschedulable {
+			names = append(names, v.Name)
+		}
 	}
 
 	return names, nil
