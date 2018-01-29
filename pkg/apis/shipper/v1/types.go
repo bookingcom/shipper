@@ -136,8 +136,10 @@ type ClusterList struct {
 }
 
 type ClusterSpec struct {
-	Capabilities []string `json:"capabilities"`
-	Region       string   `json:"region"`
+	Capabilities  []string `json:"capabilities"`
+	Region        string   `json:"region"`
+	APIMaster     string   `json:"apiMaster"`
+	Unschedulable bool     `json:"unschedulable"`
 
 	//Capacity ClusterCapacity
 }
