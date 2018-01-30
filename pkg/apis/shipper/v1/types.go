@@ -60,6 +60,7 @@ type ShipmentOrderStatus struct {
 
 type ShipmentOrderSpec struct {
 	// selectors for target clusters for the deployment
+	// XXX what are the semantics when the field is empty/omitted?
 	ClusterSelectors []ClusterSelector `json:"clusterSelectors"`
 
 	// Chart spec: name and version
@@ -69,6 +70,7 @@ type ShipmentOrderSpec struct {
 	Strategy ReleaseStrategy `json:"strategy"`
 
 	// the inlined "values.yaml" to apply to the chart when rendering it
+	// XXX pointer here means it's null-able, do we want that?
 	Values *ChartValues `json:"values"`
 }
 
