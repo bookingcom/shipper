@@ -199,7 +199,9 @@ type ReleaseSpec struct {
 }
 
 // this will likely grow into a struct with interesting fields
-type ReleaseStatus string
+type ReleaseStatus struct {
+	Phase string `json:"phase"`
+}
 
 type ReleaseEnvironment struct {
 	Clusters      []string              `json:"clusters"`
