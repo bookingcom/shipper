@@ -52,7 +52,7 @@ func main() {
 			fmt.Printf("%s %q with this spec: %+v\n", item.Kind, item.Name, item.Spec)
 		}
 	case "clusters":
-		list, err := shipperClient.ShipperV1().TargetClusters().List(metav1.ListOptions{})
+		list, err := shipperClient.ShipperV1().Clusters().List(metav1.ListOptions{})
 		if err != nil {
 			glog.Fatalf("Error listing %q: %v", *resourceType, err)
 		}
