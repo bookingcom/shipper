@@ -69,10 +69,7 @@ func NewController(
 		cache.FilteringResourceEventHandler{
 			FilterFunc: func(obj interface{}) bool {
 				release := obj.(*v1.Release)
-				if val, ok := release.ObjectMeta.Labels[v1.PhaseLabel]; ok {
-					return val == v1.ReleasePhaseWaitingForScheduling
-				}
-				return false
+				return release.Status.Phase == v1.ReleasePhaseWaitingForScheduling
 			},
 			Handler: cache.ResourceEventHandlerFuncs{
 				AddFunc: controller.enqueueRelease,
