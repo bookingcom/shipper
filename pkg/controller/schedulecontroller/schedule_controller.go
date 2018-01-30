@@ -70,7 +70,7 @@ func NewController(
 			FilterFunc: func(obj interface{}) bool {
 				release := obj.(*v1.Release)
 				if val, ok := release.ObjectMeta.Labels[v1.PhaseLabel]; ok {
-					return val == v1.WaitingForSchedulingPhase
+					return val == v1.ReleasePhaseWaitingForScheduling
 				}
 				return false
 			},

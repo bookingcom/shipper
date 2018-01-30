@@ -79,7 +79,7 @@ func (c *Controller) businessLogic(release *v1.Release) error {
 	// If we get to this point, it means that the clusters have already been selected and persisted in the Release
 	// document, and all the associated Release documents have already been created, so the last operation remaining is
 	// updating the PhaseLabel to WaitingForStrategyPhase.
-	release.Labels[v1.PhaseLabel] = v1.WaitingForStrategyPhase
+	release.Labels[v1.PhaseLabel] = v1.ReleasePhaseWaitingForStrategy
 	_, err = c.shipperclientset.ShipperV1().Releases(release.Namespace).Update(release)
 	if err != nil {
 		return err

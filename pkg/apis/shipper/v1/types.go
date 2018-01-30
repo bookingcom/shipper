@@ -10,8 +10,8 @@ const (
 	ReleaseLabel   = "release"
 	ReleaseLinkAnn = "releaseLink"
 
-	WaitingForSchedulingPhase = "WaitingForScheduling"
-	WaitingForStrategyPhase   = "WaitingForStrategy"
+	ReleasePhaseWaitingForScheduling = "WaitingForScheduling"
+	ReleasePhaseWaitingForStrategy   = "WaitingForStrategy"
 )
 
 // +genclient
