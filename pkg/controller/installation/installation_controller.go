@@ -21,7 +21,7 @@ type Controller struct {
 	workqueue                 workqueue.RateLimitingInterface
 	installationTargetsSynced cache.InformerSynced
 	installationTargetsLister shipperListers.InstallationTargetLister
-	clusterLister             shipperListers.TargetClusterLister
+	clusterLister             shipperListers.ClusterLister
 	releaseLister             shipperListers.ReleaseLister
 }
 
@@ -34,7 +34,7 @@ func NewController(
 
 	// Management Cluster InstallationTarget informer
 	installationTargetInformer := shipperInformerFactory.Shipper().V1().InstallationTargets()
-	clusterInformer := shipperInformerFactory.Shipper().V1().TargetClusters()
+	clusterInformer := shipperInformerFactory.Shipper().V1().Clusters()
 	releaseInformer := shipperInformerFactory.Shipper().V1().Releases()
 
 	controller := &Controller{
