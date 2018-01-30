@@ -10,6 +10,14 @@ required = ["k8s.io/code-generator/cmd/client-gen"]
   name = "k8s.io/apimachinery"
   branch = "release-1.9"
 
+[[override]]
+  name = "k8s.io/apiserver"
+  branch = "release-1.9"
+
+[[override]]
+  name = "github.com/coreos/etcd"
+  branch = "release-3.3"
+
 [[constraint]]
   name = "k8s.io/client-go"
   branch = "release-6.0"
