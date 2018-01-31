@@ -17,6 +17,7 @@ import (
 )
 
 type Controller struct {
+	kubeclientset             kube.Interface
 	shipperclientset          shipper.Interface
 	workqueue                 workqueue.RateLimitingInterface
 	installationTargetsSynced cache.InformerSynced
@@ -38,6 +39,8 @@ func NewController(
 	releaseInformer := shipperInformerFactory.Shipper().V1().Releases()
 
 	controller := &Controller{
+		kubeclientset:             kubeclientset,
+		shipperclientset:          shipperclientset,
 		clusterLister:             clusterInformer.Lister(),
 		releaseLister:             releaseInformer.Lister(),
 		installationTargetsLister: installationTargetInformer.Lister(),

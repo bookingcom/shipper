@@ -1,9 +1,12 @@
 package installation
 
 import (
+	"fmt"
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperChart "github.com/bookingcom/shipper/pkg/chart"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
 
@@ -20,9 +23,40 @@ func (c *Controller) renderRelease(release *shipperV1.Release, cluster *shipperV
 	return shipperChart.RenderChart(chrt, vals, options)
 }
 
+const (
+	ClusterSecretToken  = "token"
+	ClusterSecretCAData = "CAData"
+)
+
+func (c *Controller) buildClusterClient(cluster *shipperV1.Cluster) (*kubernetes.Clientset, error) {
+	cfg := &rest.Config{
+		Host: cluster.Spec.APIMaster,
+	}
+
+	secret, err := c.kubeclientset.CoreV1().Secrets(cluster.Namespace).Get(cluster.Namespace, v1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	if token, ok := secret.Data[ClusterSecretToken]; ok {
+		cfg.BearerToken = string(token)
+	} else {
+		return nil, fmt.Errorf("couldn't find token for cluster")
+	}
+
+	if caData, ok := secret.Data[ClusterSecretCAData]; ok {
+		cfg.CAData = caData
+	} else {
+		return nil, fmt.Errorf("couldn't find CAData for cluster")
+	}
+
+	return kubernetes.NewForConfig(cfg)
+
+}
+
 func (c *Controller) installIfMissing(rendered []string, cluster *shipperV1.Cluster, release *shipperV1.Release) error {
 
-	client, err := cluster.Client()
+	client, err := c.buildClusterClient(cluster)
 	if err != nil {
 		return err
 	}
