@@ -15,7 +15,7 @@ func (c *Controller) businessLogic(release *v1.Release) error {
 	var clusterNames []string
 
 	// Compute target clusters, update the release if it doesn't have any, and bail-out. Since we haven't updated
-	// PhaseLabel yet, this update will trigger a new item on the work queue.
+	// .Status.Phase yet, this update will trigger a new item on the work queue.
 	if len(release.Environment.Clusters) == 0 {
 		clusterNames, err := c.computeTargetClusters(release.Environment.ShipmentOrder.ClusterSelectors)
 		if err != nil {
@@ -78,7 +78,7 @@ func (c *Controller) businessLogic(release *v1.Release) error {
 
 	// If we get to this point, it means that the clusters have already been selected and persisted in the Release
 	// document, and all the associated Release documents have already been created, so the last operation remaining is
-	// updating the PhaseLabel to WaitingForStrategyPhase.
+	// updating the PhaseStatus to ReleasePhaseWaitingForStrategy
 	release.Status.Phase = v1.ReleasePhaseWaitingForStrategy
 	_, err = c.shipperclientset.ShipperV1().Releases(release.Namespace).Update(release)
 	if err != nil {
