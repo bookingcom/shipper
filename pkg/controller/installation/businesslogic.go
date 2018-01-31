@@ -3,47 +3,24 @@ package installation
 import (
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperChart "github.com/bookingcom/shipper/pkg/chart"
-	"gopkg.in/yaml.v2"
-	"k8s.io/helm/pkg/chartutil"
-	"k8s.io/helm/pkg/proto/hapi/chart"
-	"k8s.io/helm/pkg/timeconv"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 func (c *Controller) renderRelease(release *shipperV1.Release, cluster *shipperV1.Cluster) ([]string, error) {
-	chrt := loadChartFromEmbedded(release.Environment.Chart) // TODO: Make this a method of EmbeddedChart
-	vals, err := loadValsFromRelease(release)                // TODO: Make this a method of Release
+	options := release.Options(cluster)
+	chrt, err := release.Chart()
 	if err != nil {
 		return nil, err
 	}
-	options := optionsForCluster(release, cluster)
+	vals, err := release.Values()
+	if err != nil {
+		return nil, err
+	}
 	return shipperChart.RenderChart(chrt, vals, options)
 }
 
-func optionsForCluster(release *shipperV1.Release, cluster *shipperV1.Cluster) chartutil.ReleaseOptions {
-	options := chartutil.ReleaseOptions{
-		Name:      release.Name,
-		Time:      timeconv.Now(),
-		Namespace: release.Namespace,
-		IsInstall: true,
-	}
-	return options
-
-}
-
-func loadValsFromRelease(release *shipperV1.Release) (*chart.Config, error) {
-	yamlValues, err := yaml.Marshal(release.Environment.ShipmentOrder.Values)
-	if err != nil {
-		return nil, err
-	}
-	return &chart.Config{Raw: string(yamlValues)}, nil
-}
-
-func loadChartFromEmbedded(embeddedChart shipperV1.EmbeddedChart) *chart.Chart {
-	// base64 -> []byte -> *chart.Chart
-	return nil
-}
-
 func (c *Controller) installIfMissing(rendered []string, cluster *shipperV1.Cluster) error {
+	// - Get client for cluster
 	// - Check if rendered objects already exist in target cluster
 	//   - If do not exist, create them (Research how smart Tiller is here)
 	// - Install rendered objects in target cluster
