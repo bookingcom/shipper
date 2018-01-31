@@ -1,8 +1,9 @@
 apiVersion: stable.shipper/v1
 kind: Cluster
+metadata:
+  name: eu-ams-a
 spec:
-  name: local
-  region: local
-  apiMaster: https://127.0.0.1
-  schedulable: true
+  apiMaster: https://127.0.0
   capabilities: []
+  region: local
+#  unschedulable: true

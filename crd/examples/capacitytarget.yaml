@@ -6,5 +6,5 @@ metadata:
     release: reviewsapi-4
 spec:
   clusters:
-  - name: local
     targetPods: 0
+  - name: local

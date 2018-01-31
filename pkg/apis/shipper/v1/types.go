@@ -10,8 +10,8 @@ const (
 	ReleaseLabel   = "release"
 	ReleaseLinkAnn = "releaseLink"
 
-	WaitingForSchedulingPhase = "WaitingForScheduling"
-	WaitingForStrategyPhase   = "WaitingForStrategy"
+	ReleasePhaseWaitingForScheduling = "WaitingForScheduling"
+	ReleasePhaseWaitingForStrategy   = "WaitingForStrategy"
 )
 
 // +genclient
@@ -153,8 +153,10 @@ type ClusterList struct {
 }
 
 type ClusterSpec struct {
-	Capabilities []string `json:"capabilities"`
-	Region       string   `json:"region"`
+	Capabilities  []string `json:"capabilities"`
+	Region        string   `json:"region"`
+	APIMaster     string   `json:"apiMaster"`
+	Unschedulable bool     `json:"unschedulable"`
 
 	//Capacity ClusterCapacity
 }
@@ -197,7 +199,9 @@ type ReleaseSpec struct {
 }
 
 // this will likely grow into a struct with interesting fields
-type ReleaseStatus string
+type ReleaseStatus struct {
+	Phase string `json:"phase"`
+}
 
 type ReleaseEnvironment struct {
 	Clusters      []string              `json:"clusters"`
