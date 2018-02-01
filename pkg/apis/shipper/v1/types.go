@@ -207,10 +207,11 @@ type ReleaseSpec struct {
 type ReleaseStatus string
 
 type ReleaseEnvironment struct {
-	Clusters      []string              `json:"clusters"`
-	Chart         EmbeddedChart         `json:"chart"`
-	ShipmentOrder EmbeddedShipmentOrder `json:"shipmentOrder"`
-	Sidecars      []Sidecar             `json:"sidecars"`
+	Clusters      []string          `json:"clusters"`
+	Chart         EmbeddedChart     `json:"chart"`
+	ShipmentOrder ShipmentOrderSpec `json:"shipmentOrder"`
+	Sidecars      []Sidecar         `json:"sidecars"`
+	Replicas      *int32            `json:"replicas"`
 }
 
 type EmbeddedChart struct {
