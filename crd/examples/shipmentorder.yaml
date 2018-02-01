@@ -11,9 +11,9 @@ spec:
     - gpu
     - pci
   chart:
-    name: reviewsapi
-    version: 0.0.1
-    repourl: http://helm-chart-museum.booking.com
+    name: my-complex-app
+    version: 0.1.0
+    repoUrl: http://127.0.0.1:8879/charts
   strategy: vanguard
   values:
     perl:
