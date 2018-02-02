@@ -2,6 +2,24 @@
 
 
 [[projects]]
+  name = "github.com/BurntSushi/toml"
+  packages = ["."]
+  revision = "b26d9c308763d68093482582cea63d69be07a0f0"
+  version = "v0.3.0"
+
+[[projects]]
+  name = "github.com/Masterminds/semver"
+  packages = ["."]
+  revision = "15d8430ab86497c5c0da827b748823945e1cf1e1"
+  version = "v1.4.0"
+
+[[projects]]
+  name = "github.com/Masterminds/sprig"
+  packages = ["."]
+  revision = "b217b9c388de2cacde4354c536e520c52c055563"
+  version = "v2.14.1"
+
+[[projects]]
   name = "github.com/PuerkitoBio/purell"
   packages = ["."]
   revision = "0bcb03f4b4d0a9428594752bd2a3b9aa0a9d4bd4"
@@ -12,6 +30,12 @@
   name = "github.com/PuerkitoBio/urlesc"
   packages = ["."]
   revision = "de5bf2ad457846296e2031421a34e2568e304e35"
+
+[[projects]]
+  name = "github.com/aokoli/goutils"
+  packages = ["."]
+  revision = "3391d3790d23d03408670993e957e8f408993c34"
+  version = "v1.0.1"
 
 [[projects]]
   name = "github.com/davecgh/go-spew"
@@ -57,6 +81,21 @@
   name = "github.com/go-openapi/swag"
   packages = ["."]
   revision = "84f4bee7c0a6db40e3166044c7983c1c32125429"
+
+[[projects]]
+  name = "github.com/gobwas/glob"
+  packages = [
+    ".",
+    "compiler",
+    "match",
+    "syntax",
+    "syntax/ast",
+    "syntax/lexer",
+    "util/runes",
+    "util/strings"
+  ]
+  revision = "bea32b9cd2d6f55753d94a28e959b13f0244797a"
+  version = "v0.2.2"
 
 [[projects]]
   name = "github.com/gogo/protobuf"
@@ -138,6 +177,12 @@
   revision = "bf9dde6d0d2c004a008c27aaee91170c786f6db8"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/huandu/xstrings"
+  packages = ["."]
+  revision = "37469d0c81a7910b49d64a0d308ded4823e90937"
+
+[[projects]]
   name = "github.com/imdario/mergo"
   packages = ["."]
   revision = "f1ac5984e69fed03e0574a92f70c59f132616ea2"
@@ -178,6 +223,12 @@
   version = "v2.0.1"
 
 [[projects]]
+  name = "github.com/satori/go.uuid"
+  packages = ["."]
+  revision = "f58768cc1a7a7e77a3bd49e98cdd21419399b6a3"
+  version = "v1.2.0"
+
+[[projects]]
   name = "github.com/spf13/pflag"
   packages = ["."]
   revision = "e57e3eeb33f795204c1ca35f56c44f83227c6e66"
@@ -186,7 +237,19 @@
 [[projects]]
   branch = "master"
   name = "golang.org/x/crypto"
-  packages = ["ssh/terminal"]
+  packages = [
+    "cast5",
+    "openpgp",
+    "openpgp/armor",
+    "openpgp/clearsign",
+    "openpgp/elgamal",
+    "openpgp/errors",
+    "openpgp/packet",
+    "openpgp/s2k",
+    "pbkdf2",
+    "scrypt",
+    "ssh/terminal"
+  ]
   revision = "13931e22f9e72ea58bb73048bc752b48c6d4d4ac"
 
 [[projects]]
@@ -216,15 +279,12 @@
   packages = [
     "collate",
     "collate/build",
-    "internal",
-    "internal/catmsg",
     "internal/colltab",
     "internal/gen",
     "internal/tag",
     "internal/triegen",
     "internal/ucd",
     "language",
-    "message/catalog",
     "secure/bidirule",
     "transform",
     "unicode/bidi",
@@ -490,6 +550,32 @@
   revision = "1ef560bbde5195c01629039ad3b337ce63e7b321"
 
 [[projects]]
+  name = "k8s.io/helm"
+  packages = [
+    "pkg/chartutil",
+    "pkg/downloader",
+    "pkg/engine",
+    "pkg/getter",
+    "pkg/helm/environment",
+    "pkg/helm/helmpath",
+    "pkg/ignore",
+    "pkg/plugin",
+    "pkg/proto/hapi/chart",
+    "pkg/proto/hapi/version",
+    "pkg/provenance",
+    "pkg/repo",
+    "pkg/repo/repotest",
+    "pkg/resolver",
+    "pkg/sympath",
+    "pkg/timeconv",
+    "pkg/tlsutil",
+    "pkg/urlutil",
+    "pkg/version"
+  ]
+  revision = "14af25f1de6832228539259b821949d20069a222"
+  version = "v2.8.0"
+
+[[projects]]
   branch = "master"
   name = "k8s.io/kube-openapi"
   packages = [
@@ -501,6 +587,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "345deeed42f68c94b4fd2ac4bb6a4ff694288160fb242e38869ccb19d68acc13"
+  inputs-digest = "384e35d2225da097924cdbcdc4f3ea08481a99ddf11d68dd9e3b7a2289bbb8f3"
   solver-name = "gps-cdcl"
   solver-version = 1
