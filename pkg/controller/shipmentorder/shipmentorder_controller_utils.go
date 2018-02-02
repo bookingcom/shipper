@@ -10,6 +10,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
@@ -41,11 +43,12 @@ func (c *Controller) shipmentOrderHasRelease(so *shipperv1.ShipmentOrder) bool {
 }
 
 func (c *Controller) getReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) (*shipperv1.Release, error) {
-	selector := metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			shipperv1.ReleaseLabel: releaseNameForShipmentOrder(so),
-		},
-	}
+	req, _ := labels.NewRequirement(
+		shipperv1.ReleaseLabel,
+		selection.Equals,
+		[]string{releaseNameForShipmentOrder(so)},
+	)
+	selector := labels.NewSelector().Add(*req)
 
 	rlist, err := c.shipperclientset.ShipperV1().Releases(so.Namespace).List(metav1.ListOptions{
 		LabelSelector: selector.String(),
@@ -143,5 +146,5 @@ func downloadChartForShipmentOrder(so *shipperv1.ShipmentOrder) (*bytes.Buffer, 
 }
 
 func releaseNameForShipmentOrder(so *shipperv1.ShipmentOrder) string {
-	return "release-" + so.ObjectMeta.Name
+	return "release-" + so.GetName()
 }
