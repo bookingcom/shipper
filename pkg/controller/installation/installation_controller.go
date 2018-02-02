@@ -135,7 +135,7 @@ func (c *Controller) syncHandler(key string) error {
 		return err
 	}
 
-	err = c.businessLogic(it)
+	err = c.processInstallation(it)
 	if err != nil {
 		return err
 	}

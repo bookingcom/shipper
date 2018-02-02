@@ -14,7 +14,7 @@ const (
 	ReleasePhaseWaitingForScheduling = "WaitingForScheduling"
 	ReleasePhaseWaitingForStrategy   = "WaitingForStrategy"
 
-	InstallationStatusSucceeded = "Succeeded"
+	InstallationStatusInstalled = "Installed"
 	InstallationStatusFailed    = "Failed"
 )
 

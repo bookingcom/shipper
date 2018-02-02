@@ -6,10 +6,10 @@ import (
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/controller/installation"
+	"k8s.io/apiserver/pkg/server"
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/kubernetes/staging/src/k8s.io/apiserver/pkg/server"
 	"time"
 )
 
