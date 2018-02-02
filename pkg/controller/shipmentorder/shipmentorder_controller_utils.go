@@ -11,27 +11,31 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/client-go/tools/cache"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
 )
 
 func (c *Controller) transitionShipmentOrderPhase(so *shipperv1.ShipmentOrder, nextPhase shipperv1.ShipmentOrderPhase) error {
+	prevPhase := so.Status.Phase
 	so.Status.Phase = nextPhase
 
 	// TODO change to UpdateStatus when kubernetes#38113 is merged.
 	_, err := c.shipperclientset.ShipperV1().ShipmentOrders(so.Namespace).Update(so)
 	if err != nil {
-		return err
+		return fmt.Errorf(`transition ShipmentOrder %q to %q: %s`, metaKey(so), nextPhase, err)
 	}
 
 	c.recorder.Eventf(
 		so,
 		corev1.EventTypeNormal,
 		reasonTransition,
-		"Transitioned to %q",
-		string(nextPhase),
+		"%q -> %q",
+		prevPhase,
+		nextPhase,
 	)
 
 	return nil
@@ -54,15 +58,17 @@ func (c *Controller) getReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) (*s
 		LabelSelector: selector.String(),
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list Releases for ShipmentOrder %q: %s", metaKey(so), err)
 	}
 
-	if n := len(rlist.Items); n != 1 {
+	n := len(rlist.Items)
+	glog.V(6).Infof(`Found %d Releases for ShipmentOrder %q using selector %q`, n, metaKey(so), selector)
+	if n != 1 {
 		names := make([]string, n)
 		for i := 0; i < n; i++ {
-			names[i] = rlist.Items[i].ObjectMeta.Name
+			names[i] = rlist.Items[i].GetName()
 		}
-		return nil, fmt.Errorf("expected exactly one Release but found %v", names)
+		return nil, fmt.Errorf("list Releases for ShipmentOrder %q: expected exactly one Release but found %v", metaKey(so), names)
 	}
 
 	return &rlist.Items[0], nil
@@ -80,7 +86,7 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 	if err != nil {
 		return err
 	}
-	glog.V(6).Infof("Extracted %+v replicas from ShipmentOrder %q", replicas, so.GetName())
+	glog.V(6).Infof(`Extracted %+v replicas from ShipmentOrder %q`, replicas, metaKey(so))
 
 	releaseName := releaseNameForShipmentOrder(so)
 
@@ -108,7 +114,7 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 	}
 
 	if _, err := c.shipperclientset.ShipperV1().Releases(so.Namespace).Create(release); err != nil {
-		return err
+		return fmt.Errorf("create Release for ShipmentOrder %q: %s", metaKey(so), err)
 	}
 
 	c.recorder.Eventf(
@@ -125,12 +131,12 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 func extractReplicasFromChart(chart io.Reader, so *shipperv1.ShipmentOrder) (*int32, error) {
 	rendered, err := shipperchart.Render(chart, so.ObjectMeta.Name, so.ObjectMeta.Namespace, so.Spec.Values)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("extract replicas for ShipmentOrder %q: %s", metaKey(so), err)
 	}
 
 	deployments := shipperchart.GetDeployments(rendered)
-	if len(deployments) != 1 {
-		return nil, fmt.Errorf("expected exactly one Deployment but got %d", len(deployments))
+	if n := len(deployments); n != 1 {
+		return nil, fmt.Errorf("extract replicas for ShipmentOrder %q: expected exactly one Deployment but got %d", metaKey(so), n)
 	}
 
 	return deployments[0].Spec.Replicas, nil
@@ -139,7 +145,7 @@ func extractReplicasFromChart(chart io.Reader, so *shipperv1.ShipmentOrder) (*in
 func downloadChartForShipmentOrder(so *shipperv1.ShipmentOrder) (*bytes.Buffer, error) {
 	buf, err := shipperchart.Download(so.Spec.Chart)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("download chart for ShipmentOrder %q: %s", metaKey(so), err)
 	}
 
 	return buf, nil
@@ -147,4 +153,9 @@ func downloadChartForShipmentOrder(so *shipperv1.ShipmentOrder) (*bytes.Buffer, 
 
 func releaseNameForShipmentOrder(so *shipperv1.ShipmentOrder) string {
 	return "release-" + so.GetName()
+}
+
+func metaKey(obj runtime.Object) string {
+	key, _ := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	return key
 }

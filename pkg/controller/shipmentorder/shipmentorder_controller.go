@@ -220,8 +220,9 @@ func (c *Controller) syncOne(key string) error {
 }
 
 func (c *Controller) processOrder(so *shipperv1.ShipmentOrder) error {
-	var err error
+	glog.V(6).Infof(`ShipmentOrder %q is %q`, metaKey(so), so.Status.Phase)
 
+	var err error
 	switch so.Status.Phase {
 	case shipperv1.ShipmentOrderPhasePending:
 		err = c.processPending(so)
@@ -247,8 +248,8 @@ func (c *Controller) processShipping(so *shipperv1.ShipmentOrder) error {
 	if c.shipmentOrderHasRelease(so) {
 		nextPhase := shipperv1.ShipmentOrderPhaseShipped
 		glog.V(4).Infof(
-			"ShipmentOrder %q is %q but actually has a Release, marking as %q",
-			so.ObjectMeta.Name,
+			`ShipmentOrder %q is %q but actually has a Release, marking as %q`,
+			metaKey(so),
 			so.Status.Phase,
 			nextPhase,
 		)
