@@ -20,3 +20,24 @@ spec:
     # shortNames allow shorter string to match your resource on the CLI
     shortNames:
     - tt
+  validation:
+    openAPIV3Schema:
+      properties:
+        spec:
+          type: object
+          required:
+          - clusters
+          properties:
+            clusters:
+              type: array
+              items:
+                type: object
+                required:
+                - name
+                - targetTraffic
+                properties:
+                  name:
+                    type: string
+                  targetTraffic:
+                    minimum: 0
+                    type: integer

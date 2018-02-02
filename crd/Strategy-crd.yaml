@@ -20,3 +20,44 @@ spec:
     # shortNames allow shorter string to match your resource on the CLI
     shortNames:
     - st
+  validation:
+    openAPIV3Schema:
+      properties:
+        spec:
+          type: object
+          required:
+          - steps
+          properties:
+            steps:
+              type: array
+              items:
+                type: object
+                required:
+                - name
+                properties:
+                  name:
+                    type: string
+                  capacity:
+                    type: object
+                    required:
+                    - incumbentReplicas
+                    - contenderReplicas
+                    properties:
+                      incumbentReplicas:
+                        type: integer
+                        minimum: 0
+                      contenderReplicas:
+                        type: integer
+                        minimum: 0
+                  traffic:
+                    type: object
+                    required:
+                    - incumbentTraffic
+                    - contenderTraffic
+                    properties:
+                      incumbentTraffic:
+                        type: integer
+                        minimum: 0
+                      contenderTraffic:
+                        type: integer
+                        minimum: 0
