@@ -152,8 +152,7 @@ func (c *Controller) updateStatus(capacityTarget shipperv1.CapacityTarget, name 
 	for _, clusterStatus := range capacityTarget.Status.Clusters {
 		if clusterStatus.Name == name {
 			foundClusterStatus = true
-			glog.Infof("Found cluster %s! Setting available replicas to %d.", clusterStatus.Name, achievedReplicas)
-			clusterStatus.AchievedReplicas = achievedReplicas
+			clusterStatus.AvailableReplicas = achievedReplicas
 		}
 
 		capacityTargetStatus.Clusters = append(capacityTargetStatus.Clusters, clusterStatus)
@@ -162,9 +161,8 @@ func (c *Controller) updateStatus(capacityTarget shipperv1.CapacityTarget, name 
 	if foundClusterStatus != true {
 		// there hasn't been an update about this cluster before, so manually add it
 		clusterStatus := shipperv1.ClusterCapacityStatus{
-			Name:             name,
-			AchievedReplicas: achievedReplicas,
-			Status:           "true",
+			Name:              name,
+			AvailableReplicas: achievedReplicas,
 		}
 
 		capacityTargetStatus.Clusters = append(capacityTargetStatus.Clusters, clusterStatus)
@@ -176,7 +174,6 @@ func (c *Controller) updateStatus(capacityTarget shipperv1.CapacityTarget, name 
 	}
 
 	json := fmt.Sprintf(`{"status": %s}`, string(statusJson))
-	glog.Info(json)
 	_, err = c.shipperclientset.ShipperV1().CapacityTargets(capacityTarget.Namespace).Patch(capacityTarget.Name, types.MergePatchType, []byte(json))
 	if err != nil {
 		return err
