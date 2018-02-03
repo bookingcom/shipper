@@ -581,7 +581,7 @@
   revision = "68f9c3a1feb3140df59c67ced62d3a5df8e6c9c2"
 
 [[projects]]
-  branch = "master"
+  branch = "release-1.9"
   name = "k8s.io/apiserver"
   packages = [
     "pkg/admission",
@@ -643,7 +643,6 @@
     "pkg/server/mux",
     "pkg/server/routes",
     "pkg/server/routes/data/swagger",
-    "pkg/server/storage",
     "pkg/storage",
     "pkg/storage/etcd",
     "pkg/storage/etcd/metrics",
@@ -661,7 +660,7 @@
     "plugin/pkg/authenticator/token/webhook",
     "plugin/pkg/authorizer/webhook"
   ]
-  revision = "bfca9a4f48fbb5daa9495ab50437c8c9fb988113"
+  revision = "40b00dd493d8fb98c255f0c6427f97fbf865a538"
 
 [[projects]]
   branch = "release-6.0"
@@ -855,6 +854,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "fe0d81f3a5c1cebcaddef3abf86b10487df74df7057051c3f38e8acfec296e50"
+  inputs-digest = "e1cc84cfa9e8f3da72382f0f9d2919b4bb05841df30d03d8109537c80ad18af0"
   solver-name = "gps-cdcl"
   solver-version = 1
