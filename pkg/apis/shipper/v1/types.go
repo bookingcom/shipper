@@ -365,7 +365,7 @@ type TrafficTargetList struct {
 }
 
 type TrafficTargetStatus struct {
-	Clusters []ClusterTrafficStatus `json:"clusters,omitempty"`
+	Clusters []*ClusterTrafficStatus `json:"clusters,omitempty"`
 }
 
 type ClusterTrafficStatus struct {
