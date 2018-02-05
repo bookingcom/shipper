@@ -11,7 +11,7 @@ metadata:
   name: my-complex-app
   namespace: default
 spec:
-  replicas: 1
+  replicas: 12
   template:
     spec:
       containers:
@@ -52,7 +52,7 @@ func TestGetDeploymentsValid(t *testing.T) {
 	const (
 		expectedName      = "my-complex-app"
 		expectedNamespace = "default"
-		expectedReplicas  = 1
+		expectedReplicas  = 12
 	)
 
 	if d.GetName() != expectedName {
