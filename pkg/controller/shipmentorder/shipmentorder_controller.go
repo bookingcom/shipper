@@ -37,7 +37,6 @@ import (
 )
 
 const (
-	controllerAgentName   = "shipmentorder-controller"
 	controllerMetricsName = "shipmentorder"
 
 	reasonFailed     = "ShippingError"
