@@ -9,13 +9,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	kubeInformers "k8s.io/client-go/informers"
 	kube "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"time"
 )
 
+// Controller is a Kubernetes controller that processes InstallationTarget
+// objects.
 type Controller struct {
 	kubeclientset             kube.Interface
 	shipperclientset          shipper.Interface
@@ -26,10 +27,9 @@ type Controller struct {
 	releaseLister             shipperListers.ReleaseLister
 }
 
+// NewController returns a new Installation controller.
 func NewController(
-	kubeclientset kube.Interface,
 	shipperclientset shipper.Interface,
-	kubeInformerFactory kubeInformers.SharedInformerFactory,
 	shipperInformerFactory shipperInformers.SharedInformerFactory,
 ) *Controller {
 
@@ -39,7 +39,6 @@ func NewController(
 	releaseInformer := shipperInformerFactory.Shipper().V1().Releases()
 
 	controller := &Controller{
-		kubeclientset:             kubeclientset,
 		shipperclientset:          shipperclientset,
 		clusterLister:             clusterInformer.Lister(),
 		releaseLister:             releaseInformer.Lister(),
@@ -58,25 +57,25 @@ func NewController(
 	return controller
 }
 
+// Run starts Installation controller workers and blocks until stopCh is
+// closed.
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 	defer runtime.HandleCrash()
 	defer c.workqueue.ShutDown()
 
-	glog.Info("Starting Installation controller")
+	glog.V(2).Info("Starting Installation controller")
+	defer glog.V(2).Info("Shutting down workers")
 
-	glog.Info("Waiting for informer caches to sync")
-	if ok := cache.WaitForCacheSync(stopCh, c.installationTargetsSynced); !ok {
+	if !cache.WaitForCacheSync(stopCh, c.installationTargetsSynced) {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
-	glog.Info("Starting workers")
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.runWorker, time.Second, stopCh)
 	}
 
 	glog.Info("Started workers")
 	<-stopCh
-	glog.Info("Shutting down workers")
 
 	return nil
 
@@ -96,16 +95,21 @@ func (c *Controller) processNextWorkItem() bool {
 
 	err := func(obj interface{}) error {
 		defer c.workqueue.Done(obj)
-		var key string
-		var ok bool
+		var (
+			key string
+			ok  bool
+		)
 		if key, ok = obj.(string); !ok {
+			// Do not attempt to process invalid objects again.
 			c.workqueue.Forget(obj)
-			runtime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
+			runtime.HandleError(fmt.Errorf("invalid object key: %#v", obj))
 			return nil
 		}
-		if err := c.syncHandler(key); err != nil {
-			return fmt.Errorf("error syncing '%s': %s", key, err.Error())
+		if err := c.syncOne(key); err != nil {
+			return fmt.Errorf("error syncing %q: %s", key, err)
 		}
+
+		// Do not requeue this object because it's already processed.
 		c.workqueue.Forget(obj)
 		glog.Infof("Successfully synced '%s'", key)
 		return nil
@@ -119,7 +123,7 @@ func (c *Controller) processNextWorkItem() bool {
 	return true
 }
 
-func (c *Controller) syncHandler(key string) error {
+func (c *Controller) syncOne(key string) error {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))

@@ -28,22 +28,15 @@ func main() {
 		glog.Fatalf("Error building kubeconfig: %s", err.Error())
 	}
 
-	kubeClient, err := kubernetes.NewForConfig(cfg)
-	if err != nil {
-		glog.Fatalf("Error building kubernetes clientset: %s", err.Error())
-	}
-
 	shipperClient, err := clientset.NewForConfig(cfg)
 	if err != nil {
 		glog.Fatalf("Error building shipper clientset: %s", err.Error())
 	}
 
-	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Second*30)
 	shipperInformerFactory := informers.NewSharedInformerFactory(shipperClient, time.Second*30)
 
-	controller := installation.NewController(kubeClient, shipperClient, kubeInformerFactory, shipperInformerFactory)
+	controller := installation.NewController(shipperClient, shipperInformerFactory)
 
-	go kubeInformerFactory.Start(stopCh)
 	go shipperInformerFactory.Start(stopCh)
 
 	glog.Infof("starting controller...")
