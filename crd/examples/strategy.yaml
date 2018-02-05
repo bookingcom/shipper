@@ -1,5 +1,7 @@
 apiVersion: stable.shipper/v1
 kind: Strategy
+metadata:
+  name: vanguard
 spec:
   steps:
   - name: 5% trial

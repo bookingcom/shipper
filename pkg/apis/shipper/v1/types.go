@@ -1,6 +1,7 @@
 package v1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -10,8 +11,8 @@ const (
 	ReleaseLabel   = "release"
 	ReleaseLinkAnn = "releaseLink"
 
-	WaitingForSchedulingPhase = "WaitingForScheduling"
-	WaitingForStrategyPhase   = "WaitingForStrategy"
+	ReleasePhaseWaitingForScheduling = "WaitingForScheduling"
+	ReleasePhaseWaitingForStrategy   = "WaitingForStrategy"
 )
 
 // +genclient
@@ -162,8 +163,10 @@ type ClusterList struct {
 }
 
 type ClusterSpec struct {
-	Capabilities []string `json:"capabilities"`
-	Region       string   `json:"region"`
+	Capabilities  []string `json:"capabilities"`
+	Region        string   `json:"region"`
+	APIMaster     string   `json:"apiMaster"`
+	Unschedulable bool     `json:"unschedulable"`
 
 	//Capacity ClusterCapacity
 }
@@ -206,7 +209,9 @@ type ReleaseSpec struct {
 }
 
 // this will likely grow into a struct with interesting fields
-type ReleaseStatus string
+type ReleaseStatus struct {
+	Phase string `json:"phase"`
+}
 
 type ReleaseEnvironment struct {
 	Clusters      []string          `json:"clusters"`
@@ -298,9 +303,21 @@ type CapacityTargetStatus struct {
 }
 
 type ClusterCapacityStatus struct {
-	Name             string `json:"name"`
-	AchievedReplicas uint   `json:"achievedReplicas"`
-	Status           string `json:"status"`
+	Name              string      `json:"name"`
+	AvailableReplicas uint        `json:"achievedReplicas"`
+	SadPods           []PodStatus `json:"sadPods"`
+}
+
+type PodStatus struct {
+	Name       string              `json:"name"`
+	Containers []ContainerStatus   `json:"containers"`
+	Condition  corev1.PodCondition `json:"condition"`
+	Phase      string              `json:"phase"`
+}
+
+type ContainerStatus struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
 }
 
 // the capacity and traffic controllers need context to pick the right
