@@ -24,7 +24,7 @@ func (c *Controller) transitionShipmentOrderPhase(so *shipperv1.ShipmentOrder, n
 	so.Status.Phase = nextPhase
 
 	// TODO change to UpdateStatus when kubernetes#38113 is merged.
-	_, err := c.shipperclientset.ShipperV1().ShipmentOrders(so.Namespace).Update(so)
+	_, err := c.shipperClientset.ShipperV1().ShipmentOrders(so.Namespace).Update(so)
 	if err != nil {
 		return fmt.Errorf(`transition ShipmentOrder %q to %q: %s`, metaKey(so), nextPhase, err)
 	}
@@ -54,7 +54,7 @@ func (c *Controller) getReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) (*s
 	)
 	selector := labels.NewSelector().Add(*req)
 
-	rlist, err := c.shipperclientset.ShipperV1().Releases(so.Namespace).List(metav1.ListOptions{
+	rlist, err := c.shipperClientset.ShipperV1().Releases(so.Namespace).List(metav1.ListOptions{
 		LabelSelector: selector.String(),
 	})
 	if err != nil {
@@ -113,7 +113,7 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 		Status: shipperv1.WaitingForSchedulingPhase,
 	}
 
-	if _, err := c.shipperclientset.ShipperV1().Releases(so.Namespace).Create(release); err != nil {
+	if _, err := c.shipperClientset.ShipperV1().Releases(so.Namespace).Create(release); err != nil {
 		return fmt.Errorf("create Release for ShipmentOrder %q: %s", metaKey(so), err)
 	}
 

@@ -26,15 +26,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
-	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 )
@@ -51,7 +48,7 @@ const (
 // Controller is a Kubernetes controller that creates Releases from
 // ShipmentOrders.
 type Controller struct {
-	shipperclientset     clientset.Interface
+	shipperClientset     clientset.Interface
 	shipmentOrdersLister listers.ShipmentOrderLister
 	shipmentOrdersSynced cache.InformerSynced
 
@@ -61,19 +58,14 @@ type Controller struct {
 
 // NewController returns a new ShipmentOrder controller.
 func NewController(
-	kubeclientset kubernetes.Interface,
-	shipperclientset clientset.Interface,
+	shipperClientset clientset.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
+	recorder record.EventRecorder,
 ) *Controller {
 	informer := shipperInformerFactory.Shipper().V1().ShipmentOrders()
 
-	broadcaster := record.NewBroadcaster()
-	broadcaster.StartLogging(glog.Infof)
-	broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeclientset.CoreV1().Events("")})
-	recorder := broadcaster.NewRecorder(shipperscheme.Scheme, corev1.EventSource{Component: controllerAgentName})
-
 	controller := &Controller{
-		shipperclientset:     shipperclientset,
+		shipperClientset:     shipperClientset,
 		shipmentOrdersLister: informer.Lister(),
 		shipmentOrdersSynced: informer.Informer().HasSynced,
 

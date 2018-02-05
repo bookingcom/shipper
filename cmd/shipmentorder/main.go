@@ -24,10 +24,15 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/record"
 
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/controller/shipmentorder"
 )
@@ -36,6 +41,8 @@ var (
 	masterURL  string
 	kubeconfig string
 )
+
+const controllerAgentName = "shipmentorder-controller"
 
 func main() {
 	flag.Parse()
@@ -62,7 +69,12 @@ func main() {
 
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(shipperClient, 30*time.Second)
 
-	controller := shipmentorder.NewController(kubeClient, shipperClient, shipperInformerFactory)
+	broadcaster := record.NewBroadcaster()
+	broadcaster.StartLogging(glog.Infof)
+	broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	recorder := broadcaster.NewRecorder(shipperscheme.Scheme, corev1.EventSource{Component: controllerAgentName})
+
+	controller := shipmentorder.NewController(shipperClient, shipperInformerFactory, recorder)
 
 	go shipperInformerFactory.Start(stopCh)
 
