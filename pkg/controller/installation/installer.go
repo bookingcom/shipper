@@ -75,31 +75,54 @@ func (i *Installer) buildConfig(cluster *shipperV1.Cluster, gvk *schema.GroupVer
 	return cfg, nil
 }
 
+// buildResourceClient returns a ResourceClient suitable to manipulate the kind
+// of resource represented by the given GroupVersionKind at the given Cluster.
 func (i *Installer) buildResourceClient(
 	cluster *shipperV1.Cluster,
 	gvk *schema.GroupVersionKind,
 ) (dynamic.ResourceInterface, error) {
 
+	// Build the configuration for the cluster, according to the given GroupVersionKind.
 	cfg, err := i.buildConfig(cluster, gvk)
 	if err != nil {
 		return nil, err
 	}
 
+	// Build the dynamic client based on the built configuration.
 	dynamicClient, err := dynamic.NewClient(cfg)
 	if err != nil {
 		return nil, err
 	}
 
+	// Build the k8s client that will ne used to gather the resources for the GroupVersion
+	// contained in the given gvk.
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	resource, err := discoverResource(client, gvk)
-	if err != nil {
+	// From the list of resources the target cluster knows about, find the resource for the
+	// kind of object we have at hand.
+	var resource *v1.APIResource
+	gv := gvk.GroupVersion().String()
+	if resources, err := client.Discovery().ServerResourcesForGroupVersion(gv); err != nil {
 		return nil, err
+	} else {
+		for _, e := range resources.APIResources {
+			if e.Kind == gvk.Kind {
+				resource = &e
+				break
+			}
+		}
+		if resource == nil {
+			return nil, fmt.Errorf("resource %s not found", gvk.Kind)
+		}
 	}
 
+	// If it gets into this point, it means we have a resource, so we can create
+	// a client for it scoping to the application's namespace. The namespace can
+	// be ignored if creating, for example, objects that aren't bound to a
+	// namespace.
 	resourceClient := dynamicClient.Resource(resource, i.Release.Namespace)
 	return resourceClient, nil
 }
@@ -207,28 +230,4 @@ func decodeManifest(manifest string) (*unstructured.Unstructured, *schema.GroupV
 	}
 
 	return &unstructured.Unstructured{Object: unstructuredObj}, gvk, nil
-}
-
-// discoverResource returns an APIResource for a group, version and kind.
-func discoverResource(client *kubernetes.Clientset, gvk *schema.GroupVersionKind) (*v1.APIResource, error) {
-
-	gv := gvk.GroupVersion().String()
-	resources, err := client.Discovery().ServerResourcesForGroupVersion(gv)
-	if err != nil {
-		return nil, err
-	}
-
-	var resource *v1.APIResource
-	for _, e := range resources.APIResources {
-		if e.Kind == gvk.Kind {
-			resource = &e
-			break
-		}
-	}
-
-	if resource == nil {
-		return nil, fmt.Errorf("resource %s not found", gvk.Kind)
-	}
-
-	return resource, nil
 }
