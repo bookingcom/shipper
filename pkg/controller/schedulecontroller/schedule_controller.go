@@ -28,6 +28,7 @@ const (
 	MessageResourceSynced = "Release synced successfully"
 )
 
+// Controller is a Kubernetes controller that knows how to schedule Releases.
 type Controller struct {
 	kubeclientset    kubernetes.Interface
 	shipperclientset clientset.Interface
@@ -38,6 +39,7 @@ type Controller struct {
 	recorder         record.EventRecorder
 }
 
+// NewController returns a new Schedule controller.
 func NewController(
 	kubeclientset kubernetes.Interface,
 	shipperclientset clientset.Interface,
@@ -128,7 +130,7 @@ func (c *Controller) processNextWorkItem() bool {
 			return nil
 		}
 
-		if err := c.syncHandler(key); err != nil {
+		if err := c.syncOne(key); err != nil {
 			return fmt.Errorf("error syncing: '%s': %s", key, err.Error())
 		}
 
@@ -145,7 +147,7 @@ func (c *Controller) processNextWorkItem() bool {
 	return true
 }
 
-func (c *Controller) syncHandler(key string) error {
+func (c *Controller) syncOne(key string) error {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
@@ -162,14 +164,18 @@ func (c *Controller) syncHandler(key string) error {
 		return err
 	}
 
-	releaseCopy := release.DeepCopy()
+	scheduler := NewScheduler(
+		release,
+		c.shipperclientset,
+		c.clustersLister,
+	)
 
-	err = c.businessLogic(releaseCopy)
+	err = scheduler.scheduleRelease()
 	if err != nil {
 		return err
 	}
 
-	c.recorder.Event(releaseCopy, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
+	c.recorder.Event(scheduler.Release, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
 	return nil
 }
 
