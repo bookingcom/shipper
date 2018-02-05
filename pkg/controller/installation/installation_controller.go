@@ -3,6 +3,7 @@ package installation
 import (
 	"fmt"
 	"github.com/golang/glog"
+	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperInformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperListers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
@@ -133,7 +134,7 @@ func (c *Controller) syncOne(key string) error {
 	it, err := c.installationTargetsLister.InstallationTargets(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			runtime.HandleError(fmt.Errorf("InstallationTarget '%s' in work queue no longer exists", key))
+			runtime.HandleError(fmt.Errorf("InstallationTarget %q has been deleted", key))
 			return nil
 		}
 		return err
@@ -155,4 +156,48 @@ func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 		return
 	}
 	c.workqueue.AddRateLimited(key)
+}
+
+// processInstallation attempts to install the related release on all target clusters.
+func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error {
+
+	release, err := c.releaseLister.Releases(it.Namespace).Get(it.Name)
+	if err != nil {
+		glog.Error(err)
+		return err
+	}
+
+	handler := NewInstaller(release)
+
+	// The strategy here is try our best to install as many objects as possible
+	// in all target clusters. It is not the Installation Controller job to
+	// reason about a target cluster status.
+	clusterStatuses := make([]shipperV1.ClusterInstallationStatus, 0)
+	for _, name := range it.Spec.Clusters {
+		status := shipperV1.ClusterInstallationStatus{Name: name}
+
+		if cluster, err := c.clusterLister.Get(name); err != nil {
+			status.Status = shipperV1.InstallationStatusFailed
+			status.Message = err.Error()
+		} else {
+			if err = handler.installRelease(cluster); err != nil {
+				status.Status = shipperV1.InstallationStatusFailed
+				status.Message = err.Error()
+			} else {
+				status.Status = shipperV1.InstallationStatusInstalled
+			}
+		}
+
+		clusterStatuses = append(clusterStatuses, status)
+	}
+
+	it.Status.Clusters = clusterStatuses
+
+	_, err = c.shipperclientset.ShipperV1().InstallationTargets(it.Namespace).Update(it)
+	if err != nil {
+		glog.Error(err)
+		return err
+	}
+
+	return nil
 }

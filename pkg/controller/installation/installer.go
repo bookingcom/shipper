@@ -18,25 +18,37 @@ import (
 	"path"
 )
 
+// Installer is an object that knows how to install Helm charts directly
+// into Kubernetes clusters.
+type Installer struct {
+	Release *shipperV1.Release
+}
+
+// NewInstaller returns a new Installer.
+func NewInstaller(release *shipperV1.Release) *Installer {
+	return &Installer{Release: release}
+}
+
 // renderManifests returns a list of rendered manifests for the given release and
 // cluster, or an error.
-func (c *Controller) renderManifests(cluster *shipperV1.Cluster, release *shipperV1.Release) ([]string, error) {
-	options := release.Options(cluster)
-	chrt, err := release.Chart()
+func (i *Installer) renderManifests(cluster *shipperV1.Cluster) ([]string, error) {
+	options := i.Release.Options(cluster)
+	chrt, err := i.Release.Chart()
 	if err != nil {
 		return nil, err
 	}
-	vals, err := release.Values()
+	vals, err := i.Release.Values()
 	if err != nil {
 		return nil, err
 	}
 	return shipperChart.RenderChart(chrt, vals, options)
 }
 
-// buildConfig returns a configuration suited to communicate with the given cluster.
-func (c *Controller) buildConfig(cluster *shipperV1.Cluster, gvk *schema.GroupVersionKind) (*rest.Config, error) {
+// buildConfig returns a suitable configuration for our client to connect to
+// the given cluster.
+func (i *Installer) buildConfig(cluster *shipperV1.Cluster, gvk *schema.GroupVersionKind) (*rest.Config, error) {
 
-	// Set up the initial client configuration
+	// Set up the initial client configuration.
 	cfg := &rest.Config{
 		Host:          cluster.Spec.APIMaster,
 		APIPath:       dynamic.LegacyAPIPathResolverFunc(*gvk),
@@ -63,69 +75,12 @@ func (c *Controller) buildConfig(cluster *shipperV1.Cluster, gvk *schema.GroupVe
 	return cfg, nil
 }
 
-// decodeManifest attempts to deserialize the provided manifest. It returns
-// an unstructured decoded object, suitable to be used with a ResourceClient
-// and the object's GroupVersionKind, or an error.
-func decodeManifest(manifest string) (*unstructured.Unstructured, *schema.GroupVersionKind, error) {
-
-	// This one was tricky to find out. @asurikov pointed me out to the
-	// UniversalDeserializer, which can decode a []byte representing the
-	// k8s manifest into the proper k8s object (for example, v1.Service).
-	// Haven't tested the decoder with CRDs, so please keep a mental note
-	// that it might not work as expected (meaning more research might be
-	// necessary).
-	decodedObj, gvk, err := scheme.Codecs.UniversalDeserializer().Decode([]byte(manifest), nil, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// ResourceClient.Create() requires an Unstructured object to work with, so
-	// we need to convert from v1.Service into a map[string]interface{}, which
-	// is what ToUnstrucured() below does. To find this one, I had to find a
-	// Merge Request then track the git history to find out where it was moved
-	// to, since there's no documentation whatsoever about it anywhere.
-	unstructuredObj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(decodedObj)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return &unstructured.Unstructured{unstructuredObj}, gvk, nil
-}
-
-// discoverResource returns an APIResource for a group, version and kind.
-func discoverResource(client *kubernetes.Clientset, gvk *schema.GroupVersionKind) (*v1.APIResource, error) {
-
-	gv := gvk.GroupVersion().String()
-	resources, err := client.Discovery().ServerResourcesForGroupVersion(gv)
-	if err != nil {
-		return nil, err
-	}
-
-	var resource *v1.APIResource
-	for _, e := range resources.APIResources {
-		if e.Kind == gvk.Kind {
-			resource = &e
-			break
-		}
-	}
-
-	if resource == nil {
-		return nil, fmt.Errorf("resource %s not found", gvk.Kind)
-	}
-
-	return resource, nil
-}
-
-// buildResourceClient returns a ResourceClient suitable to communicate with
-// the given cluster, or an error if there are not resources matching the given
-// GroupVersionKind.
-func (c *Controller) buildResourceClient(
+func (i *Installer) buildResourceClient(
 	cluster *shipperV1.Cluster,
 	gvk *schema.GroupVersionKind,
-	ns string,
 ) (dynamic.ResourceInterface, error) {
 
-	cfg, err := c.buildConfig(cluster, gvk)
+	cfg, err := i.buildConfig(cluster, gvk)
 	if err != nil {
 		return nil, err
 	}
@@ -145,14 +100,13 @@ func (c *Controller) buildResourceClient(
 		return nil, err
 	}
 
-	resourceClient := dynamicClient.Resource(resource, ns)
+	resourceClient := dynamicClient.Resource(resource, i.Release.Namespace)
 	return resourceClient, nil
 }
 
 // installManifests attempts to install the manifests on the specified cluster.
-func (c *Controller) installManifests(
+func (i *Installer) installManifests(
 	cluster *shipperV1.Cluster,
-	ns string,
 	manifests []string,
 ) error {
 
@@ -172,7 +126,7 @@ func (c *Controller) installManifests(
 
 		// Once we've gathered enough information about the document we want to install,
 		// we're able to build a resource client to interact with the target cluster.
-		resourceClient, err := c.buildResourceClient(cluster, gvk, ns)
+		resourceClient, err := i.buildResourceClient(cluster, gvk)
 		if err != nil {
 			return err
 		}
@@ -209,17 +163,16 @@ func (c *Controller) installManifests(
 }
 
 // installRelease attempts to install the given release on the given cluster.
-func (c *Controller) installRelease(
-	release *shipperV1.Release,
+func (i *Installer) installRelease(
 	cluster *shipperV1.Cluster,
 ) error {
 
-	renderedManifests, err := c.renderManifests(cluster, release)
+	renderedManifests, err := i.renderManifests(cluster)
 	if err != nil {
 		return err
 	}
 
-	err = c.installManifests(cluster, release.Namespace, renderedManifests)
+	err = i.installManifests(cluster, renderedManifests)
 	if err != nil {
 		return err
 	}
@@ -227,44 +180,55 @@ func (c *Controller) installRelease(
 	return nil
 }
 
-// processInstallation attempts to install the related release on all target clusters.
-func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error {
+// decodeManifest attempts to deserialize the provided manifest. It returns
+// an unstructured decoded object, suitable to be used with a ResourceClient
+// and the object's GroupVersionKind, or an error.
+func decodeManifest(manifest string) (*unstructured.Unstructured, *schema.GroupVersionKind, error) {
 
-	release, err := c.releaseLister.Releases(it.Namespace).Get(it.Name)
+	// This one was tricky to find out. @asurikov pointed me out to the
+	// UniversalDeserializer, which can decode a []byte representing the
+	// k8s manifest into the proper k8s object (for example, v1.Service).
+	// Haven't tested the decoder with CRDs, so please keep a mental note
+	// that it might not work as expected (meaning more research might be
+	// necessary).
+	decodedObj, gvk, err := scheme.Codecs.UniversalDeserializer().Decode([]byte(manifest), nil, nil)
 	if err != nil {
-		glog.Error(err)
-		return err
+		return nil, nil, err
 	}
 
-	// The strategy here is try our best to install as many objects as possible
-	// in all target clusters. It is not the Installation Controller job to
-	// reason about a target cluster status.
-	clusterStatuses := make([]shipperV1.ClusterInstallationStatus, 0)
-	for _, name := range it.Spec.Clusters {
-		status := shipperV1.ClusterInstallationStatus{Name: name}
+	// ResourceClient.Create() requires an Unstructured object to work with, so
+	// we need to convert from v1.Service into a map[string]interface{}, which
+	// is what ToUnstrucured() below does. To find this one, I had to find a
+	// Merge Request then track the git history to find out where it was moved
+	// to, since there's no documentation whatsoever about it anywhere.
+	unstructuredObj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(decodedObj)
+	if err != nil {
+		return nil, nil, err
+	}
 
-		if cluster, err := c.clusterLister.Get(name); err != nil {
-			status.Status = shipperV1.InstallationStatusFailed
-			status.Message = err.Error()
-		} else {
-			if err = c.installRelease(release, cluster); err != nil {
-				status.Status = shipperV1.InstallationStatusFailed
-				status.Message = err.Error()
-			} else {
-				status.Status = shipperV1.InstallationStatusInstalled
-			}
+	return &unstructured.Unstructured{Object: unstructuredObj}, gvk, nil
+}
+
+// discoverResource returns an APIResource for a group, version and kind.
+func discoverResource(client *kubernetes.Clientset, gvk *schema.GroupVersionKind) (*v1.APIResource, error) {
+
+	gv := gvk.GroupVersion().String()
+	resources, err := client.Discovery().ServerResourcesForGroupVersion(gv)
+	if err != nil {
+		return nil, err
+	}
+
+	var resource *v1.APIResource
+	for _, e := range resources.APIResources {
+		if e.Kind == gvk.Kind {
+			resource = &e
+			break
 		}
-
-		clusterStatuses = append(clusterStatuses, status)
 	}
 
-	it.Status.Clusters = clusterStatuses
-
-	_, err = c.shipperclientset.ShipperV1().InstallationTargets(it.Namespace).Update(it)
-	if err != nil {
-		glog.Error(err)
-		return err
+	if resource == nil {
+		return nil, fmt.Errorf("resource %s not found", gvk.Kind)
 	}
 
-	return nil
+	return resource, nil
 }
