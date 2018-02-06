@@ -72,8 +72,6 @@ func (s *Executor) execute() (ExecutorResult, error) {
 	newReleaseStatus.AchievedStep = 1
 	newReleaseStatus.Phase = v1.ReleasePhaseWaitingForCommand
 	return &ReleaseUpdateResult{NewStatus: newReleaseStatus}, nil
-
-	return nil, nil
 }
 
 func (s *Executor) InstallationState() TargetState {
