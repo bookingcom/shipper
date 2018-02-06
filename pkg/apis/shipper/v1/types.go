@@ -304,7 +304,7 @@ type CapacityTargetStatus struct {
 
 type ClusterCapacityStatus struct {
 	Name              string      `json:"name"`
-	AvailableReplicas uint        `json:"achievedReplicas"`
+	AvailableReplicas uint        `json:"availableReplicas"`
 	SadPods           []PodStatus `json:"sadPods"`
 }
 
