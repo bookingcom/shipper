@@ -7,13 +7,12 @@ import (
 )
 
 const (
-	PhaseLabel     = "phase"
 	ReleaseLabel   = "release"
 	ReleaseLinkAnn = "releaseLink"
 
 	ReleasePhaseWaitingForScheduling = "WaitingForScheduling"
 	ReleasePhaseWaitingForStrategy   = "WaitingForStrategy"
-	ReleasePhaseWaitingForCommand    = "WaitinForCommand"
+	ReleasePhaseWaitingForCommand    = "WaitingForCommand"
 
 	InstallationStatusInstalled = "Installed"
 	InstallationStatusFailed    = "Failed"
