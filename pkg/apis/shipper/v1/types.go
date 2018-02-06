@@ -13,6 +13,7 @@ const (
 
 	ReleasePhaseWaitingForScheduling = "WaitingForScheduling"
 	ReleasePhaseWaitingForStrategy   = "WaitingForStrategy"
+	ReleasePhaseWaitingForCommand    = "WaitinForCommand"
 
 	InstallationStatusInstalled = "Installed"
 	InstallationStatusFailed    = "Failed"
@@ -213,7 +214,8 @@ type ReleaseSpec struct {
 
 // this will likely grow into a struct with interesting fields
 type ReleaseStatus struct {
-	Phase string `json:"phase"`
+	Phase        string `json:"phase"`
+	AchievedStep uint   `json:"achievedStep"`
 }
 
 type ReleaseEnvironment struct {
