@@ -1,6 +1,10 @@
 package strategycontroller
 
-import "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+import (
+	"encoding/json"
+	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+)
 
 type Executor struct {
 	release            *v1.Release
@@ -9,46 +13,67 @@ type Executor struct {
 	capacityTarget     *v1.CapacityTarget
 }
 
-type CapacityTargetOutdatedError struct {
+type ExecutorResult interface {
+	Patch() (schema.GroupVersionKind, []byte)
+}
+
+type CapacityTargetOutdatedResult struct {
 	NewSpec *v1.CapacityTargetSpec
 }
 
-func (c *CapacityTargetOutdatedError) Error() string {
-	return "CapacityTargetOutdatedError"
-}
-
-type TrafficTargetOutdatedError struct {
+type TrafficTargetOutdatedResult struct {
 	NewSpec *v1.TrafficTargetSpec
 }
 
-func (c *TrafficTargetOutdatedError) Error() string {
-	return "TrafficTargetOutdatedError"
+type ReleaseUpdateResult struct {
+	NewStatus *v1.ReleaseStatus
 }
 
-func (s *Executor) execute() error {
-	// Order: installation -> capacity -> target -> wait
+func (c *CapacityTargetOutdatedResult) Patch() (schema.GroupVersionKind, []byte) {
+	b, _ := json.Marshal(c.NewSpec)
+	return (&v1.CapacityTarget{}).GroupVersionKind(), b
+}
+
+func (c *TrafficTargetOutdatedResult) Patch() (schema.GroupVersionKind, []byte) {
+	b, _ := json.Marshal(c.NewSpec)
+	return (&v1.TrafficTarget{}).GroupVersionKind(), b
+}
+
+func (r *ReleaseUpdateResult) Patch() (schema.GroupVersionKind, []byte) {
+	b, _ := json.Marshal(r.NewStatus)
+	return (&v1.Release{}).GroupVersionKind(), b
+}
+
+// execute executes the strategy. It returns an ExecutorResult, if a patch should
+// be performed into some of the associated Release objects and an error if an error
+// has happened. Currently if both values are nil it means that the operation was
+// successful but no modifications are required.
+func (s *Executor) execute() (ExecutorResult, error) {
 
 	if state := s.InstallationState(); state == TargetStatePending {
-		return nil
+		return nil, nil
 	}
 
 	if state := s.CapacityState(); state == TargetStatePending {
-		return nil
+		return nil, nil
 	} else if state == TargetStateOutdated {
-		return &CapacityTargetOutdatedError{}
+		// Compute desired capacity target for step
+		return &CapacityTargetOutdatedResult{}, nil
 	}
 
 	if state := s.TrafficState(); state == TargetStatePending {
-		return nil
+		return nil, nil
 	} else if state == TargetStateOutdated {
-		return &TrafficTargetOutdatedError{}
+		// Compute desired traffic target for step
+		return &TrafficTargetOutdatedResult{}, nil
 	}
 
-	// Update internal Release copy
-	s.release.Status.AchievedStep = 1
-	s.release.Status.Phase = v1.ReleasePhaseWaitingForCommand
+	newReleaseStatus := s.release.Status.DeepCopy()
+	newReleaseStatus.AchievedStep = 1
+	newReleaseStatus.Phase = v1.ReleasePhaseWaitingForCommand
+	return &ReleaseUpdateResult{NewStatus: newReleaseStatus}, nil
 
-	return nil
+	return nil, nil
 }
 
 func (s *Executor) InstallationState() TargetState {

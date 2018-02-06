@@ -36,7 +36,7 @@ func main() {
 
 	shipperInformerFactory := informers.NewSharedInformerFactory(shipperclientset, time.Second*30)
 
-	controller := strategycontroller.NewController(shipperclientset, shipperInformerFactory)
+	controller := strategycontroller.NewController(shipperclientset, shipperInformerFactory, cfg)
 
 	go shipperInformerFactory.Start(stopCh)
 

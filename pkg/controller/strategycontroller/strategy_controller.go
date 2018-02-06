@@ -1,14 +1,17 @@
 package strategycontroller
 
 import (
-	"encoding/json"
 	"fmt"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	"github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"time"
@@ -16,20 +19,22 @@ import (
 
 type Controller struct {
 	clientset                 *clientset.Clientset
-	capacityTargetsLister     v1.CapacityTargetLister
-	installationTargetsLister v1.InstallationTargetLister
-	trafficTargetsLister      v1.TrafficTargetLister
-	releasesLister            v1.ReleaseLister
+	capacityTargetsLister     listers.CapacityTargetLister
+	installationTargetsLister listers.InstallationTargetLister
+	trafficTargetsLister      listers.TrafficTargetLister
+	releasesLister            listers.ReleaseLister
 	releasesSynced            cache.InformerSynced
-
-	workqueue workqueue.RateLimitingInterface
+	dynamicClientPool         dynamic.ClientPool
+	workqueue                 workqueue.RateLimitingInterface
 }
 
 func NewController(
 	clientset *clientset.Clientset,
 	informerFactory informers.SharedInformerFactory,
+	restConfig *rest.Config,
 ) *Controller {
 
+	dynamicClientPool := dynamic.NewDynamicClientPool(restConfig)
 	releaseInformer := informerFactory.Shipper().V1().Releases()
 
 	controller := &Controller{
@@ -40,6 +45,7 @@ func NewController(
 		releasesLister:            releaseInformer.Lister(),
 		releasesSynced:            releaseInformer.Informer().HasSynced,
 		workqueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Releases"),
+		dynamicClientPool:         dynamicClientPool,
 	}
 
 	releaseInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -95,42 +101,65 @@ func (c *Controller) processNextWorkItem() bool {
 }
 
 func (c *Controller) syncOne(key string) error {
-	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
 		return nil
 	}
 
-	strategy, err := c.buildStrategy(namespace, name)
+	strategy, err := c.buildStrategy(ns, name)
 	if err != nil {
 		return err
 	}
 
-	if err := strategy.execute(); err != nil {
-		if trafficTargetOutdatedError, ok := err.(*TrafficTargetOutdatedError); ok {
-			b, err := json.Marshal(trafficTargetOutdatedError.NewSpec)
-			if err != nil {
-				// Handle marshal error
-			}
-			c.clientset.ShipperV1().TrafficTargets(namespace).Patch(name, types.StrategicMergePatchType, b)
-			return nil
-		} else if capacityTargetOutdatedError, ok := err.(*CapacityTargetOutdatedError); ok {
-			b, err := json.Marshal(capacityTargetOutdatedError.NewSpec)
-			if err != nil {
-				// Handle marshal error
-			}
-			c.clientset.ShipperV1().CapacityTargets(namespace).Patch(name, types.StrategicMergePatchType, b)
-			return nil
+	if result, err := strategy.execute(); err != nil {
+		return err
+	} else if result != nil {
+
+		// XXX: This is work in progress. result implements the ExecutorResult
+		// interface, and if it is not nil then a patch is required, using the
+		// information from the returned gvk, together with the []byte that
+		// represents the patch encoded in JSON.
+		gvk, b := result.Patch()
+
+		if client, err := c.clientForGroupVersionKind(gvk, ns); err != nil {
+			return err
+		} else if _, err = client.Patch(name, types.StrategicMergePatchType, b); err != nil {
+			return err
 		}
-		return err
-	}
-
-	_, err = c.clientset.ShipperV1().Releases(namespace).Update(strategy.release)
-	if err != nil {
-		return err
 	}
 
 	return nil
+}
+
+func (c *Controller) clientForGroupVersionKind(
+	gvk schema.GroupVersionKind,
+	ns string,
+) (dynamic.ResourceInterface, error) {
+	client, err := c.dynamicClientPool.ClientForGroupVersionKind(gvk)
+	if err != nil {
+		return nil, err
+	}
+
+	// This is sort of stupid, it might exist some better way to get the APIResource here...
+	var resource *metav1.APIResource
+	gv := gvk.GroupVersion().String()
+	if resources, err := c.clientset.Discovery().ServerResourcesForGroupVersion(gv); err != nil {
+		return nil, err
+	} else {
+		for _, r := range resources.APIResources {
+			if r.Kind == gvk.Kind {
+				resource = &r
+				break
+			}
+		}
+	}
+
+	if resource == nil {
+		return nil, fmt.Errorf("could not find the specified resource")
+	}
+
+	return client.Resource(resource, ns), nil
 }
 
 func (c *Controller) buildStrategy(ns string, name string) (*Executor, error) {
