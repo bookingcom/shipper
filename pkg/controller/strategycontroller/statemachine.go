@@ -12,15 +12,21 @@ type StrategyExecutor struct {
 func (s *StrategyExecutor) execute() error {
 	// Order: installation -> capacity -> target -> wait
 
-	if !s.isInstallationFinished() {
+	if state := s.InstallationState(); state == TargetStatePending {
 		return nil
 	}
 
-	if !s.isCapacityFinished() {
+	if state := s.CapacityState(); state == TargetStatePending {
+		return nil
+	} else if state == TargetStateOutdated {
+		// Patch CapacityTarget Spec
 		return nil
 	}
 
-	if !s.isTrafficFinished() {
+	if state := s.TrafficState(); state == TargetStatePending {
+		return nil
+	} else if state == TargetStateOutdated {
+		// Patch TrafficTarget Spec
 		return nil
 	}
 
@@ -30,14 +36,14 @@ func (s *StrategyExecutor) execute() error {
 	return nil
 }
 
-func (s *StrategyExecutor) isInstallationFinished() bool {
+func (s *StrategyExecutor) InstallationState() TargetState {
 	clusterStatuses := s.installationTarget.Status.Clusters
 	for _, clusterStatus := range clusterStatuses {
 		if clusterStatus.Status != "Installed" {
-			return false
+			return TargetStatePending
 		}
 	}
-	return true
+	return TargetStateAchieved
 }
 
 type capacityData struct {
@@ -46,13 +52,21 @@ type capacityData struct {
 	targetStepReplicas uint
 }
 
-func (s *StrategyExecutor) isCapacityFinished() bool {
+type TargetState int
+
+const (
+	TargetStateAchieved TargetState = iota
+	TargetStatePending
+	TargetStateOutdated
+)
+
+func (s *StrategyExecutor) CapacityState() TargetState {
 
 	// targetStep can currently be either 0 or 1, so we adjust our expected replicas
 	// accordingly. This should stay here until I have rebased master with @asurikov's
 	// changes.
-	targetStep := s.release.Spec.TargetStep
-	targetStepReplicas := targetStep
+	// targetStep := s.release.Spec.TargetStep
+	targetStepReplicas := uint(*s.release.Environment.Replicas)
 
 	// capacityData holds the capacity data collected for the release the executor is
 	// processing.
@@ -61,7 +75,7 @@ func (s *StrategyExecutor) isCapacityFinished() bool {
 	specs := s.capacityTarget.Spec.Clusters
 	for _, spec := range specs {
 		capacityData[spec.Name] = capacityData{
-			targetStepReplicas: uint(targetStepReplicas),
+			targetStepReplicas: targetStepReplicas,
 			desiredReplicas:    spec.Replicas,
 		}
 	}
@@ -77,7 +91,7 @@ func (s *StrategyExecutor) isCapacityFinished() bool {
 		// it means that even if this was the state the strategy is expecting the
 		// strategy should not proceed.
 		if v.availableReplicas != v.desiredReplicas {
-			return false
+			return TargetStatePending
 		}
 
 		// Now we can check whether or not the desired target step replicas have
@@ -85,10 +99,10 @@ func (s *StrategyExecutor) isCapacityFinished() bool {
 		// the spec and bail out.
 		if v.availableReplicas != v.targetStepReplicas {
 			// Patch capacityTarget .spec to attempt to achieve the desired state.
-			return false
+			return TargetStateOutdated
 		}
 	}
-	return true
+	return TargetStateAchieved
 }
 
 type trafficData struct {
@@ -97,7 +111,7 @@ type trafficData struct {
 	targetStepTraffic uint
 }
 
-func (s *StrategyExecutor) isTrafficFinished() bool {
+func (s *StrategyExecutor) TrafficState() TargetState {
 
 	// targetStep can currently be either 0 or 1, so we adjust our expected replicas
 	// accordingly. This should stay here until I have rebased master with @asurikov's
@@ -133,7 +147,7 @@ func (s *StrategyExecutor) isTrafficFinished() bool {
 		// it means that even if this was the state the strategy is expecting the
 		// strategy should not proceed.
 		if v.achievedTraffic != v.targetTraffic {
-			return false
+			return TargetStatePending
 		}
 
 		// Now we can check whether or not the desired target step traffic have
@@ -141,9 +155,9 @@ func (s *StrategyExecutor) isTrafficFinished() bool {
 		// the spec and bail out.
 		if v.achievedTraffic != v.targetStepTraffic {
 			// Patch trafficTarget .spec to attempt to achieve the desired state.
-			return false
+			return TargetStateOutdated
 		}
 	}
 
-	return true
+	return TargetStateAchieved
 }
