@@ -1,10 +1,12 @@
 package strategycontroller
 
 import (
+	"encoding/json"
 	"fmt"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -105,6 +107,21 @@ func (c *Controller) syncOne(key string) error {
 	}
 
 	if err := strategy.execute(); err != nil {
+		if trafficTargetOutdatedError, ok := err.(*TrafficTargetOutdatedError); ok {
+			b, err := json.Marshal(trafficTargetOutdatedError.NewSpec)
+			if err != nil {
+				// Handle marshal error
+			}
+			c.clientset.ShipperV1().TrafficTargets(namespace).Patch(name, types.StrategicMergePatchType, b)
+			return nil
+		} else if capacityTargetOutdatedError, ok := err.(*CapacityTargetOutdatedError); ok {
+			b, err := json.Marshal(capacityTargetOutdatedError.NewSpec)
+			if err != nil {
+				// Handle marshal error
+			}
+			c.clientset.ShipperV1().CapacityTargets(namespace).Patch(name, types.StrategicMergePatchType, b)
+			return nil
+		}
 		return err
 	}
 

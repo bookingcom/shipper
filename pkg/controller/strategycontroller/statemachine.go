@@ -9,6 +9,22 @@ type StrategyExecutor struct {
 	capacityTarget     *v1.CapacityTarget
 }
 
+type CapacityTargetOutdatedError struct {
+	NewSpec *v1.CapacityTargetSpec
+}
+
+func (c *CapacityTargetOutdatedError) Error() string {
+	return "CapacityTargetOutdatedError"
+}
+
+type TrafficTargetOutdatedError struct {
+	NewSpec *v1.TrafficTargetSpec
+}
+
+func (c *TrafficTargetOutdatedError) Error() string {
+	return "TrafficTargetOutdatedError"
+}
+
 func (s *StrategyExecutor) execute() error {
 	// Order: installation -> capacity -> target -> wait
 
@@ -19,17 +35,16 @@ func (s *StrategyExecutor) execute() error {
 	if state := s.CapacityState(); state == TargetStatePending {
 		return nil
 	} else if state == TargetStateOutdated {
-		// Patch CapacityTarget Spec
-		return nil
+		return &CapacityTargetOutdatedError{}
 	}
 
 	if state := s.TrafficState(); state == TargetStatePending {
 		return nil
 	} else if state == TargetStateOutdated {
-		// Patch TrafficTarget Spec
-		return nil
+		return &TrafficTargetOutdatedError{}
 	}
 
+	// Update internal Release copy
 	s.release.Status.AchievedStep = 1
 	s.release.Status.Phase = v1.ReleasePhaseWaitingForCommand
 
