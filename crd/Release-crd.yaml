@@ -20,3 +20,70 @@ spec:
     # shortNames allow shorter string to match your resource on the CLI
     shortNames:
     - rel
+  validation:
+    openAPIV3Schema:
+      properties:
+        spec:
+          type: object
+          required:
+          - targetStep
+          properties:
+            targetStep:
+              type: integer
+              minimum: 0
+        environment:
+          type: object
+          required:
+          - chart
+          - shipmentOrder
+          - sidecars
+          properties:
+            chart:
+              type: object
+              required:
+              - name
+              - version
+              - tarball
+              properties:
+                name:
+                  type: string
+                version:
+                  type: string
+                tarball:
+                  type: string # base64?
+            sidecars:
+              type: array
+              items:
+                type: object
+                required:
+                - name
+                - version
+                properties:
+                  name:
+                    type: string
+                  version:
+                    type: string
+            shipmentOrder:
+              type: object
+              required:
+              - clusterSelectors
+              - strategy
+              - values
+              properties:
+                clusterSelectors:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      regions:
+                        type: array
+                        items:
+                          type: string
+                      capabilities:
+                        type: array
+                        items:
+                          type: string
+                strategy:
+                  type: string
+                values:
+                  type: object
