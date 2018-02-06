@@ -2,7 +2,7 @@ package strategycontroller
 
 import "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 
-type StrategyExecutor struct {
+type Executor struct {
 	release            *v1.Release
 	installationTarget *v1.InstallationTarget
 	trafficTarget      *v1.TrafficTarget
@@ -25,7 +25,7 @@ func (c *TrafficTargetOutdatedError) Error() string {
 	return "TrafficTargetOutdatedError"
 }
 
-func (s *StrategyExecutor) execute() error {
+func (s *Executor) execute() error {
 	// Order: installation -> capacity -> target -> wait
 
 	if state := s.InstallationState(); state == TargetStatePending {
@@ -51,7 +51,7 @@ func (s *StrategyExecutor) execute() error {
 	return nil
 }
 
-func (s *StrategyExecutor) InstallationState() TargetState {
+func (s *Executor) InstallationState() TargetState {
 	clusterStatuses := s.installationTarget.Status.Clusters
 	for _, clusterStatus := range clusterStatuses {
 		if clusterStatus.Status != "Installed" {
@@ -75,7 +75,7 @@ const (
 	TargetStateOutdated
 )
 
-func (s *StrategyExecutor) CapacityState() TargetState {
+func (s *Executor) CapacityState() TargetState {
 
 	// targetStep can currently be either 0 or 1, so we adjust our expected replicas
 	// accordingly. This should stay here until I have rebased master with @asurikov's
@@ -126,7 +126,7 @@ type trafficData struct {
 	targetStepTraffic uint
 }
 
-func (s *StrategyExecutor) TrafficState() TargetState {
+func (s *Executor) TrafficState() TargetState {
 
 	// targetStep can currently be either 0 or 1, so we adjust our expected replicas
 	// accordingly. This should stay here until I have rebased master with @asurikov's

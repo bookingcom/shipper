@@ -133,7 +133,7 @@ func (c *Controller) syncOne(key string) error {
 	return nil
 }
 
-func (c *Controller) buildStrategy(ns string, name string) (*StrategyExecutor, error) {
+func (c *Controller) buildStrategy(ns string, name string) (*Executor, error) {
 	release, err := c.releasesLister.Releases(ns).Get(name)
 	if err != nil {
 		return nil, err
@@ -154,7 +154,7 @@ func (c *Controller) buildStrategy(ns string, name string) (*StrategyExecutor, e
 		return nil, err
 	}
 
-	return &StrategyExecutor{
+	return &Executor{
 		release:            release,
 		installationTarget: installationTarget,
 		trafficTarget:      trafficTarget,
