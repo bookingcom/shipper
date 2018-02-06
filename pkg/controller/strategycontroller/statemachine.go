@@ -24,6 +24,7 @@ func (s *StrategyExecutor) execute() error {
 		return nil
 	}
 
+	s.release.Status.AchievedStep = 1
 	s.release.Status.Phase = v1.ReleasePhaseWaitingForCommand
 
 	return nil
@@ -32,7 +33,7 @@ func (s *StrategyExecutor) execute() error {
 func (s *StrategyExecutor) isInstallationFinished() bool {
 	clusterStatuses := s.installationTarget.Status.Clusters
 	for _, clusterStatus := range clusterStatuses {
-		if clusterStatus.Status == "Unknown" {
+		if clusterStatus.Status != "Installed" {
 			return false
 		}
 	}
@@ -91,17 +92,34 @@ func (s *StrategyExecutor) isCapacityFinished() bool {
 }
 
 type trafficData struct {
-	achievedTraffic uint
-	targetTraffic   uint
+	achievedTraffic   uint
+	targetTraffic     uint
+	targetStepTraffic uint
 }
 
 func (s *StrategyExecutor) isTrafficFinished() bool {
 
+	// targetStep can currently be either 0 or 1, so we adjust our expected replicas
+	// accordingly. This should stay here until I have rebased master with @asurikov's
+	// changes.
+	targetStep := s.release.Spec.TargetStep
+	var targetStepTraffic uint
+	if targetStep == 0 {
+		targetStepTraffic = 0
+	} else {
+		targetStepTraffic = 100
+	}
+
+	// trafficData holds the traffic data collected for the release the executor is
+	// processing.
 	trafficData := make(map[string]trafficData)
 
 	specs := s.trafficTarget.Spec.Clusters
 	for _, spec := range specs {
-		trafficData[spec.Name] = trafficData{achievedTraffic: spec.TargetTraffic}
+		trafficData[spec.Name] = trafficData{
+			achievedTraffic:   spec.TargetTraffic,
+			targetStepTraffic: targetStepTraffic,
+		}
 	}
 
 	statuses := s.trafficTarget.Status.Clusters
@@ -110,7 +128,19 @@ func (s *StrategyExecutor) isTrafficFinished() bool {
 	}
 
 	for _, v := range trafficData {
+
+		// If the number of achieved and target traffic are different in here,
+		// it means that even if this was the state the strategy is expecting the
+		// strategy should not proceed.
 		if v.achievedTraffic != v.targetTraffic {
+			return false
+		}
+
+		// Now we can check whether or not the desired target step traffic have
+		// been achieved. If this isn't the case, it means that we need to update
+		// the spec and bail out.
+		if v.achievedTraffic != v.targetStepTraffic {
+			// Patch trafficTarget .spec to attempt to achieve the desired state.
 			return false
 		}
 	}
