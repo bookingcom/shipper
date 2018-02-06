@@ -24,17 +24,17 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	kubeinformers "k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
-	// Uncomment the following line to load the gcp plugin (only required to authenticate against GKE clusters).
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
-	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/record"
+
+	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
+	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/controller/shipmentorder"
-	//clientset "k8s.io/sample-controller/pkg/client/clientset/versioned"
-	//informers "k8s.io/sample-controller/pkg/client/informers/externalversions"
-	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 )
 
 var (
@@ -42,9 +42,12 @@ var (
 	kubeconfig string
 )
 
+const controllerAgentName = "shipmentorder-controller"
+
 func main() {
-	glog.Infof("I AM RUNNING! :D")
 	flag.Parse()
+
+	glog.Infof("I AM RUNNING! :D")
 
 	// set up signals so we handle the first shutdown signal gracefully
 	stopCh := setupSignalHandler()
@@ -59,23 +62,23 @@ func main() {
 		glog.Fatalf("Error building kubernetes clientset: %s", err.Error())
 	}
 
-	shipperClient, err := clientset.NewForConfig(cfg)
+	shipperClient, err := shipperclientset.NewForConfig(cfg)
 	if err != nil {
 		glog.Fatalf("Error building shipper clientset: %s", err.Error())
 	}
 
-	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Second*30)
-	shipperInformerFactory := informers.NewSharedInformerFactory(shipperClient, time.Second*30)
+	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(shipperClient, 30*time.Second)
 
-	controller := shipmentorder.NewController(kubeClient, shipperClient, kubeInformerFactory, shipperInformerFactory)
+	broadcaster := record.NewBroadcaster()
+	broadcaster.StartLogging(glog.Infof)
+	broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	recorder := broadcaster.NewRecorder(shipperscheme.Scheme, corev1.EventSource{Component: controllerAgentName})
 
-	go kubeInformerFactory.Start(stopCh)
+	controller := shipmentorder.NewController(shipperClient, shipperInformerFactory, recorder)
+
 	go shipperInformerFactory.Start(stopCh)
 
-	glog.Infof("starting controller...")
-	if err = controller.Run(2, stopCh); err != nil {
-		glog.Fatalf("Error running controller: %s", err.Error())
-	}
+	controller.Run(2, stopCh)
 }
 
 func init() {

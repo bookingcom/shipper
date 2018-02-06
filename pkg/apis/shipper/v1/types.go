@@ -61,6 +61,7 @@ type ShipmentOrderStatus struct {
 
 type ShipmentOrderSpec struct {
 	// selectors for target clusters for the deployment
+	// XXX what are the semantics when the field is empty/omitted?
 	ClusterSelectors []ClusterSelector `json:"clusterSelectors"`
 
 	// Chart spec: name and version
@@ -70,6 +71,7 @@ type ShipmentOrderSpec struct {
 	Strategy ReleaseStrategy `json:"strategy"`
 
 	// the inlined "values.yaml" to apply to the chart when rendering it
+	// XXX pointer here means it's null-able, do we want that?
 	Values *ChartValues `json:"values"`
 }
 
@@ -81,9 +83,16 @@ type ClusterSelector struct {
 type Chart struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
+	RepoURL string `json:"repoUrl"`
 }
 
+// ReleaseStrategy is how deployments are executed.
 type ReleaseStrategy string
+
+const (
+	// ReleaseStrategyVanguard is a gradual deployment strategy with custom steps.
+	ReleaseStrategyVanguard ReleaseStrategy = "vanguard"
+)
 
 type ChartValues map[string]interface{}
 
@@ -205,10 +214,11 @@ type ReleaseStatus struct {
 }
 
 type ReleaseEnvironment struct {
-	Clusters      []string              `json:"clusters"`
-	Chart         EmbeddedChart         `json:"chart"`
-	ShipmentOrder EmbeddedShipmentOrder `json:"shipmentOrder"`
-	Sidecars      []Sidecar             `json:"sidecars"`
+	Clusters      []string          `json:"clusters"`
+	Chart         EmbeddedChart     `json:"chart"`
+	ShipmentOrder ShipmentOrderSpec `json:"shipmentOrder"`
+	Sidecars      []Sidecar         `json:"sidecars"`
+	Replicas      *int32            `json:"replicas"`
 }
 
 type EmbeddedChart struct {
