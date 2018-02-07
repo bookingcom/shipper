@@ -50,6 +50,56 @@ func Download(chart shipperv1.Chart) (*bytes.Buffer, error) {
 	return bytes.NewBuffer(data), err
 }
 
+// RenderChart renders a chart, with the given values. It returns a list
+// of rendered Kubernetes objects.
+func RenderChart(chrt *chart.Chart, chrtVals *chart.Config, options chartutil.ReleaseOptions) ([]string, error) {
+
+	// Shamelessly copied from k8s.io/helm/cmd/helm/template L153
+	//
+	// The code below load the requirements for the given chart. In the original
+	// code there's a call to checkDependencies(), which I didn't yet copy here
+	// since I don't know if we need to make this validation since `helm
+	// package` itself complains about missing requirements when packaging the
+	// chart.
+	if req, err := chartutil.LoadRequirements(chrt); err != nil {
+		return nil, fmt.Errorf("cannot load requirements: %v", err)
+	} else {
+		fmt.Printf("%+v", req)
+	}
+
+	// Removes disabled charts from the dependencies.
+	err := chartutil.ProcessRequirementsEnabled(chrt, chrtVals)
+	if err != nil {
+		return nil, err
+	}
+
+	// Import specified chart values from children to parent.
+	err = chartutil.ProcessRequirementsImportValues(chrt)
+	if err != nil {
+		return nil, err
+	}
+
+	// ToRenderValues() add all the metadata values that chart can use to
+	// process the templates, such as .Release.Name (coming out of the `options`
+	// var above), .Chart.Name (extracted from the chart itself), and others.
+	vals, err := chartutil.ToRenderValues(chrt, chrtVals, options)
+
+	// Now we are able to render the chart. `rendered` is a map where the key is
+	// the filename and the value is the rendered template. I'm not sure whether
+	// we are interested on the filename from this point on, so we'll remove it.
+	e := engine.New()
+	rendered, err := e.Render(chrt, vals)
+	if err != nil {
+		return nil, fmt.Errorf("could not render the chart: %s", err)
+	}
+	objects := make([]string, len(rendered), len(rendered))
+	for _, o := range rendered {
+		objects = append(objects, o)
+	}
+
+	return objects, nil
+}
+
 // Render renders a chart, with the given values. It returns a list
 // of rendered Kubernetes objects.
 func Render(r io.Reader, name, ns string, values *shipperv1.ChartValues) ([]string, error) {
