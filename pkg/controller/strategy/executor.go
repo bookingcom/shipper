@@ -1,9 +1,7 @@
-package strategycontroller
+package strategy
 
 import (
-	"encoding/json"
 	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 type Executor struct {
@@ -11,37 +9,6 @@ type Executor struct {
 	installationTarget *v1.InstallationTarget
 	trafficTarget      *v1.TrafficTarget
 	capacityTarget     *v1.CapacityTarget
-}
-
-type ExecutorResult interface {
-	Patch() (schema.GroupVersionKind, []byte)
-}
-
-type CapacityTargetOutdatedResult struct {
-	NewSpec *v1.CapacityTargetSpec
-}
-
-type TrafficTargetOutdatedResult struct {
-	NewSpec *v1.TrafficTargetSpec
-}
-
-type ReleaseUpdateResult struct {
-	NewStatus *v1.ReleaseStatus
-}
-
-func (c *CapacityTargetOutdatedResult) Patch() (schema.GroupVersionKind, []byte) {
-	b, _ := json.Marshal(c.NewSpec)
-	return (&v1.CapacityTarget{}).GroupVersionKind(), b
-}
-
-func (c *TrafficTargetOutdatedResult) Patch() (schema.GroupVersionKind, []byte) {
-	b, _ := json.Marshal(c.NewSpec)
-	return (&v1.TrafficTarget{}).GroupVersionKind(), b
-}
-
-func (r *ReleaseUpdateResult) Patch() (schema.GroupVersionKind, []byte) {
-	b, _ := json.Marshal(r.NewStatus)
-	return (&v1.Release{}).GroupVersionKind(), b
 }
 
 // execute executes the strategy. It returns an ExecutorResult, if a patch should
@@ -89,14 +56,6 @@ type capacityData struct {
 	desiredReplicas    uint
 	targetStepReplicas uint
 }
-
-type TargetState int
-
-const (
-	TargetStateAchieved TargetState = iota
-	TargetStatePending
-	TargetStateOutdated
-)
 
 func (s *Executor) CapacityState() TargetState {
 

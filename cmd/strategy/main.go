@@ -5,8 +5,8 @@ import (
 	"github.com/golang/glog"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	"github.com/bookingcom/shipper/pkg/controller/strategycontroller"
-	_ "github.com/bookingcom/shipper/pkg/controller/strategycontroller"
+	"github.com/bookingcom/shipper/pkg/controller/strategy"
+	_ "github.com/bookingcom/shipper/pkg/controller/strategy"
 	"k8s.io/client-go/tools/clientcmd"
 	"os"
 	"os/signal"
@@ -36,7 +36,7 @@ func main() {
 
 	shipperInformerFactory := informers.NewSharedInformerFactory(shipperclientset, time.Second*30)
 
-	controller := strategycontroller.NewController(shipperclientset, shipperInformerFactory, cfg)
+	controller := strategy.NewController(shipperclientset, shipperInformerFactory, cfg)
 
 	go shipperInformerFactory.Start(stopCh)
 

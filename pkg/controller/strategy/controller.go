@@ -1,4 +1,4 @@
-package strategycontroller
+package strategy
 
 import (
 	"fmt"
