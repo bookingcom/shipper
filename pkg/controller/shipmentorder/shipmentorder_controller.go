@@ -88,22 +88,7 @@ func NewController(
 
 			controller.enqueueShipmentOrder(new)
 		},
-		DeleteFunc: func(obj interface{}) {
-			if _, ok := obj.(*shipperv1.ShipmentOrder); !ok {
-				tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-				if !ok {
-					glog.Warningf("Couldn't extract ShipmentOrder from tombstone %#v", obj)
-					return
-				}
-
-				if _, ok := tombstone.Obj.(*shipperv1.ShipmentOrder); !ok {
-					glog.Warningf("Expected a ShipmentOrder in tombstone but got %#v", obj)
-					return
-				}
-			}
-
-			controller.enqueueShipmentOrder(obj)
-		},
+		DeleteFunc: controller.enqueueShipmentOrder,
 	})
 
 	return controller
@@ -173,7 +158,7 @@ func (c *Controller) processNextWorkItem() bool {
 }
 
 func (c *Controller) enqueueShipmentOrder(obj interface{}) {
-	key, err := cache.MetaNamespaceKeyFunc(obj)
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		runtime.HandleError(err)
 		return
