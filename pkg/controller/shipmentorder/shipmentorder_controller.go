@@ -75,10 +75,6 @@ func NewController(
 	informer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueShipmentOrder,
 		UpdateFunc: func(old, new interface{}) {
-			// We could allow changes to Pending objects because no side-effects have
-			// taken place yet but for simplicity's sake we're considering everything
-			// immutable here. This might change in the future.
-			// TODO reject updates
 			oldSo, oldOK := old.(*shipperv1.ShipmentOrder)
 			newSo, newOK := new.(*shipperv1.ShipmentOrder)
 			if oldOK && newOK && oldSo.ResourceVersion == newSo.ResourceVersion {
