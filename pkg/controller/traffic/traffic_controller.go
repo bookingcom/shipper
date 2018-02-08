@@ -18,6 +18,8 @@ package traffic
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,7 +38,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	//shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
@@ -53,6 +55,9 @@ const (
 	MessageResourceSynced = "TrafficTarget synced successfully"
 )
 
+const podTrafficLabelKey = "traffic"
+const podTrafficLabelProdValue = "prod"
+
 // Controller is the controller implementation for TrafficTarget resources
 type Controller struct {
 	// kubeclientset is a standard kubernetes clientset
@@ -61,12 +66,9 @@ type Controller struct {
 	shipperclientset shipper.Interface
 
 	// the Kube clients for each of the target clusters
-	clusterClients    map[string]kubernetes.Interface
-	clusterClientsMut sync.RWMutex
-
+	clusterClients      map[string]kubernetes.Interface
 	clusterPodInformers map[string]corev1informer.PodInformer
-
-	clusterPodInformersMut sync.RWMutex
+	clustersMut         sync.RWMutex
 
 	trafficTargetsLister listers.TrafficTargetLister
 	trafficTargetsSynced cache.InformerSynced
@@ -77,17 +79,20 @@ type Controller struct {
 	// time, and makes it easy to ensure we are never processing the same item
 	// simultaneously in two different workers.
 	workqueue workqueue.RateLimitingInterface
+
 	// recorder is an event recorder for recording Event resources to the
 	// Kubernetes API.
 	recorder record.EventRecorder
+
+	stopCh <-chan struct{}
 }
 
 // NewController returns a new TrafficTarget controller
 func NewController(
 	kubeclientset kubernetes.Interface,
 	shipperclientset shipper.Interface,
-	kubeInformerFactory kubeinformers.SharedInformerFactory,
-	shipperInformerFactory informers.SharedInformerFactory) *Controller {
+	shipperInformerFactory informers.SharedInformerFactory,
+	stopCh <-chan struct{}) *Controller {
 
 	// obtain references to shared index informers for the TrafficTarget type
 	trafficTargetInformer := shipperInformerFactory.Shipper().V1().TrafficTargets()
@@ -119,15 +124,15 @@ func NewController(
 		clusterClients: map[string]kubernetes.Interface{
 			"local": kubeclientset,
 		},
-		clusterPodInformers: map[string]corev1informer.PodInformer{
-			"local": kubeInformerFactory.Core().V1().Pods(),
-		},
-
+		// note that this informer factory was already started
+		clusterPodInformers: map[string]corev1informer.PodInformer{},
 		//clusterInformers map[string] kubeinformers.SharedInformerFactory
 		trafficTargetsLister: trafficTargetInformer.Lister(),
 		trafficTargetsSynced: trafficTargetInformer.Informer().HasSynced,
 		workqueue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "TrafficTargets"),
 		recorder:             recorder,
+
+		stopCh: stopCh,
 	}
 
 	glog.Info("Setting up event handlers")
@@ -159,27 +164,34 @@ func NewController(
 // as syncing informer caches and starting workers. It will block until stopCh
 // is closed, at which point it will shutdown the workqueue and wait for
 // workers to finish processing their current work items.
-func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
+func (c *Controller) Run(threadiness int) error {
 	defer runtime.HandleCrash()
 	defer c.workqueue.ShutDown()
 
-	// Start the informer factories to begin populating the informer caches
 	glog.Info("Starting TrafficTarget controller")
-
-	// Wait for the caches to be synced before starting workers
 	glog.Info("Waiting for informer caches to sync")
-	if ok := cache.WaitForCacheSync(stopCh, c.trafficTargetsSynced); !ok {
+	if ok := cache.WaitForCacheSync(c.stopCh, c.trafficTargetsSynced); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
+	// this will eventually be done in response to being informed about a new cluster appearing
+	for cluster, clientset := range c.clusterClients {
+		kubeInformerFactory := kubeinformers.NewSharedInformerFactory(clientset, time.Second*30)
+		podInformer := kubeInformerFactory.Core().V1().Pods()
+		c.clusterPodInformers[cluster] = podInformer
+		go kubeInformerFactory.Start(c.stopCh)
+		if ok := cache.WaitForCacheSync(c.stopCh, podInformer.Informer().HasSynced); !ok {
+			return fmt.Errorf("failed to wait for pod caches to sync")
+		}
+	}
+
 	glog.Info("Starting workers")
-	// Launch two workers to process TrafficTarget resources
 	for i := 0; i < threadiness; i++ {
-		go wait.Until(c.runWorker, time.Second, stopCh)
+		go wait.Until(c.runWorker, time.Second, c.stopCh)
 	}
 
 	glog.Info("Started workers")
-	<-stopCh
+	<-c.stopCh
 	glog.Info("Shutting down workers")
 
 	return nil
@@ -248,115 +260,89 @@ func (c *Controller) processNextWorkItem() bool {
 
 // Any time a TrafficTarget resource is modified, we should:
 // - Get all TTs in the namespace
-// - For each TT, query capacity in target cluster.
-// - For each cluster, compute pod label %s according to TT percentage. Error or something if sum of TT percentages is != 100.
+// - For each TT, get desired weight in target clusters.
+// - For each cluster, compute pod label %s according to TT weights by release.
 // - For each cluster, add/remove pod labels accordingly (if too many, remove until correct and visa versa)
 func (c *Controller) syncHandler(key string) error {
-	// Convert the namespace/name string into a distinct namespace and name
-	namespace, _, err := cache.SplitMetaNamespaceKey(key)
+	namespace, ttName, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
 		return nil
 	}
 
-	// Get the TrafficTarget resource with this namespace/name
+	syncingTT, err := c.trafficTargetsLister.TrafficTargets(namespace).Get(ttName)
+	if err != nil {
+		return err
+	}
+
+	// NOTE(btyler) - this will need fixing if we allow multiple applications
+	// per namespace. in that case we should get all the objects with the same
+	// 'app' label, or something similar. Maybe by chart name?
 	list, err := c.trafficTargetsLister.TrafficTargets(namespace).List(labels.Everything())
 	if err != nil {
 		return err
 	}
 
-	clusterReleaseTraffic := map[string]map[string]uint{}
-	for _, tt := range list {
-		release, ok := tt.Labels["release"]
+	balancer, err := newBalancer(namespace, list)
+	if err != nil {
+		return err
+	}
+
+	statuses := []*shipperv1.ClusterTrafficStatus{}
+	for _, cluster := range balancer.Clusters() {
+		// These locks have a narrow scope (rather than function-wide with
+		// 'defer') because syncing to a cluster involves very slow operations,
+		// like API calls. Once we have a reference to these read-only caches
+		// and thread-safe clients, we don't care if this target cluster is
+		// removed from the set: we should still finish our work.
+		c.clustersMut.RLock()
+		clientset, ok := c.clusterClients[cluster]
 		if !ok {
-			return fmt.Errorf(
-				"TrafficTarget '%s/%s' needs a 'release' label in order to select resources in the target clusters.",
-				namespace, tt.Name,
-			)
+			c.clustersMut.RUnlock()
+			return fmt.Errorf("No client for cluster %q", cluster)
+		}
+		informer, ok := c.clusterPodInformers[cluster]
+		if !ok {
+			c.clustersMut.RUnlock()
+			return fmt.Errorf("No pod informer for cluster %q", cluster)
+		}
+		c.clustersMut.RUnlock()
+
+		clusterStatus := &shipperv1.ClusterTrafficStatus{
+			Name: cluster,
 		}
 
-		/*
-			{
-				cluster-1: {
-					reviewsapi-1: 90,
-					reviewsapi-2: 5,
-					reviewsapi-3: 5,
-				}
-			}
+		statuses = append(statuses, clusterStatus)
 
-		*/
-		for _, cluster := range tt.Spec.Clusters {
-			clusterTraffic, ok := clusterReleaseTraffic[cluster.Name]
-			if !ok {
-				clusterReleaseTraffic[cluster.Name] = map[string]uint{}
+		errs := balancer.syncCluster(cluster, clientset, informer)
+		if len(errs) == 0 {
+			clusterStatus.Status = "Synced"
+		} else {
+			results := make([]string, 0, len(errs))
+			for _, err := range errs {
+				results = append(results, err.Error())
 			}
-			clusterTraffic[release] += cluster.TargetTraffic
+			sort.Strings(results)
+			clusterStatus.Status = strings.Join(results, ",")
 		}
 	}
-
-	// build up a map of errors so we can report per-cluster status
-	errs := map[string]error{}
-	for cluster, releases := range clusterReleaseTraffic {
-		var clusterTraffic uint = 0
-		for _, traffic := range releases {
-			clusterTraffic += traffic
-		}
-
-		if clusterTraffic != 100 {
-			return fmt.Errorf("%s TrafficTargets: cluster traffic must sum to 100%. %q sums to %q", namespace, cluster, clusterTraffic)
-		}
-
-		err := c.syncClusterTraffic(cluster, releases)
-		if err != nil {
-			errs[cluster] = err
-		}
-	}
-
-	// Finally, we update the status block of the TrafficTarget resource to reflect the
-	// current state of the world
 
 	// NEVER modify objects from the store. It's a read-only, local cache.
 	// You can use DeepCopy() to make a deep copy of original object and modify this copy
 	// Or create a copy manually for better performance
-	/*
-		ttCopy := tt.DeepCopy()
-		ttCopy.Status = shipperv1.TrafficTargetStatus{
-			Clusters: []shipperv1.ClusterTrafficStatus{
-				{
-					Name:            "local",
-					AchievedTraffic: 22,
-					Status:          "aaaagh",
-				},
-			},
-		}
-		// Until #38113 is merged, we must use Update instead of UpdateStatus to
-		// update the Status block of the TrafficTarget resource. UpdateStatus will not
-		// allow changes to the Spec of the resource, which is ideal for ensuring
-		// nothing other than resource status has been updated.
-		_, err = c.shipperclientset.ShipperV1().TrafficTargets(tt.Namespace).Update(ttCopy)
-
-		if err != nil {
-			return err
-		}
-	*/
-
-	//c.recorder.Event(tt, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
-	return nil
-}
-
-// syncClusterTraffic manipulates a single cluster to put it into the desired traffic state
-func (c *Controller) syncClusterTraffic(cluster string, releases map[string]uint) error {
-	c.clusterClientsMut.RLock()
-	defer c.clusterClientsMut.RUnlock()
-	// clientset
-	_, ok := c.clusterClients[cluster]
-	if !ok {
-		return fmt.Errorf("No such cluster %q", cluster)
+	ttCopy := syncingTT.DeepCopy()
+	ttCopy.Status = shipperv1.TrafficTargetStatus{
+		Clusters: statuses,
 	}
-	// check that service obj is in place and has the right bits
-	// query for pods for each release that we had a TT for, hang on to them
-	//
-	//releasePodCounts := map[string]uint{}
+	// Until #38113 is merged, we must use Update instead of UpdateStatus to
+	// update the Status block of the TrafficTarget resource. UpdateStatus will not
+	// allow changes to the Spec of the resource, which is ideal for ensuring
+	// nothing other than resource status has been updated.
+	_, err = c.shipperclientset.ShipperV1().TrafficTargets(namespace).Update(ttCopy)
+	if err != nil {
+		return err
+	}
+	c.recorder.Event(syncingTT, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
 	return nil
 }
 
