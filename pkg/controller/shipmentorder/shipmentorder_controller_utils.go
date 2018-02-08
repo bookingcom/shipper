@@ -109,8 +109,10 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 				Replicas:      replicas,
 			},
 		},
-		Spec:   shipperv1.ReleaseSpec{},
-		Status: shipperv1.WaitingForSchedulingPhase,
+		Spec: shipperv1.ReleaseSpec{},
+		Status: shipperv1.ReleaseStatus{
+			Phase: shipperv1.ReleasePhaseWaitingForScheduling,
+		},
 	}
 
 	if _, err := c.shipperClientset.ShipperV1().Releases(so.Namespace).Create(release); err != nil {
