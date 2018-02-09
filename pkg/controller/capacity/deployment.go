@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 
+	kubev1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 
 	"github.com/golang/glog"
@@ -121,19 +124,17 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 		return nil
 	}
 
-	labelSelector := fmt.Sprintf("release=%s", release)
-	capacityTargets, err := c.shipperclientset.ShipperV1().CapacityTargets(namespace).List(meta_v1.ListOptions{LabelSelector: labelSelector})
+	capacityTarget, err := c.getCapacityTargetForReleaseAndNamespace(release, namespace)
 	if err != nil {
 		return err
 	}
 
-	if len(capacityTargets.Items) != 1 {
-		return fmt.Errorf("Expected exactly 1 capacity target with the label %s, but found %d", release, len(capacityTargets.Items))
+	sadPods, err := c.getSadPodsForDeploymentOnCluster(targetDeployment, item.ClusterName)
+	if err != nil {
+		return err
 	}
 
-	capacityTarget := capacityTargets.Items[0]
-	glog.Infof("Got %d available replicas!", targetDeployment.Status.AvailableReplicas)
-	err = c.updateStatus(capacityTarget, item.ClusterName, uint(targetDeployment.Status.AvailableReplicas))
+	err = c.updateStatus(capacityTarget, item.ClusterName, uint(targetDeployment.Status.AvailableReplicas), sadPods)
 	if err != nil {
 		return err
 	}
@@ -141,7 +142,7 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 	return nil
 }
 
-func (c *Controller) updateStatus(capacityTarget shipperv1.CapacityTarget, name string, achievedReplicas uint) error {
+func (c *Controller) updateStatus(capacityTarget *shipperv1.CapacityTarget, clusterName string, availableReplicas uint, sadPods []shipperv1.PodStatus) error {
 	var capacityTargetStatus shipperv1.CapacityTargetStatus
 	foundClusterStatus := false
 
@@ -150,9 +151,10 @@ func (c *Controller) updateStatus(capacityTarget shipperv1.CapacityTarget, name 
 	// If not, we just add it as-is.
 	// The reason we do it this way is that we will use the resulting `capacityTargetStatus` variable for a patch operation
 	for _, clusterStatus := range capacityTarget.Status.Clusters {
-		if clusterStatus.Name == name {
+		if clusterStatus.Name == clusterName {
 			foundClusterStatus = true
-			clusterStatus.AvailableReplicas = achievedReplicas
+			clusterStatus.AvailableReplicas = availableReplicas
+			clusterStatus.SadPods = sadPods
 		}
 
 		capacityTargetStatus.Clusters = append(capacityTargetStatus.Clusters, clusterStatus)
@@ -161,8 +163,9 @@ func (c *Controller) updateStatus(capacityTarget shipperv1.CapacityTarget, name 
 	if foundClusterStatus != true {
 		// there hasn't been an update about this cluster before, so manually add it
 		clusterStatus := shipperv1.ClusterCapacityStatus{
-			Name:              name,
-			AvailableReplicas: achievedReplicas,
+			Name:              clusterName,
+			AvailableReplicas: availableReplicas,
+			SadPods:           sadPods,
 		}
 
 		capacityTargetStatus.Clusters = append(capacityTargetStatus.Clusters, clusterStatus)
@@ -180,4 +183,71 @@ func (c *Controller) updateStatus(capacityTarget shipperv1.CapacityTarget, name 
 	}
 
 	return nil
+}
+
+func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace string) (*shipperv1.CapacityTarget, error) {
+	labelSelector := fmt.Sprintf("release=%s", release)
+	capacityTargets, err := c.shipperclientset.ShipperV1().CapacityTargets(namespace).List(meta_v1.ListOptions{LabelSelector: labelSelector})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(capacityTargets.Items) != 1 {
+		return nil, fmt.Errorf("Expected exactly 1 capacity target with the label %s, but found %d", release, len(capacityTargets.Items))
+	}
+
+	return &capacityTargets.Items[0], nil
+}
+
+func (c Controller) getSadPodsForDeploymentOnCluster(deployment *kubev1.Deployment, clusterName string) ([]shipperv1.PodStatus, error) {
+	var sadPods []shipperv1.PodStatus
+
+	client := c.clusterClientSet[clusterName]
+	label := deployment.GetLabels()["release"]
+	labelSelector := fmt.Sprintf("release=%s", label)
+
+	pods, err := client.CoreV1().Pods(deployment.Namespace).List(meta_v1.ListOptions{LabelSelector: labelSelector})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, pod := range pods.Items {
+		if condition, ok := c.getFalsePodCondition(pod); ok {
+			sadPod := shipperv1.PodStatus{
+				Name:       pod.Name,
+				Condition:  *condition,
+				Containers: pod.Status.ContainerStatuses,
+			}
+
+			sadPods = append(sadPods, sadPod)
+		}
+	}
+
+	return sadPods, nil
+}
+
+func (c Controller) getFalsePodCondition(pod corev1.Pod) (*corev1.PodCondition, bool) {
+	var sadCondition *corev1.PodCondition
+
+	// The loop below finds a condition with the `status` set to
+	// "false", which means there is something wrong with the pod.
+	// The reason the loop is not returning as it finds the first
+	// condition with the status of "false" is that we're testing the
+	// assumption that there is only one condition with the status of
+	// "false" at a time. That's why there is a log there for now.
+	for _, condition := range pod.Status.Conditions {
+		if condition.Status == corev1.ConditionFalse {
+			if sadCondition == nil {
+				sadCondition = &condition
+			} else {
+				glog.Errorf("Found 2 pod conditions with the status set to `false`. The first has a type of %s, and the second has a type of %s.", sadCondition.Type, condition.Type)
+			}
+		}
+	}
+
+	if sadCondition != nil {
+		return sadCondition, true
+	}
+
+	return nil, false
 }
