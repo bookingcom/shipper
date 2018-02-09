@@ -32,9 +32,9 @@ type FakeTrafficTargets struct {
 	ns   string
 }
 
-var traffictargetsResource = schema.GroupVersionResource{Group: "shipper", Version: "v1", Resource: "traffictargets"}
+var traffictargetsResource = schema.GroupVersionResource{Group: "shipper.booking.com", Version: "v1", Resource: "traffictargets"}
 
-var traffictargetsKind = schema.GroupVersionKind{Group: "shipper", Version: "v1", Kind: "TrafficTarget"}
+var traffictargetsKind = schema.GroupVersionKind{Group: "shipper.booking.com", Version: "v1", Kind: "TrafficTarget"}
 
 // Get takes name of the trafficTarget, and returns the corresponding trafficTarget object, and an error if there is any.
 func (c *FakeTrafficTargets) Get(name string, options v1.GetOptions) (result *shipper_v1.TrafficTarget, err error) {

@@ -32,9 +32,9 @@ type FakeInstallationTargets struct {
 	ns   string
 }
 
-var installationtargetsResource = schema.GroupVersionResource{Group: "shipper", Version: "v1", Resource: "installationtargets"}
+var installationtargetsResource = schema.GroupVersionResource{Group: "shipper.booking.com", Version: "v1", Resource: "installationtargets"}
 
-var installationtargetsKind = schema.GroupVersionKind{Group: "shipper", Version: "v1", Kind: "InstallationTarget"}
+var installationtargetsKind = schema.GroupVersionKind{Group: "shipper.booking.com", Version: "v1", Kind: "InstallationTarget"}
 
 // Get takes name of the installationTarget, and returns the corresponding installationTarget object, and an error if there is any.
 func (c *FakeInstallationTargets) Get(name string, options v1.GetOptions) (result *shipper_v1.InstallationTarget, err error) {

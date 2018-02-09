@@ -31,9 +31,9 @@ type FakeReleases struct {
 	ns   string
 }
 
-var releasesResource = schema.GroupVersionResource{Group: "shipper", Version: "v1", Resource: "releases"}
+var releasesResource = schema.GroupVersionResource{Group: "shipper.booking.com", Version: "v1", Resource: "releases"}
 
-var releasesKind = schema.GroupVersionKind{Group: "shipper", Version: "v1", Kind: "Release"}
+var releasesKind = schema.GroupVersionKind{Group: "shipper.booking.com", Version: "v1", Kind: "Release"}
 
 // Get takes name of the release, and returns the corresponding release object, and an error if there is any.
 func (c *FakeReleases) Get(name string, options v1.GetOptions) (result *shipper_v1.Release, err error) {

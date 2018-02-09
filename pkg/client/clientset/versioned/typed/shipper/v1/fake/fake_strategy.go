@@ -32,9 +32,9 @@ type FakeStrategies struct {
 	ns   string
 }
 
-var strategiesResource = schema.GroupVersionResource{Group: "shipper", Version: "v1", Resource: "strategies"}
+var strategiesResource = schema.GroupVersionResource{Group: "shipper.booking.com", Version: "v1", Resource: "strategies"}
 
-var strategiesKind = schema.GroupVersionKind{Group: "shipper", Version: "v1", Kind: "Strategy"}
+var strategiesKind = schema.GroupVersionKind{Group: "shipper.booking.com", Version: "v1", Kind: "Strategy"}
 
 // Get takes name of the strategy, and returns the corresponding strategy object, and an error if there is any.
 func (c *FakeStrategies) Get(name string, options v1.GetOptions) (result *shipper_v1.Strategy, err error) {

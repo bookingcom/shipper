@@ -34,7 +34,7 @@ type ShipperV1Interface interface {
 	TrafficTargetsGetter
 }
 
-// ShipperV1Client is used to interact with features provided by the shipper group.
+// ShipperV1Client is used to interact with features provided by the shipper.booking.com group.
 type ShipperV1Client struct {
 	restClient rest.Interface
 }
