@@ -88,7 +88,7 @@ func (b *balancer) syncCluster(cluster string, clientset kubernetes.Interface, i
 
 	errors := []error{}
 	for release, weight := range releaseWeights {
-		releaseReq, err := labels.NewRequirement("release", selection.Equals, []string{release})
+		releaseReq, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{release})
 		if err != nil {
 			// programmer error: this is a static label
 			panic(err)
@@ -237,7 +237,7 @@ func buildClusterReleaseWeights(trafficTargets []*shipperv1.TrafficTarget) (clus
 	clusterReleases := map[string]map[string]int{}
 	releaseTT := map[string]*shipperv1.TrafficTarget{}
 	for _, tt := range trafficTargets {
-		release, ok := tt.Labels["release"]
+		release, ok := tt.Labels[shipperv1.ReleaseLabel]
 		if !ok {
 			return nil, fmt.Errorf(
 				"TrafficTarget '%s/%s' needs a 'release' label in order to select resources in the target clusters.",
