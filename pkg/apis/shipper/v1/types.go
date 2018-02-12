@@ -13,6 +13,9 @@ const (
 
 	ReleasePhaseWaitingForScheduling = "WaitingForScheduling"
 	ReleasePhaseWaitingForStrategy   = "WaitingForStrategy"
+
+	InstallationStatusInstalled = "Installed"
+	InstallationStatusFailed    = "Failed"
 )
 
 // +genclient
@@ -266,8 +269,10 @@ type InstallationTargetStatus struct {
 }
 
 type ClusterInstallationStatus struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
+
 	// Conditions []Condition
 }
 
