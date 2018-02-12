@@ -1,4 +1,4 @@
-apiVersion: stable.shipper/v1
+apiVersion: shipper.booking.com/v1
 kind: TrafficTarget
 metadata:
   name: traffic-v0.0.1 # a SHA1 or git tag from the CI/CD pipeline

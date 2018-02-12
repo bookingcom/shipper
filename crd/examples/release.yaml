@@ -1,4 +1,4 @@
-apiVersion: stable.shipper/v1
+apiVersion: shipper.booking.com/v1
 kind: Release
 status:
   phase: WaitingForScheduling
