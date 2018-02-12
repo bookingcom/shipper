@@ -31,9 +31,9 @@ type FakeClusters struct {
 	Fake *FakeShipperV1
 }
 
-var clustersResource = schema.GroupVersionResource{Group: "shipper", Version: "v1", Resource: "clusters"}
+var clustersResource = schema.GroupVersionResource{Group: "shipper.booking.com", Version: "v1", Resource: "clusters"}
 
-var clustersKind = schema.GroupVersionKind{Group: "shipper", Version: "v1", Kind: "Cluster"}
+var clustersKind = schema.GroupVersionKind{Group: "shipper.booking.com", Version: "v1", Kind: "Cluster"}
 
 // Get takes name of the cluster, and returns the corresponding cluster object, and an error if there is any.
 func (c *FakeClusters) Get(name string, options v1.GetOptions) (result *shipper_v1.Cluster, err error) {

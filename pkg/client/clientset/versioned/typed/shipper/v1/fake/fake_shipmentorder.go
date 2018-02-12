@@ -32,9 +32,9 @@ type FakeShipmentOrders struct {
 	ns   string
 }
 
-var shipmentordersResource = schema.GroupVersionResource{Group: "shipper", Version: "v1", Resource: "shipmentorders"}
+var shipmentordersResource = schema.GroupVersionResource{Group: "shipper.booking.com", Version: "v1", Resource: "shipmentorders"}
 
-var shipmentordersKind = schema.GroupVersionKind{Group: "shipper", Version: "v1", Kind: "ShipmentOrder"}
+var shipmentordersKind = schema.GroupVersionKind{Group: "shipper.booking.com", Version: "v1", Kind: "ShipmentOrder"}
 
 // Get takes name of the shipmentOrder, and returns the corresponding shipmentOrder object, and an error if there is any.
 func (c *FakeShipmentOrders) Get(name string, options v1.GetOptions) (result *shipper_v1.ShipmentOrder, err error) {

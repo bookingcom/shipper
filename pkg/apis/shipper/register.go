@@ -1,5 +1,5 @@
 package shipper
 
 const (
-	GroupName = "stable.shipper"
+	GroupName = "shipper.booking.com"
 )

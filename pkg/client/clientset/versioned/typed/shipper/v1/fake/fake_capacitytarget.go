@@ -32,9 +32,9 @@ type FakeCapacityTargets struct {
 	ns   string
 }
 
-var capacitytargetsResource = schema.GroupVersionResource{Group: "shipper", Version: "v1", Resource: "capacitytargets"}
+var capacitytargetsResource = schema.GroupVersionResource{Group: "shipper.booking.com", Version: "v1", Resource: "capacitytargets"}
 
-var capacitytargetsKind = schema.GroupVersionKind{Group: "shipper", Version: "v1", Kind: "CapacityTarget"}
+var capacitytargetsKind = schema.GroupVersionKind{Group: "shipper.booking.com", Version: "v1", Kind: "CapacityTarget"}
 
 // Get takes name of the capacityTarget, and returns the corresponding capacityTarget object, and an error if there is any.
 func (c *FakeCapacityTargets) Get(name string, options v1.GetOptions) (result *shipper_v1.CapacityTarget, err error) {
