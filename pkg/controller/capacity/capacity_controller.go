@@ -33,6 +33,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
@@ -87,7 +88,7 @@ func NewController(
 	kubeInformerFactory kubeinformers.SharedInformerFactory,
 	shipperInformerFactory informers.SharedInformerFactory) *Controller {
 
-	// obtain references to shared index informers for the ShipmentObject type
+	// obtain references to shared index informers for the CapacityTarget type
 	capacityTargetInformer := shipperInformerFactory.Shipper().V1().CapacityTargets()
 
 	// Create event broadcaster
@@ -259,9 +260,14 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		return err
 	}
 
-	// Get the requested number of replicas from the capacity object
-	// This is only set by the strategy controller
 	for _, clusterSpec := range ct.Spec.Clusters {
+		// Get the requested percentage of replicas from the capacity object
+		// This is only set by the strategy controller
+		replicaCount, err := c.convertPercentageToReplicaCountForCluster(ct, clusterSpec)
+		if err != nil {
+			return err
+		}
+
 		targetClusterClient := c.clusterClientSet[clusterSpec.Name]
 		targetNamespace := ct.Namespace
 		labelSelector := fmt.Sprintf("release=%s", ct.GetLabels()["release"])
@@ -276,7 +282,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		}
 
 		targetDeployment := deploymentsList.Items[0]
-		patchString := fmt.Sprintf(`{"spec": {"replicas": %d}}`, clusterSpec.Replicas)
+		patchString := fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicaCount)
 		_, err = targetClusterClient.AppsV1().Deployments(targetDeployment.Namespace).Patch(targetDeployment.Name, types.StrategicMergePatchType, []byte(patchString))
 		if err != nil {
 			return err
@@ -302,4 +308,24 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 		return
 	}
 	c.capacityTargetWorkqueue.AddRateLimited(key)
+}
+
+func (c Controller) convertPercentageToReplicaCountForCluster(capacityTarget *shipperv1.CapacityTarget, cluster shipperv1.ClusterCapacityTarget) (int32, error) {
+	label := capacityTarget.GetLabels()[shipperv1.ReleaseLabel]
+	labelSelector := fmt.Sprintf("release=%s", label)
+	releaseList, err := c.shipperclientset.ShipperV1().Releases(capacityTarget.Namespace).List(meta_v1.ListOptions{LabelSelector: labelSelector})
+	if err != nil {
+		return 0, err
+	}
+
+	if len(releaseList.Items) != 1 {
+		return 0, fmt.Errorf("Expected 1 Release with label '%s', but got %d.", label, len(releaseList.Items))
+	}
+
+	release := releaseList.Items[0]
+
+	replicaCount := release.Environment.Replicas
+	replicaPercentage := cluster.Replicas
+
+	return replicaPercentage / 100 * replicaCount, nil
 }

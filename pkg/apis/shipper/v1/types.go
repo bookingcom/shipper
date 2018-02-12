@@ -221,7 +221,7 @@ type ReleaseEnvironment struct {
 	Chart         EmbeddedChart     `json:"chart"`
 	ShipmentOrder ShipmentOrderSpec `json:"shipmentOrder"`
 	Sidecars      []Sidecar         `json:"sidecars"`
-	Replicas      *int32            `json:"replicas"`
+	Replicas      int32             `json:"replicas"`
 }
 
 type EmbeddedChart struct {
@@ -331,7 +331,7 @@ type CapacityTargetSpec struct {
 
 type ClusterCapacityTarget struct {
 	Name    string `json:"name"`
-	Percent uint   `json:"percent"`
+	Percent int32  `json:"percent"`
 }
 
 // +genclient

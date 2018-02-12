@@ -176,5 +176,6 @@ metadata:
       version: "2.1"
     - name: telegraf
       version: "0.99"
+    replicas: 10
 spec:
   targetStep: 1
