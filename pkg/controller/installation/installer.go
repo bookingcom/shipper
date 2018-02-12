@@ -2,7 +2,6 @@ package installation
 
 import (
 	"fmt"
-	"github.com/golang/glog"
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperChart "github.com/bookingcom/shipper/pkg/chart"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -144,14 +143,17 @@ func (i *Installer) installManifests(
 		// for this object.
 		obj, gvk, err := decodeManifest(manifest)
 		if err != nil {
-			return err
+			// TODO: Instead of returning an error in here, we should return an internal
+			// error that contains both the reason ("ManifestDecodingError") and the
+			// message (the error string) so callers can fill the appropriate blanks.
+			return fmt.Errorf("error decoding manifest: %s", err)
 		}
 
 		// Once we've gathered enough information about the document we want to install,
 		// we're able to build a resource client to interact with the target cluster.
 		resourceClient, err := i.buildResourceClient(cluster, gvk)
 		if err != nil {
-			return err
+			return fmt.Errorf("error building resource client: %s", err)
 		}
 
 		// Now we can create the object using the resource client. Probably all of
@@ -169,16 +171,13 @@ func (i *Installer) installManifests(
 				continue
 			}
 
-			// Log any other kind of errors.
-			glog.Error(err)
-
 			// Perhaps we want to annotate differently the error when the request
 			// couldn't be constructed? Can be removed later on if not proven useful.
 			if rce, ok := err.(*rest.RequestConstructionError); ok {
-				return rce
+				return fmt.Errorf("error constructing request: %s", rce)
 			}
 
-			return fmt.Errorf("other: %s", err)
+			return fmt.Errorf("error creating resource: %s", err)
 		}
 	}
 
