@@ -305,6 +305,7 @@ type CapacityTargetStatus struct {
 type ClusterCapacityStatus struct {
 	Name              string      `json:"name"`
 	AvailableReplicas uint        `json:"availableReplicas"`
+	AchievedPercent   uint        `json:"achievedPercent"`
 	SadPods           []PodStatus `json:"sadPods"`
 }
 
@@ -330,8 +331,8 @@ type CapacityTargetSpec struct {
 }
 
 type ClusterCapacityTarget struct {
-	Name     string `json:"name"`
-	Replicas uint   `json:"replicas"`
+	Name    string `json:"name"`
+	Percent uint   `json:"percent"`
 }
 
 // +genclient
