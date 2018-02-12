@@ -16,6 +16,7 @@ import (
 	"k8s.io/helm/pkg/timeconv"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"strings"
 )
 
 func Download(chart shipperv1.Chart) (*bytes.Buffer, error) {
@@ -61,10 +62,8 @@ func RenderChart(chrt *chart.Chart, chrtVals *chart.Config, options chartutil.Re
 	// since I don't know if we need to make this validation since `helm
 	// package` itself complains about missing requirements when packaging the
 	// chart.
-	if req, err := chartutil.LoadRequirements(chrt); err != nil {
+	if _, err := chartutil.LoadRequirements(chrt); err != nil {
 		return nil, fmt.Errorf("cannot load requirements: %v", err)
-	} else {
-		fmt.Printf("%+v", req)
 	}
 
 	// Removes disabled charts from the dependencies.
@@ -93,8 +92,10 @@ func RenderChart(chrt *chart.Chart, chrtVals *chart.Config, options chartutil.Re
 		return nil, fmt.Errorf("could not render the chart: %s", err)
 	}
 	objects := make([]string, 0, len(rendered))
-	for _, o := range rendered {
-		objects = append(objects, o)
+	for n, o := range rendered {
+		if len(o) > 0 && strings.HasSuffix(n, ".yaml") {
+			objects = append(objects, o)
+		}
 	}
 
 	return objects, nil
@@ -136,8 +137,10 @@ func Render(r io.Reader, name, ns string, values *shipperv1.ChartValues) ([]stri
 	}
 
 	objects := make([]string, 0, len(rendered))
-	for _, o := range rendered {
-		objects = append(objects, o)
+	for n, o := range rendered {
+		if len(o) > 0 && strings.HasSuffix(n, ".yaml") {
+			objects = append(objects, o)
+		}
 	}
 
 	return objects, nil
