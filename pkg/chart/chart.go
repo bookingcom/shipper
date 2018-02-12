@@ -92,7 +92,7 @@ func RenderChart(chrt *chart.Chart, chrtVals *chart.Config, options chartutil.Re
 	if err != nil {
 		return nil, fmt.Errorf("could not render the chart: %s", err)
 	}
-	objects := make([]string, len(rendered), len(rendered))
+	objects := make([]string, 0, len(rendered))
 	for _, o := range rendered {
 		objects = append(objects, o)
 	}
@@ -135,7 +135,7 @@ func Render(r io.Reader, name, ns string, values *shipperv1.ChartValues) ([]stri
 		return nil, fmt.Errorf("could not render the chart: %s", err)
 	}
 
-	objects := make([]string, len(rendered), len(rendered))
+	objects := make([]string, 0, len(rendered))
 	for _, o := range rendered {
 		objects = append(objects, o)
 	}
