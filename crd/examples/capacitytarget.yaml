@@ -7,4 +7,4 @@ metadata:
 spec:
   clusters:
   - name: local
-    replicas: 0
+    percent: 0

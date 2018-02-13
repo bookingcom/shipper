@@ -18,6 +18,7 @@ package capacity
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/golang/glog"
@@ -311,21 +312,34 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 }
 
 func (c Controller) convertPercentageToReplicaCountForCluster(capacityTarget *shipperv1.CapacityTarget, cluster shipperv1.ClusterCapacityTarget) (int32, error) {
-	label := capacityTarget.GetLabels()[shipperv1.ReleaseLabel]
-	labelSelector := fmt.Sprintf("release=%s", label)
-	releaseList, err := c.shipperclientset.ShipperV1().Releases(capacityTarget.Namespace).List(meta_v1.ListOptions{LabelSelector: labelSelector})
+	release, err := c.getReleaseForCapacityTarget(capacityTarget)
 	if err != nil {
 		return 0, err
 	}
 
-	if len(releaseList.Items) != 1 {
-		return 0, fmt.Errorf("Expected 1 Release with label '%s', but got %d.", label, len(releaseList.Items))
+	totalReplicaCount := release.Environment.Replicas
+	percentage := cluster.Percent
+
+	return c.calculateAmountFromPercentage(totalReplicaCount, percentage), nil
+}
+
+func (c Controller) getReleaseForCapacityTarget(capacityTarget *shipperv1.CapacityTarget) (*shipperv1.Release, error) {
+	label := capacityTarget.GetLabels()[shipperv1.ReleaseLabel]
+	labelSelector := fmt.Sprintf("release=%s", label)
+	releaseList, err := c.shipperclientset.ShipperV1().Releases(capacityTarget.Namespace).List(meta_v1.ListOptions{LabelSelector: labelSelector})
+	if err != nil {
+		return nil, err
 	}
 
-	release := releaseList.Items[0]
+	if len(releaseList.Items) != 1 {
+		return nil, fmt.Errorf("Expected 1 Release with label '%s', but got %d.", label, len(releaseList.Items))
+	}
 
-	replicaCount := release.Environment.Replicas
-	replicaPercentage := cluster.Replicas
+	return &releaseList.Items[0], nil
+}
 
-	return replicaPercentage / 100 * replicaCount, nil
+func (c Controller) calculateAmountFromPercentage(total, percentage int32) int32 {
+	result := float64(percentage) / 100 * float64(total)
+
+	return int32(math.Ceil(result))
 }

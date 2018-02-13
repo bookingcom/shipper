@@ -3,6 +3,7 @@ package capacity
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 
 	kubev1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -134,7 +135,7 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 		return err
 	}
 
-	err = c.updateStatus(capacityTarget, item.ClusterName, uint(targetDeployment.Status.AvailableReplicas), sadPods)
+	err = c.updateStatus(capacityTarget, item.ClusterName, targetDeployment.Status.AvailableReplicas, sadPods)
 	if err != nil {
 		return err
 	}
@@ -142,34 +143,37 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 	return nil
 }
 
-func (c *Controller) updateStatus(capacityTarget *shipperv1.CapacityTarget, clusterName string, availableReplicas uint, sadPods []shipperv1.PodStatus) error {
+func (c *Controller) updateStatus(capacityTarget *shipperv1.CapacityTarget, clusterName string, availableReplicas int32, sadPods []shipperv1.PodStatus) error {
 	var capacityTargetStatus shipperv1.CapacityTargetStatus
-	foundClusterStatus := false
 
 	// We loop over the statuses in capacityTarget.Status.
-	// If the name matches the cluster name we want, we update the status before adding it to `capacityTargetStatus`.
+	// If the name matches the cluster name we want, we don't add it to the resulting array.
 	// If not, we just add it as-is.
-	// The reason we do it this way is that we will use the resulting `capacityTargetStatus` variable for a patch operation
+	// At the end, we just append our own object to the end of the result. Since we originally filtered out the object matching our target cluster, our object will replace the original object.
+	// The reason we make our own results object instead of modifying the original one is that we will use the resulting `capacityTargetStatus` variable for a patch operation
 	for _, clusterStatus := range capacityTarget.Status.Clusters {
 		if clusterStatus.Name == clusterName {
-			foundClusterStatus = true
-			clusterStatus.AvailableReplicas = availableReplicas
-			clusterStatus.SadPods = sadPods
+			continue
 		}
 
 		capacityTargetStatus.Clusters = append(capacityTargetStatus.Clusters, clusterStatus)
 	}
 
-	if foundClusterStatus != true {
-		// there hasn't been an update about this cluster before, so manually add it
-		clusterStatus := shipperv1.ClusterCapacityStatus{
-			Name:              clusterName,
-			AvailableReplicas: availableReplicas,
-			SadPods:           sadPods,
-		}
-
-		capacityTargetStatus.Clusters = append(capacityTargetStatus.Clusters, clusterStatus)
+	release, err := c.getReleaseForCapacityTarget(capacityTarget)
+	if err != nil {
+		return err
 	}
+
+	achievedPercent := c.calculatePercentageFromAmount(release.Environment.Replicas, availableReplicas)
+
+	clusterStatus := shipperv1.ClusterCapacityStatus{
+		Name:              clusterName,
+		AchievedPercent:   achievedPercent,
+		AvailableReplicas: availableReplicas,
+		SadPods:           sadPods,
+	}
+
+	capacityTargetStatus.Clusters = append(capacityTargetStatus.Clusters, clusterStatus)
 
 	statusJson, err := json.Marshal(capacityTargetStatus)
 	if err != nil {
@@ -250,4 +254,10 @@ func (c Controller) getFalsePodCondition(pod corev1.Pod) (*corev1.PodCondition, 
 	}
 
 	return nil, false
+}
+
+func (c Controller) calculatePercentageFromAmount(total, amount int32) int32 {
+	result := float64(amount) / float64(total) * 100
+
+	return int32(math.Ceil(result))
 }
