@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"fmt"
+	"github.com/golang/glog"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
@@ -36,6 +37,9 @@ func NewController(
 
 	dynamicClientPool := dynamic.NewDynamicClientPool(restConfig)
 	releaseInformer := informerFactory.Shipper().V1().Releases()
+	capacityTargetInformer := informerFactory.Shipper().V1().CapacityTargets()
+	installationTargetInformer := informerFactory.Shipper().V1().InstallationTargets()
+	trafficTargetInformer := informerFactory.Shipper().V1().TrafficTargets()
 
 	controller := &Controller{
 		clientset:                 clientset,
@@ -49,6 +53,27 @@ func NewController(
 	}
 
 	releaseInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.enqueueRelease,
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			controller.enqueueRelease(newObj)
+		},
+	})
+
+	installationTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.enqueueRelease,
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			controller.enqueueRelease(newObj)
+		},
+	})
+
+	capacityTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.enqueueRelease,
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			controller.enqueueRelease(newObj)
+		},
+	})
+
+	trafficTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueRelease,
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			controller.enqueueRelease(newObj)
@@ -69,6 +94,10 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.runWorker, time.Second, stopCh)
 	}
+
+	glog.Info("Started workers")
+	<-stopCh
+	glog.Info("Shutting down workers")
 
 	return nil
 }
@@ -114,18 +143,23 @@ func (c *Controller) syncOne(key string) error {
 
 	if result, err := strategy.execute(); err != nil {
 		return err
-	} else if result != nil {
+	} else if len(result) > 0 {
 
-		// XXX: This is work in progress. result implements the ExecutorResult
-		// interface, and if it is not nil then a patch is required, using the
-		// information from the returned gvk, together with the []byte that
-		// represents the patch encoded in JSON.
-		gvk, b := result.Patch()
+		for _, e := range result {
 
-		if client, err := c.clientForGroupVersionKind(gvk, ns); err != nil {
-			return err
-		} else if _, err = client.Patch(name, types.StrategicMergePatchType, b); err != nil {
-			return err
+			r := e.(ExecutorResult)
+
+			// XXX: This is work in progress. result implements the ExecutorResult
+			// interface, and if it is not nil then a patch is required, using the
+			// information from the returned gvk, together with the []byte that
+			// represents the patch encoded in JSON.
+			name, gvk, b := r.Patch()
+
+			if client, err := c.clientForGroupVersionKind(gvk, ns); err != nil {
+				return err
+			} else if _, err = client.Patch(name, types.MergePatchType, b); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -184,10 +218,12 @@ func (c *Controller) buildStrategy(ns string, name string) (*Executor, error) {
 	}
 
 	return &Executor{
-		release:            release,
-		installationTarget: installationTarget,
-		trafficTarget:      trafficTarget,
-		capacityTarget:     capacityTarget,
+		contenderRelease: &releaseInfo{
+			release:            release,
+			installationTarget: installationTarget,
+			trafficTarget:      trafficTarget,
+			capacityTarget:     capacityTarget,
+		},
 	}, nil
 }
 
