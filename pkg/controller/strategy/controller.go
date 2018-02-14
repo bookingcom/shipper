@@ -124,6 +124,8 @@ func (c *Controller) processNextWorkItem() bool {
 		return false
 	}
 
+	defer c.workqueue.Done(obj)
+
 	if key, ok := obj.(string); !ok {
 		c.workqueue.Forget(obj)
 		runtime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
