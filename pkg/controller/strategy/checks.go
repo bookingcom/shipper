@@ -4,6 +4,13 @@ import "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 
 func checkInstallation(contenderRelease *releaseInfo) bool {
 	clusterStatuses := contenderRelease.installationTarget.Status.Clusters
+
+	// NOTE(btyler) not comparing against 0 because 'uninstall' looks like
+	// a 0-len Clusters in the Spec, which is correct.
+	if len(clusterStatuses) != len(contenderRelease.installationTarget.Spec.Clusters) {
+		return false
+	}
+
 	for _, clusterStatus := range clusterStatuses {
 		if clusterStatus.Status != "Installed" {
 			return false
@@ -41,6 +48,10 @@ func checkCapacity(capacityTarget *v1.CapacityTarget, stepCapacity uint) (bool, 
 		cd := capacityData[status.Name]
 		cd.achievedCapacity = status.AchievedPercent
 		capacityData[status.Name] = cd
+	}
+
+	if len(statuses) != len(specs) {
+		return false, nil
 	}
 
 	canProceed := true
@@ -103,6 +114,10 @@ func checkTraffic(trafficTarget *v1.TrafficTarget, stepTrafficWeight uint) (bool
 		td := trafficData[status.Name]
 		td.achievedTrafficWeight = status.AchievedTraffic
 		trafficData[status.Name] = td
+	}
+
+	if len(statuses) != len(specs) {
+		return false, nil
 	}
 
 	canContinue := true

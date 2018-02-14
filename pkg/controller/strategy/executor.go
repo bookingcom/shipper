@@ -51,9 +51,9 @@ func (s *Executor) execute() ([]interface{}, error) {
 	//////////////////////////////////////////////////////////////////////////
 	// Capacity
 	//
-	if capacityPatches, err := s.checkCapacity(strategyStep); err != nil {
+	if capacityAchieved, capacityPatches, err := s.checkCapacity(strategyStep); err != nil {
 		return nil, err
-	} else if len(capacityPatches) > 0 {
+	} else if !capacityAchieved {
 		glog.Infof("capacity target hasn't been achieved yet for step %d", targetStep)
 		return capacityPatches, nil
 	} else {
@@ -63,9 +63,9 @@ func (s *Executor) execute() ([]interface{}, error) {
 	//////////////////////////////////////////////////////////////////////////
 	// Traffic
 	//
-	if trafficPatches, err := s.checkTraffic(strategyStep); err != nil {
+	if trafficAchieved, trafficPatches, err := s.checkTraffic(strategyStep); err != nil {
 		return nil, err
-	} else if len(trafficPatches) > 0 {
+	} else if !trafficAchieved {
 		glog.Infof("traffic target hasn't been achieved yet for step %d", targetStep)
 		return trafficPatches, nil
 	} else {
@@ -126,15 +126,18 @@ func (s *Executor) finalizeRelease(targetStep uint, strategyStep v1.StrategyStep
 
 }
 
-func (s *Executor) checkTraffic(strategyStep v1.StrategyStep) ([]interface{}, error) {
+func (s *Executor) checkTraffic(strategyStep v1.StrategyStep) (bool, []interface{}, error) {
 	var trafficPatches []interface{}
 
 	contenderTrafficWeight, err := strconv.Atoi(strategyStep.ContenderTraffic)
 	if err != nil {
-		return nil, err
+		return false, nil, err
 	}
 
-	if canContinue, newSpec := checkTraffic(s.contenderRelease.trafficTarget, uint(contenderTrafficWeight)); !canContinue {
+	canContinue := true
+	trafficAchieved, newSpec := checkTraffic(s.contenderRelease.trafficTarget, uint(contenderTrafficWeight))
+	if !trafficAchieved {
+		canContinue = false
 		if newSpec != nil {
 			trafficPatches = append(trafficPatches, &TrafficTargetOutdatedResult{
 				NewSpec: newSpec,
@@ -146,36 +149,40 @@ func (s *Executor) checkTraffic(strategyStep v1.StrategyStep) ([]interface{}, er
 	if s.incumbentRelease != nil {
 		incumbentTrafficWeight, err := strconv.Atoi(strategyStep.ContenderCapacity)
 		if err != nil {
-			return nil, err
+			return false, nil, err
 		}
 
-		if canContinue, newSpec := checkTraffic(s.incumbentRelease.trafficTarget, uint(incumbentTrafficWeight)); !canContinue {
+		trafficAchieved, newSpec := checkTraffic(s.incumbentRelease.trafficTarget, uint(incumbentTrafficWeight))
+		if !trafficAchieved {
+			canContinue = false
 			if newSpec != nil {
 				trafficPatches = append(trafficPatches, &TrafficTargetOutdatedResult{
 					NewSpec: newSpec,
 					Name:    s.incumbentRelease.release.Name,
 				})
 			}
-			return nil, nil
 		}
 	}
 
 	if len(trafficPatches) > 0 {
-		return trafficPatches, nil
+		return false, trafficPatches, nil
 	} else {
-		return nil, nil
+		return canContinue, nil, nil
 	}
 }
 
-func (s *Executor) checkCapacity(strategyStep v1.StrategyStep) ([]interface{}, error) {
+func (s *Executor) checkCapacity(strategyStep v1.StrategyStep) (bool, []interface{}, error) {
 	var capacityPatches []interface{}
 
 	contenderCapacity, err := strconv.Atoi(strategyStep.ContenderCapacity)
 	if err != nil {
-		return nil, err
+		return false, nil, err
 	}
 
-	if canContinue, newSpec := checkCapacity(s.contenderRelease.capacityTarget, uint(contenderCapacity)); !canContinue {
+	canContinue := true
+	capacityAchieved, newSpec := checkCapacity(s.contenderRelease.capacityTarget, uint(contenderCapacity))
+	if !capacityAchieved {
+		canContinue = false
 		if newSpec != nil {
 			capacityPatches = append(capacityPatches, &CapacityTargetOutdatedResult{
 				NewSpec: newSpec,
@@ -187,10 +194,12 @@ func (s *Executor) checkCapacity(strategyStep v1.StrategyStep) ([]interface{}, e
 	if s.incumbentRelease != nil {
 		incumbentCapacity, err := strconv.Atoi(strategyStep.IncumbentCapacity)
 		if err != nil {
-			return nil, err
+			return false, nil, err
 		}
 
-		if canContinue, newSpec := checkCapacity(s.incumbentRelease.capacityTarget, uint(incumbentCapacity)); !canContinue {
+		capacityAchieved, newSpec := checkCapacity(s.incumbentRelease.capacityTarget, uint(incumbentCapacity))
+		if !capacityAchieved {
+			canContinue = false
 			if newSpec != nil {
 				capacityPatches = append(capacityPatches, &CapacityTargetOutdatedResult{
 					NewSpec: newSpec,
@@ -201,8 +210,8 @@ func (s *Executor) checkCapacity(strategyStep v1.StrategyStep) ([]interface{}, e
 	}
 
 	if len(capacityPatches) > 0 {
-		return capacityPatches, nil
+		return false, capacityPatches, nil
 	} else {
-		return nil, nil
+		return canContinue, nil, nil
 	}
 }
