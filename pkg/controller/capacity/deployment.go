@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"math"
 
-	kubev1 "k8s.io/api/apps/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+
+	"k8s.io/apimachinery/pkg/labels"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 
 	"github.com/golang/glog"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
@@ -190,8 +193,15 @@ func (c *Controller) updateStatus(capacityTarget *shipperv1.CapacityTarget, clus
 }
 
 func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace string) (*shipperv1.CapacityTarget, error) {
-	labelSelector := fmt.Sprintf("release=%s", release)
-	capacityTargets, err := c.shipperclientset.ShipperV1().CapacityTargets(namespace).List(meta_v1.ListOptions{LabelSelector: labelSelector})
+	selector := labels.NewSelector()
+
+	requirement, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{release})
+	if err != nil {
+		return nil, err
+	}
+	selector = selector.Add(*requirement)
+
+	capacityTargets, err := c.shipperclientset.ShipperV1().CapacityTargets(namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, err
 	}
@@ -203,14 +213,20 @@ func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace s
 	return &capacityTargets.Items[0], nil
 }
 
-func (c Controller) getSadPodsForDeploymentOnCluster(deployment *kubev1.Deployment, clusterName string) ([]shipperv1.PodStatus, error) {
+func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployment, clusterName string) ([]shipperv1.PodStatus, error) {
 	var sadPods []shipperv1.PodStatus
 
 	client := c.clusterClientSet[clusterName]
-	label := deployment.GetLabels()["release"]
-	labelSelector := fmt.Sprintf("release=%s", label)
+	releaseValue := deployment.GetLabels()[shipperv1.ReleaseLabel]
 
-	pods, err := client.CoreV1().Pods(deployment.Namespace).List(meta_v1.ListOptions{LabelSelector: labelSelector})
+	selector := labels.NewSelector()
+	requirement, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{releaseValue})
+	if err != nil {
+		return nil, err
+	}
+	selector = selector.Add(*requirement)
+
+	pods, err := client.CoreV1().Pods(deployment.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, err
 	}

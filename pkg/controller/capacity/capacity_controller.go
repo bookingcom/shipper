@@ -24,6 +24,8 @@ import (
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
@@ -39,7 +41,7 @@ import (
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -271,9 +273,15 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 
 		targetClusterClient := c.clusterClientSet[clusterSpec.Name]
 		targetNamespace := ct.Namespace
-		labelSelector := fmt.Sprintf("release=%s", ct.GetLabels()["release"])
+		selector := labels.NewSelector()
 
-		deploymentsList, err := targetClusterClient.AppsV1().Deployments(targetNamespace).List(meta_v1.ListOptions{LabelSelector: labelSelector})
+		requirement, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{ct.GetLabels()["release"]})
+		if err != nil {
+			return err
+		}
+		selector = selector.Add(*requirement)
+
+		deploymentsList, err := targetClusterClient.AppsV1().Deployments(targetNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 		if err != nil {
 			return err
 		}
@@ -326,7 +334,7 @@ func (c Controller) convertPercentageToReplicaCountForCluster(capacityTarget *sh
 func (c Controller) getReleaseForCapacityTarget(capacityTarget *shipperv1.CapacityTarget) (*shipperv1.Release, error) {
 	label := capacityTarget.GetLabels()[shipperv1.ReleaseLabel]
 	labelSelector := fmt.Sprintf("release=%s", label)
-	releaseList, err := c.shipperclientset.ShipperV1().Releases(capacityTarget.Namespace).List(meta_v1.ListOptions{LabelSelector: labelSelector})
+	releaseList, err := c.shipperclientset.ShipperV1().Releases(capacityTarget.Namespace).List(metav1.ListOptions{LabelSelector: labelSelector})
 	if err != nil {
 		return nil, err
 	}
