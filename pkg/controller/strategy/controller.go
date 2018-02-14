@@ -3,6 +3,7 @@ package strategy
 import (
 	"fmt"
 	"github.com/golang/glog"
+	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
@@ -38,8 +39,8 @@ func NewController(
 	dynamicClientPool := dynamic.NewDynamicClientPool(restConfig)
 	releaseInformer := informerFactory.Shipper().V1().Releases()
 	capacityTargetInformer := informerFactory.Shipper().V1().CapacityTargets()
-	installationTargetInformer := informerFactory.Shipper().V1().InstallationTargets()
 	trafficTargetInformer := informerFactory.Shipper().V1().TrafficTargets()
+	//installationTargetInformer := informerFactory.Shipper().V1().InstallationTargets()
 
 	controller := &Controller{
 		clientset:                 clientset,
@@ -53,29 +54,38 @@ func NewController(
 	}
 
 	releaseInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: controller.enqueueRelease,
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			controller.enqueueRelease(newObj)
+		AddFunc: func(obj interface{}) {
+			glog.Infof("releaseInformer(Add): Enqueueing obj %+v", obj)
+			controller.enqueueRelease(obj)
 		},
-	})
-
-	installationTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: controller.enqueueRelease,
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			controller.enqueueRelease(newObj)
+
+			newRelease := newObj.(*v1.Release)
+			oldRelease := oldObj.(*v1.Release)
+
+			glog.Infof("releaseInformer(Update): newRelease: %+v ; oldRelease: %+v", newRelease, oldRelease)
+			controller.enqueueRelease(newRelease)
 		},
 	})
 
 	capacityTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: controller.enqueueRelease,
+		AddFunc: func(obj interface{}) {
+			glog.Infof("capacityTargetInformer(Add): Enqueueing obj %+v", obj)
+			controller.enqueueRelease(obj)
+		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
+			glog.Infof("capacityTargetInformer(Update): Enqueueing obj %+v", newObj)
 			controller.enqueueRelease(newObj)
 		},
 	})
 
 	trafficTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: controller.enqueueRelease,
+		AddFunc: func(obj interface{}) {
+			glog.Infof("trafficTargetInformer(Add): Enqueueing obj %+v", obj)
+			controller.enqueueRelease(obj)
+		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
+			glog.Infof("trafficTargetInformer(Update): Enqueueing obj %+v", newObj)
 			controller.enqueueRelease(newObj)
 		},
 	})
@@ -131,6 +141,8 @@ func (c *Controller) processNextWorkItem() bool {
 
 func (c *Controller) syncOne(key string) error {
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
+
+	glog.Infof("start processing %q", key)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
 		return nil
@@ -161,6 +173,8 @@ func (c *Controller) syncOne(key string) error {
 				return err
 			}
 		}
+	} else {
+		glog.Infof("strategy executed but no result")
 	}
 
 	return nil
@@ -231,6 +245,7 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 	if key, err := cache.MetaNamespaceKeyFunc(obj); err != nil {
 		runtime.HandleError(err)
 	} else {
+		glog.Infof("enqueued item %q", key)
 		c.workqueue.AddRateLimited(key)
 	}
 }

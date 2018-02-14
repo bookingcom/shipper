@@ -29,6 +29,7 @@ func (s *Executor) execute() ([]interface{}, error) {
 	achievedStep := s.contenderRelease.release.Status.AchievedStep
 
 	if achievedStep == targetStep {
+		glog.Infof("it seems that achievedStep (%d) is the same as targetStep (%d)", achievedStep, targetStep)
 		return nil, nil
 	}
 
@@ -74,7 +75,14 @@ func (s *Executor) execute() ([]interface{}, error) {
 	//////////////////////////////////////////////////////////////////////////
 	// Release
 	//
-	if releasePatches, err := s.finalizeRelease(targetStep, strategyStep); err != nil {
+	lastStepIndex := len(strategy.Steps) - 1
+	if lastStepIndex < 0 {
+		lastStepIndex = 0
+	}
+
+	isLastStep := targetStep == uint(lastStepIndex)
+
+	if releasePatches, err := s.finalizeRelease(targetStep, strategyStep, isLastStep); err != nil {
 		return nil, err
 	} else {
 		glog.Infof("release %q has been finished", s.contenderRelease.release.Name)
@@ -82,14 +90,15 @@ func (s *Executor) execute() ([]interface{}, error) {
 	}
 }
 
-func (s *Executor) finalizeRelease(targetStep uint, strategyStep v1.StrategyStep) ([]interface{}, error) {
+func (s *Executor) finalizeRelease(targetStep uint, strategyStep v1.StrategyStep, isLastStep bool) ([]interface{}, error) {
 	var contenderPhase string
 	var incumbentPhase string
-	if false {
-		contenderPhase = v1.ReleasePhaseWaitingForCommand
-	} else {
+
+	if isLastStep {
 		contenderPhase = v1.ReleasePhaseInstalled
 		incumbentPhase = v1.ReleasePhaseDecommissioned
+	} else {
+		contenderPhase = v1.ReleasePhaseWaitingForCommand
 	}
 
 	var releasePatches []interface{}
