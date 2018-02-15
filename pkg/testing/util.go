@@ -72,7 +72,7 @@ func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
 func FilterActions(actions []kubetesting.Action) []kubetesting.Action {
 	ignore := func(action kubetesting.Action) bool {
 		for _, v := range []string{"list", "watch"} {
-			for _, r := range []string{"shipmentorders", "releases"} {
+			for _, r := range []string{"shipmentorders", "releases", "clusters", "secrets"} {
 				if action.Matches(v, r) {
 					return true
 				}
