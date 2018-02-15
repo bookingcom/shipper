@@ -24,7 +24,7 @@ func CheckActions(expected, actual []kubetesting.Action, t *testing.T) {
 	}
 
 	if len(expected) > len(actual) {
-		t.Errorf("missing %d expected actions: %+v", len(actual)-len(expected), expected[len(actual):])
+		t.Errorf("missing %d expected actions: %+v", len(expected)-len(actual), expected[len(actual):])
 	}
 }
 
