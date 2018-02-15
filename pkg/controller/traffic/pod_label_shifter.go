@@ -15,49 +15,66 @@ import (
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
 
-type balancer struct {
+type podLabelShifter struct {
 	namespace             string
 	clusterReleaseWeights clusterReleaseWeights
+	clusterInformers      map[string]corev1informer.PodInformer
 }
 
 type clusterReleaseWeights map[string]map[string]int
 
-func newBalancer(namespace string, trafficTargets []*shipperv1.TrafficTarget) (*balancer, error) {
+func newPodLabelShifter(
+	namespace string,
+	trafficTargets []*shipperv1.TrafficTarget,
+	clusterInformers map[string]corev1informer.PodInformer) (*podLabelShifter, error) {
+
 	weights, err := buildClusterReleaseWeights(trafficTargets)
 	if err != nil {
 		return nil, err
 	}
-	return &balancer{
+	// need a copy since we don't want to share lock scope with the parent controller
+	informersCopy := map[string]corev1informer.PodInformer{}
+	for cluster, informer := range clusterInformers {
+		informersCopy[cluster] = informer
+	}
+
+	return &podLabelShifter{
 		namespace:             namespace,
 		clusterReleaseWeights: weights,
+		clusterInformers:      informersCopy,
 	}, nil
 }
 
-func (b *balancer) Clusters() []string {
-	clusters := make([]string, 0, len(b.clusterReleaseWeights))
-	for cluster, _ := range b.clusterReleaseWeights {
+func (p *podLabelShifter) Clusters() []string {
+	clusters := make([]string, 0, len(p.clusterReleaseWeights))
+	for cluster, _ := range p.clusterReleaseWeights {
 		clusters = append(clusters, cluster)
 	}
 	sort.Strings(clusters)
 	return clusters
 }
 
-func (b *balancer) syncCluster(cluster string, clientset kubernetes.Interface, informer corev1informer.PodInformer) []error {
-	releaseWeights, ok := b.clusterReleaseWeights[cluster]
+func (p *podLabelShifter) SyncCluster(cluster string, clientset kubernetes.Interface) []error {
+	releaseWeights, ok := p.clusterReleaseWeights[cluster]
 	if !ok {
-		return []error{fmt.Errorf("balancer has no weights for cluster %q")}
+		return []error{fmt.Errorf("podLabelShifter has no weights for cluster %q", cluster)}
 	}
 
-	podsClient := clientset.CoreV1().Pods(b.namespace)
-	servicesClient := clientset.CoreV1().Services(b.namespace)
+	informer, ok := p.clusterInformers[cluster]
+	if !ok {
+		return []error{fmt.Errorf("podLabelShifter has no pod informer for cluster %q", cluster)}
+	}
+
+	podsClient := clientset.CoreV1().Pods(p.namespace)
+	servicesClient := clientset.CoreV1().Services(p.namespace)
 
 	// NOTE(btyler) namespace == app name == service object name here
-	svcName := b.namespace
-	prodSvc, err := servicesClient.Get(fmt.Sprintf("%s-prod", svcName), metav1.GetOptions{})
+	svcName := getAppLBName(p.namespace)
+	prodSvc, err := servicesClient.Get(svcName, metav1.GetOptions{})
 	if err != nil {
 		return []error{fmt.Errorf(
-			"failed to fetch prod service %s-prod in '%s/%s': %q",
-			svcName, cluster, b.namespace, err,
+			"failed to fetch service %s in '%s/%s': %q",
+			svcName, cluster, p.namespace, err,
 		)}
 	}
 
@@ -65,18 +82,18 @@ func (b *balancer) syncCluster(cluster string, clientset kubernetes.Interface, i
 	if trafficSelector == nil {
 		return []error{fmt.Errorf(
 			"cluster error (%q): service %s/%s does not have a selector set. this means we cannot do label-based canary deployment",
-			cluster, b.namespace, svcName,
+			cluster, p.namespace, svcName,
 		)}
 	}
 
-	nsPodLister := informer.Lister().Pods(b.namespace)
+	nsPodLister := informer.Lister().Pods(p.namespace)
 
 	// NOTE(btyler) namespace == one app (because we're fetching all the pods in the ns)
 	pods, err := nsPodLister.List(labels.Everything())
 	if err != nil {
 		return []error{fmt.Errorf(
 			"cluster error (%q): failed to list pods in '%s': %q",
-			cluster, b.namespace, err,
+			cluster, p.namespace, err,
 		)}
 	}
 
@@ -99,7 +116,7 @@ func (b *balancer) syncCluster(cluster string, clientset kubernetes.Interface, i
 		if err != nil {
 			errors = append(errors, fmt.Errorf(
 				"release error (%q): failed to list pods in '%s/%s': %q",
-				release, cluster, b.namespace, err,
+				release, cluster, p.namespace, err,
 			))
 			continue
 		}
@@ -132,7 +149,7 @@ func (b *balancer) syncCluster(cluster string, clientset kubernetes.Interface, i
 				if err != nil {
 					errors = append(errors, fmt.Errorf(
 						"pod error (%s/%s/%s): failed to add traffic label: %q",
-						cluster, b.namespace, pod.Name, err,
+						cluster, p.namespace, pod.Name, err,
 					))
 					continue
 				}
@@ -158,7 +175,7 @@ func (b *balancer) syncCluster(cluster string, clientset kubernetes.Interface, i
 				if err != nil {
 					errors = append(errors, fmt.Errorf(
 						"pod error (%s/%s/%s): failed to add traffic label: %q",
-						cluster, b.namespace, pod.Name, err,
+						cluster, p.namespace, pod.Name, err,
 					))
 					continue
 				}
@@ -263,4 +280,9 @@ func buildClusterReleaseWeights(trafficTargets []*shipperv1.TrafficTarget) (clus
 		}
 	}
 	return clusterReleaseWeights(clusterReleases), nil
+}
+
+func getAppLBName(name string) string {
+	const serviceNameTemplate = "%s-prod"
+	return fmt.Sprintf(serviceNameTemplate, name)
 }

@@ -283,13 +283,15 @@ func (c *Controller) syncHandler(key string) error {
 		return err
 	}
 
-	balancer, err := newBalancer(namespace, list)
+	c.clustersMut.RLock()
+	shifter, err := newPodLabelShifter(namespace, list, c.clusterPodInformers)
+	c.clustersMut.RUnlock()
 	if err != nil {
 		return err
 	}
 
 	statuses := []*shipperv1.ClusterTrafficStatus{}
-	for _, cluster := range balancer.Clusters() {
+	for _, cluster := range shifter.Clusters() {
 		// These locks have a narrow scope (rather than function-wide with
 		// 'defer') because syncing to a cluster involves very slow operations,
 		// like API calls. Once we have a reference to these read-only caches
@@ -297,16 +299,10 @@ func (c *Controller) syncHandler(key string) error {
 		// removed from the set: we should still finish our work.
 		c.clustersMut.RLock()
 		clientset, ok := c.clusterClients[cluster]
+		c.clustersMut.RUnlock()
 		if !ok {
-			c.clustersMut.RUnlock()
 			return fmt.Errorf("No client for cluster %q", cluster)
 		}
-		informer, ok := c.clusterPodInformers[cluster]
-		if !ok {
-			c.clustersMut.RUnlock()
-			return fmt.Errorf("No pod informer for cluster %q", cluster)
-		}
-		c.clustersMut.RUnlock()
 
 		clusterStatus := &shipperv1.ClusterTrafficStatus{
 			Name: cluster,
@@ -314,7 +310,7 @@ func (c *Controller) syncHandler(key string) error {
 
 		statuses = append(statuses, clusterStatus)
 
-		errs := balancer.syncCluster(cluster, clientset, informer)
+		errs := shifter.SyncCluster(cluster, clientset)
 		if len(errs) == 0 {
 			clusterStatus.Status = "Synced"
 		} else {
