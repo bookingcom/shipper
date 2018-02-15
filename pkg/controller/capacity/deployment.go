@@ -123,7 +123,7 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 	// Only react on this event if the deployment has a `release` label that matches with a release
 	var release string
 	var ok bool
-	if release, ok = targetDeployment.GetLabels()["release"]; !ok {
+	if release, ok = targetDeployment.GetLabels()[shipperv1.ReleaseLabel]; !ok {
 		// This deployment is not one of ours, so don't do anything
 		return nil
 	}
@@ -217,9 +217,18 @@ func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployme
 	var sadPods []shipperv1.PodStatus
 
 	client := c.clusterClientSet[clusterName]
-	releaseValue := deployment.GetLabels()[shipperv1.ReleaseLabel]
-
 	selector := labels.NewSelector()
+
+	var releaseValue string
+	var ok bool
+	if releaseValue, ok = deployment.GetLabels()[shipperv1.ReleaseLabel]; !ok {
+		return nil, fmt.Errorf("Deployment %s/%s has no label called 'release'", deployment.Namespace, deployment.Name)
+	}
+
+	if releaseValue == "" {
+		return nil, fmt.Errorf("Deployment %s/%s has an empty 'release' label", deployment.Namespace, deployment.Name)
+	}
+
 	requirement, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{releaseValue})
 	if err != nil {
 		return nil, err

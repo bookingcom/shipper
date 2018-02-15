@@ -275,7 +275,17 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		targetNamespace := ct.Namespace
 		selector := labels.NewSelector()
 
-		requirement, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{ct.GetLabels()["release"]})
+		var releaseValue string
+		var ok bool
+		if releaseValue, ok = ct.GetLabels()[shipperv1.ReleaseLabel]; !ok {
+			return fmt.Errorf("Capacity target %s in namespace %s has no label called 'release'", ct.Name, ct.Namespace)
+		}
+
+		if releaseValue == "" {
+			return fmt.Errorf("The capacity target %s in namespace %s has an empty 'release' label", ct.Name, ct.Namespace)
+		}
+
+		requirement, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{releaseValue})
 		if err != nil {
 			return err
 		}
@@ -332,15 +342,31 @@ func (c Controller) convertPercentageToReplicaCountForCluster(capacityTarget *sh
 }
 
 func (c Controller) getReleaseForCapacityTarget(capacityTarget *shipperv1.CapacityTarget) (*shipperv1.Release, error) {
-	label := capacityTarget.GetLabels()[shipperv1.ReleaseLabel]
-	labelSelector := fmt.Sprintf("release=%s", label)
-	releaseList, err := c.shipperclientset.ShipperV1().Releases(capacityTarget.Namespace).List(metav1.ListOptions{LabelSelector: labelSelector})
+	selector := labels.NewSelector()
+
+	var releaseValue string
+	var ok bool
+	if releaseValue, ok = capacityTarget.GetLabels()[shipperv1.ReleaseLabel]; !ok {
+		return nil, fmt.Errorf("Capacity target %s in namespace %s has no label called 'release'", capacityTarget.Name, capacityTarget.Namespace)
+	}
+
+	if releaseValue == "" {
+		return nil, fmt.Errorf("The capacity target %s in namespace %s has an empty 'release' label", capacityTarget.Name, capacityTarget.Namespace)
+	}
+
+	requirement, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{releaseValue})
+	if err != nil {
+		return nil, err
+	}
+	selector = selector.Add(*requirement)
+
+	releaseList, err := c.shipperclientset.ShipperV1().Releases(capacityTarget.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, err
 	}
 
 	if len(releaseList.Items) != 1 {
-		return nil, fmt.Errorf("Expected 1 Release with label '%s', but got %d.", label, len(releaseList.Items))
+		return nil, fmt.Errorf("Expected 1 Release with label '%s', but got %d.", releaseValue, len(releaseList.Items))
 	}
 
 	return &releaseList.Items[0], nil
