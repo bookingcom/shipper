@@ -8,6 +8,8 @@ import (
 	kubetesting "k8s.io/client-go/testing"
 )
 
+const TestNamespace = "test-namespace"
+
 // CheckActions takes a slice of expected actions and a slice of observed
 // actions (typically obtained from fakeClient.Actions()) and compares them.
 // Calls Errorf on t for every difference it finds.

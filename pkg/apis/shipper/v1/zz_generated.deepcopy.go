@@ -1017,8 +1017,15 @@ func (in *TrafficTargetStatus) DeepCopyInto(out *TrafficTargetStatus) {
 	*out = *in
 	if in.Clusters != nil {
 		in, out := &in.Clusters, &out.Clusters
-		*out = make([]ClusterTrafficStatus, len(*in))
-		copy(*out, *in)
+		*out = make([]*ClusterTrafficStatus, len(*in))
+		for i := range *in {
+			if (*in)[i] == nil {
+				(*out)[i] = nil
+			} else {
+				(*out)[i] = new(ClusterTrafficStatus)
+				(*in)[i].DeepCopyInto((*out)[i])
+			}
+		}
 	}
 	return
 }
