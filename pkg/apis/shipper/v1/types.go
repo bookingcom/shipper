@@ -221,7 +221,7 @@ type ReleaseEnvironment struct {
 	Chart         EmbeddedChart     `json:"chart"`
 	ShipmentOrder ShipmentOrderSpec `json:"shipmentOrder"`
 	Sidecars      []Sidecar         `json:"sidecars"`
-	Replicas      *int32            `json:"replicas"`
+	Replicas      int32             `json:"replicas"`
 }
 
 type EmbeddedChart struct {
@@ -309,21 +309,15 @@ type CapacityTargetStatus struct {
 
 type ClusterCapacityStatus struct {
 	Name              string      `json:"name"`
-	AvailableReplicas uint        `json:"availableReplicas"`
-	AchievedPercent   uint        `json:"achievedPercent"`
+	AvailableReplicas int32       `json:"availableReplicas"`
+	AchievedPercent   int32       `json:"achievedPercent"`
 	SadPods           []PodStatus `json:"sadPods"`
 }
 
 type PodStatus struct {
-	Name       string              `json:"name"`
-	Containers []ContainerStatus   `json:"containers"`
-	Condition  corev1.PodCondition `json:"condition"`
-	Phase      string              `json:"phase"`
-}
-
-type ContainerStatus struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
+	Name       string                   `json:"name"`
+	Containers []corev1.ContainerStatus `json:"containers"`
+	Condition  corev1.PodCondition      `json:"condition"`
 }
 
 // the capacity and traffic controllers need context to pick the right
@@ -337,7 +331,7 @@ type CapacityTargetSpec struct {
 
 type ClusterCapacityTarget struct {
 	Name    string `json:"name"`
-	Percent uint   `json:"percent"`
+	Percent int32  `json:"percent"`
 }
 
 // +genclient

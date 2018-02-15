@@ -18,11 +18,14 @@ package capacity
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
@@ -33,11 +36,12 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -87,7 +91,7 @@ func NewController(
 	kubeInformerFactory kubeinformers.SharedInformerFactory,
 	shipperInformerFactory informers.SharedInformerFactory) *Controller {
 
-	// obtain references to shared index informers for the ShipmentObject type
+	// obtain references to shared index informers for the CapacityTarget type
 	capacityTargetInformer := shipperInformerFactory.Shipper().V1().CapacityTargets()
 
 	// Create event broadcaster
@@ -259,14 +263,35 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		return err
 	}
 
-	// Get the requested number of replicas from the capacity object
-	// This is only set by the strategy controller
 	for _, clusterSpec := range ct.Spec.Clusters {
+		// Get the requested percentage of replicas from the capacity object
+		// This is only set by the strategy controller
+		replicaCount, err := c.convertPercentageToReplicaCountForCluster(ct, clusterSpec)
+		if err != nil {
+			return err
+		}
+
 		targetClusterClient := c.clusterClientSet[clusterSpec.Name]
 		targetNamespace := ct.Namespace
-		labelSelector := fmt.Sprintf("release=%s", ct.GetLabels()["release"])
+		selector := labels.NewSelector()
 
-		deploymentsList, err := targetClusterClient.AppsV1().Deployments(targetNamespace).List(meta_v1.ListOptions{LabelSelector: labelSelector})
+		var releaseValue string
+		var ok bool
+		if releaseValue, ok = ct.GetLabels()[shipperv1.ReleaseLabel]; !ok {
+			return fmt.Errorf("Capacity target %s in namespace %s has no label called 'release'", ct.Name, ct.Namespace)
+		}
+
+		if releaseValue == "" {
+			return fmt.Errorf("The capacity target %s in namespace %s has an empty 'release' label", ct.Name, ct.Namespace)
+		}
+
+		requirement, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{releaseValue})
+		if err != nil {
+			return err
+		}
+		selector = selector.Add(*requirement)
+
+		deploymentsList, err := targetClusterClient.AppsV1().Deployments(targetNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 		if err != nil {
 			return err
 		}
@@ -276,7 +301,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		}
 
 		targetDeployment := deploymentsList.Items[0]
-		patchString := fmt.Sprintf(`{"spec": {"replicas": %d}}`, clusterSpec.Replicas)
+		patchString := fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicaCount)
 		_, err = targetClusterClient.AppsV1().Deployments(targetDeployment.Namespace).Patch(targetDeployment.Name, types.StrategicMergePatchType, []byte(patchString))
 		if err != nil {
 			return err
@@ -302,4 +327,53 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 		return
 	}
 	c.capacityTargetWorkqueue.AddRateLimited(key)
+}
+
+func (c Controller) convertPercentageToReplicaCountForCluster(capacityTarget *shipperv1.CapacityTarget, cluster shipperv1.ClusterCapacityTarget) (int32, error) {
+	release, err := c.getReleaseForCapacityTarget(capacityTarget)
+	if err != nil {
+		return 0, err
+	}
+
+	totalReplicaCount := release.Environment.Replicas
+	percentage := cluster.Percent
+
+	return c.calculateAmountFromPercentage(totalReplicaCount, percentage), nil
+}
+
+func (c Controller) getReleaseForCapacityTarget(capacityTarget *shipperv1.CapacityTarget) (*shipperv1.Release, error) {
+	selector := labels.NewSelector()
+
+	var releaseValue string
+	var ok bool
+	if releaseValue, ok = capacityTarget.GetLabels()[shipperv1.ReleaseLabel]; !ok {
+		return nil, fmt.Errorf("Capacity target %s in namespace %s has no label called 'release'", capacityTarget.Name, capacityTarget.Namespace)
+	}
+
+	if releaseValue == "" {
+		return nil, fmt.Errorf("The capacity target %s in namespace %s has an empty 'release' label", capacityTarget.Name, capacityTarget.Namespace)
+	}
+
+	requirement, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{releaseValue})
+	if err != nil {
+		return nil, err
+	}
+	selector = selector.Add(*requirement)
+
+	releaseList, err := c.shipperclientset.ShipperV1().Releases(capacityTarget.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(releaseList.Items) != 1 {
+		return nil, fmt.Errorf("Expected 1 Release with label '%s', but got %d.", releaseValue, len(releaseList.Items))
+	}
+
+	return &releaseList.Items[0], nil
+}
+
+func (c Controller) calculateAmountFromPercentage(total, percentage int32) int32 {
+	result := float64(percentage) / 100 * float64(total)
+
+	return int32(math.Ceil(result))
 }

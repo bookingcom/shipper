@@ -36,10 +36,10 @@ spec:
                 type: object
                 required:
                 - name
-                - replicas
+                - percent
                 properties:
                   name:
                     type: string
-                  replicas:
+                  percent:
                     minimum: 0
                     type: integer
