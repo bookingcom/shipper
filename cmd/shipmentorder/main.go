@@ -47,8 +47,6 @@ const controllerAgentName = "shipmentorder-controller"
 func main() {
 	flag.Parse()
 
-	glog.Infof("I AM RUNNING! :D")
-
 	// set up signals so we handle the first shutdown signal gracefully
 	stopCh := setupSignalHandler()
 
