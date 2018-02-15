@@ -27,6 +27,48 @@ func TestIsShifter(t *testing.T) {
 	var _ TrafficShifter = &podLabelShifter{}
 }
 
+// this is a private func, but other tests make use of it, so it's better tested in isolation
+func TestGetsTraffic(t *testing.T) {
+	singleSelector := map[string]string{
+		"test-gets-traffic": "firehose",
+	}
+
+	doubleSelector := map[string]string{
+		"test-gets-traffic": "firehose",
+		"test-is-in-lb":     "prod",
+	}
+
+	getsTrafficTestCase(t, "good single label", true, singleSelector, singleSelector)
+	getsTrafficTestCase(t, "good double label", true, doubleSelector, doubleSelector)
+
+	getsTrafficTestCase(t, "no label", false, singleSelector, map[string]string{})
+	getsTrafficTestCase(t, "partial label", false, doubleSelector, map[string]string{
+		"test-gets-traffic": "firehose",
+	})
+	getsTrafficTestCase(t, "correct single label, wrong values", false, singleSelector, map[string]string{
+		"test-gets-traffic": "dripfeed",
+	})
+	getsTrafficTestCase(t, "correct double label, one wrong value", false, doubleSelector, map[string]string{
+		"test-gets-traffic": "firehose",
+		"test-is-in-lb":     "staging",
+	})
+	getsTrafficTestCase(t, "correct double label, two wrong values", false, doubleSelector, map[string]string{
+		"test-gets-traffic": "dripfeed",
+		"test-is-in-lb":     "staging",
+	})
+}
+
+func getsTrafficTestCase(t *testing.T, name string, shouldGetTraffic bool, selector, labels map[string]string) {
+	result := getsTraffic(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: labels,
+		},
+	}, selector)
+	if result != shouldGetTraffic {
+		t.Errorf("%s: getTraffic returned %v but expected %v", name, result, shouldGetTraffic)
+	}
+}
+
 func TestSyncCluster(t *testing.T) {
 	// the 'no release' case doesn't work, and also doesn't make sense
 	clusterSyncTestCase(t, "one empty release",
@@ -85,6 +127,12 @@ func TestSyncCluster(t *testing.T) {
 		releasePodCounts{10, 10},
 		// 1/10001 * 20 (total pods) = 0.00198 -> round up to 1 pod
 		releaseExpectedTrafficPods{1, 10},
+	)
+
+	clusterSyncTestCase(t, "no rounding, cap on larger weight (too few pods)",
+		releaseWeights{3, 7},
+		releasePodCounts{50, 50},
+		releaseExpectedTrafficPods{30, 50},
 	)
 
 	clusterSyncTestCase(t, "one empty / one present",
@@ -213,6 +261,8 @@ func (f *fixture) checkReleasePodsWithTraffic(release string, expectedCount int)
 			update, _ := a.(kubetesting.UpdateAction)
 			obj := update.GetObject()
 
+			//NOTE(btyler) I feel like there must be a better way to take
+			// a runtime.Object and decide whether it is a pod
 			switch p := obj.(type) {
 			case *corev1.Pod:
 				podRelease, ok := p.GetLabels()[shipperv1.ReleaseLabel]
