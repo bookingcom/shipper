@@ -123,7 +123,7 @@ func (c *Scheduler) CreateCapacityTarget() error {
 	count := len(c.Clusters())
 	targets := make([]v1.ClusterCapacityTarget, count)
 	for i, v := range c.Clusters() {
-		targets[i] = v1.ClusterCapacityTarget{Name: v, Replicas: 0}
+		targets[i] = v1.ClusterCapacityTarget{Name: v, Percent: 0}
 	}
 	capacityTarget := &v1.CapacityTarget{
 		ObjectMeta: metav1.ObjectMeta{
