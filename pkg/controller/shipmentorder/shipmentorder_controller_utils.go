@@ -130,18 +130,25 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 	return nil
 }
 
-func extractReplicasFromChart(chart io.Reader, so *shipperv1.ShipmentOrder) (*int32, error) {
+func extractReplicasFromChart(chart io.Reader, so *shipperv1.ShipmentOrder) (int32, error) {
 	rendered, err := shipperchart.Render(chart, so.ObjectMeta.Name, so.ObjectMeta.Namespace, so.Spec.Values)
 	if err != nil {
-		return nil, fmt.Errorf("extract replicas for ShipmentOrder %q: %s", metaKey(so), err)
+		return 0, fmt.Errorf("extract replicas for ShipmentOrder %q: %s", metaKey(so), err)
 	}
 
 	deployments := shipperchart.GetDeployments(rendered)
 	if n := len(deployments); n != 1 {
-		return nil, fmt.Errorf("extract replicas for ShipmentOrder %q: expected exactly one Deployment but got %d", metaKey(so), n)
+		return 0, fmt.Errorf("extract replicas for ShipmentOrder %q: expected exactly one Deployment but got %d", metaKey(so), n)
 	}
 
-	return deployments[0].Spec.Replicas, nil
+	replicas := deployments[0].Spec.Replicas
+	// deployments default to 1 replica when replicas is nil or unspecified
+	// see k8s.io/api/apps/v1/types.go DeploymentSpec
+	if replicas == nil {
+		return 1, nil
+	}
+
+	return *replicas, nil
 }
 
 func downloadChartForShipmentOrder(so *shipperv1.ShipmentOrder) (*bytes.Buffer, error) {

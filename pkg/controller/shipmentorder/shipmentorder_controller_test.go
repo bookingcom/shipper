@@ -67,7 +67,7 @@ func TestShippingToShipped(t *testing.T) {
 					Tarball: tar,
 				},
 				ShipmentOrder: so.DeepCopy().Spec,
-				Replicas:      &twelve,
+				Replicas:      twelve,
 			},
 		},
 		Spec: shipperv1.ReleaseSpec{},
