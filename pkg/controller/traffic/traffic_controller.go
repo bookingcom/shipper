@@ -55,9 +55,6 @@ const (
 	MessageResourceSynced = "TrafficTarget synced successfully"
 )
 
-const podTrafficLabelKey = "traffic"
-const podTrafficLabelProdValue = "prod"
-
 // Controller is the controller implementation for TrafficTarget resources
 type Controller struct {
 	// kubeclientset is a standard kubernetes clientset

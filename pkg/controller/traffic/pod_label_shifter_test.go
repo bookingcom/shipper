@@ -187,7 +187,6 @@ type fixture struct {
 	name           string
 	svc            *corev1.Service
 	client         *kubefake.Clientset
-	actions        []kubetesting.Action
 	objects        []runtime.Object
 	pods           []*corev1.Pod
 	trafficTargets []*shipperv1.TrafficTarget
