@@ -126,14 +126,6 @@ func (s *Executor) finalizeRelease(targetStep uint, strategyStep v1.StrategyStep
 
 }
 
-func contenderTrafficComparison(achieved uint, desired uint) bool {
-	return achieved >= desired
-}
-
-func incumbentTrafficComparison(achieved uint, desired uint) bool {
-	return achieved <= desired
-}
-
 func (s *Executor) checkTraffic(strategyStep v1.StrategyStep) (bool, []interface{}, error) {
 	var trafficPatches []interface{}
 
@@ -177,14 +169,6 @@ func (s *Executor) checkTraffic(strategyStep v1.StrategyStep) (bool, []interface
 	} else {
 		return canContinue, nil, nil
 	}
-}
-
-func contenderCapacityComparison(achieved uint, desired uint) bool {
-	return achieved >= desired
-}
-
-func incumbentCapacityComparison(achieved uint, desired uint) bool {
-	return achieved <= desired
 }
 
 func (s *Executor) checkCapacity(strategyStep v1.StrategyStep) (bool, []interface{}, error) {
