@@ -63,18 +63,11 @@ func checkCapacity(capacityTarget *v1.CapacityTarget, stepCapacity uint, compFn 
 			r := v1.ClusterCapacityTarget{Name: k, Percent: int32(v.stepCapacity)}
 			newSpec.Clusters = append(newSpec.Clusters, r)
 		} else if compFn(v.achievedCapacity, v.desiredCapacity) {
-
-			// In the case this branch has been reached, we assume that the capacity
-			// for this step hasn't been met by setting up isFinished to false. It
-			// means that isFinished will be false if at least one cluster hasn't
-			// achieved the desired capacity.
 			canProceed = true
 		}
 	}
 
 	if len(newSpec.Clusters) > 0 {
-		// In practice isFinished here will be always false, since there's at least one
-		// ClusterCapacityTarget item in newSpec.Clusters.
 		return canProceed, newSpec
 	} else {
 		return canProceed, nil
