@@ -14,7 +14,7 @@ const (
 	ReleasePhaseWaitingForStrategy   = "WaitingForStrategy"
 	ReleasePhaseWaitingForCommand    = "WaitingForCommand"
 	ReleasePhaseInstalled            = "Installed"
-	ReleasePhaseDecommissioned       = "Decommissioned"
+	ReleasePhaseSuperseded           = "Superseded"
 
 	InstallationStatusInstalled = "Installed"
 	InstallationStatusFailed    = "Failed"
