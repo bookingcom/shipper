@@ -71,6 +71,8 @@ func NewController(
 		},
 	})
 
+	// The InstallationTarget object should have the same name as the Release
+	// object it is associated with.
 	installationTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			controller.enqueueInstallationTarget(newObj)
@@ -78,8 +80,7 @@ func NewController(
 	})
 
 	// The CapacityTarget object should have the same name as the Release
-	// object it is associated with, so when there is an event for it we
-	// enqueue it as a release.
+	// object it is associated with.
 	capacityTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			controller.enqueueCapacityTarget(newObj)
@@ -87,8 +88,7 @@ func NewController(
 	})
 
 	// The TrafficTarget object should have the same name as the Release
-	// object it is associate with, so when there is an event for it we
-	// enqueue it as a release.
+	// object it is associate with.
 	trafficTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			controller.enqueueTrafficTarget(newObj)
