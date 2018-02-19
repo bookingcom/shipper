@@ -16,6 +16,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+	"os"
 	"time"
 )
 
@@ -309,13 +310,13 @@ func (c *Controller) buildReleaseInfo(ns string, name string) (*releaseInfo, err
 	}, nil
 }
 
-func (c *Controller) incumbentReleaseNameForRelease(ns string, name string) string {
+func (c *Controller) incumbentReleaseNameForRelease(ns string, name string) (string, error) {
 	if rel, err := c.releasesLister.Releases(ns).Get(name); err != nil {
-		runtime.HandleError(err)
+		return "", err
 	} else if incumbentReleaseName, ok := rel.GetAnnotations()["incumbent"]; ok {
-		return incumbentReleaseName
+		return incumbentReleaseName, nil
 	}
-	return ""
+	return "", os.ErrNotExist
 }
 
 func (c *Controller) buildStrategy(ns string, name string) (*Executor, error) {
@@ -326,8 +327,7 @@ func (c *Controller) buildStrategy(ns string, name string) (*Executor, error) {
 	}
 
 	var incumbentReleaseInfo *releaseInfo
-	incumbentReleaseName := c.incumbentReleaseNameForRelease(ns, name)
-	if len(incumbentReleaseName) > 0 {
+	if incumbentReleaseName, err := c.incumbentReleaseNameForRelease(ns, name); !os.IsNotExist(err) {
 		incumbentReleaseInfo, err = c.buildReleaseInfo(ns, incumbentReleaseName)
 		if err != nil {
 			return nil, err
