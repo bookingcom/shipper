@@ -96,7 +96,7 @@ func (s *Executor) finalizeRelease(targetStep uint, strategyStep v1.StrategyStep
 
 	if isLastStep {
 		contenderPhase = v1.ReleasePhaseInstalled
-		incumbentPhase = v1.ReleasePhaseDecommissioned
+		incumbentPhase = v1.ReleasePhaseSuperseded
 	} else {
 		contenderPhase = v1.ReleasePhaseWaitingForCommand
 	}
