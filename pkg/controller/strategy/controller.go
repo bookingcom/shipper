@@ -26,6 +26,9 @@ type Controller struct {
 	trafficTargetsLister      listers.TrafficTargetLister
 	releasesLister            listers.ReleaseLister
 	releasesSynced            cache.InformerSynced
+	capacityTargetsSynced     cache.InformerSynced
+	trafficTargetsSynced      cache.InformerSynced
+	installationTargetsSynced cache.InformerSynced
 	dynamicClientPool         dynamic.ClientPool
 	workqueue                 workqueue.RateLimitingInterface
 }
@@ -40,7 +43,7 @@ func NewController(
 	releaseInformer := informerFactory.Shipper().V1().Releases()
 	capacityTargetInformer := informerFactory.Shipper().V1().CapacityTargets()
 	trafficTargetInformer := informerFactory.Shipper().V1().TrafficTargets()
-	//installationTargetInformer := informerFactory.Shipper().V1().InstallationTargets()
+	installationTargetInformer := informerFactory.Shipper().V1().InstallationTargets()
 
 	controller := &Controller{
 		clientset:                 clientset,
@@ -49,48 +52,101 @@ func NewController(
 		trafficTargetsLister:      informerFactory.Shipper().V1().TrafficTargets().Lister(),
 		releasesLister:            releaseInformer.Lister(),
 		releasesSynced:            releaseInformer.Informer().HasSynced,
+		capacityTargetsSynced:     capacityTargetInformer.Informer().HasSynced,
+		trafficTargetsSynced:      trafficTargetInformer.Informer().HasSynced,
+		installationTargetsSynced: installationTargetInformer.Informer().HasSynced,
 		workqueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Releases"),
 		dynamicClientPool:         dynamicClientPool,
 	}
 
 	releaseInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			glog.Infof("releaseInformer(Add): Enqueueing obj %+v", obj)
-			controller.enqueueRelease(obj)
-		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-
-			newRelease := newObj.(*v1.Release)
-			oldRelease := oldObj.(*v1.Release)
-
-			glog.Infof("releaseInformer(Update): newRelease: %+v ; oldRelease: %+v", newRelease, oldRelease)
-			controller.enqueueRelease(newRelease)
+			rel := newObj.(*v1.Release)
+			if isWorkingOnStrategy(rel) {
+				// We should enqueue only releases that have been modified AND
+				// are in the middle of a strategy execution.
+				controller.enqueueRelease(rel)
+			}
 		},
 	})
 
+	installationTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			controller.enqueueInstallationTarget(newObj)
+		},
+	})
+
+	// The CapacityTarget object should have the same name as the Release
+	// object it is associated with, so when there is an event for it we
+	// enqueue it as a release.
 	capacityTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			glog.Infof("capacityTargetInformer(Add): Enqueueing obj %+v", obj)
-			controller.enqueueRelease(obj)
-		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			glog.Infof("capacityTargetInformer(Update): Enqueueing obj %+v", newObj)
-			controller.enqueueRelease(newObj)
+			controller.enqueueCapacityTarget(newObj)
 		},
 	})
 
+	// The TrafficTarget object should have the same name as the Release
+	// object it is associate with, so when there is an event for it we
+	// enqueue it as a release.
 	trafficTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			glog.Infof("trafficTargetInformer(Add): Enqueueing obj %+v", obj)
-			controller.enqueueRelease(obj)
-		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			glog.Infof("trafficTargetInformer(Update): Enqueueing obj %+v", newObj)
-			controller.enqueueRelease(newObj)
+			controller.enqueueTrafficTarget(newObj)
 		},
 	})
 
 	return controller
+}
+
+func isWorkingOnStrategy(r *v1.Release) (workingOnStrategy bool) {
+	switch r.Status.Phase {
+	case
+		v1.ReleasePhaseWaitingForCommand,
+		v1.ReleasePhaseWaitingForStrategy:
+		workingOnStrategy = true
+	default:
+		workingOnStrategy = false
+	}
+
+	return workingOnStrategy
+}
+
+func (c *Controller) contenderForRelease(r *v1.Release) (*v1.Release, error) {
+	if contenderName, ok := r.GetAnnotations()["contender"]; ok {
+		if contender, err := c.releasesLister.Releases(r.Namespace).Get(contenderName); err != nil {
+			return nil, err
+		} else {
+			return contender, nil
+		}
+	}
+	return nil, nil
+}
+
+func isInstalled(r *v1.Release) bool {
+	return r.Status.Phase == v1.ReleasePhaseInstalled
+}
+
+func (c *Controller) releaseForCapacityTarget(ct *v1.CapacityTarget) (*v1.Release, error) {
+	if rel, err := c.releasesLister.Releases(ct.Namespace).Get(ct.Name); err != nil {
+		return nil, err
+	} else {
+		return rel, nil
+	}
+}
+
+func (c *Controller) releaseForTrafficTarget(tt *v1.TrafficTarget) (*v1.Release, error) {
+	if rel, err := c.releasesLister.Releases(tt.Namespace).Get(tt.Name); err != nil {
+		return nil, err
+	} else {
+		return rel, nil
+	}
+}
+
+func (c *Controller) releaseForInstallationTarget(it *v1.InstallationTarget) (*v1.Release, error) {
+	if rel, err := c.releasesLister.Releases(it.Namespace).Get(it.Name); err != nil {
+		return nil, err
+	} else {
+		return rel, nil
+	}
 }
 
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
@@ -98,6 +154,18 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 	defer c.workqueue.ShutDown()
 
 	if ok := cache.WaitForCacheSync(stopCh, c.releasesSynced); !ok {
+		return fmt.Errorf("failed to wait for caches to sync")
+	}
+
+	if ok := cache.WaitForCacheSync(stopCh, c.installationTargetsSynced); !ok {
+		return fmt.Errorf("failed to wait for caches to sync")
+	}
+
+	if ok := cache.WaitForCacheSync(stopCh, c.trafficTargetsSynced); !ok {
+		return fmt.Errorf("failed to wait for caches to sync")
+	}
+
+	if ok := cache.WaitForCacheSync(stopCh, c.capacityTargetsSynced); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
@@ -212,7 +280,7 @@ func (c *Controller) clientForGroupVersionKind(
 	return client.Resource(resource, ns), nil
 }
 
-func (c *Controller) buildStrategy(ns string, name string) (*Executor, error) {
+func (c *Controller) buildReleaseInfo(ns string, name string) (*releaseInfo, error) {
 	release, err := c.releasesLister.Releases(ns).Get(name)
 	if err != nil {
 		return nil, err
@@ -233,21 +301,112 @@ func (c *Controller) buildStrategy(ns string, name string) (*Executor, error) {
 		return nil, err
 	}
 
-	return &Executor{
-		contenderRelease: &releaseInfo{
-			release:            release,
-			installationTarget: installationTarget,
-			trafficTarget:      trafficTarget,
-			capacityTarget:     capacityTarget,
-		},
+	return &releaseInfo{
+		release:            release,
+		installationTarget: installationTarget,
+		trafficTarget:      trafficTarget,
+		capacityTarget:     capacityTarget,
 	}, nil
 }
 
-func (c *Controller) enqueueRelease(obj interface{}) {
-	if key, err := cache.MetaNamespaceKeyFunc(obj); err != nil {
+func (c *Controller) incumbentReleaseNameForRelease(ns string, name string) string {
+	if rel, err := c.releasesLister.Releases(ns).Get(name); err != nil {
 		runtime.HandleError(err)
+	} else if incumbentReleaseName, ok := rel.GetAnnotations()["incumbent"]; ok {
+		return incumbentReleaseName
+	}
+	return ""
+}
+
+func (c *Controller) buildStrategy(ns string, name string) (*Executor, error) {
+
+	contenderReleaseInfo, err := c.buildReleaseInfo(ns, name)
+	if err != nil {
+		return nil, err
+	}
+
+	var incumbentReleaseInfo *releaseInfo
+	incumbentReleaseName := c.incumbentReleaseNameForRelease(ns, name)
+	if len(incumbentReleaseName) > 0 {
+		incumbentReleaseInfo, err = c.buildReleaseInfo(ns, incumbentReleaseName)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &Executor{
+		contenderRelease: contenderReleaseInfo,
+		incumbentRelease: incumbentReleaseInfo,
+	}, nil
+}
+
+func (c *Controller) enqueueInstallationTarget(obj interface{}) error {
+	it := obj.(*v1.InstallationTarget)
+	if rel, err := c.releaseForInstallationTarget(it); err != nil {
+		return err
 	} else {
-		glog.Infof("enqueued item %q", key)
-		c.workqueue.AddRateLimited(key)
+		c.enqueueRelease(rel)
+		return nil
+	}
+}
+
+func (c *Controller) enqueueTrafficTarget(obj interface{}) error {
+	tt := obj.(*v1.TrafficTarget)
+	if rel, err := c.releaseForTrafficTarget(tt); err != nil {
+		return err
+	} else {
+		c.enqueueRelease(rel)
+		return nil
+	}
+}
+
+func (c *Controller) enqueueCapacityTarget(obj interface{}) error {
+	ct := obj.(*v1.CapacityTarget)
+	if rel, err := c.releaseForCapacityTarget(ct); err != nil {
+		return err
+	} else {
+		c.enqueueRelease(rel)
+		return nil
+	}
+}
+
+func (c *Controller) enqueueRelease(obj interface{}) {
+	rel := obj.(*v1.Release)
+	glog.Infof("inspecting release %s/%s", rel.Namespace, rel.Name)
+
+	if isInstalled(rel) {
+		// isInstalled returns true if Release.Status.Phase is Installed. If this
+		// is true, it is really likely that a modification was made in an installed
+		// release, so we check if there's a contender for this release and enqueue
+		// it instead. Now that I think more about it, I'm questioning how often this
+		// code path would be executed... Ah, this code path *will* be executed since
+		// capacity and traffic target objects will be modified when transitioning from
+		// one release to the other. So, this code path will be executed when
+		// CapacityTarget, TrafficTarget objects, for both contender and incumbent
+		// releases, and all those should enqueue only the contender release in the work
+		// queue.
+
+		// Check if there is a contender release for given release.
+		if contenderRel, err := c.contenderForRelease(rel); err != nil {
+			runtime.HandleError(err)
+		} else if contenderRel != nil {
+
+			if isWorkingOnStrategy(contenderRel) {
+				if key, err := cache.MetaNamespaceKeyFunc(contenderRel); err != nil {
+					runtime.HandleError(err)
+				} else {
+					glog.Infof("enqueued item %q", key)
+					c.workqueue.AddRateLimited(key)
+				}
+			}
+		}
+	} else if isWorkingOnStrategy(rel) {
+		// This release is in the middle of its strategy, so we just enqueue it.
+		if key, err := cache.MetaNamespaceKeyFunc(rel); err != nil {
+			runtime.HandleError(err)
+		} else {
+			glog.Infof("enqueued item %q", key)
+			c.workqueue.AddRateLimited(key)
+		}
 	}
 }

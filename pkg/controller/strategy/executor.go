@@ -126,6 +126,14 @@ func (s *Executor) finalizeRelease(targetStep uint, strategyStep v1.StrategyStep
 
 }
 
+func contenderTrafficComparison(achieved uint, desired uint) bool {
+	return achieved >= desired
+}
+
+func incumbentTrafficComparison(achieved uint, desired uint) bool {
+	return achieved <= desired
+}
+
 func (s *Executor) checkTraffic(strategyStep v1.StrategyStep) (bool, []interface{}, error) {
 	var trafficPatches []interface{}
 
@@ -135,7 +143,7 @@ func (s *Executor) checkTraffic(strategyStep v1.StrategyStep) (bool, []interface
 	}
 
 	canContinue := true
-	trafficAchieved, newSpec := checkTraffic(s.contenderRelease.trafficTarget, uint(contenderTrafficWeight))
+	trafficAchieved, newSpec := checkTraffic(s.contenderRelease.trafficTarget, uint(contenderTrafficWeight), contenderTrafficComparison)
 	if !trafficAchieved {
 		canContinue = false
 		if newSpec != nil {
@@ -147,12 +155,12 @@ func (s *Executor) checkTraffic(strategyStep v1.StrategyStep) (bool, []interface
 	}
 
 	if s.incumbentRelease != nil {
-		incumbentTrafficWeight, err := strconv.Atoi(strategyStep.ContenderCapacity)
+		incumbentTrafficWeight, err := strconv.Atoi(strategyStep.IncumbentTraffic)
 		if err != nil {
 			return false, nil, err
 		}
 
-		trafficAchieved, newSpec := checkTraffic(s.incumbentRelease.trafficTarget, uint(incumbentTrafficWeight))
+		trafficAchieved, newSpec := checkTraffic(s.incumbentRelease.trafficTarget, uint(incumbentTrafficWeight), incumbentTrafficComparison)
 		if !trafficAchieved {
 			canContinue = false
 			if newSpec != nil {
@@ -171,6 +179,14 @@ func (s *Executor) checkTraffic(strategyStep v1.StrategyStep) (bool, []interface
 	}
 }
 
+func contenderCapacityComparison(achieved uint, desired uint) bool {
+	return achieved >= desired
+}
+
+func incumbentCapacityComparison(achieved uint, desired uint) bool {
+	return achieved <= desired
+}
+
 func (s *Executor) checkCapacity(strategyStep v1.StrategyStep) (bool, []interface{}, error) {
 	var capacityPatches []interface{}
 
@@ -180,7 +196,7 @@ func (s *Executor) checkCapacity(strategyStep v1.StrategyStep) (bool, []interfac
 	}
 
 	canContinue := true
-	capacityAchieved, newSpec := checkCapacity(s.contenderRelease.capacityTarget, uint(contenderCapacity))
+	capacityAchieved, newSpec := checkCapacity(s.contenderRelease.capacityTarget, uint(contenderCapacity), contenderCapacityComparison)
 	if !capacityAchieved {
 		canContinue = false
 		if newSpec != nil {
@@ -192,12 +208,13 @@ func (s *Executor) checkCapacity(strategyStep v1.StrategyStep) (bool, []interfac
 	}
 
 	if s.incumbentRelease != nil {
+		glog.Infof("Found incumbent release: %s", s.incumbentRelease.release.Name)
 		incumbentCapacity, err := strconv.Atoi(strategyStep.IncumbentCapacity)
 		if err != nil {
 			return false, nil, err
 		}
 
-		capacityAchieved, newSpec := checkCapacity(s.incumbentRelease.capacityTarget, uint(incumbentCapacity))
+		capacityAchieved, newSpec := checkCapacity(s.incumbentRelease.capacityTarget, uint(incumbentCapacity), incumbentCapacityComparison)
 		if !capacityAchieved {
 			canContinue = false
 			if newSpec != nil {
