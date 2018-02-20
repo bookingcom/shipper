@@ -30,14 +30,14 @@ GetOptions(
     "name=s" => \$cluster_name,
     "namespace=s" => \$namespace,
     "key=s" => \$client_key_file,
-    "cert=s" => \$client_cert_file,
+    "crt=s" => \$client_cert_file,
     "ca=s" => \$ca_cert_file
 );
 chomp($host);
 
 my %secret_files = (
     key => $client_key_file,
-    cert => $client_cert_file,
+    crt => $client_cert_file,
     ca => $ca_cert_file,
 );
 
@@ -61,7 +61,7 @@ my $secret_fh = File::Temp->new(UNLINK => 1);
 printf $secret_fh
     $templates[SECRET_TEMPLATE],
     $secret{"tls.ca"},
-    $secret{"tls.cert"},
+    $secret{"tls.crt"},
     $secret{"tls.key"},
     $cluster_name,
     $namespace;
@@ -85,7 +85,7 @@ __DATA__
 apiVersion: v1
 data:
   tls.ca: %s
-  tls.cert: %s
+  tls.crt: %s
   tls.key: %s
 kind: Secret
 metadata:
