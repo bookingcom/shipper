@@ -197,7 +197,6 @@ func (c *Controller) processNextWorkItem() bool {
 func (c *Controller) syncOne(key string) error {
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
 
-	glog.Infof("start processing %q", key)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
 		return nil
@@ -208,10 +207,11 @@ func (c *Controller) syncOne(key string) error {
 		return err
 	}
 
+	strategy.info("will start processing release")
 	if result, err := strategy.execute(); err != nil {
 		return err
 	} else if len(result) > 0 {
-
+		strategy.info("strategy executed, patches to apply")
 		for _, e := range result {
 
 			r := e.(ExecutorResult)
@@ -229,7 +229,7 @@ func (c *Controller) syncOne(key string) error {
 			}
 		}
 	} else {
-		glog.Infof("strategy executed but no result")
+		strategy.info("strategy executed, nothing to patch")
 	}
 
 	return nil
@@ -259,7 +259,7 @@ func (c *Controller) clientForGroupVersionKind(
 	}
 
 	if resource == nil {
-		return nil, fmt.Errorf("could not find the specified resource")
+		return nil, fmt.Errorf("could not find the specified resource %q", gvk)
 	}
 
 	return client.Resource(resource, ns), nil
@@ -356,7 +356,7 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) error {
 
 func (c *Controller) enqueueRelease(obj interface{}) {
 	rel := obj.(*v1.Release)
-	glog.Infof("inspecting release %s/%s", rel.Namespace, rel.Name)
+	glog.V(5).Infof("inspecting release %s/%s", rel.Namespace, rel.Name)
 
 	if isInstalled(rel) {
 		// isInstalled returns true if Release.Status.Phase is Installed. If this
@@ -379,22 +379,22 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 				if key, err := cache.MetaNamespaceKeyFunc(contenderRel); err != nil {
 					runtime.HandleError(err)
 				} else {
-					glog.Infof("enqueued item %q", key)
+					glog.V(5).Infof("enqueued item %q", key)
 					c.workqueue.AddRateLimited(key)
 				}
 			}
 		} else {
-			glog.Infof("couldn't find a release to enqueue based on %s/%s", rel.Namespace, rel.Name)
+			glog.V(5).Infof("couldn't find a release to enqueue based on %s/%s", rel.Namespace, rel.Name)
 		}
 	} else if isWorkingOnStrategy(rel) {
 		// This release is in the middle of its strategy, so we just enqueue it.
 		if key, err := cache.MetaNamespaceKeyFunc(rel); err != nil {
 			runtime.HandleError(err)
 		} else {
-			glog.Infof("enqueued item %q", key)
+			glog.V(5).Infof("enqueued item %q", key)
 			c.workqueue.AddRateLimited(key)
 		}
 	} else {
-		glog.Infof("couldn't find a release to enqueue based on %s/%s", rel.Namespace, rel.Name)
+		glog.V(5).Infof("couldn't find a release to enqueue based on %s/%s", rel.Namespace, rel.Name)
 	}
 }
