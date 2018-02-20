@@ -10,7 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	kube "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"time"
@@ -19,7 +18,6 @@ import (
 // Controller is a Kubernetes controller that processes InstallationTarget
 // objects.
 type Controller struct {
-	kubeclientset             kube.Interface
 	shipperclientset          shipper.Interface
 	workqueue                 workqueue.RateLimitingInterface
 	installationTargetsSynced cache.InformerSynced
@@ -140,12 +138,7 @@ func (c *Controller) syncOne(key string) error {
 		return err
 	}
 
-	err = c.processInstallation(it)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return c.processInstallation(it)
 }
 
 func (c *Controller) enqueueInstallationTarget(obj interface{}) {
@@ -176,7 +169,8 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	for _, name := range it.Spec.Clusters {
 		status := shipperV1.ClusterInstallationStatus{Name: name}
 
-		if cluster, err := c.clusterLister.Get(name); err != nil {
+		var cluster *shipperV1.Cluster
+		if cluster, err = c.clusterLister.Get(name); err != nil {
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
 		} else {

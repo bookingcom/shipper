@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -266,7 +267,8 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 	for _, clusterSpec := range ct.Spec.Clusters {
 		// Get the requested percentage of replicas from the capacity object
 		// This is only set by the strategy controller
-		replicaCount, err := c.convertPercentageToReplicaCountForCluster(ct, clusterSpec)
+		var replicaCount int32
+		replicaCount, err = c.convertPercentageToReplicaCountForCluster(ct, clusterSpec)
 		if err != nil {
 			return err
 		}
@@ -285,13 +287,15 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 			return fmt.Errorf("The capacity target %s in namespace %s has an empty 'release' label", ct.Name, ct.Namespace)
 		}
 
-		requirement, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{releaseValue})
+		var requirement *labels.Requirement
+		requirement, err = labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{releaseValue})
 		if err != nil {
 			return err
 		}
 		selector = selector.Add(*requirement)
 
-		deploymentsList, err := targetClusterClient.AppsV1().Deployments(targetNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+		var deploymentsList *appsv1.DeploymentList
+		deploymentsList, err = targetClusterClient.AppsV1().Deployments(targetNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 		if err != nil {
 			return err
 		}

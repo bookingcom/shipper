@@ -36,7 +36,13 @@ func Download(chart shipperv1.Chart) (*bytes.Buffer, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+
+	defer func() {
+		err = resp.Body.Close()
+		if err != nil {
+			glog.V(2).Infof("error closing resp.Body from chart repo: %s", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		// TODO log body
@@ -82,6 +88,9 @@ func RenderChart(chrt *chart.Chart, chrtVals *chart.Config, options chartutil.Re
 	// process the templates, such as .Release.Name (coming out of the `options`
 	// var above), .Chart.Name (extracted from the chart itself), and others.
 	vals, err := chartutil.ToRenderValues(chrt, chrtVals, options)
+	if err != nil {
+		return nil, err
+	}
 
 	// Now we are able to render the chart. `rendered` is a map where the key is
 	// the filename and the value is the rendered template. I'm not sure whether
@@ -111,11 +120,11 @@ func Render(r io.Reader, name, ns string, values *shipperv1.ChartValues) ([]stri
 
 	chartConfig := &chart.Config{Values: map[string]*chart.Value{}}
 
-	if err := chartutil.ProcessRequirementsEnabled(helmChart, chartConfig); err != nil {
+	if err = chartutil.ProcessRequirementsEnabled(helmChart, chartConfig); err != nil {
 		return nil, err
 	}
 
-	if err := chartutil.ProcessRequirementsImportValues(helmChart); err != nil {
+	if err = chartutil.ProcessRequirementsImportValues(helmChart); err != nil {
 		return nil, err
 	}
 

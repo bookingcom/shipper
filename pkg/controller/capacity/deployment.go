@@ -138,12 +138,7 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 		return err
 	}
 
-	err = c.updateStatus(capacityTarget, item.ClusterName, targetDeployment.Status.AvailableReplicas, sadPods)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return c.updateStatus(capacityTarget, item.ClusterName, targetDeployment.Status.AvailableReplicas, sadPods)
 }
 
 func (c *Controller) updateStatus(capacityTarget *shipperv1.CapacityTarget, clusterName string, availableReplicas int32, sadPods []shipperv1.PodStatus) error {
@@ -185,11 +180,7 @@ func (c *Controller) updateStatus(capacityTarget *shipperv1.CapacityTarget, clus
 
 	json := fmt.Sprintf(`{"status": %s}`, string(statusJson))
 	_, err = c.shipperclientset.ShipperV1().CapacityTargets(capacityTarget.Namespace).Patch(capacityTarget.Name, types.MergePatchType, []byte(json))
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace string) (*shipperv1.CapacityTarget, error) {

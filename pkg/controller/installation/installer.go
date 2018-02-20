@@ -194,12 +194,7 @@ func (i *Installer) installRelease(
 		return err
 	}
 
-	err = i.installManifests(cluster, renderedManifests)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return i.installManifests(cluster, renderedManifests)
 }
 
 // decodeManifest attempts to deserialize the provided manifest. It returns

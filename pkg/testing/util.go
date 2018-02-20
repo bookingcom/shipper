@@ -37,7 +37,7 @@ func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
 	}
 
 	if reflect.TypeOf(actual) != reflect.TypeOf(expected) {
-		t.Errorf("expected action %t but got %t", expected, actual)
+		t.Errorf("expected action %T but got %T", expected, actual)
 		return
 	}
 
