@@ -92,6 +92,7 @@ func main() {
 	)
 
 	go shipperInformerFactory.Start(stopCh)
+	go kubeInformerFactory.Start(stopCh)
 
 	controller.Run(2, stopCh)
 }
