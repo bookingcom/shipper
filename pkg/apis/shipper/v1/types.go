@@ -10,6 +10,9 @@ const (
 	ReleaseLabel   = "release"
 	ReleaseLinkAnn = "releaseLink"
 
+	ReleaseIncumbentAnn = "incumbent"
+	ReleaseContenderAnn = "contender"
+
 	ReleasePhaseWaitingForScheduling = "WaitingForScheduling"
 	ReleasePhaseWaitingForStrategy   = "WaitingForStrategy"
 	ReleasePhaseWaitingForCommand    = "WaitingForCommand"
