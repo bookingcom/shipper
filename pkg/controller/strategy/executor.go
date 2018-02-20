@@ -14,8 +14,8 @@ type releaseInfo struct {
 }
 
 type Executor struct {
-	contenderRelease *releaseInfo
-	incumbentRelease *releaseInfo
+	contender *releaseInfo
+	incumbent *releaseInfo
 }
 
 // execute executes the strategy. It returns an ExecutorResult, if a patch should
@@ -24,9 +24,9 @@ type Executor struct {
 // successful but no modifications are required.
 func (s *Executor) execute() ([]interface{}, error) {
 
-	strategy := getStrategy(string(s.contenderRelease.release.Environment.ShipmentOrder.Strategy))
-	targetStep := uint(s.contenderRelease.release.Spec.TargetStep)
-	achievedStep := s.contenderRelease.release.Status.AchievedStep
+	strategy := getStrategy(string(s.contender.release.Environment.ShipmentOrder.Strategy))
+	targetStep := uint(s.contender.release.Spec.TargetStep)
+	achievedStep := s.contender.release.Status.AchievedStep
 
 	if achievedStep == targetStep {
 		glog.Infof("it seems that achievedStep (%d) is the same as targetStep (%d)", achievedStep, targetStep)
@@ -41,35 +41,31 @@ func (s *Executor) execute() ([]interface{}, error) {
 	//////////////////////////////////////////////////////////////////////////
 	// Installation
 	//
-	if canContinue := checkInstallation(s.contenderRelease); !canContinue {
-		glog.Infof("Installation pending for release %q", s.contenderRelease.release.Name)
+	if canContinue := checkInstallation(s.contender); !canContinue {
+		glog.Infof("Installation pending for release %q", s.contender.release.Name)
 		return nil, nil
 	} else {
-		glog.Infof("installation target has been achieved for release %q", s.contenderRelease.release.Name)
+		glog.Infof("installation target has been achieved for release %q", s.contender.release.Name)
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Capacity
-	//
-	if capacityAchieved, capacityPatches, err := s.checkCapacity(strategyStep); err != nil {
+	// Contender
+	if contenderReady, contenderPatches, err := s.checkContender(strategyStep); err != nil {
 		return nil, err
-	} else if !capacityAchieved {
-		glog.Infof("capacity target hasn't been achieved yet for step %d", targetStep)
-		return capacityPatches, nil
+	} else if !contenderReady {
+		glog.Infof("contender is not yet ready for release %q, step %d", s.contender.release.Name, targetStep)
+		return contenderPatches, nil
 	} else {
-		glog.Infof("capacity target has been achieved for step %d", targetStep)
+		glog.Infof("contender is ready for release %q, step %d", s.contender.release.Name, targetStep)
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Traffic
-	//
-	if trafficAchieved, trafficPatches, err := s.checkTraffic(strategyStep); err != nil {
+	// Incumbent
+	if incumbentReady, incumbentPatches, err := s.checkIncumbent(strategyStep); err != nil {
 		return nil, err
-	} else if !trafficAchieved {
-		glog.Infof("traffic target hasn't been achieved yet for step %d", targetStep)
-		return trafficPatches, nil
+	} else if !incumbentReady {
+		glog.Infof("incumbent is not yet ready for release %q, step %d", s.incumbent.release.Name, targetStep)
+		return incumbentPatches, nil
 	} else {
-		glog.Infof("traffic target has been achieved for step %d", targetStep)
+		glog.Infof("incumbent is ready for step release %q, step %d", s.incumbent.release.Name, targetStep)
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -85,7 +81,7 @@ func (s *Executor) execute() ([]interface{}, error) {
 	if releasePatches, err := s.finalizeRelease(targetStep, strategyStep, isLastStep); err != nil {
 		return nil, err
 	} else {
-		glog.Infof("release %q has been finished", s.contenderRelease.release.Name)
+		glog.Infof("release %q has been finished", s.contender.release.Name)
 		return releasePatches, nil
 	}
 }
@@ -109,16 +105,16 @@ func (s *Executor) finalizeRelease(targetStep uint, strategyStep v1.StrategyStep
 	}
 	releasePatches = append(releasePatches, &ReleaseUpdateResult{
 		NewStatus: newReleaseStatus,
-		Name:      s.contenderRelease.release.Name,
+		Name:      s.contender.release.Name,
 	})
 
-	if s.incumbentRelease != nil {
+	if s.incumbent != nil {
 		newReleaseStatus := &v1.ReleaseStatus{
 			Phase: incumbentPhase,
 		}
 		releasePatches = append(releasePatches, &ReleaseUpdateResult{
 			NewStatus: newReleaseStatus,
-			Name:      s.incumbentRelease.release.Name,
+			Name:      s.incumbent.release.Name,
 		})
 	}
 
@@ -126,93 +122,94 @@ func (s *Executor) finalizeRelease(targetStep uint, strategyStep v1.StrategyStep
 
 }
 
-func (s *Executor) checkTraffic(strategyStep v1.StrategyStep) (bool, []interface{}, error) {
-	var trafficPatches []interface{}
+func (s *Executor) checkContender(strategyStep v1.StrategyStep) (bool, []interface{}, error) {
+	var patches []interface{}
 
-	contenderTrafficWeight, err := strconv.Atoi(strategyStep.ContenderTraffic)
+	capacity, err := strconv.Atoi(strategyStep.ContenderCapacity)
 	if err != nil {
 		return false, nil, err
 	}
 
-	canContinue := true
-	trafficAchieved, newSpec := checkTraffic(s.contenderRelease.trafficTarget, uint(contenderTrafficWeight), contenderTrafficComparison)
-	if !trafficAchieved {
-		canContinue = false
+	trafficWeight, err := strconv.Atoi(strategyStep.ContenderTraffic)
+	if err != nil {
+		return false, nil, err
+	}
+
+	if achieved, newSpec := checkCapacity(s.contender.capacityTarget, uint(capacity), contenderCapacityComparison); !achieved {
+		glog.Infof("contender %q hasn't achieved capacity yet", s.contender.release.Name)
 		if newSpec != nil {
-			trafficPatches = append(trafficPatches, &TrafficTargetOutdatedResult{
+			patches = append(patches, &CapacityTargetOutdatedResult{
 				NewSpec: newSpec,
-				Name:    s.contenderRelease.release.Name,
+				Name:    s.contender.release.Name,
 			})
+			return false, patches, nil
+		} else {
+			return false, []interface{}{}, nil
 		}
-	}
-
-	if s.incumbentRelease != nil {
-		incumbentTrafficWeight, err := strconv.Atoi(strategyStep.IncumbentTraffic)
-		if err != nil {
-			return false, nil, err
-		}
-
-		trafficAchieved, newSpec := checkTraffic(s.incumbentRelease.trafficTarget, uint(incumbentTrafficWeight), incumbentTrafficComparison)
-		if !trafficAchieved {
-			canContinue = false
-			if newSpec != nil {
-				trafficPatches = append(trafficPatches, &TrafficTargetOutdatedResult{
-					NewSpec: newSpec,
-					Name:    s.incumbentRelease.release.Name,
-				})
-			}
-		}
-	}
-
-	if len(trafficPatches) > 0 {
-		return false, trafficPatches, nil
 	} else {
-		return canContinue, nil, nil
+		glog.Infof("contender %q has achieved capacity", s.contender.release.Name)
 	}
+
+	if achieved, newSpec := checkTraffic(s.contender.trafficTarget, uint(trafficWeight), contenderTrafficComparison); !achieved {
+		glog.Infof("contender %q hasn't achieved traffic yet", s.contender.release.Name)
+		if newSpec != nil {
+			patches = append(patches, &TrafficTargetOutdatedResult{
+				NewSpec: newSpec,
+				Name:    s.contender.release.Name,
+			})
+			return false, patches, nil
+		} else {
+			return false, []interface{}{}, nil
+		}
+	} else {
+		glog.Infof("contender %q has achieved traffic", s.contender.release.Name)
+	}
+
+	return true, []interface{}{}, nil
 }
 
-func (s *Executor) checkCapacity(strategyStep v1.StrategyStep) (bool, []interface{}, error) {
-	var capacityPatches []interface{}
+func (s *Executor) checkIncumbent(strategyStep v1.StrategyStep) (bool, []interface{}, error) {
+	var patches []interface{}
 
-	contenderCapacity, err := strconv.Atoi(strategyStep.ContenderCapacity)
+	capacity, err := strconv.Atoi(strategyStep.IncumbentCapacity)
 	if err != nil {
 		return false, nil, err
 	}
 
-	canContinue := true
-	capacityAchieved, newSpec := checkCapacity(s.contenderRelease.capacityTarget, uint(contenderCapacity), contenderCapacityComparison)
-	if !capacityAchieved {
-		canContinue = false
+	trafficWeight, err := strconv.Atoi(strategyStep.IncumbentTraffic)
+	if err != nil {
+		return false, nil, err
+	}
+
+	if achieved, newSpec := checkTraffic(s.incumbent.trafficTarget, uint(trafficWeight), incumbentTrafficComparison); !achieved {
+		glog.Infof("incumbent %q hasn't achieved traffic yet", s.incumbent.release.Name)
 		if newSpec != nil {
-			capacityPatches = append(capacityPatches, &CapacityTargetOutdatedResult{
+			patches = append(patches, &TrafficTargetOutdatedResult{
 				NewSpec: newSpec,
-				Name:    s.contenderRelease.release.Name,
+				Name:    s.incumbent.release.Name,
 			})
+			return false, patches, nil
+		} else {
+			return false, []interface{}{}, nil
 		}
-	}
-
-	if s.incumbentRelease != nil {
-		glog.Infof("Found incumbent release: %s", s.incumbentRelease.release.Name)
-		incumbentCapacity, err := strconv.Atoi(strategyStep.IncumbentCapacity)
-		if err != nil {
-			return false, nil, err
-		}
-
-		capacityAchieved, newSpec := checkCapacity(s.incumbentRelease.capacityTarget, uint(incumbentCapacity), incumbentCapacityComparison)
-		if !capacityAchieved {
-			canContinue = false
-			if newSpec != nil {
-				capacityPatches = append(capacityPatches, &CapacityTargetOutdatedResult{
-					NewSpec: newSpec,
-					Name:    s.incumbentRelease.release.Name,
-				})
-			}
-		}
-	}
-
-	if len(capacityPatches) > 0 {
-		return false, capacityPatches, nil
 	} else {
-		return canContinue, nil, nil
+		glog.Infof("incumbent %q has achieved traffic", s.incumbent.release.Name)
 	}
+
+	if achieved, newSpec := checkCapacity(s.incumbent.capacityTarget, uint(capacity), incumbentCapacityComparison); !achieved {
+		glog.Infof("incumbent %q hasn't achieved capacity yet", s.incumbent.release.Name)
+		if newSpec != nil {
+			patches = append(patches, &CapacityTargetOutdatedResult{
+				NewSpec: newSpec,
+				Name:    s.incumbent.release.Name,
+			})
+			return false, patches, nil
+		} else {
+			return false, []interface{}{}, nil
+		}
+	} else {
+		glog.Infof("incumbent %q has achieved capacity", s.incumbent.release.Name)
+	}
+
+	return true, []interface{}{}, nil
 }

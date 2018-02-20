@@ -112,7 +112,7 @@ func isWorkingOnStrategy(r *v1.Release) (workingOnStrategy bool) {
 }
 
 func (c *Controller) contenderForRelease(r *v1.Release) (*v1.Release, error) {
-	if contenderName, ok := r.GetAnnotations()["contender"]; ok {
+	if contenderName, ok := r.GetAnnotations()[v1.ReleaseContenderAnn]; ok {
 		if contender, err := c.releasesLister.Releases(r.Namespace).Get(contenderName); err != nil {
 			return nil, err
 		} else {
@@ -126,24 +126,8 @@ func isInstalled(r *v1.Release) bool {
 	return r.Status.Phase == v1.ReleasePhaseInstalled
 }
 
-func (c *Controller) releaseForCapacityTarget(ct *v1.CapacityTarget) (*v1.Release, error) {
+func (c *Controller) getAssociatedRelease(ct *metav1.ObjectMeta) (*v1.Release, error) {
 	if rel, err := c.releasesLister.Releases(ct.Namespace).Get(ct.Name); err != nil {
-		return nil, err
-	} else {
-		return rel, nil
-	}
-}
-
-func (c *Controller) releaseForTrafficTarget(tt *v1.TrafficTarget) (*v1.Release, error) {
-	if rel, err := c.releasesLister.Releases(tt.Namespace).Get(tt.Name); err != nil {
-		return nil, err
-	} else {
-		return rel, nil
-	}
-}
-
-func (c *Controller) releaseForInstallationTarget(it *v1.InstallationTarget) (*v1.Release, error) {
-	if rel, err := c.releasesLister.Releases(it.Namespace).Get(it.Name); err != nil {
 		return nil, err
 	} else {
 		return rel, nil
@@ -313,7 +297,7 @@ func (c *Controller) buildReleaseInfo(ns string, name string) (*releaseInfo, err
 func (c *Controller) incumbentReleaseNameForRelease(ns string, name string) (string, error) {
 	if rel, err := c.releasesLister.Releases(ns).Get(name); err != nil {
 		return "", err
-	} else if incumbentReleaseName, ok := rel.GetAnnotations()["incumbent"]; ok {
+	} else if incumbentReleaseName, ok := rel.GetAnnotations()[v1.ReleaseIncumbentAnn]; ok {
 		return incumbentReleaseName, nil
 	}
 	return "", os.ErrNotExist
@@ -335,14 +319,14 @@ func (c *Controller) buildStrategy(ns string, name string) (*Executor, error) {
 	}
 
 	return &Executor{
-		contenderRelease: contenderReleaseInfo,
-		incumbentRelease: incumbentReleaseInfo,
+		contender: contenderReleaseInfo,
+		incumbent: incumbentReleaseInfo,
 	}, nil
 }
 
 func (c *Controller) enqueueInstallationTarget(obj interface{}) error {
 	it := obj.(*v1.InstallationTarget)
-	if rel, err := c.releaseForInstallationTarget(it); err != nil {
+	if rel, err := c.getAssociatedRelease(&it.ObjectMeta); err != nil {
 		return err
 	} else {
 		c.enqueueRelease(rel)
@@ -352,7 +336,7 @@ func (c *Controller) enqueueInstallationTarget(obj interface{}) error {
 
 func (c *Controller) enqueueTrafficTarget(obj interface{}) error {
 	tt := obj.(*v1.TrafficTarget)
-	if rel, err := c.releaseForTrafficTarget(tt); err != nil {
+	if rel, err := c.getAssociatedRelease(&tt.ObjectMeta); err != nil {
 		return err
 	} else {
 		c.enqueueRelease(rel)
@@ -362,7 +346,7 @@ func (c *Controller) enqueueTrafficTarget(obj interface{}) error {
 
 func (c *Controller) enqueueCapacityTarget(obj interface{}) error {
 	ct := obj.(*v1.CapacityTarget)
-	if rel, err := c.releaseForCapacityTarget(ct); err != nil {
+	if rel, err := c.getAssociatedRelease(&ct.ObjectMeta); err != nil {
 		return err
 	} else {
 		c.enqueueRelease(rel)
@@ -399,6 +383,8 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 					c.workqueue.AddRateLimited(key)
 				}
 			}
+		} else {
+			glog.Infof("couldn't find a release to enqueue based on %s/%s", rel.Namespace, rel.Name)
 		}
 	} else if isWorkingOnStrategy(rel) {
 		// This release is in the middle of its strategy, so we just enqueue it.
@@ -408,5 +394,7 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 			glog.Infof("enqueued item %q", key)
 			c.workqueue.AddRateLimited(key)
 		}
+	} else {
+		glog.Infof("couldn't find a release to enqueue based on %s/%s", rel.Namespace, rel.Name)
 	}
 }
