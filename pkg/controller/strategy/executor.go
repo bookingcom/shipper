@@ -38,7 +38,7 @@ func (s *Executor) execute() ([]interface{}, error) {
 		return nil, nil
 	}
 
-	strategyStep, err := strategy.GetStep(targetStep)
+	strategyStep, err := getStrategyStep(strategy, int(targetStep))
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (s *Executor) execute() ([]interface{}, error) {
 	//////////////////////////////////////////////////////////////////////////
 	// Release
 	//
-	lastStepIndex := len(strategy.Steps) - 1
+	lastStepIndex := len(strategy.Spec.Steps) - 1
 	if lastStepIndex < 0 {
 		lastStepIndex = 0
 	}
