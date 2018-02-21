@@ -262,7 +262,8 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 			return err
 		}
 
-		targetClusterClient, err := c.clusterClientStore.GetClient(clusterSpec.Name)
+		var targetClusterClient kubernetes.Interface
+		targetClusterClient, err = c.clusterClientStore.GetClient(clusterSpec.Name)
 		if err != nil {
 			return err
 		}

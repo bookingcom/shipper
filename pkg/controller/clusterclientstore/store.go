@@ -111,7 +111,7 @@ func (s *Store) GetClient(clusterName string) (kubernetes.Interface, error) {
 // GetInformerFactory returns an informer factory for the specified cluster name.
 func (s *Store) GetInformerFactory(clusterName string) (kubeinformers.SharedInformerFactory, error) {
 	s.sharedInformerLock.RLock()
-	s.sharedInformerLock.RUnlock()
+	defer s.sharedInformerLock.RUnlock()
 
 	informer, ok := s.clusterInformerFactories[clusterName]
 	if !ok {
@@ -130,7 +130,7 @@ func (s *Store) setClient(clusterName string, client kubernetes.Interface) {
 
 func (s *Store) setInformerFactory(clusterName string, informerFactory kubeinformers.SharedInformerFactory) {
 	s.sharedInformerLock.Lock()
-	s.sharedInformerLock.Unlock()
+	defer s.sharedInformerLock.Unlock()
 
 	s.clusterInformerFactories[clusterName] = informerFactory
 	s.SubscriptionRegisterFunc(informerFactory)
@@ -160,7 +160,7 @@ func (s *Store) updateSecret(old, new interface{}) {
 func (s *Store) addCluster(obj interface{}) {
 	cluster := obj.(*shipperv1.Cluster)
 
-	secret, err := s.managementClusterKubeClient.Core().Secrets(shipperv1.ShipperNamespace).Get(cluster.Name, metav1.GetOptions{})
+	secret, err := s.managementClusterKubeClient.CoreV1().Secrets(shipperv1.ShipperNamespace).Get(cluster.Name, metav1.GetOptions{})
 	if err != nil {
 		runtime.HandleError(err)
 		return
