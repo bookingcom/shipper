@@ -234,7 +234,7 @@ func (c *Controller) syncOne(key string) error {
 			}
 		}
 	} else {
-		strategy.info("strategy executed, nothing to patch")
+		strategy.info("strategy verified, nothing to patch")
 	}
 
 	return nil

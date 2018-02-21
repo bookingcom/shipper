@@ -31,12 +31,6 @@ func (s *Executor) execute() ([]interface{}, error) {
 
 	strategy := getStrategy(string(s.contender.release.Environment.ShipmentOrder.Strategy))
 	targetStep := uint(s.contender.release.Spec.TargetStep)
-	achievedStep := s.contender.release.Status.AchievedStep
-
-	if achievedStep == targetStep {
-		s.info("it seems that achievedStep (%d) is the same as targetStep (%d)", achievedStep, targetStep)
-		return nil, nil
-	}
 
 	strategyStep, err := getStrategyStep(strategy, int(targetStep))
 	if err != nil {
