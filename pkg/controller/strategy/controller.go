@@ -61,6 +61,7 @@ func NewController(
 	}
 
 	releaseInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.enqueueRelease,
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			rel := newObj.(*v1.Release)
 			if isWorkingOnStrategy(rel) {
@@ -74,6 +75,7 @@ func NewController(
 	// The InstallationTarget object should have the same name as the Release
 	// object it is associated with.
 	installationTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.enqueueInstallationTarget,
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			controller.enqueueInstallationTarget(newObj)
 		},
@@ -82,6 +84,7 @@ func NewController(
 	// The CapacityTarget object should have the same name as the Release
 	// object it is associated with.
 	capacityTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.enqueueCapacityTarget,
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			controller.enqueueCapacityTarget(newObj)
 		},
@@ -90,6 +93,7 @@ func NewController(
 	// The TrafficTarget object should have the same name as the Release
 	// object it is associate with.
 	trafficTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.enqueueTrafficTarget,
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			controller.enqueueTrafficTarget(newObj)
 		},
@@ -126,11 +130,12 @@ func isInstalled(r *v1.Release) bool {
 	return r.Status.Phase == v1.ReleasePhaseInstalled
 }
 
-func (c *Controller) getAssociatedRelease(ct *metav1.ObjectMeta) (*v1.Release, error) {
-	if rel, err := c.releasesLister.Releases(ct.Namespace).Get(ct.Name); err != nil {
-		return nil, err
+func (c *Controller) getAssociatedRelease(obj *metav1.ObjectMeta) *v1.Release {
+	if rel, err := c.releasesLister.Releases(obj.Namespace).Get(obj.Name); err != nil {
+		glog.V(4).Infof("error fetching release %s: %s", obj.Name, err)
+		return nil
 	} else {
-		return rel, nil
+		return rel
 	}
 }
 
@@ -324,33 +329,24 @@ func (c *Controller) buildStrategy(ns string, name string) (*Executor, error) {
 	}, nil
 }
 
-func (c *Controller) enqueueInstallationTarget(obj interface{}) error {
+func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 	it := obj.(*v1.InstallationTarget)
-	if rel, err := c.getAssociatedRelease(&it.ObjectMeta); err != nil {
-		return err
-	} else {
+	if rel := c.getAssociatedRelease(&it.ObjectMeta); rel != nil {
 		c.enqueueRelease(rel)
-		return nil
 	}
 }
 
-func (c *Controller) enqueueTrafficTarget(obj interface{}) error {
+func (c *Controller) enqueueTrafficTarget(obj interface{}) {
 	tt := obj.(*v1.TrafficTarget)
-	if rel, err := c.getAssociatedRelease(&tt.ObjectMeta); err != nil {
-		return err
-	} else {
+	if rel := c.getAssociatedRelease(&tt.ObjectMeta); rel != nil {
 		c.enqueueRelease(rel)
-		return nil
 	}
 }
 
-func (c *Controller) enqueueCapacityTarget(obj interface{}) error {
+func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 	ct := obj.(*v1.CapacityTarget)
-	if rel, err := c.getAssociatedRelease(&ct.ObjectMeta); err != nil {
-		return err
-	} else {
+	if rel := c.getAssociatedRelease(&ct.ObjectMeta); rel != nil {
 		c.enqueueRelease(rel)
-		return nil
 	}
 }
 
