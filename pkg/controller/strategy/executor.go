@@ -20,7 +20,7 @@ type Executor struct {
 }
 
 func (s *Executor) info(format string, args ...interface{}) {
-	glog.Infof("release/%s: %s", s.contender.release.Name, fmt.Sprintf(format, args...))
+	glog.Infof("release %s/%s: %s", s.contender.release.Namespace, s.contender.release.Name, fmt.Sprintf(format, args...))
 }
 
 // execute executes the strategy. It returns an ExecutorResult, if a patch should
