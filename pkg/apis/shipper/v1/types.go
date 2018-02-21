@@ -7,6 +7,10 @@ import (
 )
 
 const (
+	ShipperNamespace = "shipper-system"
+
+	PhaseLabel = "phase"
+
 	ReleaseLabel   = "release"
 	ReleaseLinkAnn = "releaseLink"
 

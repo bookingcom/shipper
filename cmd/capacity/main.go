@@ -35,6 +35,7 @@ import (
 	//clientset "k8s.io/sample-controller/pkg/client/clientset/versioned"
 	//informers "k8s.io/sample-controller/pkg/client/informers/externalversions"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	"github.com/bookingcom/shipper/pkg/controller/clusterclientstore"
 )
 
 var (
@@ -66,11 +67,13 @@ func main() {
 	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Second*30)
 	shipperInformerFactory := informers.NewSharedInformerFactory(shipperClient, time.Second*30)
 
-	controller := capacity.NewController(kubeClient, shipperClient, kubeInformerFactory, shipperInformerFactory)
+	store := clusterclientstore.NewStore(kubeClient, shipperClient, kubeInformerFactory, shipperInformerFactory, stopCh)
+	controller := capacity.NewController(kubeClient, shipperClient, kubeInformerFactory, shipperInformerFactory, store)
 
 	go kubeInformerFactory.Start(stopCh)
 	go shipperInformerFactory.Start(stopCh)
 
+	store.Run()
 	glog.Infof("starting controller...")
 	if err = controller.Run(2, stopCh); err != nil {
 		glog.Fatalf("Error running controller: %s", err.Error())

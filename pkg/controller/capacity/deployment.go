@@ -114,7 +114,11 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 	}
 
 	// Get the informer for the cluster this item belongs to, and use the lister to fetch the deployment from the cache
-	informerFactory := c.clusterInformerFactory[item.ClusterName]
+	informerFactory, err := c.clusterClientStore.GetInformerFactory(item.ClusterName)
+	if err != nil {
+		return err
+	}
+
 	targetDeployment, err := informerFactory.Apps().V1().Deployments().Lister().Deployments(namespace).Get(name)
 	if err != nil {
 		return err
@@ -207,7 +211,11 @@ func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace s
 func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployment, clusterName string) ([]shipperv1.PodStatus, error) {
 	var sadPods []shipperv1.PodStatus
 
-	client := c.clusterClientSet[clusterName]
+	client, err := c.clusterClientStore.GetClient(clusterName)
+	if err != nil {
+		return nil, err
+	}
+
 	selector := labels.NewSelector()
 
 	var releaseValue string

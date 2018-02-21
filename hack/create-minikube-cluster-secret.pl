@@ -17,7 +17,7 @@ my $home = $ENV{"HOME"};
 my $host = `minikube ip`;
 
 my $cluster_name = "minikube";
-my $namespace = "default";
+my $namespace = "shipper-system";
 my $client_key_file = "$home/.minikube/client.key";
 my $client_cert_file = "$home/.minikube/client.crt";
 my $ca_cert_file = "$home/.minikube/ca.crt";

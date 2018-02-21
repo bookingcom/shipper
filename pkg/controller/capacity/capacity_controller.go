@@ -42,6 +42,7 @@ import (
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/controller/clusterclientstore"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -60,12 +61,11 @@ const (
 type Controller struct {
 	// kubeclientset is a standard kubernetes clientset
 	kubeclientset kubernetes.Interface
+
 	// shipperclientset is a clientset for our own API group
 	shipperclientset clientset.Interface
-	// clusterClientSet is a map for storing a client set per each cluster
-	clusterClientSet map[string]kubernetes.Interface
-	// clusterInformerFactory is a map for storing a SharedInformerfactory per cluster
-	clusterInformerFactory map[string]kubeinformers.SharedInformerFactory
+
+	clusterClientStore *clusterclientstore.Store
 
 	capacityTargetsLister listers.CapacityTargetLister
 	capacityTargetsSynced cache.InformerSynced
@@ -90,7 +90,9 @@ func NewController(
 	kubeclientset kubernetes.Interface,
 	shipperclientset clientset.Interface,
 	kubeInformerFactory kubeinformers.SharedInformerFactory,
-	shipperInformerFactory informers.SharedInformerFactory) *Controller {
+	shipperInformerFactory informers.SharedInformerFactory,
+	store *clusterclientstore.Store,
+) *Controller {
 
 	// obtain references to shared index informers for the CapacityTarget type
 	capacityTargetInformer := shipperInformerFactory.Shipper().V1().CapacityTargets()
@@ -113,10 +115,7 @@ func NewController(
 		capacityTargetWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "CapacityTargets"),
 		deploymentWorkqueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Deployments"),
 		recorder:                recorder,
-		clusterClientSet: map[string]kubernetes.Interface{
-			"local": kubeclientset,
-		},
-		clusterInformerFactory: make(map[string]kubeinformers.SharedInformerFactory),
+		clusterClientStore:      store,
 	}
 
 	glog.Info("Setting up event handlers")
@@ -134,11 +133,8 @@ func NewController(
 		DeleteFunc: controller.enqueueCapacityTarget,
 	})
 
-	for clusterName, clusterClient := range controller.clusterClientSet {
-		informerFactory := kubeinformers.NewSharedInformerFactory(clusterClient, 30*time.Second)
-		informerFactory.Apps().V1().Deployments().Informer().AddEventHandler(controller.NewDeploymentResourceEventHandler(clusterName))
-		controller.clusterInformerFactory[clusterName] = informerFactory
-	}
+	store.SubscriptionRegisterFunc = controller.subscribe
+	store.EventHandlerRegisterFunc = controller.registerEventHandlers
 
 	return controller
 }
@@ -151,13 +147,6 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 	defer runtime.HandleCrash()
 	defer c.capacityTargetWorkqueue.ShutDown()
 	defer c.deploymentWorkqueue.ShutDown()
-
-	// Start the informer factories to begin populating the informer caches
-	glog.Info("Starting CapacityTarget controller")
-
-	for _, informerFactory := range c.clusterInformerFactory {
-		go informerFactory.Start(stopCh)
-	}
 
 	// Wait for the caches to be synced before starting workers
 	glog.Info("Waiting for informer caches to sync")
@@ -273,7 +262,11 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 			return err
 		}
 
-		targetClusterClient := c.clusterClientSet[clusterSpec.Name]
+		targetClusterClient, err := c.clusterClientStore.GetClient(clusterSpec.Name)
+		if err != nil {
+			return err
+		}
+
 		targetNamespace := ct.Namespace
 		selector := labels.NewSelector()
 
@@ -301,7 +294,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		}
 
 		if len(deploymentsList.Items) != 1 {
-			return fmt.Errorf("Expected one deployment object, but %d deployments exist.", len(deploymentsList.Items))
+			return fmt.Errorf("Expected a deployment on cluster %s, namespace %s, with label %s, but %d deployments exist.", clusterSpec.Name, targetNamespace, selector.String(), len(deploymentsList.Items))
 		}
 
 		targetDeployment := deploymentsList.Items[0]
@@ -380,4 +373,12 @@ func (c Controller) calculateAmountFromPercentage(total, percentage int32) int32
 	result := float64(percentage) / 100 * float64(total)
 
 	return int32(math.Ceil(result))
+}
+
+func (c *Controller) registerEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
+	informerFactory.Apps().V1().Deployments().Informer().AddEventHandler(c.NewDeploymentResourceEventHandler(clusterName))
+}
+
+func (c *Controller) subscribe(informerFactory kubeinformers.SharedInformerFactory) {
+	informerFactory.Apps().V1().Deployments().Informer()
 }
