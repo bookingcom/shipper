@@ -351,7 +351,28 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 }
 
 func (c *Controller) enqueueRelease(obj interface{}) {
-	rel := obj.(*v1.Release)
+	var (
+		rel *v1.Release
+		ok  bool
+	)
+
+	if _, ok = obj.(metav1.Object); !ok {
+		_, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			runtime.HandleError(fmt.Errorf("neither a Meta object, nor a tombstone: %#v", obj))
+			return
+		}
+		// TODO(btyler) work out Release end-of-life #24
+		glog.V(5).Infof("trying to enqueue a deleted release. we don't know what to do with this yet: skipping. object: %#v", obj)
+		return
+	}
+
+	rel, ok = obj.(*v1.Release)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("enqueued something that isn't a release with enqueueRelease. %#v", obj))
+		return
+	}
+
 	glog.V(5).Infof("inspecting release %s/%s", rel.Namespace, rel.Name)
 
 	if isInstalled(rel) {
