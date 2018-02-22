@@ -12,7 +12,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/tools/cache"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
@@ -47,12 +46,9 @@ func (c *Controller) shipmentOrderHasRelease(so *shipperv1.ShipmentOrder) bool {
 }
 
 func (c *Controller) getReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) (*shipperv1.Release, error) {
-	req, _ := labels.NewRequirement(
-		shipperv1.ReleaseLabel,
-		selection.Equals,
-		[]string{releaseNameForShipmentOrder(so)},
-	)
-	selector := labels.NewSelector().Add(*req)
+	selector := labels.Set{
+		shipperv1.ReleaseLabel: releaseNameForShipmentOrder(so),
+	}.AsSelector()
 
 	rlist, err := c.shipperClientset.ShipperV1().Releases(so.Namespace).List(metav1.ListOptions{
 		LabelSelector: selector.String(),
