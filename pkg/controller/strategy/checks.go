@@ -49,7 +49,13 @@ func checkCapacity(capacityTarget *v1.CapacityTarget, stepCapacity uint, compFn 
 	}
 
 	for _, status := range statuses {
-		cd := capacityData[status.Name]
+		cd, ok := capacityData[status.Name]
+		// this means that we have a status for a cluster which is not present
+		// in the spec. suspicious, sketchy, and probably fixed by the responsible
+		// controller by the next time we look
+		if !ok {
+			return false, nil
+		}
 		cd.achievedCapacity = uint(status.AchievedPercent)
 		capacityData[status.Name] = cd
 	}
@@ -102,7 +108,14 @@ func checkTraffic(trafficTarget *v1.TrafficTarget, stepTrafficWeight uint, compF
 	}
 
 	for _, status := range statuses {
-		td := trafficData[status.Name]
+		td, ok := trafficData[status.Name]
+		// this means that we have a status for a cluster which is not present
+		// in the spec. suspicious, sketchy, and probably fixed by the responsible
+		// controller by the next time we look
+		if !ok {
+			return false, nil
+		}
+
 		td.achievedTrafficWeight = status.AchievedTraffic
 		trafficData[status.Name] = td
 	}
