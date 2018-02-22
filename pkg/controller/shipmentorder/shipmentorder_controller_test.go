@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -47,36 +48,42 @@ func TestShippingToShipped(t *testing.T) {
 	so.Spec.Chart.RepoURL = srv.URL()
 	f.objects = append(f.objects, so)
 
-	// `base64 -i pkg/controller/shipmentorder/testdata/simple-0.0.1.tgz` on OS X
-	const tar = `H4sIFAAAAAAA/ykAK2FIUjBjSE02THk5NWIzVjBkUzVpWlM5Nk9WVjZNV2xqYW5keVRRbz1IZWxtAOyUz077MAzHd85T+AW2pt26n9TrjyMSByTuXmtYhJNGiVdpb4/SbWUrB5AYoEn9XNLGf2Ir+Toa65my/1sMstij5dn10Vrrf2XZr1rr8arzZTF89/t5sVwVM/iBUj6yi4JhpvV384ybuxHQmycK0bSugi5XDcU6GC/9/+PWeEtOHkJDAerWSWiZKYBQFEDvlUNLFRzekOpOefRCL3L1151NfIWj/oWsZxSKWUOe23269quNg8/0Xxbrkf7L1Xo96f83eDWuqeBuuHR1PhDQ+5h1ubIk2KBgpQAuJA/AuCGOyQDJfbBET3XaDeTZ1BgryAsFEImpljYcAixKvb0/y3CZA+D0LI/uZ2Uk+CJyHAtwqiGRphcaR2Hwnx9bsWjckMJYfKEKkL1xVPWKkMFYt9aia94PnEO2MS4TNAzzZ8ga6jK3Y55m38TExA3wFgAA//9zRQvpAAwAAA==`
-	relName := releaseNameForShipmentOrder(so)
-	twelve := int32(12)
-	rel := &shipperv1.Release{
-		ReleaseMeta: shipperv1.ReleaseMeta{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      relName,
-				Namespace: so.GetNamespace(),
-				Labels: map[string]string{
-					shipperv1.ReleaseLabel: relName,
-				},
-			},
-			Environment: shipperv1.ReleaseEnvironment{
-				Chart: shipperv1.EmbeddedChart{
-					Name:    so.Spec.Chart.Name,
-					Version: so.Spec.Chart.Version,
-					Tarball: tar,
-				},
-				ShipmentOrder: so.DeepCopy().Spec,
-				Replicas:      twelve,
-			},
-		},
-		Spec: shipperv1.ReleaseSpec{},
-		Status: shipperv1.ReleaseStatus{
-			Phase: shipperv1.ReleasePhaseWaitingForScheduling,
-		},
-	}
-	f.expectReleaseCreate(rel)
+	oldRel := newRelease("running-now")
+	oldRel.Status.Phase = shipperv1.ReleasePhaseInstalled
+	f.objects = append(f.objects, oldRel)
 
+	relName := releaseNameForShipmentOrder(so)
+
+	// Expect "running-now" to have its Predecessor set. Other fields don't matter.
+	oldRelWithSucc := oldRel.DeepCopy()
+	oldRelWithSucc.Status.Successor = &corev1.ObjectReference{
+		Kind:       oldRel.Kind,
+		APIVersion: oldRel.APIVersion,
+		Name:       relName,
+		Namespace:  oldRel.GetNamespace(),
+	}
+	f.expectReleaseStatusUpdate(oldRelWithSucc)
+
+	// Expect a new Release created with all the fields set correctly.
+	newRel := newRelease(relName)
+	newRel.Environment.Chart = shipperv1.EmbeddedChart{
+		Name:    so.Spec.Chart.Name,
+		Version: so.Spec.Chart.Version,
+		// `base64 -i pkg/controller/shipmentorder/testdata/simple-0.0.1.tgz` on OS X
+		Tarball: `H4sIFAAAAAAA/ykAK2FIUjBjSE02THk5NWIzVjBkUzVpWlM5Nk9WVjZNV2xqYW5keVRRbz1IZWxtAOyUz077MAzHd85T+AW2pt26n9TrjyMSByTuXmtYhJNGiVdpb4/SbWUrB5AYoEn9XNLGf2Ir+Toa65my/1sMstij5dn10Vrrf2XZr1rr8arzZTF89/t5sVwVM/iBUj6yi4JhpvV384ybuxHQmycK0bSugi5XDcU6GC/9/+PWeEtOHkJDAerWSWiZKYBQFEDvlUNLFRzekOpOefRCL3L1151NfIWj/oWsZxSKWUOe23269quNg8/0Xxbrkf7L1Xo96f83eDWuqeBuuHR1PhDQ+5h1ubIk2KBgpQAuJA/AuCGOyQDJfbBET3XaDeTZ1BgryAsFEImpljYcAixKvb0/y3CZA+D0LI/uZ2Uk+CJyHAtwqiGRphcaR2Hwnx9bsWjckMJYfKEKkL1xVPWKkMFYt9aia94PnEO2MS4TNAzzZ8ga6jK3Y55m38TExA3wFgAA//9zRQvpAAwAAA==`,
+	}
+	newRel.Environment.ShipmentOrder = so.DeepCopy().Spec
+	newRel.Environment.Replicas = int32(12) // set in the chart
+	newRel.Status.Phase = shipperv1.ReleasePhaseWaitingForScheduling
+	newRel.Status.Predecessor = &corev1.ObjectReference{
+		Kind:       oldRel.Kind,
+		APIVersion: oldRel.APIVersion,
+		Name:       oldRel.GetName(),
+		Namespace:  oldRel.GetNamespace(),
+	}
+	f.expectReleaseCreate(newRel)
+
+	// Expect the ShipmentOrder to transition to "Shipped".
 	shippedSo := so.DeepCopy()
 	shippedSo.Status.Phase = shipperv1.ShipmentOrderPhaseShipped
 	f.expectShipmentOrderStatusUpdate(shippedSo)
@@ -91,28 +98,8 @@ func TestShippingToShippedWithExistingRelease(t *testing.T) {
 	f.objects = append(f.objects, so)
 
 	relName := releaseNameForShipmentOrder(so)
-	rel := &shipperv1.Release{
-		ReleaseMeta: shipperv1.ReleaseMeta{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      relName,
-				Namespace: so.GetNamespace(),
-				Labels: map[string]string{
-					shipperv1.ReleaseLabel: relName,
-				},
-			},
-			Environment: shipperv1.ReleaseEnvironment{
-				Chart: shipperv1.EmbeddedChart{
-					Name:    so.Spec.Chart.Name,
-					Version: so.Spec.Chart.Version,
-				},
-				ShipmentOrder: so.DeepCopy().Spec,
-			},
-		},
-		Spec: shipperv1.ReleaseSpec{},
-		Status: shipperv1.ReleaseStatus{
-			Phase: shipperv1.ReleasePhaseWaitingForScheduling,
-		},
-	}
+
+	rel := newRelease(relName)
 	f.objects = append(f.objects, rel)
 
 	shippedSo := so.DeepCopy()
@@ -122,11 +109,128 @@ func TestShippingToShippedWithExistingRelease(t *testing.T) {
 	f.run()
 }
 
+func TestDanglingSuccessorPointer(t *testing.T) {
+	f := newFixture(t)
+
+	rel := newRelease("dangling-pointer")
+	rel.Status.Successor = &corev1.ObjectReference{
+		Kind:       rel.Kind,
+		APIVersion: rel.APIVersion,
+		Name:       "does-not-exist",
+		Namespace:  rel.GetNamespace(),
+	}
+	f.objects = append(f.objects, rel)
+
+	fixedRel := rel.DeepCopy()
+	fixedRel.Status.Successor = nil
+	f.expectReleaseStatusUpdate(fixedRel)
+
+	f.runForRelease()
+}
+
+func TestValidSuccessorPointer(t *testing.T) {
+	f := newFixture(t)
+
+	// alpha -> bravo -> charlie aborted
+	//                `-> delta
+	alpha := newRelease("alpha")
+	bravo := newRelease("bravo")
+	charlie := newRelease("charlie")
+	delta := newRelease("delta")
+
+	alpha.Status.Successor = &corev1.ObjectReference{
+		Kind:       bravo.Kind,
+		APIVersion: bravo.APIVersion,
+		Name:       bravo.GetName(),
+		Namespace:  bravo.GetNamespace(),
+	}
+	alpha.Status.Phase = shipperv1.ReleasePhaseSuperseded
+
+	bravo.Status.Predecessor = &corev1.ObjectReference{
+		Kind:       alpha.Kind,
+		APIVersion: alpha.APIVersion,
+		Name:       alpha.GetName(),
+		Namespace:  alpha.GetNamespace(),
+	}
+	bravo.Status.Successor = &corev1.ObjectReference{
+		Kind:       delta.Kind,
+		APIVersion: delta.APIVersion,
+		Name:       delta.GetName(),
+		Namespace:  delta.GetNamespace(),
+	}
+	bravo.Status.Phase = shipperv1.ReleasePhaseSuperseded
+
+	charlie.Status.Predecessor = &corev1.ObjectReference{
+		Kind:       bravo.Kind,
+		APIVersion: bravo.APIVersion,
+		Name:       bravo.GetName(),
+		Namespace:  bravo.GetNamespace(),
+	}
+	charlie.Status.Phase = shipperv1.ReleasePhaseAborted
+
+	delta.Status.Predecessor = &corev1.ObjectReference{
+		Kind:       bravo.Kind,
+		APIVersion: bravo.APIVersion,
+		Name:       bravo.GetName(),
+		Namespace:  bravo.GetNamespace(),
+	}
+	delta.Status.Phase = shipperv1.ReleasePhaseInstalled
+
+	f.objects = append(f.objects, alpha, bravo, charlie, delta)
+
+	// expect no actions
+
+	f.runForRelease()
+}
+
+func TestAbortedReleaseSuccessor(t *testing.T) {
+	f := newFixture(t)
+
+	// alpha -> bravo
+	alpha := newRelease("alpha")
+	bravo := newRelease("bravo")
+
+	alpha.Status.Successor = &corev1.ObjectReference{
+		Kind:       bravo.Kind,
+		APIVersion: bravo.APIVersion,
+		Name:       bravo.GetName(),
+		Namespace:  bravo.GetNamespace(),
+	}
+	alpha.Status.Phase = shipperv1.ReleasePhaseInstalled
+
+	bravo.Status.Predecessor = &corev1.ObjectReference{
+		Kind:       alpha.Kind,
+		APIVersion: alpha.APIVersion,
+		Name:       alpha.GetName(),
+		Namespace:  alpha.GetNamespace(),
+	}
+	bravo.Status.Phase = shipperv1.ReleasePhaseAborted
+
+	f.objects = append(f.objects, alpha, bravo)
+
+	alphaFixed := alpha.DeepCopy()
+	alphaFixed.Status.Successor = nil
+	f.expectReleaseStatusUpdate(alphaFixed)
+
+	f.runForRelease()
+}
+
+func TestNoSuccessorRelease(t *testing.T) {
+	f := newFixture(t)
+
+	alpha := newRelease("alpha")
+	f.objects = append(f.objects, alpha)
+
+	// expect no actions
+
+	f.runForRelease()
+}
+
 func newShipmentOrder(phase shipperv1.ShipmentOrderPhase) *shipperv1.ShipmentOrder {
 	return &shipperv1.ShipmentOrder{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ship-it",
-			Namespace: "shipper-test",
+			Namespace: shippertesting.TestNamespace,
 		},
 		Spec: shipperv1.ShipmentOrderSpec{
 			ClusterSelectors: []shipperv1.ClusterSelector{
@@ -141,9 +245,34 @@ func newShipmentOrder(phase shipperv1.ShipmentOrderPhase) *shipperv1.ShipmentOrd
 				RepoURL: "http://127.0.0.1:8879/charts",
 			},
 			Strategy: shipperv1.ReleaseStrategyVanguard,
+			ReleaseSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "shipmentorder-controller-test",
+				},
+			},
 		},
 		Status: shipperv1.ShipmentOrderStatus{
 			Phase: phase,
+		},
+	}
+}
+
+func newRelease(name string) *shipperv1.Release {
+	return &shipperv1.Release{
+		ReleaseMeta: shipperv1.ReleaseMeta{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: shippertesting.TestNamespace,
+				Labels: map[string]string{
+					"app": "shipmentorder-controller-test",
+					shipperv1.ReleaseLabel: name,
+				},
+			},
+			Environment: shipperv1.ReleaseEnvironment{
+				Chart:         shipperv1.EmbeddedChart{},
+				ShipmentOrder: shipperv1.ShipmentOrderSpec{},
+				Replicas:      int32(21),
+			},
 		},
 	}
 }
@@ -181,11 +310,32 @@ func (f *fixture) run() {
 
 	wait.PollUntil(
 		10*time.Millisecond,
-		func() (bool, error) { return c.workqueue.Len() >= 1, nil },
+		func() (bool, error) { return c.soWorkqueue.Len() >= 1, nil },
 		stopCh,
 	)
 
-	c.processNextWorkItem()
+	processNextWorkItem(c.soWorkqueue, c.syncShipmentOrder)
+
+	actual := shippertesting.FilterActions(f.client.Actions())
+	shippertesting.CheckActions(f.actions, actual, f.t)
+}
+
+func (f *fixture) runForRelease() {
+	c, i := f.newController()
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	i.Start(stopCh)
+	i.WaitForCacheSync(stopCh)
+
+	wait.PollUntil(
+		10*time.Millisecond,
+		func() (bool, error) { return c.relWorkqueue.Len() >= 1, nil },
+		stopCh,
+	)
+
+	processNextWorkItem(c.relWorkqueue, c.syncRelease)
 
 	actual := shippertesting.FilterActions(f.client.Actions())
 	shippertesting.CheckActions(f.actions, actual, f.t)
@@ -203,6 +353,15 @@ func (f *fixture) expectShipmentOrderStatusUpdate(so *shipperv1.ShipmentOrder) {
 func (f *fixture) expectReleaseCreate(rel *shipperv1.Release) {
 	gvr := shipperv1.SchemeGroupVersion.WithResource("releases")
 	action := kubetesting.NewCreateAction(gvr, rel.GetNamespace(), rel)
+
+	f.actions = append(f.actions, action)
+}
+
+func (f *fixture) expectReleaseStatusUpdate(rel *shipperv1.Release) {
+	gvr := shipperv1.SchemeGroupVersion.WithResource("releases")
+	action := kubetesting.NewUpdateAction(gvr, rel.GetNamespace(), rel)
+	// TODO uncomment when kubernetes#38113 is merged
+	//action.Subresource = "status"
 
 	f.actions = append(f.actions, action)
 }

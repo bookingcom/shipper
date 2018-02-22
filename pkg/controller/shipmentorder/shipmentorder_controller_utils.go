@@ -50,22 +50,61 @@ func (c *Controller) getReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) (*s
 		shipperv1.ReleaseLabel: releaseNameForShipmentOrder(so),
 	}.AsSelector()
 
+	mk := metaKey(so)
+
 	rlist, err := c.relLister.Releases(so.GetNamespace()).List(selector)
 	if err != nil {
-		return nil, fmt.Errorf("list Releases for ShipmentOrder %q: %s", metaKey(so), err)
+		return nil, fmt.Errorf("list Releases for ShipmentOrder %q: %s", mk, err)
 	}
 
 	n := len(rlist)
-	glog.V(6).Infof(`Found %d Releases for ShipmentOrder %q using selector %q`, n, metaKey(so), selector)
-	if n != 1 {
+	glog.V(6).Infof(`Found %d Releases for ShipmentOrder %q using selector %q`, n, mk, selector)
+	if n == 0 {
+		return nil, fmt.Errorf("list Releases for ShipmentOrder %q: too few", mk)
+	} else if n > 1 {
 		names := make([]string, n)
 		for i := 0; i < n; i++ {
 			names[i] = rlist[i].GetName()
 		}
-		return nil, fmt.Errorf("list Releases for ShipmentOrder %q: expected exactly one Release but found %v", metaKey(so), names)
+		glog.Warningf("expected exactly one Release for ShipmentOrder %q but found %v", mk, names)
+
+		return nil, fmt.Errorf("list Releases for ShipmentOrder %q: too many", mk)
 	}
 
 	return rlist[0], nil
+}
+
+// findLatestRelease, given a namespace and a selector, finds the latest
+// installed Release for an application. Selector needs to cover all Releases of
+// a single application.
+// Returns an error if more than one Release is found. Returned Release can be
+// nil even if there's no error (i.e. no installed Releases).
+func (c *Controller) findLatestRelease(ns string, selector labels.Selector) (*shipperv1.Release, error) {
+	rlist, err := c.relLister.Releases(ns).List(selector)
+	if err != nil {
+		return nil, fmt.Errorf("find latest Release for %q in %q: %s", selector, ns, err)
+	}
+
+	var (
+		already bool
+		latest  *shipperv1.Release
+	)
+
+	for _, r := range rlist {
+		if r.Status.Successor != nil || r.Status.Phase != shipperv1.ReleasePhaseInstalled {
+			continue
+		}
+
+		if already {
+			glog.Warningf("Found at least two installed Releases without a successor: %q and %q", metaKey(latest), metaKey(r))
+			return nil, fmt.Errorf("find latest Release for %q in %q: too many", ns, selector)
+		}
+
+		already = true
+		latest = r
+	}
+
+	return latest, nil
 }
 
 func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) error {
@@ -83,15 +122,31 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 	glog.V(6).Infof(`Extracted %+v replicas from ShipmentOrder %q`, replicas, metaKey(so))
 
 	releaseName := releaseNameForShipmentOrder(so)
+	releaseNs := so.GetNamespace()
 
-	release := &shipperv1.Release{
+	labels, err := metav1.LabelSelectorAsMap(so.Spec.ReleaseSelector)
+	if err != nil {
+		return fmt.Errorf("Release selector for ShipmentOrder %q: %s", metaKey(so), err)
+	}
+	labels[shipperv1.ReleaseLabel] = releaseNameForShipmentOrder(so)
+
+	selector, err := metav1.LabelSelectorAsSelector(so.Spec.ReleaseSelector)
+	if err != nil {
+		return fmt.Errorf("Release selector for ShipmentOrder %q: %s", metaKey(so), err)
+	}
+	glog.V(6).Infof("Using Release selector %q", selector)
+
+	var (
+		new  *shipperv1.Release
+		pred *shipperv1.Release
+	)
+
+	new = &shipperv1.Release{
 		ReleaseMeta: shipperv1.ReleaseMeta{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      releaseName,
-				Namespace: so.Namespace,
-				Labels: map[string]string{
-					shipperv1.ReleaseLabel: releaseName,
-				},
+				Namespace: releaseNs,
+				Labels:    labels,
 			},
 			Environment: shipperv1.ReleaseEnvironment{
 				Chart: shipperv1.EmbeddedChart{
@@ -99,7 +154,7 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 					Version: so.Spec.Chart.Version,
 					Tarball: b64,
 				},
-				ShipmentOrder: *so.Spec.DeepCopy(),
+				ShipmentOrder: *so.Spec.DeepCopy(), // XXX use SerializedReference?
 				Replicas:      replicas,
 			},
 		},
@@ -109,7 +164,54 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 		},
 	}
 
-	if _, err := c.shipperClientset.ShipperV1().Releases(so.Namespace).Create(release); err != nil {
+	pred, err = c.findLatestRelease(releaseNs, selector)
+	if err != nil {
+		return err
+	}
+
+	ri := c.shipperClientset.ShipperV1().Releases(releaseNs)
+
+	// It's important that we do Update first. If the update fails, at least there
+	// won't be two Releases without a successor. Recovering from this would
+	// require reasoning about order of things e.g. based on timestamps. In a
+	// distributed system this can be complicated.
+
+	if pred != nil {
+		glog.V(4).Infof("Release %q is the predecessor of %q", releaseName, pred.GetName())
+
+		new.Status.Predecessor = &corev1.ObjectReference{
+			APIVersion: pred.APIVersion,
+			Kind:       pred.Kind,
+			Name:       pred.GetName(),
+			Namespace:  releaseNs,
+		}
+
+		pred.Status.Successor = &corev1.ObjectReference{
+			APIVersion: new.APIVersion,
+			Kind:       new.Kind,
+			Name:       releaseName,
+			Namespace:  releaseNs,
+		}
+
+		// TODO change to UpdateStatus when kubernetes#38113 is merged.
+		// TODO Patch
+		if _, err = ri.Update(pred); err != nil {
+			// If Update failed, we bail out with pred untouched and new is not created.
+			// No recovery needed.
+			return fmt.Errorf("set successor for Release %q: %s", metaKey(pred), err)
+		}
+	} else {
+		// Must be a first deployment of a new app.
+		glog.V(4).Infof("No predecessor for Release %q", metaKey(new))
+	}
+
+	if _, err := ri.Create(new); err != nil {
+		// If Update went through but Create failed, we have pred pointing to a
+		// Release that does not exist. We can recover from this by fixing the
+		// dangling successor pointer.
+		// Requeue pred directly so that we don't need to wait a full re-sync period
+		// before progress can be made.
+		c.relWorkqueue.AddRateLimited(metaKey(pred))
 		return fmt.Errorf("create Release for ShipmentOrder %q: %s", metaKey(so), err)
 	}
 
