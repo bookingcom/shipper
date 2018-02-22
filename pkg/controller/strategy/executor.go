@@ -20,7 +20,7 @@ type Executor struct {
 }
 
 func (s *Executor) info(format string, args ...interface{}) {
-	glog.Infof("release/%s: %s", s.contender.release.Name, fmt.Sprintf(format, args...))
+	glog.Infof("release %s/%s: %s", s.contender.release.Namespace, s.contender.release.Name, fmt.Sprintf(format, args...))
 }
 
 // execute executes the strategy. It returns an ExecutorResult, if a patch should
@@ -31,14 +31,8 @@ func (s *Executor) execute() ([]interface{}, error) {
 
 	strategy := getStrategy(string(s.contender.release.Environment.ShipmentOrder.Strategy))
 	targetStep := uint(s.contender.release.Spec.TargetStep)
-	achievedStep := s.contender.release.Status.AchievedStep
 
-	if achievedStep == targetStep {
-		s.info("it seems that achievedStep (%d) is the same as targetStep (%d)", achievedStep, targetStep)
-		return nil, nil
-	}
-
-	strategyStep, err := strategy.GetStep(targetStep)
+	strategyStep, err := getStrategyStep(strategy, int(targetStep))
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +70,7 @@ func (s *Executor) execute() ([]interface{}, error) {
 	//////////////////////////////////////////////////////////////////////////
 	// Release
 	//
-	lastStepIndex := len(strategy.Steps) - 1
+	lastStepIndex := len(strategy.Spec.Steps) - 1
 	if lastStepIndex < 0 {
 		lastStepIndex = 0
 	}
@@ -93,38 +87,47 @@ func (s *Executor) execute() ([]interface{}, error) {
 
 func (s *Executor) finalizeRelease(targetStep uint, strategyStep v1.StrategyStep, isLastStep bool) ([]interface{}, error) {
 	var contenderPhase string
-	var incumbentPhase string
 
 	if isLastStep {
 		contenderPhase = v1.ReleasePhaseInstalled
-		incumbentPhase = v1.ReleasePhaseSuperseded
 	} else {
 		contenderPhase = v1.ReleasePhaseWaitingForCommand
 	}
 
 	var releasePatches []interface{}
 
-	newReleaseStatus := &v1.ReleaseStatus{
-		AchievedStep: targetStep,
-		Phase:        contenderPhase,
-	}
-	releasePatches = append(releasePatches, &ReleaseUpdateResult{
-		NewStatus: newReleaseStatus,
-		Name:      s.contender.release.Name,
-	})
+	reportedStep := s.contender.release.Status.AchievedStep
+	reportedPhase := s.contender.release.Status.Phase
 
-	if s.incumbent != nil {
-		newReleaseStatus := &v1.ReleaseStatus{
-			Phase: incumbentPhase,
+	if targetStep != reportedStep || contenderPhase != reportedPhase {
+		contenderStatus := &v1.ReleaseStatus{
+			AchievedStep: targetStep,
+			Phase:        contenderPhase,
 		}
 		releasePatches = append(releasePatches, &ReleaseUpdateResult{
-			NewStatus: newReleaseStatus,
-			Name:      s.incumbent.release.Name,
+			NewStatus: contenderStatus,
+			Name:      s.contender.release.Name,
 		})
 	}
 
-	return releasePatches, nil
+	if s.incumbent != nil {
+		incumbentPhase := v1.ReleasePhaseInstalled
+		if isLastStep {
+			incumbentPhase = v1.ReleasePhaseSuperseded
+		}
 
+		if incumbentPhase != s.incumbent.release.Status.Phase {
+			incumbentStatus := &v1.ReleaseStatus{
+				Phase: incumbentPhase,
+			}
+			releasePatches = append(releasePatches, &ReleaseUpdateResult{
+				NewStatus: incumbentStatus,
+				Name:      s.incumbent.release.Name,
+			})
+		}
+	}
+
+	return releasePatches, nil
 }
 
 func (s *Executor) checkContender(strategyStep v1.StrategyStep) (bool, []interface{}, error) {

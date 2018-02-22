@@ -44,6 +44,10 @@ func checkCapacity(capacityTarget *v1.CapacityTarget, stepCapacity uint, compFn 
 	}
 
 	statuses := capacityTarget.Status.Clusters
+	if len(statuses) != len(specs) {
+		return false, nil
+	}
+
 	for _, status := range statuses {
 		cd := capacityData[status.Name]
 		cd.achievedCapacity = uint(status.AchievedPercent)
@@ -93,6 +97,10 @@ func checkTraffic(trafficTarget *v1.TrafficTarget, stepTrafficWeight uint, compF
 	}
 
 	statuses := trafficTarget.Status.Clusters
+	if len(statuses) != len(specs) {
+		return false, nil
+	}
+
 	for _, status := range statuses {
 		td := trafficData[status.Name]
 		td.achievedTrafficWeight = status.AchievedTraffic

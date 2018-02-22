@@ -1,6 +1,10 @@
 package strategy
 
-import "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+import (
+	"fmt"
+
+	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+)
 
 var allInStrategy = &v1.StrategySpec{
 	Steps: []v1.StrategyStep{
@@ -47,10 +51,22 @@ var strategies = map[string]*v1.StrategySpec{
 	"vanguard": vanguardStrategy,
 }
 
-func getStrategy(name string) *v1.StrategySpec {
-	if s, ok := strategies[name]; !ok {
-		return allInStrategy
+func getStrategy(name string) *v1.Strategy {
+	strat := &v1.Strategy{}
+	if spec, ok := strategies[name]; !ok {
+		strat.Name = "allIn"
+		strat.Spec = *allInStrategy
+		return strat
 	} else {
-		return s
+		strat.Name = name
+		strat.Spec = *spec
+		return strat
 	}
+}
+
+func getStrategyStep(s *v1.Strategy, idx int) (v1.StrategyStep, error) {
+	if idx >= len(s.Spec.Steps) {
+		return v1.StrategyStep{}, fmt.Errorf("no step %d in strategy %q", idx, s.Name)
+	}
+	return s.Spec.Steps[idx], nil
 }
