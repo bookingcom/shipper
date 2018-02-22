@@ -221,7 +221,7 @@ func (c *Controller) syncOne(key string) error {
 			// interface, and if it is not nil then a patch is required, using the
 			// information from the returned gvk, together with the []byte that
 			// represents the patch encoded in JSON.
-			name, gvk, b := r.Patch()
+			name, gvk, b := r.PatchSpec()
 
 			if client, err := c.clientForGroupVersionKind(gvk, ns); err != nil {
 				return err
