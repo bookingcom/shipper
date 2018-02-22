@@ -20,17 +20,14 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
-	//"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
-	corev1informer "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -43,6 +40,7 @@ import (
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/controller/clusterclientstore"
 )
 
 const controllerAgentName = "traffic-controller"
@@ -57,15 +55,11 @@ const (
 
 // Controller is the controller implementation for TrafficTarget resources
 type Controller struct {
-	// kubeclientset is a standard kubernetes clientset
-	kubeclientset kubernetes.Interface
 	// shipperclientset is a clientset for our own API group
 	shipperclientset shipper.Interface
 
 	// the Kube clients for each of the target clusters
-	clusterClients      map[string]kubernetes.Interface
-	clusterPodInformers map[string]corev1informer.PodInformer
-	clustersMut         sync.RWMutex
+	clusterClientStore *clusterclientstore.Store
 
 	trafficTargetsLister listers.TrafficTargetLister
 	trafficTargetsSynced cache.InformerSynced
@@ -80,8 +74,6 @@ type Controller struct {
 	// recorder is an event recorder for recording Event resources to the
 	// Kubernetes API.
 	recorder record.EventRecorder
-
-	stopCh <-chan struct{}
 }
 
 // NewController returns a new TrafficTarget controller
@@ -89,13 +81,11 @@ func NewController(
 	kubeclientset kubernetes.Interface,
 	shipperclientset shipper.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
-	stopCh <-chan struct{}) *Controller {
+	store *clusterclientstore.Store,
+) *Controller {
 
 	// obtain references to shared index informers for the TrafficTarget type
 	trafficTargetInformer := shipperInformerFactory.Shipper().V1().TrafficTargets()
-
-	// obtain references to shared index informers for the Cluster type
-	// clusterInformer := shipperInformerFactory.Shipper().V1().Clusters()
 
 	// Create event broadcaster
 	// Add sample-controller types to the default Kubernetes Scheme so Events can be
@@ -108,28 +98,13 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
 
 	controller := &Controller{
-		kubeclientset:    kubeclientset,
-		shipperclientset: shipperclientset,
-		/*
-			NOTE: we're hardcoding clients and informers for target clusters
-			for the time being. These are already-configured clients (in
-			cmd/traffic/main.go) for the local  minikube. Eventually these maps
-			will be guarded by a mutex and updated dynamically as clusters
-			come and go. For now, we're just using the local cluster to avoid
-			investing time into credential management.
-		*/
-		clusterClients: map[string]kubernetes.Interface{
-			"local": kubeclientset,
-		},
-		// note that this informer factory was already started
-		clusterPodInformers: map[string]corev1informer.PodInformer{},
-		//clusterInformers map[string] kubeinformers.SharedInformerFactory
+		shipperclientset:   shipperclientset,
+		clusterClientStore: store,
+
 		trafficTargetsLister: trafficTargetInformer.Lister(),
 		trafficTargetsSynced: trafficTargetInformer.Informer().HasSynced,
 		workqueue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "TrafficTargets"),
 		recorder:             recorder,
-
-		stopCh: stopCh,
 	}
 
 	glog.Info("Setting up event handlers")
@@ -143,16 +118,10 @@ func NewController(
 		DeleteFunc: controller.enqueueTrafficTarget,
 	})
 
-	/*
-		clusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.setCluster,
-			UpdateFunc: func(old, new interface{}) {
-				controller.setCluster(new)
-			},
-			// the syncHandler needs to cope with the case where the object was deleted
-			DeleteFunc: controller.deleteCluster,
-		})
-	*/
+	store.SubscriptionRegisterFunc = func(informerFactory kubeinformers.SharedInformerFactory) {
+		informerFactory.Core().V1().Pods().Informer()
+	}
+	store.EventHandlerRegisterFunc = func(_ kubeinformers.SharedInformerFactory, _ string) {}
 
 	return controller
 }
@@ -161,34 +130,23 @@ func NewController(
 // as syncing informer caches and starting workers. It will block until stopCh
 // is closed, at which point it will shutdown the workqueue and wait for
 // workers to finish processing their current work items.
-func (c *Controller) Run(threadiness int) error {
+func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 	defer runtime.HandleCrash()
 	defer c.workqueue.ShutDown()
 
 	glog.Info("Starting TrafficTarget controller")
 	glog.Info("Waiting for informer caches to sync")
-	if ok := cache.WaitForCacheSync(c.stopCh, c.trafficTargetsSynced); !ok {
+	if ok := cache.WaitForCacheSync(stopCh, c.trafficTargetsSynced); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
-	}
-
-	// this will eventually be done in response to being informed about a new cluster appearing
-	for cluster, clientset := range c.clusterClients {
-		kubeInformerFactory := kubeinformers.NewSharedInformerFactory(clientset, time.Second*30)
-		podInformer := kubeInformerFactory.Core().V1().Pods()
-		c.clusterPodInformers[cluster] = podInformer
-		go kubeInformerFactory.Start(c.stopCh)
-		if ok := cache.WaitForCacheSync(c.stopCh, podInformer.Informer().HasSynced); !ok {
-			return fmt.Errorf("failed to wait for pod caches to sync")
-		}
 	}
 
 	glog.Info("Starting workers")
 	for i := 0; i < threadiness; i++ {
-		go wait.Until(c.runWorker, time.Second, c.stopCh)
+		go wait.Until(c.runWorker, time.Second, stopCh)
 	}
 
 	glog.Info("Started workers")
-	<-c.stopCh
+	<-stopCh
 	glog.Info("Shutting down workers")
 
 	return nil
@@ -280,25 +238,22 @@ func (c *Controller) syncHandler(key string) error {
 		return err
 	}
 
-	c.clustersMut.RLock()
-	shifter, err := newPodLabelShifter(namespace, list, c.clusterPodInformers)
-	c.clustersMut.RUnlock()
+	shifter, err := newPodLabelShifter(namespace, list)
 	if err != nil {
 		return err
 	}
 
 	statuses := []*shipperv1.ClusterTrafficStatus{}
 	for _, cluster := range shifter.Clusters() {
-		// These locks have a narrow scope (rather than function-wide with
-		// 'defer') because syncing to a cluster involves very slow operations,
-		// like API calls. Once we have a reference to these read-only caches
-		// and thread-safe clients, we don't care if this target cluster is
-		// removed from the set: we should still finish our work.
-		c.clustersMut.RLock()
-		clientset, ok := c.clusterClients[cluster]
-		c.clustersMut.RUnlock()
-		if !ok {
-			return fmt.Errorf("No client for cluster %q", cluster)
+		var clientset kubernetes.Interface
+		clientset, err = c.clusterClientStore.GetClient(cluster)
+		if err != nil {
+			return err
+		}
+		var informerFactory kubeinformers.SharedInformerFactory
+		informerFactory, err = c.clusterClientStore.GetInformerFactory(cluster)
+		if err != nil {
+			return err
 		}
 
 		clusterStatus := &shipperv1.ClusterTrafficStatus{
@@ -307,7 +262,7 @@ func (c *Controller) syncHandler(key string) error {
 
 		statuses = append(statuses, clusterStatus)
 
-		errs := shifter.SyncCluster(cluster, clientset)
+		errs := shifter.SyncCluster(cluster, clientset, informerFactory.Core().V1().Pods())
 		if len(errs) == 0 {
 			clusterStatus.Status = "Synced"
 		} else {
