@@ -50,24 +50,22 @@ func (c *Controller) getReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) (*s
 		shipperv1.ReleaseLabel: releaseNameForShipmentOrder(so),
 	}.AsSelector()
 
-	rlist, err := c.shipperClientset.ShipperV1().Releases(so.Namespace).List(metav1.ListOptions{
-		LabelSelector: selector.String(),
-	})
+	rlist, err := c.relLister.Releases(so.GetNamespace()).List(selector)
 	if err != nil {
 		return nil, fmt.Errorf("list Releases for ShipmentOrder %q: %s", metaKey(so), err)
 	}
 
-	n := len(rlist.Items)
+	n := len(rlist)
 	glog.V(6).Infof(`Found %d Releases for ShipmentOrder %q using selector %q`, n, metaKey(so), selector)
 	if n != 1 {
 		names := make([]string, n)
 		for i := 0; i < n; i++ {
-			names[i] = rlist.Items[i].GetName()
+			names[i] = rlist[i].GetName()
 		}
 		return nil, fmt.Errorf("list Releases for ShipmentOrder %q: expected exactly one Release but found %v", metaKey(so), names)
 	}
 
-	return &rlist.Items[0], nil
+	return rlist[0], nil
 }
 
 func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) error {
