@@ -143,19 +143,15 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 	defer runtime.HandleCrash()
 	defer c.workqueue.ShutDown()
 
-	if ok := cache.WaitForCacheSync(stopCh, c.releasesSynced); !ok {
-		return fmt.Errorf("failed to wait for caches to sync")
-	}
+	ok := cache.WaitForCacheSync(
+		stopCh,
+		c.releasesSynced,
+		c.installationTargetsSynced,
+		c.trafficTargetsSynced,
+		c.capacityTargetsSynced,
+	)
 
-	if ok := cache.WaitForCacheSync(stopCh, c.installationTargetsSynced); !ok {
-		return fmt.Errorf("failed to wait for caches to sync")
-	}
-
-	if ok := cache.WaitForCacheSync(stopCh, c.trafficTargetsSynced); !ok {
-		return fmt.Errorf("failed to wait for caches to sync")
-	}
-
-	if ok := cache.WaitForCacheSync(stopCh, c.capacityTargetsSynced); !ok {
+	if !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
