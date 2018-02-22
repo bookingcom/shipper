@@ -12,7 +12,7 @@ func checkInstallation(contenderRelease *releaseInfo) bool {
 	}
 
 	for _, clusterStatus := range clusterStatuses {
-		if clusterStatus.Status != "Installed" {
+		if clusterStatus.Status != v1.ReleasePhaseInstalled {
 			return false
 		}
 	}
