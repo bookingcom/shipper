@@ -60,7 +60,6 @@ for my $item (sort keys %secret_files) {
 my $secret_fh = File::Temp->new(UNLINK => 1);
 printf $secret_fh
     $templates[SECRET_TEMPLATE],
-    $secret{"tls.ca"},
     $secret{"tls.crt"},
     $secret{"tls.key"},
     $cluster_name,
@@ -84,7 +83,6 @@ __DATA__
 
 apiVersion: v1
 data:
-  tls.ca: %s
   tls.crt: %s
   tls.key: %s
 kind: Secret

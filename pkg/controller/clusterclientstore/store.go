@@ -169,8 +169,16 @@ func (s *Store) addCluster(obj interface{}) {
 	config := &rest.Config{
 		Host: cluster.Spec.APIMaster,
 	}
-	config.CAData = secret.Data["tls.ca"]
-	config.CertData = secret.Data["tls.cert"]
+
+	// the cluster secret controller does not include the CA in the secret:
+	// you end up using the system CA trust store. However, it's much handier
+	// for integration testing to be able to create a secret that is
+	// independent of the underlying system trust store.
+	if ca, ok := secret.Data["tls.ca"]; ok {
+		config.CAData = ca
+	}
+
+	config.CertData = secret.Data["tls.crt"]
 	config.KeyData = secret.Data["tls.key"]
 
 	client, err := kubernetes.NewForConfig(config)
