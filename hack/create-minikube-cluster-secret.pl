@@ -62,6 +62,7 @@ printf $secret_fh
     $templates[SECRET_TEMPLATE],
     $secret{"tls.crt"},
     $secret{"tls.key"},
+    $secret{"tls.ca"},
     $cluster_name,
     $namespace;
 
@@ -85,6 +86,7 @@ apiVersion: v1
 data:
   tls.crt: %s
   tls.key: %s
+  tls.ca %s
 kind: Secret
 metadata:
   name: %s
