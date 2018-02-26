@@ -25,8 +25,9 @@ import (
 
 type Store struct {
 	// internal lock, protecting access to the map of cluster clients
-	clientLock     sync.RWMutex
-	clusterClients map[string]kubernetes.Interface
+	clientLock           sync.RWMutex
+	clusterClients       map[string]kubernetes.Interface
+	clusterClientConfigs map[string]*rest.Config
 	// internal lock, protecting access to the map of informer factories
 	sharedInformerLock       sync.RWMutex
 	clusterInformerFactories map[string]kubeinformers.SharedInformerFactory
@@ -109,6 +110,20 @@ func (s *Store) GetClient(clusterName string) (kubernetes.Interface, error) {
 	return client, nil
 }
 
+// GetConfig returns a client for the specified cluster name.
+func (s *Store) GetConfig(clusterName string) (*rest.Config, error) {
+	s.clientLock.RLock()
+	defer s.clientLock.RUnlock()
+
+	var config *rest.Config
+	var ok bool
+	if config, ok = s.clusterClientConfigs[clusterName]; !ok {
+		return nil, fmt.Errorf("No client config for cluster %s", clusterName)
+	}
+
+	return config, nil
+}
+
 // GetInformerFactory returns an informer factory for the specified cluster name.
 func (s *Store) GetInformerFactory(clusterName string) (kubeinformers.SharedInformerFactory, error) {
 	s.sharedInformerLock.RLock()
@@ -122,11 +137,12 @@ func (s *Store) GetInformerFactory(clusterName string) (kubeinformers.SharedInfo
 	return informer, nil
 }
 
-func (s *Store) setClient(clusterName string, client kubernetes.Interface) {
+func (s *Store) setClient(clusterName string, client kubernetes.Interface, config *rest.Config) {
 	s.clientLock.Lock()
 	defer s.clientLock.Unlock()
 
 	s.clusterClients[clusterName] = client
+	s.clusterClientConfigs[clusterName] = config
 }
 
 func (s *Store) setInformerFactory(clusterName string, informerFactory kubeinformers.SharedInformerFactory) {
@@ -145,6 +161,7 @@ func (s *Store) unsetClient(clusterName string) {
 	defer s.clientLock.Unlock()
 
 	delete(s.clusterClients, clusterName)
+	delete(s.clusterClientConfigs, clusterName)
 }
 
 func (s *Store) unsetInformerFactory(clusterName string) {
@@ -191,7 +208,7 @@ func (s *Store) addCluster(obj interface{}) {
 
 	informerFactory := kubeinformers.NewSharedInformerFactory(client, time.Second*30)
 
-	s.setClient(cluster.Name, client)
+	s.setClient(cluster.Name, client, config)
 	s.setInformerFactory(cluster.Name, informerFactory)
 }
 
