@@ -498,8 +498,15 @@ func (in *InstallationTargetStatus) DeepCopyInto(out *InstallationTargetStatus) 
 	*out = *in
 	if in.Clusters != nil {
 		in, out := &in.Clusters, &out.Clusters
-		*out = make([]ClusterInstallationStatus, len(*in))
-		copy(*out, *in)
+		*out = make([]*ClusterInstallationStatus, len(*in))
+		for i := range *in {
+			if (*in)[i] == nil {
+				(*out)[i] = nil
+			} else {
+				(*out)[i] = new(ClusterInstallationStatus)
+				(*in)[i].DeepCopyInto((*out)[i])
+			}
+		}
 	}
 	return
 }

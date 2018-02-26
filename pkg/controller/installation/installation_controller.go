@@ -7,9 +7,12 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperInformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperListers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/controller/clusterclientstore"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"time"
@@ -18,7 +21,10 @@ import (
 // Controller is a Kubernetes controller that processes InstallationTarget
 // objects.
 type Controller struct {
-	shipperclientset          shipper.Interface
+	shipperclientset shipper.Interface
+	// the Kube clients for each of the target clusters
+	clusterClientStore *clusterclientstore.Store
+
 	workqueue                 workqueue.RateLimitingInterface
 	installationTargetsSynced cache.InformerSynced
 	installationTargetsLister shipperListers.InstallationTargetLister
@@ -30,6 +36,7 @@ type Controller struct {
 func NewController(
 	shipperclientset shipper.Interface,
 	shipperInformerFactory shipperInformers.SharedInformerFactory,
+	store *clusterclientstore.Store,
 ) *Controller {
 
 	// Management Cluster InstallationTarget informer
@@ -39,6 +46,7 @@ func NewController(
 
 	controller := &Controller{
 		shipperclientset:          shipperclientset,
+		clusterClientStore:        store,
 		clusterLister:             clusterInformer.Lister(),
 		releaseLister:             releaseInformer.Lister(),
 		installationTargetsLister: installationTargetInformer.Lister(),
@@ -165,24 +173,41 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	// The strategy here is try our best to install as many objects as possible
 	// in all target clusters. It is not the Installation Controller job to
 	// reason about a target cluster status.
-	clusterStatuses := make([]shipperV1.ClusterInstallationStatus, 0)
-	for _, name := range it.Spec.Clusters {
-		status := shipperV1.ClusterInstallationStatus{Name: name}
+	clusterStatuses := make([]*shipperV1.ClusterInstallationStatus, 0, len(it.Spec.Clusters))
+	for _, clusterName := range it.Spec.Clusters {
+		status := &shipperV1.ClusterInstallationStatus{Name: clusterName}
+		clusterStatuses = append(clusterStatuses, status)
 
 		var cluster *shipperV1.Cluster
-		if cluster, err = c.clusterLister.Get(name); err != nil {
+		if cluster, err = c.clusterLister.Get(clusterName); err != nil {
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
-		} else {
-			if err = handler.installRelease(cluster); err != nil {
-				status.Status = shipperV1.InstallationStatusFailed
-				status.Message = err.Error()
-			} else {
-				status.Status = shipperV1.InstallationStatusInstalled
-			}
+			continue
 		}
 
-		clusterStatuses = append(clusterStatuses, status)
+		var client kubernetes.Interface
+		client, err = c.clusterClientStore.GetClient(clusterName)
+		if err != nil {
+			status.Status = shipperV1.InstallationStatusFailed
+			status.Message = err.Error()
+			continue
+		}
+
+		var restConfig *rest.Config
+		restConfig, err = c.clusterClientStore.GetConfig(clusterName)
+		if err != nil {
+			status.Status = shipperV1.InstallationStatusFailed
+			status.Message = err.Error()
+			continue
+		}
+
+		if err = handler.installRelease(cluster, client, restConfig); err != nil {
+			status.Status = shipperV1.InstallationStatusFailed
+			status.Message = err.Error()
+			continue
+		}
+
+		status.Status = shipperV1.InstallationStatusInstalled
 	}
 
 	it.Status.Clusters = clusterStatuses

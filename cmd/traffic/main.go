@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	// Uncomment the following line to load the gcp plugin (only required to authenticate against GKE clusters).
@@ -34,6 +35,7 @@ import (
 	//clientset "k8s.io/sample-controller/pkg/client/clientset/versioned"
 	//informers "k8s.io/sample-controller/pkg/client/informers/externalversions"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	"github.com/bookingcom/shipper/pkg/controller/clusterclientstore"
 )
 
 var (
@@ -62,14 +64,18 @@ func main() {
 		glog.Fatalf("Error building shipper clientset: %s", err.Error())
 	}
 
+	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Second*30)
 	shipperInformerFactory := informers.NewSharedInformerFactory(shipperClient, time.Second*60)
 
-	controller := traffic.NewController(kubeClient, shipperClient, shipperInformerFactory, stopCh)
+	store := clusterclientstore.NewStore(kubeClient, shipperClient, kubeInformerFactory, shipperInformerFactory, stopCh)
+	controller := traffic.NewController(kubeClient, shipperClient, shipperInformerFactory, store)
 
+	go kubeInformerFactory.Start(stopCh)
 	go shipperInformerFactory.Start(stopCh)
 
+	store.Run()
 	glog.Infof("starting traffic controller...")
-	if err = controller.Run(2); err != nil {
+	if err = controller.Run(2, stopCh); err != nil {
 		glog.Fatalf("Error running controller: %s", err.Error())
 	}
 }

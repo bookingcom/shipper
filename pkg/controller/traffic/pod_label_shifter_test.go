@@ -9,7 +9,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
-	corev1informer "k8s.io/client-go/informers/core/v1"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	kubetesting "k8s.io/client-go/testing"
 
@@ -22,10 +21,6 @@ const clusterName = "test-cluster"
 type releaseWeights []uint
 type releasePodCounts []int
 type releaseExpectedTrafficPods []int
-
-func TestIsShifter(t *testing.T) {
-	var _ TrafficShifter = &podLabelShifter{}
-}
 
 // this is a private func, but other tests make use of it, so it's better tested in isolation
 func TestGetsTraffic(t *testing.T) {
@@ -235,9 +230,6 @@ func (f *fixture) run() {
 	shifter, err := newPodLabelShifter(
 		shippertesting.TestNamespace,
 		f.trafficTargets,
-		map[string]corev1informer.PodInformer{
-			clusterName: informers.Core().V1().Pods(),
-		},
 	)
 
 	if err != nil {
@@ -245,7 +237,7 @@ func (f *fixture) run() {
 		return
 	}
 
-	errs := shifter.SyncCluster(clusterName, f.client)
+	errs := shifter.SyncCluster(clusterName, f.client, informers.Core().V1().Pods())
 	for _, err := range errs {
 		f.Errorf("failed to sync cluster: %s", err.Error())
 	}

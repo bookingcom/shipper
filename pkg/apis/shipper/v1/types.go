@@ -7,6 +7,10 @@ import (
 )
 
 const (
+	ShipperNamespace = "shipper-system"
+
+	PhaseLabel = "phase"
+
 	ReleaseLabel   = "release"
 	ReleaseLinkAnn = "releaseLink"
 
@@ -21,6 +25,9 @@ const (
 
 	InstallationStatusInstalled = "Installed"
 	InstallationStatusFailed    = "Failed"
+
+	SecretChecksumAnnotation    = "shipper.booking.com/cluster-secret.checksum"
+	SecretClusterNameAnnotation = "shipper.booking.com/cluster-secret.clusterName"
 )
 
 // +genclient
@@ -271,7 +278,7 @@ type InstallationTargetList struct {
 }
 
 type InstallationTargetStatus struct {
-	Clusters []ClusterInstallationStatus `json:"clusters,omitempty"`
+	Clusters []*ClusterInstallationStatus `json:"clusters,omitempty"`
 }
 
 type ClusterInstallationStatus struct {

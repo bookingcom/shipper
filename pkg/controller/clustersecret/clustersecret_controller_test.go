@@ -48,7 +48,7 @@ func TestUpdateStaleSecret(t *testing.T) {
 
 	oldSecret := newSecret.DeepCopy()
 	// simulate stale data
-	oldSecret.Annotations[checksumAnnotation] = "stale"
+	oldSecret.Annotations[shipperv1.SecretChecksumAnnotation] = "stale"
 	oldSecret.Data[corev1.TLSCertKey] = []byte{'s', 't', 'a', 'l', 'e'}
 	oldSecret.Data[corev1.TLSPrivateKeyKey] = []byte{'s', 't', 'a', 'l', 'e'}
 	f.kubeObjects = append(f.kubeObjects, oldSecret)
@@ -66,7 +66,7 @@ func TestMissingChecksum(t *testing.T) {
 	f.expectSecretUpdate(newSecret)
 
 	oldSecret := newSecret.DeepCopy()
-	delete(oldSecret.Annotations, checksumAnnotation) // simulate missing annotation
+	delete(oldSecret.Annotations, shipperv1.SecretChecksumAnnotation) // simulate missing annotation
 	f.kubeObjects = append(f.kubeObjects, oldSecret)
 
 	f.run()
@@ -139,8 +139,8 @@ func newClusterSecret(cluster *shipperv1.Cluster, p tlsPair) *corev1.Secret {
 			Name:      name,
 			Namespace: shippertesting.TestNamespace,
 			Annotations: map[string]string{
-				clusterNameAnnotation: name,
-				checksumAnnotation:    hex.EncodeToString(csum),
+				shipperv1.SecretClusterNameAnnotation: name,
+				shipperv1.SecretChecksumAnnotation:    hex.EncodeToString(csum),
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{

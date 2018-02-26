@@ -17,7 +17,7 @@ my $home = $ENV{"HOME"};
 my $host = `minikube ip`;
 
 my $cluster_name = "minikube";
-my $namespace = "default";
+my $namespace = "shipper-system";
 my $client_key_file = "$home/.minikube/client.key";
 my $client_cert_file = "$home/.minikube/client.crt";
 my $ca_cert_file = "$home/.minikube/ca.crt";
@@ -60,9 +60,9 @@ for my $item (sort keys %secret_files) {
 my $secret_fh = File::Temp->new(UNLINK => 1);
 printf $secret_fh
     $templates[SECRET_TEMPLATE],
-    $secret{"tls.ca"},
     $secret{"tls.crt"},
     $secret{"tls.key"},
+    $secret{"tls.ca"},
     $cluster_name,
     $namespace;
 
@@ -84,13 +84,15 @@ __DATA__
 
 apiVersion: v1
 data:
-  tls.ca: %s
   tls.crt: %s
   tls.key: %s
+  tls.ca: %s
 kind: Secret
 metadata:
   name: %s
   namespace: %s
+  annotations:
+    shipper.booking.com/cluster-secret.checksum: some_checksum_hash
 type: Opaque
 ---
 apiVersion: shipper.booking.com/v1

@@ -18,7 +18,6 @@ import (
 type podLabelShifter struct {
 	namespace             string
 	clusterReleaseWeights clusterReleaseWeights
-	clusterInformers      map[string]corev1informer.PodInformer
 }
 
 type clusterReleaseWeights map[string]map[string]int
@@ -26,22 +25,16 @@ type clusterReleaseWeights map[string]map[string]int
 func newPodLabelShifter(
 	namespace string,
 	trafficTargets []*shipperv1.TrafficTarget,
-	clusterInformers map[string]corev1informer.PodInformer) (*podLabelShifter, error) {
+) (*podLabelShifter, error) {
 
 	weights, err := buildClusterReleaseWeights(trafficTargets)
 	if err != nil {
 		return nil, err
 	}
-	// need a copy since we don't want to share lock scope with the parent controller
-	informersCopy := map[string]corev1informer.PodInformer{}
-	for cluster, informer := range clusterInformers {
-		informersCopy[cluster] = informer
-	}
 
 	return &podLabelShifter{
 		namespace:             namespace,
 		clusterReleaseWeights: weights,
-		clusterInformers:      informersCopy,
 	}, nil
 }
 
@@ -54,15 +47,14 @@ func (p *podLabelShifter) Clusters() []string {
 	return clusters
 }
 
-func (p *podLabelShifter) SyncCluster(cluster string, clientset kubernetes.Interface) []error {
+func (p *podLabelShifter) SyncCluster(
+	cluster string,
+	clientset kubernetes.Interface,
+	informer corev1informer.PodInformer,
+) []error {
 	releaseWeights, ok := p.clusterReleaseWeights[cluster]
 	if !ok {
 		return []error{fmt.Errorf("podLabelShifter has no weights for cluster %q", cluster)}
-	}
-
-	informer, ok := p.clusterInformers[cluster]
-	if !ok {
-		return []error{fmt.Errorf("podLabelShifter has no pod informer for cluster %q", cluster)}
 	}
 
 	podsClient := clientset.CoreV1().Pods(p.namespace)
