@@ -1,7 +1,8 @@
 apiVersion: shipper.booking.com/v1
 kind: Release
 status:
-  phase: WaitingForScheduling
+  phase: WaitingForStrategy
+  achievedStep: 0
 metadata:
   name: 0.0.1
   labels:
@@ -178,4 +179,4 @@ metadata:
       version: "0.99"
     replicas: 10
 spec:
-  targetStep: 1
+  targetStep: 0
