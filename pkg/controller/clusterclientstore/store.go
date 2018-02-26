@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang/glog"
+
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
@@ -150,10 +152,15 @@ func (s *Store) setInformerFactory(clusterName string, informerFactory kubeinfor
 	defer s.sharedInformerLock.Unlock()
 
 	s.clusterInformerFactories[clusterName] = informerFactory
+	glog.Info("Calling subscription register function")
 	s.SubscriptionRegisterFunc(informerFactory)
+	glog.Info("Starting the informer factory")
 	informerFactory.Start(s.stopchan)
+	glog.Info("Waiting for cache to sync...")
 	informerFactory.WaitForCacheSync(s.stopchan)
+	glog.Info("Cache synced. Calling event handler register function")
 	s.EventHandlerRegisterFunc(informerFactory, clusterName)
+	glog.Infof("Set up informer factory for %s complete", clusterName)
 }
 
 func (s *Store) unsetClient(clusterName string) {
@@ -174,6 +181,36 @@ func (s *Store) unsetInformerFactory(clusterName string) {
 func (s *Store) updateSecret(old, new interface{}) {
 	oldSecret := old.(*corev1.Secret)
 	newSecret := new.(*corev1.Secret)
+
+	if oldSecret.Namespace != shipperv1.ShipperNamespace || newSecret.Namespace != shipperv1.ShipperNamespace {
+		// These secrets are not in our namespace, so we don't need to do anything
+		return
+	}
+
+	oldChecksum, ok := oldSecret.GetAnnotations()[shipperv1.SecretChecksumAnnotation]
+	if !ok {
+		runtime.HandleError(fmt.Errorf("Can't compare secrets: no %s annotation defined on the old version of %s secret", shipperv1.SecretChecksumAnnotation, oldSecret.Name))
+		return
+	}
+
+	newChecksum, ok := newSecret.GetAnnotations()[shipperv1.SecretChecksumAnnotation]
+	if !ok {
+		runtime.HandleError(fmt.Errorf("Can't compare secrets: no %s annotation defined on the new version of %s secret", shipperv1.SecretChecksumAnnotation, newSecret.Name))
+		return
+	}
+
+	if oldChecksum == newChecksum {
+		// Nothing changed, nothing to do
+		return
+	}
+
+	cluster, err := s.managementClusterShipperClient.ShipperV1().Clusters().Get(newSecret.Name, metav1.GetOptions{})
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	s.addCluster(cluster)
 }
 
 func (s *Store) addCluster(obj interface{}) {

@@ -13,11 +13,6 @@ import (
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
 
-const (
-	checksumAnnotation    = "shipper.booking.com/cluster-secret.checksum"
-	clusterNameAnnotation = "shipper.booking.com/cluster-secret.clusterName"
-)
-
 func (c *Controller) processCluster(cluster *shipperv1.Cluster) error {
 	// cluster is not a copy here!
 	// this controller must not modify the Cluster resource
@@ -49,7 +44,7 @@ func (c *Controller) processCluster(cluster *shipperv1.Cluster) error {
 
 	clusterName := cluster.GetName()
 
-	got, ok := secret.GetAnnotations()[checksumAnnotation]
+	got, ok := secret.GetAnnotations()[shipperv1.SecretChecksumAnnotation]
 	if !ok {
 		// we got a Secret that's controlled by us (because we must've passed the
 		// owner ref check to get here) but it does not have the right annotation,
@@ -79,12 +74,12 @@ func (c *Controller) createSecretForCluster(cluster *shipperv1.Cluster, crt, key
 			Name:      secretName,
 			Namespace: c.ownNamespace,
 			Annotations: map[string]string{
-				checksumAnnotation: hex.EncodeToString(csum),
+				shipperv1.SecretChecksumAnnotation: hex.EncodeToString(csum),
 				// the convention is that Secrets should be named after their respective
 				// target Clusters
 				// but I don't want this to be a hard dependency so I'm putting the cluster
 				// name separately in the annotations, just in case
-				clusterNameAnnotation: clusterName,
+				shipperv1.SecretClusterNameAnnotation: clusterName,
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
@@ -122,8 +117,8 @@ func (c *Controller) createSecretForCluster(cluster *shipperv1.Cluster, crt, key
 func (c *Controller) updateClusterSecret(secret *corev1.Secret, clusterName string, crt, key, csum []byte) error {
 	secretName := secret.GetName()
 
-	secret.Annotations[checksumAnnotation] = hex.EncodeToString(csum)
-	secret.Annotations[clusterNameAnnotation] = clusterName
+	secret.Annotations[shipperv1.SecretChecksumAnnotation] = hex.EncodeToString(csum)
+	secret.Annotations[shipperv1.SecretClusterNameAnnotation] = clusterName
 
 	secret.Data[corev1.TLSCertKey] = crt
 	secret.Data[corev1.TLSPrivateKeyKey] = key

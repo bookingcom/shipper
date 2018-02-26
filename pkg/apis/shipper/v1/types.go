@@ -25,6 +25,9 @@ const (
 
 	InstallationStatusInstalled = "Installed"
 	InstallationStatusFailed    = "Failed"
+
+	SecretChecksumAnnotation    = "shipper.booking.com/cluster-secret.checksum"
+	SecretClusterNameAnnotation = "shipper.booking.com/cluster-secret.clusterName"
 )
 
 // +genclient
