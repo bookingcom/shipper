@@ -278,7 +278,7 @@ type InstallationTargetList struct {
 }
 
 type InstallationTargetStatus struct {
-	Clusters []ClusterInstallationStatus `json:"clusters,omitempty"`
+	Clusters []*ClusterInstallationStatus `json:"clusters,omitempty"`
 }
 
 type ClusterInstallationStatus struct {
