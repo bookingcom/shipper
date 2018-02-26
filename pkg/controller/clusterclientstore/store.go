@@ -68,6 +68,7 @@ func NewStore(
 		managementClusterShipperInformerFactory: shipperInformerFactory,
 		stopchan:                 stopchan,
 		clusterClients:           map[string]kubernetes.Interface{},
+		clusterClientConfigs:     map[string]*rest.Config{},
 		clusterInformerFactories: map[string]kubeinformers.SharedInformerFactory{},
 	}
 }
