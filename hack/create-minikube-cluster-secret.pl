@@ -86,7 +86,7 @@ apiVersion: v1
 data:
   tls.crt: %s
   tls.key: %s
-  tls.ca %s
+  tls.ca: %s
 kind: Secret
 metadata:
   name: %s
