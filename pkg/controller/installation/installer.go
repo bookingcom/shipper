@@ -13,8 +13,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"os/user"
-	"path"
 )
 
 // Installer is an object that knows how to install Helm charts directly
@@ -43,59 +41,22 @@ func (i *Installer) renderManifests(cluster *shipperV1.Cluster) ([]string, error
 	return shipperChart.RenderChart(chrt, vals, options)
 }
 
-// buildConfig returns a suitable configuration for our client to connect to
-// the given cluster.
-func (i *Installer) buildConfig(cluster *shipperV1.Cluster, gvk *schema.GroupVersionKind) (*rest.Config, error) {
-
-	// Set up the initial client configuration.
-	cfg := &rest.Config{
-		Host:          cluster.Spec.APIMaster,
-		APIPath:       dynamic.LegacyAPIPathResolverFunc(*gvk),
-		ContentConfig: dynamic.ContentConfig(),
-	}
-
-	// We need to update the configuration's GroupVersion with the information
-	// found in GroupVersionKind. This is required otherwise the ResourceClient
-	// won't be able to compute the right URL to interact with the target cluster.
-	cfg.GroupVersion = &schema.GroupVersion{Group: gvk.Group, Version: gvk.Version}
-
-	// The following configuration is meant only to be used with minikube. In
-	// production it is likely that we'll need to provide some sort of
-	// configuration regarding Cluster secrets. One idea is to have a secret
-	// with the same interface rest.Config accepts and use it to compose the
-	// cluster's client configuration.
-	if cluster.Name == "minikube" {
-		usr, _ := user.Current()
-		cfg.CAFile = path.Join(usr.HomeDir, ".minikube", "ca.crt")
-		cfg.CertFile = path.Join(usr.HomeDir, ".minikube", "client.crt")
-		cfg.KeyFile = path.Join(usr.HomeDir, ".minikube", "client.key")
-	}
-
-	return cfg, nil
-}
-
 // buildResourceClient returns a ResourceClient suitable to manipulate the kind
 // of resource represented by the given GroupVersionKind at the given Cluster.
 func (i *Installer) buildResourceClient(
 	cluster *shipperV1.Cluster,
+	client kubernetes.Interface,
+	referenceConfig *rest.Config,
 	gvk *schema.GroupVersionKind,
 ) (dynamic.ResourceInterface, error) {
+	config := rest.CopyConfig(referenceConfig)
 
-	// Build the configuration for the cluster, according to the given GroupVersionKind.
-	cfg, err := i.buildConfig(cluster, gvk)
-	if err != nil {
-		return nil, err
-	}
+	config.GroupVersion = &schema.GroupVersion{Group: gvk.Group, Version: gvk.Version}
+	config.APIPath = dynamic.LegacyAPIPathResolverFunc(*gvk)
+	config.ContentConfig = dynamic.ContentConfig()
 
 	// Build the dynamic client based on the built configuration.
-	dynamicClient, err := dynamic.NewClient(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	// Build the k8s client that will ne used to gather the resources for the GroupVersion
-	// contained in the given gvk.
-	client, err := kubernetes.NewForConfig(cfg)
+	dynamicClient, err := dynamic.NewClient(config)
 	if err != nil {
 		return nil, err
 	}
@@ -129,6 +90,8 @@ func (i *Installer) buildResourceClient(
 // installManifests attempts to install the manifests on the specified cluster.
 func (i *Installer) installManifests(
 	cluster *shipperV1.Cluster,
+	client kubernetes.Interface,
+	config *rest.Config,
 	manifests []string,
 ) error {
 
@@ -151,7 +114,7 @@ func (i *Installer) installManifests(
 
 		// Once we've gathered enough information about the document we want to install,
 		// we're able to build a resource client to interact with the target cluster.
-		resourceClient, err := i.buildResourceClient(cluster, gvk)
+		resourceClient, err := i.buildResourceClient(cluster, client, config, gvk)
 		if err != nil {
 			return fmt.Errorf("error building resource client: %s", err)
 		}
@@ -187,6 +150,8 @@ func (i *Installer) installManifests(
 // installRelease attempts to install the given release on the given cluster.
 func (i *Installer) installRelease(
 	cluster *shipperV1.Cluster,
+	client kubernetes.Interface,
+	config *rest.Config,
 ) error {
 
 	renderedManifests, err := i.renderManifests(cluster)
@@ -194,7 +159,7 @@ func (i *Installer) installRelease(
 		return err
 	}
 
-	return i.installManifests(cluster, renderedManifests)
+	return i.installManifests(cluster, client, config, renderedManifests)
 }
 
 // decodeManifest attempts to deserialize the provided manifest. It returns
