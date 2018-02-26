@@ -119,6 +119,7 @@ func NewController(
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.soWorkqueue.ShutDown()
+	defer c.relWorkqueue.ShutDown()
 
 	glog.V(2).Info("Starting ShipmentOrder controller")
 	defer glog.V(2).Info("Shutting down ShipmentOrder controller")
