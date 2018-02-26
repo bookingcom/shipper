@@ -14,6 +14,7 @@ import (
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	kubeinformers "k8s.io/client-go/informers"
@@ -154,7 +155,8 @@ func (s *Store) unsetInformerFactory(clusterName string) {
 }
 
 func (s *Store) updateSecret(old, new interface{}) {
-
+	oldSecret := old.(*corev1.Secret)
+	newSecret := new.(*corev1.Secret)
 }
 
 func (s *Store) addCluster(obj interface{}) {
@@ -194,6 +196,14 @@ func (s *Store) addCluster(obj interface{}) {
 }
 
 func (s *Store) updateCluster(old, new interface{}) {
+	oldCluster := old.(*shipperv1.Cluster)
+	newCluster := new.(*shipperv1.Cluster)
+
+	if oldCluster.Spec.APIMaster == newCluster.Spec.APIMaster {
+		// nothing has changed and this is just a resync, so do nothing
+		return
+	}
+
 	s.addCluster(new)
 }
 
