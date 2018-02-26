@@ -378,10 +378,8 @@ func (c Controller) calculateAmountFromPercentage(total, percentage int32) int32
 
 func (c *Controller) registerEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
 	informerFactory.Apps().V1().Deployments().Informer().AddEventHandler(c.NewDeploymentResourceEventHandler(clusterName))
-	glog.Info("Registered event handlers")
 }
 
 func (c *Controller) subscribe(informerFactory kubeinformers.SharedInformerFactory) {
 	informerFactory.Apps().V1().Deployments().Informer()
-	glog.Info("Subscribed to deployments")
 }

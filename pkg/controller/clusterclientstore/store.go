@@ -11,8 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
-
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
@@ -153,19 +151,16 @@ func (s *Store) setInformerFactory(clusterName string, informerFactory kubeinfor
 	defer s.sharedInformerLock.Unlock()
 
 	s.clusterInformerFactories[clusterName] = informerFactory
-	glog.Info("Calling subscription register function")
 	if s.SubscriptionRegisterFunc != nil {
 		s.SubscriptionRegisterFunc(informerFactory)
 	}
-	glog.Info("Starting the informer factory")
+
 	informerFactory.Start(s.stopchan)
-	glog.Info("Waiting for cache to sync...")
 	informerFactory.WaitForCacheSync(s.stopchan)
-	glog.Info("Cache synced. Calling event handler register function")
+
 	if s.EventHandlerRegisterFunc != nil {
 		s.EventHandlerRegisterFunc(informerFactory, clusterName)
 	}
-	glog.Infof("Set up informer factory for %s complete", clusterName)
 }
 
 func (s *Store) unsetClient(clusterName string) {
