@@ -184,7 +184,15 @@ func (s *Store) updateSecret(old, new interface{}) {
 	newSecret := new.(*corev1.Secret)
 
 	if oldSecret.Namespace != shipperv1.ShipperNamespace || newSecret.Namespace != shipperv1.ShipperNamespace {
-		// These secrets are not in our namespace, so we don't need to do anything
+		// These secrets are not in our namespace, so we don't
+		// need to do anything
+		return
+	}
+
+	_, ok := s.clusterClients[newSecret.Name]
+	if !ok {
+		// we don't have a cluster by this name, so don't do
+		// anything
 		return
 	}
 
