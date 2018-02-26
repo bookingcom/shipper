@@ -154,13 +154,17 @@ func (s *Store) setInformerFactory(clusterName string, informerFactory kubeinfor
 
 	s.clusterInformerFactories[clusterName] = informerFactory
 	glog.Info("Calling subscription register function")
-	s.SubscriptionRegisterFunc(informerFactory)
+	if s.SubscriptionRegisterFunc != nil {
+		s.SubscriptionRegisterFunc(informerFactory)
+	}
 	glog.Info("Starting the informer factory")
 	informerFactory.Start(s.stopchan)
 	glog.Info("Waiting for cache to sync...")
 	informerFactory.WaitForCacheSync(s.stopchan)
 	glog.Info("Cache synced. Calling event handler register function")
-	s.EventHandlerRegisterFunc(informerFactory, clusterName)
+	if s.EventHandlerRegisterFunc != nil {
+		s.EventHandlerRegisterFunc(informerFactory, clusterName)
+	}
 	glog.Infof("Set up informer factory for %s complete", clusterName)
 }
 
