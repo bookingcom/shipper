@@ -22,6 +22,7 @@ const (
 	ReleasePhaseWaitingForCommand    = "WaitingForCommand"
 	ReleasePhaseInstalled            = "Installed"
 	ReleasePhaseSuperseded           = "Superseded"
+	ReleasePhaseAborted              = "Aborted"
 
 	InstallationStatusInstalled = "Installed"
 	InstallationStatusFailed    = "Failed"
@@ -88,6 +89,8 @@ type ShipmentOrderSpec struct {
 	// the inlined "values.yaml" to apply to the chart when rendering it
 	// XXX pointer here means it's null-able, do we want that?
 	Values *ChartValues `json:"values"`
+
+	ReleaseSelector *metav1.LabelSelector `json:"releaseSelector"`
 }
 
 type ClusterSelector struct {
@@ -227,6 +230,10 @@ type ReleaseSpec struct {
 type ReleaseStatus struct {
 	Phase        string `json:"phase"`
 	AchievedStep uint   `json:"achievedStep"`
+	// Successor is a reference to a Release that supersedes this one.
+	Successor *corev1.ObjectReference `json:"successor,omitempty"`
+	// Predecessor is a reference to a known working Release.
+	Predecessor *corev1.ObjectReference `json:"predecessor,omitempty"`
 }
 
 type ReleaseEnvironment struct {
