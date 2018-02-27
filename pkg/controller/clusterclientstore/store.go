@@ -1,9 +1,3 @@
-// package clusterclientstore provides a thread-safe storage for kubernetes
-// clients. The internal storage is updated automatically by observing
-// the kubernetes cluster for cluster objects. New cluster objects
-// trigger a client creation, updates to Secret objects trigger
-// re-creation of a client, and Cluster deletions cause the removal of
-// a client.
 package clusterclientstore
 
 import (
@@ -71,8 +65,11 @@ func NewStore(
 	}
 }
 
-// Run registers event handlers to watch Secret and
-// Cluster objects on the management cluster.
+// Run registers event handlers to watch Secret and Cluster objects on
+// the management cluster. This method must be called before any other
+// method. Otherwise, the cluster client store would not be populated,
+// and you will receive errors saying that the specified cluster does
+// not exist.
 func (s *Store) Run() {
 	secretsInformer := s.managementClusterKubeInformerFactory.Core().V1().Secrets().Informer()
 	clustersInformer := s.managementClusterShipperInformerFactory.Shipper().V1().Clusters().Informer()
@@ -97,7 +94,9 @@ func (s *Store) Run() {
 	})
 }
 
-// GetClient returns a client for the specified cluster name.
+// GetClient returns a client for the specified cluster name.  Note
+// that you must call the `Run()` function, or otherwise the cluster
+// client store will not be populated.
 func (s *Store) GetClient(clusterName string) (kubernetes.Interface, error) {
 	s.clientLock.RLock()
 	defer s.clientLock.RUnlock()
@@ -111,7 +110,9 @@ func (s *Store) GetClient(clusterName string) (kubernetes.Interface, error) {
 	return client, nil
 }
 
-// GetConfig returns a client for the specified cluster name.
+// GetConfig returns a client for the specified cluster name. Note
+// that you must call the `Run()` function, or otherwise the cluster
+// client store will not be populated.
 func (s *Store) GetConfig(clusterName string) (*rest.Config, error) {
 	s.clientLock.RLock()
 	defer s.clientLock.RUnlock()
@@ -125,7 +126,9 @@ func (s *Store) GetConfig(clusterName string) (*rest.Config, error) {
 	return config, nil
 }
 
-// GetInformerFactory returns an informer factory for the specified cluster name.
+// GetInformerFactory returns an informer factory for the specified
+// cluster name. Note that you must call the `Run()` function, or
+// otherwise the cluster client store will not be populated.
 func (s *Store) GetInformerFactory(clusterName string) (kubeinformers.SharedInformerFactory, error) {
 	s.sharedInformerLock.RLock()
 	defer s.sharedInformerLock.RUnlock()

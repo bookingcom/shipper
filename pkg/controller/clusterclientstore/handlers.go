@@ -4,8 +4,8 @@ import (
 	kubeinformers "k8s.io/client-go/informers"
 )
 
-// SubscriptionRegisterFunc calls the relevant functions on a shared
-// informer factory to set up watches.
+// SubscriptionRegisterFunc should call the relevant functions on a
+// shared informer factory to set up watches.
 //
 // Note that there should be no event handlers being assigned to any
 // informers in this function.
