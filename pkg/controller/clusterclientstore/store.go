@@ -5,16 +5,18 @@ import (
 	"sync"
 	"time"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	"github.com/golang/glog"
+
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	kubeinformers "k8s.io/client-go/informers"
+	corev1informer "k8s.io/client-go/informers/core/v1"
 	kubernetes "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperv1informer "github.com/bookingcom/shipper/pkg/client/informers/externalversions/shipper/v1"
 )
 
 type Store struct {
@@ -26,15 +28,9 @@ type Store struct {
 	sharedInformerLock       sync.RWMutex
 	clusterInformerFactories map[string]kubeinformers.SharedInformerFactory
 
-	// the client for the shipper group on the management cluster
-	managementClusterShipperClient shipper.Interface
-	// an informer watching the shipper group on the management cluster
-	managementClusterShipperInformerFactory shipperinformers.SharedInformerFactory
-	// The client for the kubernetes group on the management cluster
-	managementClusterKubeClient kubernetes.Interface
-	// The informer for the kubernetes group on the management cluster
-	managementClusterKubeInformerFactory kubeinformers.SharedInformerFactory
-	// the stop channel to be passed to informers
+	secretInformer  corev1informer.SecretInformer
+	clusterInformer shipperv1informer.ClusterInformer
+
 	stopchan <-chan struct{}
 
 	// called when the cluster caches have been populated, so that the controller can register event handlers
@@ -47,56 +43,34 @@ type Store struct {
 // NewStore creates a new client store that will use the specified
 // client to set up watches on Cluster objects.
 func NewStore(
-	kubeClient kubernetes.Interface,
-	shipperClient shipper.Interface,
-	kubeInformerFactory kubeinformers.SharedInformerFactory,
-	shipperInformerFactory shipperinformers.SharedInformerFactory,
+	secretInformer corev1informer.SecretInformer,
+	clusterInformer shipperv1informer.ClusterInformer,
 	stopchan <-chan struct{},
 ) *Store {
-	return &Store{
-		managementClusterKubeClient:             kubeClient,
-		managementClusterShipperClient:          shipperClient,
-		managementClusterKubeInformerFactory:    kubeInformerFactory,
-		managementClusterShipperInformerFactory: shipperInformerFactory,
+	s := &Store{
+		secretInformer:           secretInformer,
+		clusterInformer:          clusterInformer,
 		stopchan:                 stopchan,
 		clusterClients:           map[string]kubernetes.Interface{},
 		clusterClientConfigs:     map[string]*rest.Config{},
 		clusterInformerFactories: map[string]kubeinformers.SharedInformerFactory{},
 	}
-}
-
-// Run registers event handlers to watch Secret and Cluster objects on
-// the management cluster. This method must be called before any other
-// method. Otherwise, the cluster client store would not be populated,
-// and you will receive errors saying that the specified cluster does
-// not exist.
-func (s *Store) Run() {
-	secretsInformer := s.managementClusterKubeInformerFactory.Core().V1().Secrets().Informer()
-	clustersInformer := s.managementClusterShipperInformerFactory.Shipper().V1().Clusters().Informer()
-
-	// Start the informers
-	s.managementClusterKubeInformerFactory.Start(s.stopchan)
-	s.managementClusterShipperInformerFactory.Start(s.stopchan)
-
-	// Wait for caches to sync
-	s.managementClusterKubeInformerFactory.WaitForCacheSync(s.stopchan)
-	s.managementClusterShipperInformerFactory.WaitForCacheSync(s.stopchan)
 
 	// register the event handlers
-	secretsInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	secretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: s.updateSecret,
 	})
 
-	clustersInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	clusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    s.addCluster,
 		UpdateFunc: s.updateCluster,
 		DeleteFunc: s.deleteCluster,
 	})
+
+	return s
 }
 
-// GetClient returns a client for the specified cluster name.  Note
-// that you must call the `Run()` function, or otherwise the cluster
-// client store will not be populated.
+// GetClient returns a client for the specified cluster name.
 func (s *Store) GetClient(clusterName string) (kubernetes.Interface, error) {
 	s.clientLock.RLock()
 	defer s.clientLock.RUnlock()
@@ -110,9 +84,7 @@ func (s *Store) GetClient(clusterName string) (kubernetes.Interface, error) {
 	return client, nil
 }
 
-// GetConfig returns a client for the specified cluster name. Note
-// that you must call the `Run()` function, or otherwise the cluster
-// client store will not be populated.
+// GetConfig returns a client for the specified cluster name.
 func (s *Store) GetConfig(clusterName string) (*rest.Config, error) {
 	s.clientLock.RLock()
 	defer s.clientLock.RUnlock()
@@ -127,8 +99,7 @@ func (s *Store) GetConfig(clusterName string) (*rest.Config, error) {
 }
 
 // GetInformerFactory returns an informer factory for the specified
-// cluster name. Note that you must call the `Run()` function, or
-// otherwise the cluster client store will not be populated.
+// cluster name.
 func (s *Store) GetInformerFactory(clusterName string) (kubeinformers.SharedInformerFactory, error) {
 	s.sharedInformerLock.RLock()
 	defer s.sharedInformerLock.RUnlock()
@@ -182,6 +153,7 @@ func (s *Store) unsetInformerFactory(clusterName string) {
 }
 
 func (s *Store) updateSecret(old, new interface{}) {
+	//TODO(btyler) check these assertions #28
 	oldSecret := old.(*corev1.Secret)
 	newSecret := new.(*corev1.Secret)
 
@@ -191,7 +163,9 @@ func (s *Store) updateSecret(old, new interface{}) {
 		return
 	}
 
+	s.clientLock.RLock()
 	_, ok := s.clusterClients[newSecret.Name]
+	s.clientLock.RUnlock()
 	if !ok {
 		// we don't have a cluster by this name, so don't do
 		// anything
@@ -215,7 +189,7 @@ func (s *Store) updateSecret(old, new interface{}) {
 		return
 	}
 
-	cluster, err := s.managementClusterShipperClient.ShipperV1().Clusters().Get(newSecret.Name, metav1.GetOptions{})
+	cluster, err := s.clusterInformer.Lister().Get(newSecret.Name)
 	if err != nil {
 		runtime.HandleError(err)
 		return
@@ -225,9 +199,10 @@ func (s *Store) updateSecret(old, new interface{}) {
 }
 
 func (s *Store) addCluster(obj interface{}) {
+	//TODO(btyler) check this assertion #28
 	cluster := obj.(*shipperv1.Cluster)
 
-	secret, err := s.managementClusterKubeClient.CoreV1().Secrets(shipperv1.ShipperNamespace).Get(cluster.Name, metav1.GetOptions{})
+	secret, err := s.secretInformer.Lister().Secrets(shipperv1.ShipperNamespace).Get(cluster.Name)
 	if err != nil {
 		runtime.HandleError(err)
 		return
@@ -261,11 +236,12 @@ func (s *Store) addCluster(obj interface{}) {
 }
 
 func (s *Store) updateCluster(old, new interface{}) {
+	//TODO(btyler) check these assertions #28
 	oldCluster := old.(*shipperv1.Cluster)
 	newCluster := new.(*shipperv1.Cluster)
 
+	// only inspect API server because that's the only field which has a bearing on client connectivity
 	if oldCluster.Spec.APIMaster == newCluster.Spec.APIMaster {
-		// nothing has changed and this is just a resync, so do nothing
 		return
 	}
 
@@ -273,6 +249,7 @@ func (s *Store) updateCluster(old, new interface{}) {
 }
 
 func (s *Store) deleteCluster(obj interface{}) {
+	//TODO(btyler) check this assertion #28
 	cluster := obj.(*shipperv1.Cluster)
 
 	s.unsetClient(cluster.Name)

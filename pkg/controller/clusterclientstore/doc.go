@@ -5,7 +5,4 @@
 // re-creation of a client/informer, and Cluster deletions cause the removal of
 // a client and its associated informer.
 //
-// Important Note
-//
-// before using the methods for retrieving cluster-specific objects from the store, you *must* call the `Run()` method.
 package clusterclientstore

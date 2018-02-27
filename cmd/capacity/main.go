@@ -67,13 +67,17 @@ func main() {
 	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Second*30)
 	shipperInformerFactory := informers.NewSharedInformerFactory(shipperClient, time.Second*30)
 
-	store := clusterclientstore.NewStore(kubeClient, shipperClient, kubeInformerFactory, shipperInformerFactory, stopCh)
+	store := clusterclientstore.NewStore(
+		kubeInformerFactory.Core().V1().Secrets(),
+		shipperInformerFactory.Shipper().V1().Clusters(),
+		stopCh,
+	)
+
 	controller := capacity.NewController(kubeClient, shipperClient, kubeInformerFactory, shipperInformerFactory, store)
 
 	go kubeInformerFactory.Start(stopCh)
 	go shipperInformerFactory.Start(stopCh)
 
-	store.Run()
 	glog.Infof("starting controller...")
 	if err = controller.Run(2, stopCh); err != nil {
 		glog.Fatalf("Error running controller: %s", err.Error())
