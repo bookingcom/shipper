@@ -5,7 +5,7 @@ import (
 	"github.com/golang/glog"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	"github.com/bookingcom/shipper/pkg/controller/clusterclientstore"
+	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/controller/installation"
 	"k8s.io/apiserver/pkg/server"
 	kubeinformers "k8s.io/client-go/informers"

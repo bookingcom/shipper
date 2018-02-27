@@ -7,7 +7,7 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperInformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperListers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
-	"github.com/bookingcom/shipper/pkg/controller/clusterclientstore"
+	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"

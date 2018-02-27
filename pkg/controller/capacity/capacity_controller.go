@@ -42,7 +42,7 @@ import (
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
-	"github.com/bookingcom/shipper/pkg/controller/clusterclientstore"
+	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )

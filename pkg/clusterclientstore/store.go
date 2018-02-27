@@ -5,8 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	kubeinformers "k8s.io/client-go/informers"

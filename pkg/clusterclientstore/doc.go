@@ -4,5 +4,4 @@
 // objects trigger a client/informer creation, updates to Secret objects trigger
 // re-creation of a client/informer, and Cluster deletions cause the removal of
 // a client and its associated informer.
-//
 package clusterclientstore

@@ -35,7 +35,7 @@ import (
 	//clientset "k8s.io/sample-controller/pkg/client/clientset/versioned"
 	//informers "k8s.io/sample-controller/pkg/client/informers/externalversions"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	"github.com/bookingcom/shipper/pkg/controller/clusterclientstore"
+	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 )
 
 var (
