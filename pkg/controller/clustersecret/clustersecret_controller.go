@@ -37,6 +37,7 @@ import (
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/tls"
 )
 
 const (
@@ -58,7 +59,7 @@ type Controller struct {
 	workqueue workqueue.RateLimitingInterface
 	recorder  record.EventRecorder
 
-	tls          tlsPair
+	tls          tls.Pair
 	ownNamespace string
 }
 
@@ -85,7 +86,7 @@ func NewController(
 		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerMetricsName),
 		recorder:  recorder,
 
-		tls:          tlsPair{certPath, keyPath},
+		tls:          tls.Pair{certPath, keyPath},
 		ownNamespace: ownNamespace,
 	}
 

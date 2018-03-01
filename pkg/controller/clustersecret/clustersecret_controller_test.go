@@ -21,9 +21,10 @@ import (
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	"github.com/bookingcom/shipper/pkg/tls"
 )
 
-var tls = tlsPair{"testdata/tls.crt", "testdata/tls.key"}
+var tlsPair = tls.Pair{"../../tls/testdata/tls.crt", "../../tls/testdata/tls.key"}
 
 func TestNewCluster(t *testing.T) {
 	f := newFixture(t)
@@ -31,7 +32,7 @@ func TestNewCluster(t *testing.T) {
 	cluster := newCluster("test-cluster")
 	f.shipperObjects = append(f.kubeObjects, cluster)
 
-	secret := newClusterSecret(cluster, tls)
+	secret := newClusterSecret(cluster, tlsPair)
 	f.expectSecretCreate(secret)
 
 	f.run()
@@ -43,7 +44,7 @@ func TestUpdateStaleSecret(t *testing.T) {
 	cluster := newCluster("test-cluster")
 	f.shipperObjects = append(f.shipperObjects, cluster)
 
-	newSecret := newClusterSecret(cluster, tls)
+	newSecret := newClusterSecret(cluster, tlsPair)
 	f.expectSecretUpdate(newSecret)
 
 	oldSecret := newSecret.DeepCopy()
@@ -62,7 +63,7 @@ func TestMissingChecksum(t *testing.T) {
 	cluster := newCluster("test-cluster")
 	f.shipperObjects = append(f.shipperObjects, cluster)
 
-	newSecret := newClusterSecret(cluster, tls)
+	newSecret := newClusterSecret(cluster, tlsPair)
 	f.expectSecretUpdate(newSecret)
 
 	oldSecret := newSecret.DeepCopy()
@@ -79,7 +80,7 @@ func TestSecretNotControlledByUs(t *testing.T) {
 	cluster := newCluster("test-cluster")
 	f.shipperObjects = append(f.shipperObjects, cluster)
 
-	clusterSecret := newClusterSecret(cluster, tls)
+	clusterSecret := newClusterSecret(cluster, tlsPair)
 	genericTLSSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "tls-secret",
@@ -128,7 +129,7 @@ func newCluster(name string) *shipperv1.Cluster {
 	}
 }
 
-func newClusterSecret(cluster *shipperv1.Cluster, p tlsPair) *corev1.Secret {
+func newClusterSecret(cluster *shipperv1.Cluster, p tls.Pair) *corev1.Secret {
 	crt, key, csum, _ := p.GetAll()
 
 	name := cluster.GetName()
@@ -187,8 +188,8 @@ func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerF
 		f.kubeClientset,
 		kubeInformerFactory,
 		record.NewFakeRecorder(42),
-		tls.crt,
-		tls.key,
+		tlsPair.CrtPath,
+		tlsPair.KeyPath,
 		shippertesting.TestNamespace,
 	)
 
