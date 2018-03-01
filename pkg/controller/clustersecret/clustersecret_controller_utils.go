@@ -97,7 +97,8 @@ func (c *Controller) createSecretForCluster(cluster *shipperv1.Cluster, crt, key
 		},
 	}
 
-	_, err := c.kubeClientset.CoreV1().Secrets(c.ownNamespace).Create(secret)
+	var err error
+	secret, err = c.kubeClientset.CoreV1().Secrets(c.ownNamespace).Create(secret)
 	if err != nil {
 		return fmt.Errorf("create Secret %q for Cluster %q: %s", secretName, clusterName, err)
 	}

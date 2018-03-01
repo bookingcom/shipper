@@ -205,7 +205,8 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 		glog.V(4).Infof("No predecessor for Release %q", metaKey(new))
 	}
 
-	if _, err := ri.Create(new); err != nil {
+	new, err = ri.Create(new)
+	if err != nil {
 		// If Update went through but Create failed, we have pred pointing to a
 		// Release that does not exist. We can recover from this by fixing the
 		// dangling successor pointer.
@@ -216,7 +217,7 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 	}
 
 	c.recorder.Eventf(
-		so,
+		new,
 		corev1.EventTypeNormal,
 		reasonShipping,
 		"Created Release %q",
