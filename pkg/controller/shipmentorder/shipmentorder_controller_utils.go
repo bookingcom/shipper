@@ -127,6 +127,9 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 	labels, err := metav1.LabelSelectorAsMap(so.Spec.ReleaseSelector)
 	if err != nil {
 		return fmt.Errorf("Release selector for ShipmentOrder %q: %s", metaKey(so), err)
+	} else if labels == nil {
+		// TODO this should be replaced with an admission hook
+		return fmt.Errorf("Release selector for ShipmentOrder %q: not specified", metaKey(so))
 	}
 	labels[shipperv1.ReleaseLabel] = releaseNameForShipmentOrder(so)
 
