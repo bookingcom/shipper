@@ -70,7 +70,6 @@ func main() {
 	store := clusterclientstore.NewStore(
 		kubeInformerFactory.Core().V1().Secrets(),
 		shipperInformerFactory.Shipper().V1().Clusters(),
-		stopCh,
 	)
 
 	controller := traffic.NewController(kubeClient, shipperClient, shipperInformerFactory, store)
@@ -78,6 +77,7 @@ func main() {
 	go kubeInformerFactory.Start(stopCh)
 	go shipperInformerFactory.Start(stopCh)
 
+	store.Run(stopCh)
 	glog.Infof("starting traffic controller...")
 	if err = controller.Run(2, stopCh); err != nil {
 		glog.Fatalf("Error running controller: %s", err.Error())

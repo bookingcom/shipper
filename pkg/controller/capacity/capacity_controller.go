@@ -133,8 +133,8 @@ func NewController(
 		DeleteFunc: controller.enqueueCapacityTarget,
 	})
 
-	store.SubscriptionRegisterFunc = controller.subscribe
-	store.EventHandlerRegisterFunc = controller.registerEventHandlers
+	store.AddSubscriptionCallback(controller.subscribe)
+	store.AddEventHandlerCallback(controller.registerEventHandlers)
 
 	return controller
 }

@@ -2,210 +2,245 @@ package clusterclientstore
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
+	"github.com/golang/glog"
+
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
 	corev1informer "k8s.io/client-go/informers/core/v1"
 	kubernetes "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/cache"
+	kubecache "k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperv1informer "github.com/bookingcom/shipper/pkg/client/informers/externalversions/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/clusterclientstore/cache"
 )
 
 type Store struct {
-	// internal lock, protecting access to the map of cluster clients
-	clientLock           sync.RWMutex
-	clusterClients       map[string]kubernetes.Interface
-	clusterClientConfigs map[string]*rest.Config
-	// internal lock, protecting access to the map of informer factories
-	sharedInformerLock       sync.RWMutex
-	clusterInformerFactories map[string]kubeinformers.SharedInformerFactory
+	cache cache.CacheServer
 
 	secretInformer  corev1informer.SecretInformer
 	clusterInformer shipperv1informer.ClusterInformer
 
-	stopchan <-chan struct{}
+	secretWorkqueue  workqueue.RateLimitingInterface
+	clusterWorkqueue workqueue.RateLimitingInterface
 
 	// called when the cluster caches have been populated, so that the controller can register event handlers
-	EventHandlerRegisterFunc EventHandlerRegisterFunc
+	eventHandlerRegisterFuncs []EventHandlerRegisterFunc
 
 	// called before the informer factory is started, so that the controller can set watches on objects it's interested in
-	SubscriptionRegisterFunc SubscriptionRegisterFunc
+	subscriptionRegisterFuncs []SubscriptionRegisterFunc
 }
 
 // NewStore creates a new client store that will use the specified
-// client to set up watches on Cluster objects.
+// informers to maintain a cache of clientsets, rest.Configs, and informers for target clusters
 func NewStore(
 	secretInformer corev1informer.SecretInformer,
 	clusterInformer shipperv1informer.ClusterInformer,
-	stopchan <-chan struct{},
 ) *Store {
 	s := &Store{
-		secretInformer:           secretInformer,
-		clusterInformer:          clusterInformer,
-		stopchan:                 stopchan,
-		clusterClients:           map[string]kubernetes.Interface{},
-		clusterClientConfigs:     map[string]*rest.Config{},
-		clusterInformerFactories: map[string]kubeinformers.SharedInformerFactory{},
+		cache: cache.NewServer(),
+
+		secretInformer:  secretInformer,
+		clusterInformer: clusterInformer,
+
+		secretWorkqueue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Client Store Secrets"),
+		clusterWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Client Store Clusters"),
 	}
 
-	// register the event handlers
-	secretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		UpdateFunc: s.updateSecret,
-	})
-
-	clusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    s.addCluster,
-		UpdateFunc: s.updateCluster,
-		DeleteFunc: s.deleteCluster,
-	})
+	s.bindEventHandlers()
 
 	return s
 }
 
-// GetClient returns a client for the specified cluster name.
-func (s *Store) GetClient(clusterName string) (kubernetes.Interface, error) {
-	s.clientLock.RLock()
-	defer s.clientLock.RUnlock()
+func (s *Store) Run(stopCh <-chan struct{}) error {
+	glog.Info("Waiting for client store informer caches to sync")
+	ok := kubecache.WaitForCacheSync(
+		stopCh,
+		s.secretInformer.Informer().HasSynced,
+		s.clusterInformer.Informer().HasSynced,
+	)
 
-	var client kubernetes.Interface
-	var ok bool
-	if client, ok = s.clusterClients[clusterName]; !ok {
-		return nil, fmt.Errorf("No client for cluster %s", clusterName)
+	if !ok {
+		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
-	return client, nil
+	glog.Info("Starting cluster client store workers")
+	go s.cache.Serve()
+	go wait.Until(s.clusterWorker, time.Second, stopCh)
+	go wait.Until(s.secretWorker, time.Second, stopCh)
+
+	glog.Info("client store is running")
+	// We prefer the client store caches to sync before we start the other
+	// controllers so that the clients are likely to be populated. This means
+	// that we ought to block in Run() until caches are synced.
+	//
+	// However, we need to finish blocking so that the other controllers can
+	// start. So, we can either handle shutdown with an internal goroutine, or take
+	// a WaitGroup as param and call store.Run in a goroutine, calling
+	// wg.Done() when caches are synced. I prefer APIs that don't expose
+	// concurrency when possible, so I opted for an internal goroutine.
+	go func() {
+		defer runtime.HandleCrash()
+		defer s.clusterWorkqueue.ShutDown()
+		defer s.secretWorkqueue.ShutDown()
+
+		<-stopCh
+		glog.Info("shutting down client store...")
+		s.cache.Stop()
+	}()
+
+	return nil
+}
+
+func (s *Store) AddSubscriptionCallback(subscription SubscriptionRegisterFunc) {
+	s.subscriptionRegisterFuncs = append(s.subscriptionRegisterFuncs, subscription)
+}
+
+func (s *Store) AddEventHandlerCallback(eventHandler EventHandlerRegisterFunc) {
+	s.eventHandlerRegisterFuncs = append(s.eventHandlerRegisterFuncs, eventHandler)
+}
+
+// GetClient returns a client for the specified cluster name.
+func (s *Store) GetClient(clusterName string) (kubernetes.Interface, error) {
+	cluster, ok := s.cache.Fetch(clusterName)
+	if !ok {
+		return nil, cache.ErrClusterNotInStore
+	}
+
+	return cluster.GetClient()
 }
 
 // GetConfig returns a client for the specified cluster name.
 func (s *Store) GetConfig(clusterName string) (*rest.Config, error) {
-	s.clientLock.RLock()
-	defer s.clientLock.RUnlock()
-
-	var config *rest.Config
-	var ok bool
-	if config, ok = s.clusterClientConfigs[clusterName]; !ok {
-		return nil, fmt.Errorf("No client config for cluster %s", clusterName)
+	cluster, ok := s.cache.Fetch(clusterName)
+	if !ok {
+		return nil, cache.ErrClusterNotInStore
 	}
 
-	return config, nil
+	return cluster.GetConfig()
 }
 
 // GetInformerFactory returns an informer factory for the specified
 // cluster name.
 func (s *Store) GetInformerFactory(clusterName string) (kubeinformers.SharedInformerFactory, error) {
-	s.sharedInformerLock.RLock()
-	defer s.sharedInformerLock.RUnlock()
-
-	informer, ok := s.clusterInformerFactories[clusterName]
+	cluster, ok := s.cache.Fetch(clusterName)
 	if !ok {
-		return nil, fmt.Errorf("No informer factory exists for a cluster called %s", clusterName)
+		return nil, cache.ErrClusterNotInStore
 	}
 
-	return informer, nil
+	return cluster.GetInformerFactory()
 }
 
-func (s *Store) setClient(clusterName string, client kubernetes.Interface, config *rest.Config) {
-	s.clientLock.Lock()
-	defer s.clientLock.Unlock()
-
-	s.clusterClients[clusterName] = client
-	s.clusterClientConfigs[clusterName] = config
-}
-
-func (s *Store) setInformerFactory(clusterName string, informerFactory kubeinformers.SharedInformerFactory) {
-	s.sharedInformerLock.Lock()
-	defer s.sharedInformerLock.Unlock()
-
-	s.clusterInformerFactories[clusterName] = informerFactory
-	if s.SubscriptionRegisterFunc != nil {
-		s.SubscriptionRegisterFunc(informerFactory)
-	}
-
-	informerFactory.Start(s.stopchan)
-	informerFactory.WaitForCacheSync(s.stopchan)
-
-	if s.EventHandlerRegisterFunc != nil {
-		s.EventHandlerRegisterFunc(informerFactory, clusterName)
-	}
-}
-
-func (s *Store) unsetClient(clusterName string) {
-	s.clientLock.Lock()
-	defer s.clientLock.Unlock()
-
-	delete(s.clusterClients, clusterName)
-	delete(s.clusterClientConfigs, clusterName)
-}
-
-func (s *Store) unsetInformerFactory(clusterName string) {
-	s.sharedInformerLock.Lock()
-	defer s.sharedInformerLock.Unlock()
-
-	delete(s.clusterInformerFactories, clusterName)
-}
-
-func (s *Store) updateSecret(old, new interface{}) {
-	//TODO(btyler) check these assertions #28
-	oldSecret := old.(*corev1.Secret)
-	newSecret := new.(*corev1.Secret)
-
-	if oldSecret.Namespace != shipperv1.ShipperNamespace || newSecret.Namespace != shipperv1.ShipperNamespace {
-		// These secrets are not in our namespace, so we don't
-		// need to do anything
-		return
-	}
-
-	s.clientLock.RLock()
-	_, ok := s.clusterClients[newSecret.Name]
-	s.clientLock.RUnlock()
-	if !ok {
-		// we don't have a cluster by this name, so don't do
-		// anything
-		return
-	}
-
-	oldChecksum, ok := oldSecret.GetAnnotations()[shipperv1.SecretChecksumAnnotation]
-	if !ok {
-		runtime.HandleError(fmt.Errorf("Can't compare secrets: no %s annotation defined on the old version of %s secret", shipperv1.SecretChecksumAnnotation, oldSecret.Name))
-		return
-	}
-
-	newChecksum, ok := newSecret.GetAnnotations()[shipperv1.SecretChecksumAnnotation]
-	if !ok {
-		runtime.HandleError(fmt.Errorf("Can't compare secrets: no %s annotation defined on the new version of %s secret", shipperv1.SecretChecksumAnnotation, newSecret.Name))
-		return
-	}
-
-	if oldChecksum == newChecksum {
-		// Nothing changed, nothing to do
-		return
-	}
-
-	cluster, err := s.clusterInformer.Lister().Get(newSecret.Name)
+// no splitting here because clusters are not namespaced
+func (s *Store) syncCluster(name string) error {
+	clusterObj, err := s.clusterInformer.Lister().Get(name)
 	if err != nil {
-		runtime.HandleError(err)
-		return
+		if errors.IsNotFound(err) {
+			glog.Infof("Cluster %q has been deleted; purging it from client store", name)
+			s.cache.Remove(name)
+			return nil
+		}
+
+		return err
 	}
 
-	s.addCluster(cluster)
+	cachedCluster, ok := s.cache.Fetch(name)
+	if ok {
+		var config *rest.Config
+		config, err = cachedCluster.GetConfig()
+		// we don't want to regenerate the client if we already have one with
+		// the right properties (host or secret checksum) that's either ready
+		// (err == nil) or in the process of getting ready. Otherwise we'll
+		// refill the cache needlessly, or could even end up in a livelock
+		// where waiting for informer cache to fill takes longer than the
+		// resync period, and resync resets the informer.
+		if err == nil || err == cache.ErrClusterNotReady {
+			if config != nil && config.Host == clusterObj.Spec.APIMaster {
+				glog.Infof("Cluster %q syncing, but we already have a client with the right host in the cache", name)
+				return nil
+			}
+		}
+	}
+
+	secret, err := s.secretInformer.Lister().Secrets(shipperv1.ShipperNamespace).Get(name)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			glog.Infof("Cluster %q has no corresponding secret", name)
+			return nil
+		}
+
+		return err
+	}
+
+	return s.create(clusterObj, secret)
 }
 
-func (s *Store) addCluster(obj interface{}) {
-	//TODO(btyler) check this assertion #28
-	cluster := obj.(*shipperv1.Cluster)
-
-	secret, err := s.secretInformer.Lister().Secrets(shipperv1.ShipperNamespace).Get(cluster.Name)
+func (s *Store) syncSecret(key string) error {
+	ns, name, err := kubecache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(err)
-		return
+		return fmt.Errorf("invalid resource key: %q", key)
 	}
 
+	// programmer error: there's a filter func on the callbacks before things get enqueued
+	if ns != shipperv1.ShipperNamespace {
+		panic("client store secret workqueue should only contain secrets from the shipper namespace")
+	}
+
+	secret, err := s.secretInformer.Lister().Secrets(shipperv1.ShipperNamespace).Get(name)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			glog.Infof("Secret %q has been deleted; purging any associated client from client store", key)
+			s.cache.Remove(name)
+			return nil
+		}
+
+		return err
+	}
+
+	clusterObj, err := s.clusterInformer.Lister().Get(secret.Name)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			glog.Infof("Secret %q has no corresponding cluster", key)
+			return nil
+		}
+
+		return err
+	}
+
+	checksum, ok := secret.GetAnnotations()[shipperv1.SecretChecksumAnnotation]
+	if !ok {
+		return fmt.Errorf("Secret %q looks like a cluster secret but doesn't have a checksum", key)
+	}
+
+	cachedCluster, ok := s.cache.Fetch(secret.Name)
+	if ok {
+		existingChecksum, err := cachedCluster.GetChecksum()
+		// we don't want to regenerate the client if we already have one with
+		// the right properties (host or secret checksum) that's either ready
+		// (err == nil) or in the process of getting ready. Otherwise we'll
+		// refill the cache needlessly, or could even end up in a livelock
+		// where waiting for informer cache to fill takes longer than the
+		// resync period, and resync resets the informer.
+		if err == nil || err == cache.ErrClusterNotReady {
+			if existingChecksum == checksum {
+				glog.Infof("Secret %q syncing but we already have a client based on the same checksum in the cache", key)
+				return nil
+			}
+		}
+	}
+
+	return s.create(clusterObj, secret)
+}
+
+func (s *Store) create(cluster *shipperv1.Cluster, secret *corev1.Secret) error {
+	clusterName := cluster.Name
 	config := &rest.Config{
 		Host: cluster.Spec.APIMaster,
 	}
@@ -223,33 +258,29 @@ func (s *Store) addCluster(obj interface{}) {
 
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		runtime.HandleError(err)
-		return
+		return err
+	}
+
+	checksum, ok := secret.GetAnnotations()[shipperv1.SecretChecksumAnnotation]
+	// programmer error: this is filtered for at the informer level
+	if !ok {
+		panic(fmt.Sprintf("Secret %q doesn't have a checksum annotation. this should be checked before calling 'create'", secret.Name))
 	}
 
 	informerFactory := kubeinformers.NewSharedInformerFactory(client, time.Second*30)
-
-	s.setClient(cluster.Name, client, config)
-	s.setInformerFactory(cluster.Name, informerFactory)
-}
-
-func (s *Store) updateCluster(old, new interface{}) {
-	//TODO(btyler) check these assertions #28
-	oldCluster := old.(*shipperv1.Cluster)
-	newCluster := new.(*shipperv1.Cluster)
-
-	// only inspect API server because that's the only field which has a bearing on client connectivity
-	if oldCluster.Spec.APIMaster == newCluster.Spec.APIMaster {
-		return
+	// register all the resources that the controllers are interested in, e.g. informerFactory.Core().V1().Pods().Informer()
+	for _, cb := range s.subscriptionRegisterFuncs {
+		cb(informerFactory)
 	}
 
-	s.addCluster(new)
-}
+	newCachedCluster := cache.NewCluster(clusterName, checksum, client, config, informerFactory, func() {
+		// if/when the informer cache finishes syncing, bind all of the event handler callbacks from the controllers
+		// if it does not finish (because the cluster was Shutdown) this will not be called
+		for _, cb := range s.eventHandlerRegisterFuncs {
+			cb(informerFactory, clusterName)
+		}
+	})
 
-func (s *Store) deleteCluster(obj interface{}) {
-	//TODO(btyler) check this assertion #28
-	cluster := obj.(*shipperv1.Cluster)
-
-	s.unsetClient(cluster.Name)
-	s.unsetInformerFactory(cluster.Name)
+	s.cache.Store(newCachedCluster)
+	return nil
 }
