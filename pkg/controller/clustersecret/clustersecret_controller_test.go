@@ -71,7 +71,22 @@ func TestMissingChecksum(t *testing.T) {
 	f.kubeObjects = append(f.kubeObjects, oldSecret)
 
 	f.run()
+}
 
+func TestNoAnnotations(t *testing.T) {
+	f := newFixture(t)
+
+	cluster := newCluster("test-cluster")
+	f.shipperObjects = append(f.shipperObjects, cluster)
+
+	newSecret := newClusterSecret(cluster, tlsPair)
+	f.expectSecretUpdate(newSecret)
+
+	oldSecret := newSecret.DeepCopy()
+	oldSecret.Annotations = nil // simulate missing annotation
+	f.kubeObjects = append(f.kubeObjects, oldSecret)
+
+	f.run()
 }
 
 func TestSecretNotControlledByUs(t *testing.T) {

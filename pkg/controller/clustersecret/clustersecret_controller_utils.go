@@ -118,6 +118,11 @@ func (c *Controller) createSecretForCluster(cluster *shipperv1.Cluster, crt, key
 func (c *Controller) updateClusterSecret(secret *corev1.Secret, clusterName string, crt, key, csum []byte) error {
 	secretName := secret.GetName()
 
+	// There may be no annotations set and `metadata.annotations` is tagged as
+	// "omitempty".
+	if secret.Annotations == nil {
+		secret.Annotations = make(map[string]string)
+	}
 	secret.Annotations[shipperv1.SecretChecksumAnnotation] = hex.EncodeToString(csum)
 	secret.Annotations[shipperv1.SecretClusterNameAnnotation] = clusterName
 
