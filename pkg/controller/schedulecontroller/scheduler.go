@@ -93,9 +93,7 @@ func (c *Scheduler) CreateInstallationTarget() error {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      c.Release.Name,
 			Namespace: c.Release.Namespace,
-			Labels: map[string]string{
-				v1.ReleaseLabel: string(c.Release.UID),
-			},
+			Labels:    c.Release.Labels,
 			Annotations: map[string]string{
 				v1.ReleaseLinkAnn: c.Release.SelfLink,
 			},
@@ -129,9 +127,7 @@ func (c *Scheduler) CreateCapacityTarget() error {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      c.Release.Name,
 			Namespace: c.Release.Namespace,
-			Labels: map[string]string{
-				v1.ReleaseLabel: string(c.Release.UID),
-			},
+			Labels:    c.Release.Labels,
 			Annotations: map[string]string{
 				v1.ReleaseLinkAnn: c.Release.SelfLink,
 			},
@@ -166,9 +162,7 @@ func (c *Scheduler) CreateTrafficTarget() error {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      c.Release.Name,
 			Namespace: c.Release.Namespace,
-			Labels: map[string]string{
-				v1.ReleaseLabel: string(c.Release.UID),
-			},
+			Labels:    c.Release.Labels,
 			Annotations: map[string]string{
 				v1.ReleaseLinkAnn: c.Release.SelfLink,
 			},
