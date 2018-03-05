@@ -94,8 +94,13 @@ func (c *Scheduler) CreateInstallationTarget() error {
 			Name:      c.Release.Name,
 			Namespace: c.Release.Namespace,
 			Labels:    c.Release.Labels,
-			Annotations: map[string]string{
-				v1.ReleaseLinkAnn: c.Release.SelfLink,
+			OwnerReferences: []metav1.OwnerReference{
+				metav1.OwnerReference{
+					APIVersion: c.Release.APIVersion,
+					Kind:       c.Release.Kind,
+					Name:       c.Release.GetName(),
+					UID:        c.Release.GetUID(),
+				},
 			},
 		},
 		Spec: v1.InstallationTargetSpec{Clusters: c.Clusters()},
@@ -128,8 +133,13 @@ func (c *Scheduler) CreateCapacityTarget() error {
 			Name:      c.Release.Name,
 			Namespace: c.Release.Namespace,
 			Labels:    c.Release.Labels,
-			Annotations: map[string]string{
-				v1.ReleaseLinkAnn: c.Release.SelfLink,
+			OwnerReferences: []metav1.OwnerReference{
+				metav1.OwnerReference{
+					APIVersion: c.Release.APIVersion,
+					Kind:       c.Release.Kind,
+					Name:       c.Release.GetName(),
+					UID:        c.Release.GetUID(),
+				},
 			},
 		},
 		Spec: v1.CapacityTargetSpec{Clusters: targets},
@@ -163,8 +173,13 @@ func (c *Scheduler) CreateTrafficTarget() error {
 			Name:      c.Release.Name,
 			Namespace: c.Release.Namespace,
 			Labels:    c.Release.Labels,
-			Annotations: map[string]string{
-				v1.ReleaseLinkAnn: c.Release.SelfLink,
+			OwnerReferences: []metav1.OwnerReference{
+				metav1.OwnerReference{
+					APIVersion: c.Release.APIVersion,
+					Kind:       c.Release.Kind,
+					Name:       c.Release.GetName(),
+					UID:        c.Release.GetUID(),
+				},
 			},
 		},
 		Spec: v1.TrafficTargetSpec{Clusters: trafficTargets},
