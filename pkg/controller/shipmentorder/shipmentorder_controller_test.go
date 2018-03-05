@@ -231,6 +231,9 @@ func newShipmentOrder(phase shipperv1.ShipmentOrderPhase) *shipperv1.ShipmentOrd
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ship-it",
 			Namespace: shippertesting.TestNamespace,
+			Labels: map[string]string{
+				"some-label-key": "some-label-value",
+			},
 		},
 		Spec: shipperv1.ShipmentOrderSpec{
 			ClusterSelectors: []shipperv1.ClusterSelector{
@@ -264,7 +267,8 @@ func newRelease(name string) *shipperv1.Release {
 				Name:      name,
 				Namespace: shippertesting.TestNamespace,
 				Labels: map[string]string{
-					"app": "shipmentorder-controller-test",
+					"app":                  "shipmentorder-controller-test",
+					"some-label-key":       "some-label-value",
 					shipperv1.ReleaseLabel: name,
 				},
 			},
