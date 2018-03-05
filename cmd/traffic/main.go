@@ -35,7 +35,7 @@ import (
 	//clientset "k8s.io/sample-controller/pkg/client/clientset/versioned"
 	//informers "k8s.io/sample-controller/pkg/client/informers/externalversions"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	"github.com/bookingcom/shipper/pkg/controller/clusterclientstore"
+	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 )
 
 var (
@@ -65,15 +65,22 @@ func main() {
 	}
 
 	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Second*30)
-	shipperInformerFactory := informers.NewSharedInformerFactory(shipperClient, time.Second*60)
+	shipperInformerFactory := informers.NewSharedInformerFactory(shipperClient, time.Second*30)
 
-	store := clusterclientstore.NewStore(kubeClient, shipperClient, kubeInformerFactory, shipperInformerFactory, stopCh)
+	store := clusterclientstore.NewStore(
+		kubeInformerFactory.Core().V1().Secrets(),
+		shipperInformerFactory.Shipper().V1().Clusters(),
+	)
+
 	controller := traffic.NewController(kubeClient, shipperClient, shipperInformerFactory, store)
 
 	go kubeInformerFactory.Start(stopCh)
 	go shipperInformerFactory.Start(stopCh)
 
-	store.Run()
+	err = store.Run(stopCh)
+	if err != nil {
+		glog.Fatalf("Error running client store: %s", err.Error())
+	}
 	glog.Infof("starting traffic controller...")
 	if err = controller.Run(2, stopCh); err != nil {
 		glog.Fatalf("Error running controller: %s", err.Error())

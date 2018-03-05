@@ -40,7 +40,7 @@ import (
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
-	"github.com/bookingcom/shipper/pkg/controller/clusterclientstore"
+	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 )
 
 const controllerAgentName = "traffic-controller"
@@ -118,10 +118,9 @@ func NewController(
 		DeleteFunc: controller.enqueueTrafficTarget,
 	})
 
-	store.SubscriptionRegisterFunc = func(informerFactory kubeinformers.SharedInformerFactory) {
+	store.AddSubscriptionCallback(func(informerFactory kubeinformers.SharedInformerFactory) {
 		informerFactory.Core().V1().Pods().Informer()
-	}
-	store.EventHandlerRegisterFunc = func(_ kubeinformers.SharedInformerFactory, _ string) {}
+	})
 
 	return controller
 }
@@ -245,22 +244,24 @@ func (c *Controller) syncHandler(key string) error {
 
 	statuses := []*shipperv1.ClusterTrafficStatus{}
 	for _, cluster := range shifter.Clusters() {
-		var clientset kubernetes.Interface
-		clientset, err = c.clusterClientStore.GetClient(cluster)
-		if err != nil {
-			return err
-		}
-		var informerFactory kubeinformers.SharedInformerFactory
-		informerFactory, err = c.clusterClientStore.GetInformerFactory(cluster)
-		if err != nil {
-			return err
-		}
-
 		clusterStatus := &shipperv1.ClusterTrafficStatus{
 			Name: cluster,
 		}
 
 		statuses = append(statuses, clusterStatus)
+
+		var clientset kubernetes.Interface
+		clientset, err = c.clusterClientStore.GetClient(cluster)
+		if err != nil {
+			clusterStatus.Status = err.Error()
+			break
+		}
+		var informerFactory kubeinformers.SharedInformerFactory
+		informerFactory, err = c.clusterClientStore.GetInformerFactory(cluster)
+		if err != nil {
+			clusterStatus.Status = err.Error()
+			break
+		}
 
 		errs := shifter.SyncCluster(cluster, clientset, informerFactory.Core().V1().Pods())
 		if len(errs) == 0 {
@@ -290,6 +291,7 @@ func (c *Controller) syncHandler(key string) error {
 	if err != nil {
 		return err
 	}
+	//TODO(btyler) don't record "success" if it wasn't a total success: this should include some information about how many clusters worked and how many did not
 	c.recorder.Event(syncingTT, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
 	return nil
 }
