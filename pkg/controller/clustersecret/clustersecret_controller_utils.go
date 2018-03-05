@@ -22,8 +22,8 @@ func (c *Controller) processCluster(cluster *shipperv1.Cluster) error {
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// either a new Cluster or the Secret is gone, re-create it
-
-			crt, key, csum, err := c.tls.GetAll()
+			var crt, key, csum []byte
+			crt, key, csum, err = c.tls.GetAll()
 			if err != nil {
 				return err
 			}
