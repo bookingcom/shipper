@@ -117,7 +117,7 @@ func (s *Store) GetClient(clusterName string) (kubernetes.Interface, error) {
 	return cluster.GetClient()
 }
 
-// GetConfig returns a client for the specified cluster name.
+// GetConfig returns a rest.Config for the specified cluster name.
 func (s *Store) GetConfig(clusterName string) (*rest.Config, error) {
 	cluster, ok := s.cache.Fetch(clusterName)
 	if !ok {
