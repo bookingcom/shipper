@@ -29,21 +29,18 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
-	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 )
 
-const controllerAgentName = "traffic-controller"
+const AgentName = "traffic-controller"
 
 const (
 	// SuccessSynced is used as part of the Event 'reason' when a TrafficTarget is synced
@@ -82,20 +79,11 @@ func NewController(
 	shipperclientset shipper.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
 	store *clusterclientstore.Store,
+	recorder record.EventRecorder,
 ) *Controller {
 
 	// obtain references to shared index informers for the TrafficTarget type
 	trafficTargetInformer := shipperInformerFactory.Shipper().V1().TrafficTargets()
-
-	// Create event broadcaster
-	// Add sample-controller types to the default Kubernetes Scheme so Events can be
-	// logged for sample-controller types.
-	shipperscheme.AddToScheme(scheme.Scheme)
-	glog.V(4).Info("Creating event broadcaster")
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.Infof)
-	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeclientset.CoreV1().Events("")})
-	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
 
 	controller := &Controller{
 		shipperclientset:   shipperclientset,
@@ -129,26 +117,25 @@ func NewController(
 // as syncing informer caches and starting workers. It will block until stopCh
 // is closed, at which point it will shutdown the workqueue and wait for
 // workers to finish processing their current work items.
-func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
+func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.workqueue.ShutDown()
 
-	glog.Info("Starting TrafficTarget controller")
-	glog.Info("Waiting for informer caches to sync")
+	glog.V(2).Info("Starting Traffic controller")
+	defer glog.V(2).Info("Shutting down Traffic controller")
+
 	if ok := cache.WaitForCacheSync(stopCh, c.trafficTargetsSynced); !ok {
-		return fmt.Errorf("failed to wait for caches to sync")
+		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
+		return
 	}
 
-	glog.Info("Starting workers")
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.runWorker, time.Second, stopCh)
 	}
 
-	glog.Info("Started workers")
-	<-stopCh
-	glog.Info("Shutting down workers")
+	glog.V(4).Info("Started Traffic controller")
 
-	return nil
+	<-stopCh
 }
 
 // runWorker is a long-running function that will continually call the

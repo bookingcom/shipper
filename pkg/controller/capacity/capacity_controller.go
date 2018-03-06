@@ -31,15 +31,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
-	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
@@ -47,7 +44,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-const controllerAgentName = "capacity-controller"
+const AgentName = "capacity-controller"
 
 const (
 	// SuccessSynced is used as part of the Event 'reason' when a ShipmentOrder is synced
@@ -92,20 +89,11 @@ func NewController(
 	kubeInformerFactory kubeinformers.SharedInformerFactory,
 	shipperInformerFactory informers.SharedInformerFactory,
 	store *clusterclientstore.Store,
+	recorder record.EventRecorder,
 ) *Controller {
 
 	// obtain references to shared index informers for the CapacityTarget type
 	capacityTargetInformer := shipperInformerFactory.Shipper().V1().CapacityTargets()
-
-	// Create event broadcaster
-	// Add sample-controller types to the default Kubernetes Scheme so Events can be
-	// logged for sample-controller types.
-	shipperscheme.AddToScheme(scheme.Scheme)
-	glog.V(4).Info("Creating event broadcaster")
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.Infof)
-	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeclientset.CoreV1().Events("")})
-	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
 
 	controller := &Controller{
 		kubeclientset:           kubeclientset,
@@ -143,29 +131,29 @@ func NewController(
 // as syncing informer caches and starting workers. It will block until stopCh
 // is closed, at which point it will shutdown the workqueue and wait for
 // workers to finish processing their current work items.
-func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
+func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.capacityTargetWorkqueue.ShutDown()
 	defer c.deploymentWorkqueue.ShutDown()
 
+	glog.V(2).Info("Starting Capacity controller")
+	defer glog.V(2).Info("Shutting down Capacity controller")
+
 	// Wait for the caches to be synced before starting workers
-	glog.Info("Waiting for informer caches to sync")
 	if ok := cache.WaitForCacheSync(stopCh, c.capacityTargetsSynced); !ok {
-		return fmt.Errorf("failed to wait for caches to sync")
+		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
+		return
 	}
 
-	glog.Info("Starting capacity target workers")
 	// Launch workers to process CapacityTarget resources
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.runCapacityTargetWorker, time.Second, stopCh)
 		go wait.Until(c.runDeploymentWorker, time.Second, stopCh)
 	}
 
-	glog.Info("Started capacity target workers")
-	<-stopCh
-	glog.Info("Shutting down workers")
+	glog.V(4).Info("Started Capacity controller")
 
-	return nil
+	<-stopCh
 }
 
 // runCapacityTargetWorker is a long-running function that will continually call the

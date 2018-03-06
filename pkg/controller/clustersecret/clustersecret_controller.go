@@ -40,6 +40,8 @@ import (
 	"github.com/bookingcom/shipper/pkg/tls"
 )
 
+const AgentName = "clustersecret-controller"
+
 const (
 	controllerMetricsName = "clustersecret"
 
@@ -67,10 +69,10 @@ func NewController(
 	shipperInformerFactory shipperinformers.SharedInformerFactory,
 	kubeClientset kubernetes.Interface,
 	kubeInformerFactory informers.SharedInformerFactory,
-	recorder record.EventRecorder,
 	certPath string,
 	keyPath string,
 	ownNamespace string,
+	recorder record.EventRecorder,
 ) *Controller {
 	clusterInformer := shipperInformerFactory.Shipper().V1().Clusters()
 	secretInformer := kubeInformerFactory.Core().V1().Secrets()

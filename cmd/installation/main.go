@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+	"time"
+
 	"github.com/golang/glog"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
@@ -11,7 +13,6 @@ import (
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"time"
 )
 
 var (
@@ -57,9 +58,7 @@ func main() {
 		glog.Fatalf("Error running client store: %s", err.Error())
 	}
 	glog.Infof("starting controller...")
-	if err = controller.Run(2, stopCh); err != nil {
-		glog.Fatalf("Error running controller: %s", err.Error())
-	}
+	controller.Run(2, stopCh)
 }
 
 func init() {

@@ -2,6 +2,11 @@ package main
 
 import (
 	"flag"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
 	"github.com/golang/glog"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
@@ -9,10 +14,6 @@ import (
 	_ "github.com/bookingcom/shipper/pkg/controller/strategy"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/clientcmd"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 )
 
 var (
@@ -44,9 +45,7 @@ func main() {
 	go shipperInformerFactory.Start(stopCh)
 
 	glog.Infof("Starting controller...")
-	if err = controller.Run(2, stopCh); err != nil {
-		glog.Fatalf("Error running controller: %s", err.Error())
-	}
+	controller.Run(2, stopCh)
 }
 
 func init() {

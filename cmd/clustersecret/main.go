@@ -46,8 +46,6 @@ var (
 	namespace  = flag.String("namespace", "shipper-system", "The namespace in which secrets will be populated")
 )
 
-const controllerAgentName = "clustersecret-controller"
-
 func main() {
 	flag.Parse()
 
@@ -79,16 +77,16 @@ func main() {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(glog.Infof)
 	broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
-	recorder := broadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
+	recorder := broadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: clustersecret.AgentName})
 
 	controller := clustersecret.NewController(
 		shipperInformerFactory,
 		kubeClient,
 		kubeInformerFactory,
-		recorder,
 		*certPath,
 		*keyPath,
 		*namespace,
+		recorder,
 	)
 
 	go shipperInformerFactory.Start(stopCh)

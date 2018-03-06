@@ -42,6 +42,8 @@ const (
 	reasonShipping   = "Shipping"
 )
 
+const AgentName = "shipmentorder-controller"
+
 // Controller is a Kubernetes controller that creates Releases from
 // ShipmentOrders.
 type Controller struct {

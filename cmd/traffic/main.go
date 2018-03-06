@@ -27,11 +27,16 @@ import (
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	// Uncomment the following line to load the gcp plugin (only required to authenticate against GKE clusters).
+	// Uncomment the following line to load the gcp plugin (only required to authenticate against GKE cluster
+	"github.com/bookingcom/shipper/pkg/controller/capacity"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes/scheme"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/tools/record"
 	// _ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	"github.com/bookingcom/shipper/pkg/controller/traffic"
+	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	//clientset "k8s.io/sample-controller/pkg/client/clientset/versioned"
 	//informers "k8s.io/sample-controller/pkg/client/informers/externalversions"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
@@ -59,6 +64,14 @@ func main() {
 		glog.Fatalf("Error building kubernetes clientset: %s", err.Error())
 	}
 
+	broadcaster := record.NewBroadcaster()
+	broadcaster.StartLogging(glog.Infof)
+	broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	shipperscheme.AddToScheme(scheme.Scheme)
+	recorder := func(component string) record.EventRecorder {
+		return broadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: component})
+	}
+
 	shipperClient, err := clientset.NewForConfig(cfg)
 	if err != nil {
 		glog.Fatalf("Error building shipper clientset: %s", err.Error())
@@ -72,7 +85,8 @@ func main() {
 		shipperInformerFactory.Shipper().V1().Clusters(),
 	)
 
-	controller := traffic.NewController(kubeClient, shipperClient, shipperInformerFactory, store)
+	controller := capacity.NewController(kubeClient, shipperClient, kubeInformerFactory, shipperInformerFactory, store,
+		recorder(capacity.AgentName))
 
 	go kubeInformerFactory.Start(stopCh)
 	go shipperInformerFactory.Start(stopCh)
@@ -81,10 +95,8 @@ func main() {
 	if err != nil {
 		glog.Fatalf("Error running client store: %s", err.Error())
 	}
-	glog.Infof("starting traffic controller...")
-	if err = controller.Run(2, stopCh); err != nil {
-		glog.Fatalf("Error running controller: %s", err.Error())
-	}
+	glog.Infof("starting controller...")
+	controller.Run(2, stopCh)
 }
 
 func init() {
