@@ -164,11 +164,22 @@ func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 
 // processInstallation attempts to install the related release on all target clusters.
 func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error {
+	if n := len(it.OwnerReferences); n != 1 {
+		return fmt.Errorf("expected exactly one owner for InstallationTarget %q, got %d", it.GetName(), n)
+	}
 
-	release, err := c.releaseLister.Releases(it.Namespace).Get(it.Name)
+	owner := it.OwnerReferences[0]
+
+	release, err := c.releaseLister.Releases(it.GetNamespace()).Get(owner.Name)
 	if err != nil {
-		glog.Error(err)
 		return err
+	} else if release.GetUID() != owner.UID {
+		return fmt.Errorf(
+			"the owner Release for InstallationTarget %q is gone; expected UID %s but got %s",
+			it.GetName(),
+			owner.UID,
+			release.GetUID(),
+		)
 	}
 
 	handler := NewInstaller(release)
