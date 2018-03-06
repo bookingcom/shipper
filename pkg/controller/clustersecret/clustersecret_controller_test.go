@@ -187,10 +187,10 @@ func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerF
 		shipperInformerFactory,
 		f.kubeClientset,
 		kubeInformerFactory,
-		record.NewFakeRecorder(42),
 		tlsPair.CrtPath,
 		tlsPair.KeyPath,
 		shippertesting.TestNamespace,
+		record.NewFakeRecorder(42),
 	)
 
 	return c, shipperInformerFactory, kubeInformerFactory

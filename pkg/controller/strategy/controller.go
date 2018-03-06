@@ -7,7 +7,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,7 +21,7 @@ import (
 )
 
 type Controller struct {
-	clientset                 clientset.Interface
+	clientset                 shipperclientset.Interface
 	capacityTargetsLister     listers.CapacityTargetLister
 	installationTargetsLister listers.InstallationTargetLister
 	trafficTargetsLister      listers.TrafficTargetLister
@@ -35,7 +35,7 @@ type Controller struct {
 }
 
 func NewController(
-	clientset clientset.Interface,
+	shipperClient shipperclientset.Interface,
 	informerFactory informers.SharedInformerFactory,
 	dynamicClientPool dynamic.ClientPool,
 ) *Controller {
@@ -45,7 +45,7 @@ func NewController(
 	installationTargetInformer := informerFactory.Shipper().V1().InstallationTargets()
 
 	controller := &Controller{
-		clientset:                 clientset,
+		clientset:                 shipperClient,
 		capacityTargetsLister:     informerFactory.Shipper().V1().CapacityTargets().Lister(),
 		installationTargetsLister: informerFactory.Shipper().V1().InstallationTargets().Lister(),
 		trafficTargetsLister:      informerFactory.Shipper().V1().TrafficTargets().Lister(),
@@ -137,9 +137,12 @@ func (c *Controller) getAssociatedRelease(obj *metav1.ObjectMeta) *v1.Release {
 	}
 }
 
-func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
+func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.workqueue.ShutDown()
+
+	glog.V(2).Info("Starting Strategy controller")
+	defer glog.V(2).Info("Shutting down Strategy controller")
 
 	ok := cache.WaitForCacheSync(
 		stopCh,
@@ -150,18 +153,17 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 	)
 
 	if !ok {
-		return fmt.Errorf("failed to wait for caches to sync")
+		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
+		return
 	}
 
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.runWorker, time.Second, stopCh)
 	}
 
-	glog.Info("Started workers")
-	<-stopCh
-	glog.Info("Shutting down workers")
+	glog.V(4).Info("Started Strategy controller")
 
-	return nil
+	<-stopCh
 }
 
 func (c *Controller) runWorker() {

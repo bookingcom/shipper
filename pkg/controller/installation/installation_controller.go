@@ -2,6 +2,8 @@ package installation
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/golang/glog"
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
@@ -15,7 +17,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	"time"
 )
 
 // Controller is a Kubernetes controller that processes InstallationTarget
@@ -66,26 +67,25 @@ func NewController(
 
 // Run starts Installation controller workers and blocks until stopCh is
 // closed.
-func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
+func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.workqueue.ShutDown()
 
 	glog.V(2).Info("Starting Installation controller")
-	defer glog.V(2).Info("Shutting down workers")
+	defer glog.V(2).Info("Shutting down Installation controller")
 
 	if !cache.WaitForCacheSync(stopCh, c.installationTargetsSynced) {
-		return fmt.Errorf("failed to wait for caches to sync")
+		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
+		return
 	}
 
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.runWorker, time.Second, stopCh)
 	}
 
-	glog.Info("Started workers")
+	glog.V(4).Info("Started Installation controller")
+
 	<-stopCh
-
-	return nil
-
 }
 
 func (c *Controller) runWorker() {
