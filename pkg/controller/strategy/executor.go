@@ -118,7 +118,8 @@ func (s *Executor) finalizeRelease(targetStep uint, strategyStep v1.StrategyStep
 
 		if incumbentPhase != s.incumbent.release.Status.Phase {
 			incumbentStatus := &v1.ReleaseStatus{
-				Phase: incumbentPhase,
+				Phase:        incumbentPhase,
+				AchievedStep: s.incumbent.release.Status.AchievedStep,
 			}
 			releasePatches = append(releasePatches, &ReleaseUpdateResult{
 				NewStatus: incumbentStatus,

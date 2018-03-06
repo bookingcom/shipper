@@ -49,7 +49,7 @@ func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
 		object := a.GetObject()
 
 		if !reflect.DeepEqual(expObject, object) {
-			t.Errorf("%s %s has wrong object\nDiff:\n%s",
+			t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
 				a.GetResource().Resource, a.GetVerb(), diff.ObjectGoPrintDiff(expObject, object))
 		}
 
@@ -63,6 +63,15 @@ func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
 				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expObject, object))
 		}
 
+	case kubetesting.PatchAction:
+		e, _ := expected.(kubetesting.PatchAction)
+		expObject := string(e.GetPatch())
+		object := string(a.GetPatch())
+
+		if !reflect.DeepEqual(expObject, object) {
+			t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
+				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expObject, object))
+		}
 	}
 }
 
@@ -72,7 +81,15 @@ func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
 func FilterActions(actions []kubetesting.Action) []kubetesting.Action {
 	ignore := func(action kubetesting.Action) bool {
 		for _, v := range []string{"list", "watch"} {
-			for _, r := range []string{"shipmentorders", "releases", "clusters", "secrets"} {
+			for _, r := range []string{
+				"shipmentorders",
+				"releases",
+				"clusters",
+				"secrets",
+				"installationtargets",
+				"traffictargets",
+				"capacitytargets",
+			} {
 				if action.Matches(v, r) {
 					return true
 				}
@@ -82,7 +99,7 @@ func FilterActions(actions []kubetesting.Action) []kubetesting.Action {
 		return false
 	}
 
-	ret := []kubetesting.Action{}
+	var ret []kubetesting.Action
 	for _, action := range actions {
 		if ignore(action) {
 			continue
