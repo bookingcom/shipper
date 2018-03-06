@@ -2,6 +2,9 @@ package strategy
 
 import (
 	"fmt"
+	"os"
+	"time"
+
 	"github.com/golang/glog"
 	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
@@ -13,15 +16,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	"os"
-	"time"
 )
 
 type Controller struct {
-	clientset                 *clientset.Clientset
+	clientset                 clientset.Interface
 	capacityTargetsLister     listers.CapacityTargetLister
 	installationTargetsLister listers.InstallationTargetLister
 	trafficTargetsLister      listers.TrafficTargetLister
@@ -35,12 +35,10 @@ type Controller struct {
 }
 
 func NewController(
-	clientset *clientset.Clientset,
+	clientset clientset.Interface,
 	informerFactory informers.SharedInformerFactory,
-	restConfig *rest.Config,
+	dynamicClientPool dynamic.ClientPool,
 ) *Controller {
-
-	dynamicClientPool := dynamic.NewDynamicClientPool(restConfig)
 	releaseInformer := informerFactory.Shipper().V1().Releases()
 	capacityTargetInformer := informerFactory.Shipper().V1().CapacityTargets()
 	trafficTargetInformer := informerFactory.Shipper().V1().TrafficTargets()
@@ -248,6 +246,7 @@ func (c *Controller) clientForGroupVersionKind(
 	// This is sort of stupid, it might exist some better way to get the APIResource here...
 	var resource *metav1.APIResource
 	gv := gvk.GroupVersion().String()
+
 	if resources, err := c.clientset.Discovery().ServerResourcesForGroupVersion(gv); err != nil {
 		return nil, err
 	} else {
