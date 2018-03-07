@@ -26,7 +26,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
@@ -264,7 +263,6 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		}
 
 		targetNamespace := ct.Namespace
-		selector := labels.NewSelector()
 
 		var releaseValue string
 		var ok bool
@@ -272,16 +270,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 			return fmt.Errorf("Capacity target %s in namespace %s has no label called 'release'", ct.Name, ct.Namespace)
 		}
 
-		if releaseValue == "" {
-			return fmt.Errorf("The capacity target %s in namespace %s has an empty 'release' label", ct.Name, ct.Namespace)
-		}
-
-		var requirement *labels.Requirement
-		requirement, err = labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{releaseValue})
-		if err != nil {
-			return err
-		}
-		selector = selector.Add(*requirement)
+		selector := labels.Set{shipperv1.ReleaseLabel: releaseValue}.AsSelector()
 
 		var deploymentsList *appsv1.DeploymentList
 		deploymentsList, err = targetClusterClient.AppsV1().Deployments(targetNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
