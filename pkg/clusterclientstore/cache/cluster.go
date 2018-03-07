@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"fmt"
 	"sync"
 
 	kubeinformers "k8s.io/client-go/informers"
@@ -98,14 +97,14 @@ func (c *cluster) WaitForInformerCache() {
 	// no defer unlock here to keep cache sync out of lock scope
 	c.stateMut.Lock()
 	if c.state != StateNotReady {
-		// I expect this panic to take the system down, but if anyone has
-		// a recover() floating around we're better citizens if we
-		// don't hold this lock forever
+		// this means that something happened and we already changed the
+		// state of the cluster cache entry. this is almost always in a test
+		// case where we're calling server.Store in close proximity to
+		// server.Stop(). If the state has changed to terminated, returning
+		// here is a totally sane and safe thing to do: we certainly don't want
+		// to warm up any cache
 		c.stateMut.Unlock()
-		panic(fmt.Sprintf(
-			"cluster.WaitForInformerCache called on a cluster in state %q, which is not StateNotReady. this should never happen",
-			c.state,
-		))
+		return
 	}
 	c.state = StateWaitingForSync
 	c.stateMut.Unlock()
