@@ -14,7 +14,6 @@ import (
 
 	"github.com/golang/glog"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
@@ -188,14 +187,7 @@ func (c *Controller) updateStatus(capacityTarget *shipperv1.CapacityTarget, clus
 }
 
 func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace string) (*shipperv1.CapacityTarget, error) {
-	selector := labels.NewSelector()
-
-	requirement, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{release})
-	if err != nil {
-		return nil, err
-	}
-	selector = selector.Add(*requirement)
-
+	selector := labels.Set{shipperv1.ReleaseLabel: release}.AsSelector()
 	capacityTargets, err := c.shipperclientset.ShipperV1().CapacityTargets(namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, err
