@@ -3,6 +3,8 @@ package installation
 import (
 	"fmt"
 
+	"github.com/golang/glog"
+
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperChart "github.com/bookingcom/shipper/pkg/chart"
 
@@ -108,6 +110,11 @@ func (i *Installer) installManifests(
 			return fmt.Errorf("error decoding manifest: %s", err)
 		}
 
+		kind, ns, name := gvk.Kind, obj.GetNamespace(), obj.GetName()
+		glog.V(6).Infof(`%s "%s/%s": before injecting labels: %v`, kind, ns, name, obj.GetLabels())
+		injectLabels(obj, i.Release.Labels)
+		glog.V(6).Infof(`%s "%s/%s: after injecting labels: %v`, kind, ns, name, obj.GetLabels())
+
 		// Once we've gathered enough information about the document we want to install,
 		// we're able to build a resource client to interact with the target cluster.
 		resourceClient, err := i.buildResourceClient(cluster, client, restConfig, dynamicClientBuilderFunc, gvk)
@@ -186,4 +193,20 @@ func decodeManifest(manifest string) (*unstructured.Unstructured, *schema.GroupV
 	}
 
 	return &unstructured.Unstructured{Object: unstructuredObj}, gvk, nil
+}
+
+// injectLabels labels obj *in-place* with labels from inj without overwriting
+// existing values. That is, if inj has a label with the same key as an existing
+// label in obj, the existing value will be preserved.
+func injectLabels(obj *unstructured.Unstructured, inj map[string]string) {
+	newLabels := make(map[string]string)
+	for k, v := range inj {
+		newLabels[k] = v
+	}
+
+	for k, v := range obj.GetLabels() {
+		newLabels[k] = v
+	}
+
+	obj.SetLabels(newLabels)
 }
