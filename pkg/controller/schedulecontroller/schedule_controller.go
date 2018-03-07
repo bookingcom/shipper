@@ -9,6 +9,7 @@ import (
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -19,10 +20,9 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
-const AgentName = "schedule-controller"
-
 //noinspection GoUnusedConst
 const (
+	AgentName             = "schedule-controller"
 	SuccessSynced         = "Synced"
 	MessageResourceSynced = "Release synced successfully"
 )
