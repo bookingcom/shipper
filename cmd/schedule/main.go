@@ -8,10 +8,12 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/controller/schedulecontroller"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"

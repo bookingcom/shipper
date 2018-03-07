@@ -48,7 +48,7 @@ func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
 		expObject := e.GetObject()
 		object := a.GetObject()
 
-		if !reflect.DeepEqual(expObject, object) {
+		if expObject != nil && !reflect.DeepEqual(expObject, object) {
 			t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
 				a.GetResource().Resource, a.GetVerb(), diff.ObjectGoPrintDiff(expObject, object))
 		}
@@ -58,7 +58,7 @@ func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
 		expObject := e.GetObject()
 		object := a.GetObject()
 
-		if !reflect.DeepEqual(expObject, object) {
+		if expObject != nil && !reflect.DeepEqual(expObject, object) {
 			t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
 				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expObject, object))
 		}
