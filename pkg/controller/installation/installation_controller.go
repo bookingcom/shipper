@@ -196,18 +196,22 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 		if cluster, err = c.clusterLister.Get(clusterName); err != nil {
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
+			glog.Warningf("Get Cluster %q for InstallationTarget: %s", clusterName, metaKey(it), err)
 			continue
 		}
+
 		client, restConfig, err := c.GetClusterAndConfig(clusterName)
 		if err != nil {
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
+			glog.Warningf("Get config for Cluster %q for InstallationTarget %q: %s", clusterName, metaKey(it), err)
 			continue
 		}
 
 		if err = handler.installRelease(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
+			glog.Warningf("Install InstallationTarget %q for Cluster %q: %s", metaKey(it), clusterName, err)
 			continue
 		}
 
@@ -218,7 +222,7 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 
 	_, err = c.shipperclientset.ShipperV1().InstallationTargets(it.Namespace).Update(it)
 	if err != nil {
-		glog.Error(err)
+		glog.Warningf("Update InstallationTarget %q: %s", metaKey(it), err)
 		return err
 	}
 
@@ -242,4 +246,9 @@ func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interfa
 	copy := rest.CopyConfig(referenceConfig)
 
 	return client, copy, nil
+}
+
+func metaKey(it *shipperV1.InstallationTarget) string {
+	key, _ := cache.MetaNamespaceKeyFunc(it)
+	return key
 }
