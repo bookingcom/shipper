@@ -149,7 +149,7 @@ func (c *Controller) syncOne(key string) error {
 		return err
 	}
 
-	return c.processInstallation(it)
+	return c.processInstallation(it.DeepCopy())
 }
 
 func (c *Controller) enqueueInstallationTarget(obj interface{}) {
