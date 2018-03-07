@@ -216,24 +216,7 @@ func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployme
 		return nil, err
 	}
 
-	selector := labels.NewSelector()
-
-	var releaseValue string
-	var ok bool
-	if releaseValue, ok = deployment.GetLabels()[shipperv1.ReleaseLabel]; !ok {
-		return nil, fmt.Errorf("Deployment %s/%s has no label called 'release'", deployment.Namespace, deployment.Name)
-	}
-
-	if releaseValue == "" {
-		return nil, fmt.Errorf("Deployment %s/%s has an empty 'release' label", deployment.Namespace, deployment.Name)
-	}
-
-	requirement, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{releaseValue})
-	if err != nil {
-		return nil, err
-	}
-	selector = selector.Add(*requirement)
-
+	selector := deployment.Spec.Selector
 	pods, err := client.CoreV1().Pods(deployment.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, err
