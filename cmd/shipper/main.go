@@ -14,17 +14,8 @@ import (
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
-	"github.com/bookingcom/shipper/pkg/controller/capacity"
-	"github.com/bookingcom/shipper/pkg/controller/clustersecret"
-	"github.com/bookingcom/shipper/pkg/controller/installation"
-	"github.com/bookingcom/shipper/pkg/controller/schedulecontroller"
-	"github.com/bookingcom/shipper/pkg/controller/shipmentorder"
-	"github.com/bookingcom/shipper/pkg/controller/strategy"
-	"github.com/bookingcom/shipper/pkg/controller/traffic"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -45,25 +36,34 @@ var (
 )
 
 type cfg struct {
-	kubeClient        kubernetes.Interface
-	shipperClient     shipperclientset.Interface
-	restCfg           *rest.Config
-	resync            time.Duration
+	restCfg *rest.Config
+
+	kubeClient             kubernetes.Interface
+	shipperClient          shipperclientset.Interface
+	kubeInformerFactory    informers.SharedInformerFactory
+	shipperInformerFactory shipperinformers.SharedInformerFactory
+	resync                 time.Duration
+
+	recorder func(string) record.EventRecorder
+
+	store *clusterclientstore.Store
+
 	certPath, keyPath string
 	ns                string
 	workers           int
-	stopCh            <-chan struct{}
+
+	wg     sync.WaitGroup
+	stopCh <-chan struct{}
 }
 
 func main() {
 	flag.Parse()
 
-	if *certPath == "" {
-		glog.Fatal("Need -cert")
-	}
-
-	if *keyPath == "" {
-		glog.Fatal("Need -key")
+	clusterSecretControllerEnabled := *certPath != "" && *keyPath != ""
+	if !clusterSecretControllerEnabled {
+		if *certPath != "" || *keyPath != "" {
+			glog.Fatal("--cert and --key must be used together or not at all")
+		}
 	}
 
 	resync, err := time.ParseDuration(*resyncPeriod)
@@ -78,16 +78,44 @@ func main() {
 
 	stopCh := setupSignalHandler()
 
+	kubeInformerFactory := informers.NewSharedInformerFactory(kubeClient, resync)
+	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(shipperClient, resync)
+
+	broadcaster := record.NewBroadcaster()
+	broadcaster.StartLogging(glog.Infof)
+	broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	shipperscheme.AddToScheme(scheme.Scheme)
+
+	recorder := func(component string) record.EventRecorder {
+		return broadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: component})
+	}
+
+	store := clusterclientstore.NewStore(
+		kubeInformerFactory.Core().V1().Secrets(),
+		shipperInformerFactory.Shipper().V1().Clusters(),
+	)
+	go store.Run(stopCh)
+
 	cfg := &cfg{
-		kubeClient:    kubeClient,
-		shipperClient: shipperClient,
-		restCfg:       restCfg,
-		resync:        resync,
-		certPath:      *certPath,
-		keyPath:       *keyPath,
-		ns:            *ns,
-		workers:       *workers,
-		stopCh:        stopCh,
+		restCfg: restCfg,
+
+		kubeClient:             kubeClient,
+		shipperClient:          shipperClient,
+		kubeInformerFactory:    kubeInformerFactory,
+		shipperInformerFactory: shipperInformerFactory,
+		resync:                 resync,
+
+		recorder: recorder,
+
+		store: store,
+
+		certPath: *certPath,
+		keyPath:  *keyPath,
+		ns:       *ns,
+		workers:  *workers,
+
+		wg:     sync.WaitGroup{},
+		stopCh: stopCh,
 	}
 
 	runControllers(cfg)
@@ -113,81 +141,36 @@ func buildClients(masterURL, kubeconfig string) (kubernetes.Interface, shippercl
 }
 
 func runControllers(cfg *cfg) {
-	kubeInformerFactory := informers.NewSharedInformerFactory(cfg.kubeClient, cfg.resync)
-	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(cfg.shipperClient, cfg.resync)
+	controllerInitializers := buildInitializers()
 
-	broadcaster := record.NewBroadcaster()
-	broadcaster.StartLogging(glog.Infof)
-	broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: cfg.kubeClient.CoreV1().Events("")})
-	shipperscheme.AddToScheme(scheme.Scheme)
-
-	recorder := func(component string) record.EventRecorder {
-		return broadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: component})
-	}
-
-	var wg sync.WaitGroup
-
-	store := clusterclientstore.NewStore(
-		kubeInformerFactory.Core().V1().Secrets(),
-		shipperInformerFactory.Shipper().V1().Clusters(),
-	)
-
-	type ctrl interface {
-		Run(int, <-chan struct{})
-	}
-
-	dynamicClientBuilderFunc := func(gvk *schema.GroupVersionKind, config *rest.Config) dynamic.Interface {
-		// Probably this needs to be fixed, according to @asurikov's latest findings.
-		config.APIPath = dynamic.LegacyAPIPathResolverFunc(*gvk)
-		config.GroupVersion = &schema.GroupVersion{Group: gvk.Group, Version: gvk.Version}
-
-		dynamicClient, newClientErr := dynamic.NewClient(config)
-		if newClientErr != nil {
-			glog.Fatal(newClientErr)
+	for name, initializer := range controllerInitializers {
+		started, err := initializer(cfg)
+		// TODO make it visible when some controller's aren't starting properly; all of the initializers return 'nil' ATM
+		if err != nil {
+			glog.Fatalf("%q failed to initialize", name)
 		}
-		return dynamicClient
+
+		if !started {
+			glog.Infof("%q was skipped per config", name)
+		}
 	}
 
-	for _, c := range []ctrl{
-		shipmentorder.NewController(cfg.shipperClient, shipperInformerFactory,
-			recorder(shipmentorder.AgentName)),
+	go cfg.kubeInformerFactory.Start(cfg.stopCh)
+	go cfg.shipperInformerFactory.Start(cfg.stopCh)
 
-		clustersecret.NewController(shipperInformerFactory, cfg.kubeClient, kubeInformerFactory, cfg.certPath, cfg.keyPath, cfg.ns,
-			recorder(clustersecret.AgentName)),
+	doneCh := make(chan struct{})
 
-		// does not use a recorder yet
-		installation.NewController(cfg.shipperClient, shipperInformerFactory, store, dynamicClientBuilderFunc),
+	go func() {
+		cfg.wg.Wait()
+		close(doneCh)
+	}()
 
-		capacity.NewController(cfg.kubeClient, cfg.shipperClient, kubeInformerFactory, shipperInformerFactory, store,
-			recorder(capacity.AgentName)),
-
-		traffic.NewController(cfg.kubeClient, cfg.shipperClient, shipperInformerFactory, store,
-			recorder(traffic.AgentName)),
-
-		// does not use a recorder yet
-		strategy.NewController(cfg.shipperClient, shipperInformerFactory, dynamic.NewDynamicClientPool(cfg.restCfg)),
-
-		schedulecontroller.NewController(cfg.kubeClient, cfg.shipperClient, shipperInformerFactory,
-			recorder(schedulecontroller.AgentName)),
-	} {
-		wg.Add(1)
-
-		go func(c ctrl) {
-			c.Run(2, cfg.stopCh)
-			wg.Done()
-		}(c)
+	select {
+	case _ = <-doneCh:
+		glog.Info("controllers have all finished??? shutting down")
+	case _ = <-cfg.stopCh:
+		glog.Info("controller-manager stopped, shutting down...")
 	}
-
-	go kubeInformerFactory.Start(cfg.stopCh)
-	go shipperInformerFactory.Start(cfg.stopCh)
-
-	if err := store.Run(cfg.stopCh); err != nil {
-		glog.Fatalf("Error running client store: %s", err)
-	}
-
-	// TODO make it visible when some controller's aren't starting properly
-
-	wg.Wait()
 }
 
 func setupSignalHandler() <-chan struct{} {
