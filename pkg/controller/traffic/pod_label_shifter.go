@@ -17,6 +17,7 @@ import (
 
 type podLabelShifter struct {
 	namespace             string
+	selector              string
 	clusterReleaseWeights clusterReleaseWeights
 }
 
@@ -24,6 +25,7 @@ type clusterReleaseWeights map[string]map[string]int
 
 func newPodLabelShifter(
 	namespace string,
+	ttLabels map[string]string,
 	trafficTargets []*shipperv1.TrafficTarget,
 ) (*podLabelShifter, error) {
 
@@ -34,6 +36,7 @@ func newPodLabelShifter(
 
 	return &podLabelShifter{
 		namespace:             namespace,
+		selector:              labels.Set(ttLabels).AsSelector().String(),
 		clusterReleaseWeights: weights,
 	}, nil
 }
@@ -60,21 +63,25 @@ func (p *podLabelShifter) SyncCluster(
 	podsClient := clientset.CoreV1().Pods(p.namespace)
 	servicesClient := clientset.CoreV1().Services(p.namespace)
 
-	// NOTE(btyler) namespace == app name == service object name here
-	svcName := getAppLBName(p.namespace)
-	prodSvc, err := servicesClient.Get(svcName, metav1.GetOptions{})
+	svcList, err := servicesClient.List(metav1.ListOptions{LabelSelector: p.selector})
 	if err != nil {
 		return []error{fmt.Errorf(
-			"failed to fetch service %s in '%s/%s': %q",
-			svcName, cluster, p.namespace, err,
+			`cluster error (%q): failed to fetch Service matching %q in namespace %q: %s`,
+			cluster, p.selector, p.namespace, err,
+		)}
+	} else if n := len(svcList.Items); n != 1 {
+		return []error{fmt.Errorf(
+			"cluster error (%q): expected exactly one Service in namespace %q matching %q, but got %d",
+			cluster, p.namespace, p.selector, n,
 		)}
 	}
 
+	prodSvc := svcList.Items[0]
 	trafficSelector := prodSvc.Spec.Selector
 	if trafficSelector == nil {
 		return []error{fmt.Errorf(
 			"cluster error (%q): service %s/%s does not have a selector set. this means we cannot do label-based canary deployment",
-			cluster, p.namespace, svcName,
+			cluster, p.namespace, prodSvc.Name,
 		)}
 	}
 
@@ -272,9 +279,4 @@ func buildClusterReleaseWeights(trafficTargets []*shipperv1.TrafficTarget) (clus
 		}
 	}
 	return clusterReleaseWeights(clusterReleases), nil
-}
-
-func getAppLBName(name string) string {
-	const serviceNameTemplate = "%s-prod"
-	return fmt.Sprintf(serviceNameTemplate, name)
 }
