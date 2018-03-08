@@ -148,7 +148,7 @@ func (i *Installer) installManifests(
 				return fmt.Errorf("error constructing request: %s", rce)
 			}
 
-			return fmt.Errorf("error creating resource: %s", err)
+			return fmt.Errorf(`error creating resource %s "%s/%s": %s`, obj.GetKind(), obj.GetNamespace(), obj.GetName(), err)
 		}
 	}
 
