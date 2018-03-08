@@ -2,9 +2,12 @@ package strategy
 
 import (
 	"fmt"
-	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"testing"
+
+	coreV1 "k8s.io/api/core/v1"
+	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
 
 const clusterName = "minikube"
@@ -150,14 +153,18 @@ func buildIncumbent() *releaseInfo {
 			ObjectMeta: metaV1.ObjectMeta{
 				Name:      incumbentName,
 				Namespace: namespace,
-				Annotations: map[string]string{
-					v1.ReleaseContenderAnn: contenderName,
-				},
 			},
 		},
 		Status: v1.ReleaseStatus{
 			Phase:        v1.ReleasePhaseInstalled,
 			AchievedStep: 2,
+			Successor: &coreV1.ObjectReference{
+				APIVersion: "shipper.booking.com/v1",
+				Kind:       "Release",
+				Name:       contenderName,
+				Namespace:  namespace,
+				// TODO populate UID
+			},
 		},
 		Spec: v1.ReleaseSpec{
 			TargetStep: 2,
@@ -260,9 +267,6 @@ func buildContender() *releaseInfo {
 			ObjectMeta: metaV1.ObjectMeta{
 				Name:      contenderName,
 				Namespace: namespace,
-				Annotations: map[string]string{
-					v1.ReleaseIncumbentAnn: incumbentName,
-				},
 			},
 			Environment: v1.ReleaseEnvironment{
 				ShipmentOrder: v1.ShipmentOrderSpec{
@@ -273,6 +277,13 @@ func buildContender() *releaseInfo {
 		Status: v1.ReleaseStatus{
 			Phase:        v1.ReleasePhaseWaitingForStrategy,
 			AchievedStep: 0,
+			Predecessor: &coreV1.ObjectReference{
+				APIVersion: "shipper.booking.com/v1",
+				Kind:       "Release",
+				Name:       incumbentName,
+				Namespace:  namespace,
+				// TODO populate UID
+			},
 		},
 		Spec: v1.ReleaseSpec{
 			TargetStep: 0,
