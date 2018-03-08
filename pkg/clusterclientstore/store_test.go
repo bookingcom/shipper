@@ -219,7 +219,7 @@ func (f *fixture) run() *Store {
 	kubeInformerFactory.WaitForCacheSync(stopCh)
 	shipperInformerFactory.WaitForCacheSync(stopCh)
 
-	s.Run(stopCh)
+	go s.Run(stopCh)
 	return s
 }
 

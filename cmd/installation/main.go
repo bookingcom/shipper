@@ -70,10 +70,8 @@ func main() {
 	go kubeInformerFactory.Start(stopCh)
 	go shipperInformerFactory.Start(stopCh)
 
-	err = store.Run(stopCh)
-	if err != nil {
-		glog.Fatalf("Error running client store: %s", err.Error())
-	}
+	store.Run(stopCh)
+
 	glog.Infof("starting controller...")
 	controller.Run(2, stopCh)
 }
