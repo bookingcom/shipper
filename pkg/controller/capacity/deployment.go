@@ -9,7 +9,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -101,15 +100,13 @@ func (c *Controller) enqueueDeployment(obj interface{}, clusterName string) {
 func (c Controller) NewDeploymentResourceEventHandler(clusterName string) cache.ResourceEventHandler {
 	return cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
-			var labels map[string]string
-			switch deploy := obj.(type) {
-			case appsv1.Deployment:
-				labels = deploy.GetLabels()
-			case extensionsv1beta1.Deployment:
-				labels = deploy.GetLabels()
+			deploy, ok := obj.(*appsv1.Deployment)
+			if !ok {
+				glog.Warningf("Received something that's not a appsv1/Deployment: %v", obj)
+				return false
 			}
 
-			_, ok := labels[shipperv1.ReleaseLabel]
+			_, ok = deploy.GetLabels()[shipperv1.ReleaseLabel]
 
 			return ok
 		},
