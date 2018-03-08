@@ -131,12 +131,20 @@ func isInstalled(r *v1.Release) bool {
 }
 
 func (c *Controller) getAssociatedRelease(obj *metav1.ObjectMeta) *v1.Release {
-	if rel, err := c.releasesLister.Releases(obj.Namespace).Get(obj.Name); err != nil {
-		glog.V(4).Infof("error fetching release %s: %s", obj.Name, err)
+	if n := len(obj.OwnerReferences); n != 1 {
+		glog.Warningf("expected exactly one OwnerReference for %q but got %d", obj.GetNamespace()+"/"+obj.GetName(), n)
 		return nil
-	} else {
-		return rel
 	}
+
+	owner := obj.OwnerReferences[0]
+
+	rel, err := c.releasesLister.Releases(obj.Namespace).Get(owner.Name)
+	if err != nil {
+		// This target object will soon be GC-ed.
+		return nil
+	}
+
+	return rel
 }
 
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
