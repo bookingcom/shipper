@@ -2,9 +2,10 @@ package strategy
 
 import (
 	"fmt"
+	"strconv"
+
 	"github.com/golang/glog"
 	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	"strconv"
 )
 
 type releaseInfo struct {
@@ -58,13 +59,17 @@ func (s *Executor) execute() ([]interface{}, error) {
 	}
 
 	// Incumbent
-	if incumbentReady, incumbentPatches, err := s.checkIncumbent(strategyStep); err != nil {
-		return nil, err
-	} else if !incumbentReady {
-		s.info("incumbent is not yet ready for release %q, step %d", s.incumbent.release.Name, targetStep)
-		return incumbentPatches, nil
+	if s.incumbent != nil {
+		if incumbentReady, incumbentPatches, err := s.checkIncumbent(strategyStep); err != nil {
+			return nil, err
+		} else if !incumbentReady {
+			s.info("incumbent is not yet ready for release %q, step %d", s.incumbent.release.Name, targetStep)
+			return incumbentPatches, nil
+		} else {
+			s.info("incumbent is ready for step release %q, step %d", s.incumbent.release.Name, targetStep)
+		}
 	} else {
-		s.info("incumbent is ready for step release %q, step %d", s.incumbent.release.Name, targetStep)
+		s.info("no incumbent, must be a new app")
 	}
 
 	//////////////////////////////////////////////////////////////////////////
