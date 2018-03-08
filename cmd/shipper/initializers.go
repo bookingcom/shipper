@@ -28,6 +28,11 @@ func buildInitializers() map[string]initFunc {
 }
 
 func startShipmentOrderController(cfg *cfg) (bool, error) {
+	enabled := cfg.enabledControllers["shipmentorder"]
+	if !enabled {
+		return false, nil
+	}
+
 	c := shipmentorder.NewController(
 		cfg.shipperClient,
 		cfg.shipperInformerFactory,
@@ -39,7 +44,8 @@ func startShipmentOrderController(cfg *cfg) (bool, error) {
 }
 
 func startClusterSecretController(cfg *cfg) (bool, error) {
-	if cfg.certPath == "" && cfg.keyPath == "" {
+	enabled := cfg.enabledControllers["clustersecret"]
+	if !enabled {
 		return false, nil
 	}
 
@@ -58,6 +64,11 @@ func startClusterSecretController(cfg *cfg) (bool, error) {
 }
 
 func startScheduleController(cfg *cfg) (bool, error) {
+	enabled := cfg.enabledControllers["schedule"]
+	if !enabled {
+		return false, nil
+	}
+
 	c := schedulecontroller.NewController(
 		cfg.kubeClient,
 		cfg.shipperClient,
@@ -70,6 +81,11 @@ func startScheduleController(cfg *cfg) (bool, error) {
 }
 
 func startStrategyController(cfg *cfg) (bool, error) {
+	enabled := cfg.enabledControllers["strategy"]
+	if !enabled {
+		return false, nil
+	}
+
 	// does not use a recorder yet
 	c := strategy.NewController(
 		cfg.shipperClient,
@@ -94,6 +110,11 @@ func startInstallationController(cfg *cfg) (bool, error) {
 		return dynamicClient
 	}
 
+	enabled := cfg.enabledControllers["installation"]
+	if !enabled {
+		return false, nil
+	}
+
 	// does not use a recorder yet
 	c := installation.NewController(
 		cfg.shipperClient,
@@ -107,6 +128,11 @@ func startInstallationController(cfg *cfg) (bool, error) {
 }
 
 func startCapacityController(cfg *cfg) (bool, error) {
+	enabled := cfg.enabledControllers["capacity"]
+	if !enabled {
+		return false, nil
+	}
+
 	c := capacity.NewController(
 		cfg.kubeClient,
 		cfg.shipperClient,
@@ -121,6 +147,11 @@ func startCapacityController(cfg *cfg) (bool, error) {
 }
 
 func startTrafficController(cfg *cfg) (bool, error) {
+	enabled := cfg.enabledControllers["traffic"]
+	if !enabled {
+		return false, nil
+	}
+
 	c := traffic.NewController(
 		cfg.kubeClient,
 		cfg.shipperClient,
