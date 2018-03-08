@@ -95,12 +95,7 @@ func (c *Scheduler) CreateInstallationTarget() error {
 			Namespace: c.Release.Namespace,
 			Labels:    c.Release.Labels,
 			OwnerReferences: []metav1.OwnerReference{
-				metav1.OwnerReference{
-					APIVersion: c.Release.APIVersion,
-					Kind:       c.Release.Kind,
-					Name:       c.Release.GetName(),
-					UID:        c.Release.GetUID(),
-				},
+				createOwnerRefFromRelease(c.Release),
 			},
 		},
 		Spec: v1.InstallationTargetSpec{Clusters: c.Clusters()},
@@ -134,12 +129,7 @@ func (c *Scheduler) CreateCapacityTarget() error {
 			Namespace: c.Release.Namespace,
 			Labels:    c.Release.Labels,
 			OwnerReferences: []metav1.OwnerReference{
-				metav1.OwnerReference{
-					APIVersion: c.Release.APIVersion,
-					Kind:       c.Release.Kind,
-					Name:       c.Release.GetName(),
-					UID:        c.Release.GetUID(),
-				},
+				createOwnerRefFromRelease(c.Release),
 			},
 		},
 		Spec: v1.CapacityTargetSpec{Clusters: targets},
@@ -174,12 +164,7 @@ func (c *Scheduler) CreateTrafficTarget() error {
 			Namespace: c.Release.Namespace,
 			Labels:    c.Release.Labels,
 			OwnerReferences: []metav1.OwnerReference{
-				metav1.OwnerReference{
-					APIVersion: c.Release.APIVersion,
-					Kind:       c.Release.Kind,
-					Name:       c.Release.GetName(),
-					UID:        c.Release.GetUID(),
-				},
+				createOwnerRefFromRelease(c.Release),
 			},
 		},
 		Spec: v1.TrafficTargetSpec{Clusters: trafficTargets},
@@ -217,5 +202,20 @@ func (c *Scheduler) ComputeTargetClusters() error {
 
 		c.SetClusters(clusterNames)
 		return nil
+	}
+}
+
+// the strings here are insane, but if you create a fresh release object for
+// some reason it lands in the work queue with an empty TypeMeta. This is resolved
+// if you restart the controllers, so I'm not sure what's going on.
+// https://github.com/kubernetes/client-go/issues/60#issuecomment-281533822 and
+// https://github.com/kubernetes/client-go/issues/60#issuecomment-281747911 give
+// some potential context.
+func createOwnerRefFromRelease(r *v1.Release) metav1.OwnerReference {
+	return metav1.OwnerReference{
+		APIVersion: "shipper.booking.com/v1",
+		Kind:       "Release",
+		Name:       r.GetName(),
+		UID:        r.GetUID(),
 	}
 }
