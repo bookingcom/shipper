@@ -219,7 +219,11 @@ func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployme
 		return nil, err
 	}
 
-	selector := deployment.Spec.Selector
+	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
+	if err != nil {
+		return nil, fmt.Errorf("failed to transform label selector %v into a selector: %s", deployment.Spec.Selector, err)
+	}
+
 	pods, err := client.CoreV1().Pods(deployment.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, err
