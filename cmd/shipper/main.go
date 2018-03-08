@@ -166,9 +166,9 @@ func runControllers(cfg *cfg) {
 	}()
 
 	select {
-	case _ = <-doneCh:
+	case <-doneCh:
 		glog.Info("controllers have all finished??? shutting down")
-	case _ = <-cfg.stopCh:
+	case <-cfg.stopCh:
 		glog.Info("controller-manager stopped, shutting down...")
 	}
 }
