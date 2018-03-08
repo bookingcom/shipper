@@ -110,6 +110,11 @@ func (i *Installer) installManifests(
 			return fmt.Errorf("error decoding manifest: %s", err)
 		}
 
+		// We label final objects with Release labels so that we can find/filter them
+		// later in Capacity and Installation controllers.
+		// This may overwrite some of the pre-existing labels. It's not ideal but with
+		// current implementation we require that shipperv1.ReleaseLabel is propagated
+		// correctly. This may be subject to change.
 		kind, ns, name := gvk.Kind, obj.GetNamespace(), obj.GetName()
 		glog.V(6).Infof(`%s "%s/%s": before injecting labels: %v`, kind, ns, name, obj.GetLabels())
 		injectLabels(obj, i.Release.Labels)
@@ -195,18 +200,18 @@ func decodeManifest(manifest string) (*unstructured.Unstructured, *schema.GroupV
 	return &unstructured.Unstructured{Object: unstructuredObj}, gvk, nil
 }
 
-// injectLabels labels obj *in-place* with labels from inj without overwriting
-// existing values. That is, if inj has a label with the same key as an existing
-// label in obj, the existing value will be preserved.
+// injectLabels labels obj *in-place* with labels from inj, overwriting existing
+// values. That is, if inj has a label with the same key as an existing label in
+// obj, the existing value will be overwritten.
 func injectLabels(obj *unstructured.Unstructured, inj map[string]string) {
-	newLabels := make(map[string]string)
+	labels := obj.GetLabels()
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+
 	for k, v := range inj {
-		newLabels[k] = v
+		labels[k] = v
 	}
 
-	for k, v := range obj.GetLabels() {
-		newLabels[k] = v
-	}
-
-	obj.SetLabels(newLabels)
+	obj.SetLabels(labels)
 }
