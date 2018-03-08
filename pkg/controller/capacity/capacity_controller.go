@@ -264,13 +264,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 
 		targetNamespace := ct.Namespace
 
-		var releaseValue string
-		var ok bool
-		if releaseValue, ok = ct.GetLabels()[shipperv1.ReleaseLabel]; !ok {
-			return fmt.Errorf("Capacity target %s in namespace %s has no label called 'release'", ct.Name, ct.Namespace)
-		}
-
-		selector := labels.Set{shipperv1.ReleaseLabel: releaseValue}.AsSelector()
+		selector := labels.Set(ct.Labels).AsSelector()
 
 		var deploymentsList *appsv1.DeploymentList
 		deploymentsList, err = targetClusterClient.AppsV1().Deployments(targetNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
