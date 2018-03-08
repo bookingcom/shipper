@@ -5,18 +5,18 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/golang/glog"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-
-	"k8s.io/apimachinery/pkg/labels"
-
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-
-	"github.com/golang/glog"
+	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
+
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
 
 type deploymentWorkqueueItem struct {
@@ -99,9 +99,24 @@ func (c *Controller) enqueueDeployment(obj interface{}, clusterName string) {
 }
 
 func (c Controller) NewDeploymentResourceEventHandler(clusterName string) cache.ResourceEventHandler {
-	return cache.ResourceEventHandlerFuncs{
-		UpdateFunc: func(old, new interface{}) {
-			c.enqueueDeployment(new, clusterName)
+	return cache.FilteringResourceEventHandler{
+		FilterFunc: func(obj interface{}) bool {
+			var labels map[string]string
+			switch deploy := obj.(type) {
+			case appsv1.Deployment:
+				labels = deploy.GetLabels()
+			case extensionsv1beta1.Deployment:
+				labels = deploy.GetLabels()
+			}
+
+			_, ok := labels[shipperv1.ReleaseLabel]
+
+			return ok
+		},
+		Handler: cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(old, new interface{}) {
+				c.enqueueDeployment(new, clusterName)
+			},
 		},
 	}
 }
@@ -123,14 +138,13 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 		return err
 	}
 
-	// Only react on this event if the deployment has a `release` label that matches with a release
-	var release string
-	var ok bool
-	if release, ok = targetDeployment.GetLabels()[shipperv1.ReleaseLabel]; !ok {
-		// This deployment is not one of ours, so don't do anything
-		return nil
-	}
-
+	// Using ReleaseLabel here instead of the full set of Deployment labels because
+	// we can't guarantee that there isn't extra stuff there that was put directly
+	// in the chart.
+	// Also not using ObjectReference here because it would go over cluster
+	// boundaries. While technically it's probably ok, I feel like it'd be abusing
+	// the feature.
+	release := targetDeployment.GetLabels()[shipperv1.ReleaseLabel]
 	capacityTarget, err := c.getCapacityTargetForReleaseAndNamespace(release, namespace)
 	if err != nil {
 		return err
