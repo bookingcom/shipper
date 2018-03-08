@@ -54,10 +54,10 @@ func (p *podLabelShifter) SyncCluster(
 	cluster string,
 	clientset kubernetes.Interface,
 	informer corev1informer.PodInformer,
-) []error {
+) (map[string]int, []error) {
 	releaseWeights, ok := p.clusterReleaseWeights[cluster]
 	if !ok {
-		return []error{fmt.Errorf("podLabelShifter has no weights for cluster %q", cluster)}
+		return nil, []error{fmt.Errorf("podLabelShifter has no weights for cluster %q", cluster)}
 	}
 
 	podsClient := clientset.CoreV1().Pods(p.namespace)
@@ -65,12 +65,12 @@ func (p *podLabelShifter) SyncCluster(
 
 	svcList, err := servicesClient.List(metav1.ListOptions{LabelSelector: p.selector})
 	if err != nil {
-		return []error{fmt.Errorf(
+		return nil, []error{fmt.Errorf(
 			`cluster error (%q): failed to fetch Service matching %q in namespace %q: %s`,
 			cluster, p.selector, p.namespace, err,
 		)}
 	} else if n := len(svcList.Items); n != 1 {
-		return []error{fmt.Errorf(
+		return nil, []error{fmt.Errorf(
 			"cluster error (%q): expected exactly one Service in namespace %q matching %q, but got %d",
 			cluster, p.namespace, p.selector, n,
 		)}
@@ -79,7 +79,7 @@ func (p *podLabelShifter) SyncCluster(
 	prodSvc := svcList.Items[0]
 	trafficSelector := prodSvc.Spec.Selector
 	if trafficSelector == nil {
-		return []error{fmt.Errorf(
+		return nil, []error{fmt.Errorf(
 			"cluster error (%q): service %s/%s does not have a selector set. this means we cannot do label-based canary deployment",
 			cluster, p.namespace, prodSvc.Name,
 		)}
@@ -90,7 +90,7 @@ func (p *podLabelShifter) SyncCluster(
 	// NOTE(btyler) namespace == one app (because we're fetching all the pods in the ns)
 	pods, err := nsPodLister.List(labels.Everything())
 	if err != nil {
-		return []error{fmt.Errorf(
+		return nil, []error{fmt.Errorf(
 			"cluster error (%q): failed to list pods in '%s': %q",
 			cluster, p.namespace, err,
 		)}
@@ -102,6 +102,7 @@ func (p *podLabelShifter) SyncCluster(
 		totalWeight += weight
 	}
 
+	achievedWeights := map[string]int{}
 	errors := []error{}
 	for release, weight := range releaseWeights {
 		releaseReq, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{release})
@@ -134,11 +135,13 @@ func (p *podLabelShifter) SyncCluster(
 
 		// everything is fine, nothing to do
 		if len(trafficPods) == targetPods {
+			achievedWeights[release] = weight
 			continue
 		}
 
 		if len(trafficPods) > targetPods {
 			excess := len(trafficPods) - targetPods
+			removedFromLB := 0
 			for i := 0; i < excess; i++ {
 				pod := trafficPods[i].DeepCopy()
 
@@ -152,11 +155,17 @@ func (p *podLabelShifter) SyncCluster(
 					))
 					continue
 				}
+				removedFromLB++
 			}
+			finalTrafficPods := len(trafficPods) - removedFromLB
+			proportion := float64(finalTrafficPods) / float64(totalPods)
+			achievedWeights[release] = int(round(proportion * float64(totalWeight)))
+			continue
 		}
 
 		if len(trafficPods) < targetPods {
 			missing := targetPods - len(trafficPods)
+			addedToLB := 0
 			if missing > len(idlePods) {
 				errors = append(errors, fmt.Errorf(
 					"release error (%q): the math is broken: there aren't enough idle pods (%d) to meet requested increase in traffic pods (%d).",
@@ -178,15 +187,15 @@ func (p *podLabelShifter) SyncCluster(
 					))
 					continue
 				}
+				addedToLB++
 			}
+			finalTrafficPods := len(trafficPods) + addedToLB
+			proportion := float64(finalTrafficPods) / float64(totalPods)
+			achievedWeights[release] = int(round(proportion * float64(totalWeight)))
 		}
 	}
 
-	// check that service obj is in place and has the right bits
-	// query for pods for each release that we had a TT for, hang on to them
-	//
-	//releasePodCounts := map[string]uint{}
-	return errors
+	return achievedWeights, errors
 }
 
 func getsTraffic(pod *corev1.Pod, trafficSelectors map[string]string) bool {
@@ -279,4 +288,12 @@ func buildClusterReleaseWeights(trafficTargets []*shipperv1.TrafficTarget) (clus
 		}
 	}
 	return clusterReleaseWeights(clusterReleases), nil
+}
+
+// math.Round arrives in go 1.10
+func round(num float64) int {
+	if num < 0 {
+		return int(num - 0.5)
+	}
+	return int(num + 0.5)
 }
