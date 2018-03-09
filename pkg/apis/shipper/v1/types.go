@@ -3,7 +3,6 @@ package v1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const (
@@ -112,7 +111,7 @@ type ChartValues map[string]interface{}
 
 func (in *ChartValues) DeepCopyInto(out *ChartValues) {
 	*out = ChartValues(
-		runtime.DeepCopyJSON(
+		deepCopyJSON(
 			map[string]interface{}(*in),
 		),
 	)
