@@ -20,7 +20,6 @@ const (
 	testClusterName     = "test-cluster"
 	testServiceName     = "test-service"
 	testApplicationName = "test-app"
-	testRelease         = "test-release"
 )
 
 type releaseWeights []uint

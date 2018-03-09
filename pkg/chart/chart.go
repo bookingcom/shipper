@@ -127,7 +127,9 @@ func Render(r io.Reader, name, ns string, shipperValues *shipperv1.ChartValues) 
 	chartConfig := &chart.Config{}
 	if shipperValues != nil {
 		values := chartutil.Values(*shipperValues)
-		yaml, err := values.YAML()
+
+		var yaml string
+		yaml, err = values.YAML()
 		if err != nil {
 			return nil, err
 		}

@@ -323,7 +323,10 @@ func (c *Controller) processRelease(rel *shipperv1.Release) error {
 	// NEVER modify objects from the store. It's a read-only, local cache.
 	rel = rel.DeepCopy()
 	rel.Status.Successor = nil
-	c.shipperClientset.ShipperV1().Releases(rel.GetNamespace()).Update(rel)
+	_, err = c.shipperClientset.ShipperV1().Releases(rel.GetNamespace()).Update(rel)
+	if err != nil {
+		return err
+	}
 
 	c.recorder.Eventf(
 		rel,

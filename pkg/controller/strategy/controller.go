@@ -357,7 +357,7 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 	)
 
 	if _, ok = obj.(metav1.Object); !ok {
-		_, ok := obj.(cache.DeletedFinalStateUnknown)
+		_, ok = obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
 			runtime.HandleError(fmt.Errorf("neither a Meta object, nor a tombstone: %#v", obj))
 			return
