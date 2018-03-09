@@ -118,13 +118,19 @@ func RenderChart(chrt *chart.Chart, chrtVals *chart.Config, options chartutil.Re
 
 // Render renders a chart, with the given values. It returns a list
 // of rendered Kubernetes objects.
-func Render(r io.Reader, name, ns string, values *shipperv1.ChartValues) ([]string, error) {
+func Render(r io.Reader, name, ns string, shipperValues *shipperv1.ChartValues) ([]string, error) {
 	helmChart, err := chartutil.LoadArchive(r)
 	if err != nil {
 		return nil, nil
 	}
 
-	chartConfig := &chart.Config{Values: map[string]*chart.Value{}}
+	values := chartutil.Values(*shipperValues)
+	yaml, err := values.YAML()
+	if err != nil {
+		return nil, err
+	}
+
+	chartConfig := &chart.Config{Raw: yaml}
 
 	if err = chartutil.ProcessRequirementsEnabled(helmChart, chartConfig); err != nil {
 		return nil, err

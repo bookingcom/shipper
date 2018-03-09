@@ -39,11 +39,23 @@ func TestRender(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	expectedReplicas := 42
 	vals := &shipperv1.ChartValues{
-		"foo": "bar",
+		"replicaCount": expectedReplicas,
 	}
 
-	if _, err := Render(chart, "my-complex-app", "my-complex-app", vals); err != nil {
+	rendered, err := Render(chart, "my-complex-app", "my-complex-app", vals)
+	if err != nil {
 		t.Fatal(err)
+	}
+
+	deployments := GetDeployments(rendered)
+	extractedReplicas := deployments[0].Spec.Replicas
+	if extractedReplicas == nil {
+		t.Fatal("extracted nil replicas from deployment")
+	}
+	actualReplicas := int(*extractedReplicas)
+	if actualReplicas != expectedReplicas {
+		t.Errorf("expected %d replicas but found %d", expectedReplicas, actualReplicas)
 	}
 }
