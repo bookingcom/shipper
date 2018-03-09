@@ -17,8 +17,10 @@ import (
 )
 
 const (
-	testClusterName = "test-cluster"
-	testRelease     = "test-release"
+	testClusterName     = "test-cluster"
+	testServiceName     = "test-service"
+	testApplicationName = "test-app"
+	testRelease         = "test-release"
 )
 
 type releaseWeights []uint
@@ -208,10 +210,12 @@ func clusterSyncTestCase(
 
 	f.contenderRelease = releaseNames[len(releaseNames)-1]
 	f.addService()
-	f.run(expectedWeightsByName)
+	keepTesting := f.run(expectedWeightsByName)
 
-	for i, expectedPodsWithTraffic := range expectedTrafficCounts {
-		f.checkReleasePodsWithTraffic(releaseNames[i], expectedPodsWithTraffic)
+	if keepTesting {
+		for i, expectedPodsWithTraffic := range expectedTrafficCounts {
+			f.checkReleasePodsWithTraffic(releaseNames[i], expectedPodsWithTraffic)
+		}
 	}
 }
 
@@ -254,10 +258,13 @@ func (f *fixture) addPods(releaseName string, count int) {
 }
 
 func (f *fixture) addService() {
+	labels := appLabels()
+	labels[shipperv1.LBLabel] = shipperv1.LBForProduction
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      getAppLBName(shippertesting.TestNamespace),
+			Name:      testServiceName,
 			Namespace: shippertesting.TestNamespace,
+			Labels:    labels,
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
@@ -270,7 +277,7 @@ func (f *fixture) addService() {
 	f.objects = append(f.objects, svc)
 }
 
-func (f *fixture) run(expectedWeights map[string]int) {
+func (f *fixture) run(expectedWeights map[string]int) bool {
 	clientset := kubefake.NewSimpleClientset(f.objects...)
 	f.client = clientset
 
@@ -282,12 +289,13 @@ func (f *fixture) run(expectedWeights map[string]int) {
 
 	shifter, err := newPodLabelShifter(
 		shippertesting.TestNamespace,
+		releaseLabels(f.contenderRelease),
 		f.trafficTargets,
 	)
 
 	if err != nil {
 		f.Errorf("failed to create labelShifter: %s", err.Error())
-		return
+		return false
 	}
 
 	achievedWeights, errs := shifter.SyncCluster(testClusterName, f.client, informers.Core().V1().Pods())
@@ -295,14 +303,22 @@ func (f *fixture) run(expectedWeights map[string]int) {
 		f.Errorf("failed to sync cluster: %s", err.Error())
 	}
 
+	// no point inspecting anything else
+	if len(errs) > 0 {
+		return false
+	}
+
+	keepTesting := true
 	for release, expectedWeight := range expectedWeights {
 		achievedWeight, ok := achievedWeights[release]
 		if !ok {
 			f.Errorf("expected to find release %q in achievedWeights, but it wasn't there", release)
+			keepTesting = false
 			continue
 		}
 		if expectedWeight != achievedWeight {
 			f.Errorf("release %q expected weight %d but got %d", release, expectedWeight, achievedWeight)
+			keepTesting = false
 		}
 		delete(achievedWeights, release)
 	}
@@ -310,7 +326,9 @@ func (f *fixture) run(expectedWeights map[string]int) {
 	// should be empty now
 	for release, achievedWeight := range achievedWeights {
 		f.Errorf("release %q was found in achievedWeights with weight %d, but that map should be empty", release, achievedWeight)
+		keepTesting = false
 	}
+	return keepTesting
 }
 
 func (f *fixture) checkReleasePodsWithTraffic(release string, expectedCount int) {
@@ -378,7 +396,13 @@ func newReleasePods(release string, count int) []*corev1.Pod {
 }
 
 func releaseLabels(releaseName string) map[string]string {
+	labels := appLabels()
+	labels[shipperv1.ReleaseLabel] = releaseName
+	return labels
+}
+
+func appLabels() map[string]string {
 	return map[string]string{
-		shipperv1.ReleaseLabel: releaseName,
+		"coolapp": testApplicationName,
 	}
 }

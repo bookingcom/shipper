@@ -7,6 +7,7 @@ import (
 
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperChart "github.com/bookingcom/shipper/pkg/chart"
+	"github.com/bookingcom/shipper/pkg/label"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -116,19 +117,24 @@ func (i *Installer) installManifests(
 		// current implementation we require that shipperv1.ReleaseLabel is propagated
 		// correctly. This may be subject to change.
 
-		// Ok, this is kinda ugly but bear with me.
-		// We're skipping Services because with they're not tied to Releases but rather
-		// to application identity. The contract is that we have one Service per
-		// application and this service is always the same, so it'd be confusing if we
-		// relabled it with Release name one every deployment.
 		kind, ns, name := gvk.Kind, obj.GetNamespace(), obj.GetName()
-		if kind != "Service" {
-			glog.V(6).Infof(`%s "%s/%s": before injecting labels: %v`, kind, ns, name, obj.GetLabels())
-			injectLabels(obj, i.Release.Labels)
-			glog.V(6).Infof(`%s "%s/%s: after injecting labels: %v`, kind, ns, name, obj.GetLabels())
-		} else {
-			glog.V(6).Infof(`Skipping label injection for Service "%s/%s"`, ns, name)
+		labelsToInject := i.Release.Labels
+
+		// We have a contract with the chart that they create one stably-named
+		// (that is, the name should remain the same from release to release)
+		// Service per application with a special label: 'shipper-lb: production'.
+		// We don't want to add the 'release' label to this service because the
+		// lifetime spans releases: this is an application-scoped object, not
+		// a release-scoped object. Other services are not part of this
+		// contract; user charts can do whatever they want.
+		lbType, ok := obj.GetLabels()[shipperV1.LBLabel]
+		if kind == "Service" && ok && lbType == shipperV1.LBForProduction {
+			labelsToInject = label.FilterRelease(labelsToInject)
 		}
+
+		glog.V(6).Infof(`%s "%s/%s": before injecting labels: %v`, kind, ns, name, obj.GetLabels())
+		injectLabels(obj, labelsToInject)
+		glog.V(6).Infof(`%s "%s/%s: after injecting labels: %v`, kind, ns, name, obj.GetLabels())
 
 		// Once we've gathered enough information about the document we want to install,
 		// we're able to build a resource client to interact with the target cluster.

@@ -24,6 +24,9 @@ const (
 
 	SecretChecksumAnnotation    = "shipper.booking.com/cluster-secret.checksum"
 	SecretClusterNameAnnotation = "shipper.booking.com/cluster-secret.clusterName"
+
+	LBLabel         = "shipper-lb"
+	LBForProduction = "production"
 )
 
 // +genclient
