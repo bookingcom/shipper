@@ -115,10 +115,20 @@ func (i *Installer) installManifests(
 		// This may overwrite some of the pre-existing labels. It's not ideal but with
 		// current implementation we require that shipperv1.ReleaseLabel is propagated
 		// correctly. This may be subject to change.
+
+		// Ok, this is kinda ugly but bear with me.
+		// We're skipping Services because with they're not tied to Releases but rather
+		// to application identity. The contract is that we have one Service per
+		// application and this service is always the same, so it'd be confusing if we
+		// relabled it with Release name one every deployment.
 		kind, ns, name := gvk.Kind, obj.GetNamespace(), obj.GetName()
-		glog.V(6).Infof(`%s "%s/%s": before injecting labels: %v`, kind, ns, name, obj.GetLabels())
-		injectLabels(obj, i.Release.Labels)
-		glog.V(6).Infof(`%s "%s/%s: after injecting labels: %v`, kind, ns, name, obj.GetLabels())
+		if gvk.Version != "v1" && kind != "Service" {
+			glog.V(6).Infof(`%s "%s/%s": before injecting labels: %v`, kind, ns, name, obj.GetLabels())
+			injectLabels(obj, i.Release.Labels)
+			glog.V(6).Infof(`%s "%s/%s: after injecting labels: %v`, kind, ns, name, obj.GetLabels())
+		} else {
+			glog.V(6).Infof(`Skipping label injection for Service "%s/%s"`, ns, name)
+		}
 
 		// Once we've gathered enough information about the document we want to install,
 		// we're able to build a resource client to interact with the target cluster.
