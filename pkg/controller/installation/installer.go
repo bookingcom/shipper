@@ -122,7 +122,7 @@ func (i *Installer) installManifests(
 		// application and this service is always the same, so it'd be confusing if we
 		// relabled it with Release name one every deployment.
 		kind, ns, name := gvk.Kind, obj.GetNamespace(), obj.GetName()
-		if gvk.Version != "v1" && kind != "Service" {
+		if kind != "Service" {
 			glog.V(6).Infof(`%s "%s/%s": before injecting labels: %v`, kind, ns, name, obj.GetLabels())
 			injectLabels(obj, i.Release.Labels)
 			glog.V(6).Infof(`%s "%s/%s: after injecting labels: %v`, kind, ns, name, obj.GetLabels())
