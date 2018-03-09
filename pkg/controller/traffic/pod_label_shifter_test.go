@@ -18,7 +18,6 @@ import (
 
 const (
 	testClusterName = "test-cluster"
-	testServiceName = "test-service"
 	testRelease     = "test-release"
 )
 
@@ -257,9 +256,8 @@ func (f *fixture) addPods(releaseName string, count int) {
 func (f *fixture) addService() {
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      testServiceName,
+			Name:      getAppLBName(shippertesting.TestNamespace),
 			Namespace: shippertesting.TestNamespace,
-			Labels:    releaseLabels(f.contenderRelease),
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
@@ -284,7 +282,6 @@ func (f *fixture) run(expectedWeights map[string]int) {
 
 	shifter, err := newPodLabelShifter(
 		shippertesting.TestNamespace,
-		releaseLabels(f.contenderRelease),
 		f.trafficTargets,
 	)
 

@@ -229,7 +229,7 @@ func (c *Controller) syncHandler(key string) error {
 		return err
 	}
 
-	shifter, err := newPodLabelShifter(namespace, syncingTT.GetLabels(), list)
+	shifter, err := newPodLabelShifter(namespace, list)
 	if err != nil {
 		return err
 	}
