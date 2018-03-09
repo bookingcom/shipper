@@ -253,6 +253,8 @@ func newShipmentOrder(phase shipperv1.ShipmentOrderPhase) *shipperv1.ShipmentOrd
 					"app": "shipmentorder-controller-test",
 				},
 			},
+			// TODO check if values are actually propagated
+			Values: &shipperv1.ChartValues{},
 		},
 		Status: shipperv1.ShipmentOrderStatus{
 			Phase: phase,
