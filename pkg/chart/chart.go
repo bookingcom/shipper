@@ -124,13 +124,15 @@ func Render(r io.Reader, name, ns string, shipperValues *shipperv1.ChartValues) 
 		return nil, nil
 	}
 
-	values := chartutil.Values(*shipperValues)
-	yaml, err := values.YAML()
-	if err != nil {
-		return nil, err
+	chartConfig := &chart.Config{}
+	if shipperValues != nil {
+		values := chartutil.Values(*shipperValues)
+		yaml, err := values.YAML()
+		if err != nil {
+			return nil, err
+		}
+		chartConfig = &chart.Config{Raw: yaml}
 	}
-
-	chartConfig := &chart.Config{Raw: yaml}
 
 	if err = chartutil.ProcessRequirementsEnabled(helmChart, chartConfig); err != nil {
 		return nil, err
