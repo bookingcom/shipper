@@ -3,8 +3,10 @@ package installation
 import (
 	"testing"
 
+	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
@@ -41,6 +43,17 @@ var apiResourceList = []*v1.APIResourceList{
 			},
 		},
 	},
+	{
+		GroupVersion: "apps/v1",
+		APIResources: []v1.APIResource{
+
+			{
+				Kind:       "Deployment",
+				Namespaced: true,
+				Name:       "deployments",
+			},
+		},
+	},
 }
 
 // TestInstaller tests the installation process using a Installer directly,
@@ -68,12 +81,35 @@ func TestInstaller(t *testing.T) {
 			schema.GroupVersionResource{Resource: "services", Version: "v1"},
 			release.GetNamespace(),
 			nil),
-		kubetesting.NewCreateAction(
-			schema.GroupVersionResource{Resource: "deployments", Version: "v1beta1"},
+		kubetesting.NewCreateAction( // TODO: Feed deployment object for comparison
+			schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"},
 			release.GetNamespace(),
 			nil),
 	}
 	shippertesting.CheckActions(expectedActions, fakeDynamicClient.Actions(), t)
+
+	// The following tests are currently disabled. It seems the cast to
+	// appsv1.Deployment doesn't work because the runtime.Object stored
+	// in the action isn't the object itself, but a serializable
+	// representation of it.
+	if false {
+		createDeploymentAction := fakeDynamicClient.Actions()[1].(kubetesting.CreateAction)
+		obj := createDeploymentAction.GetObject()
+		if deployment, ok := obj.(*appsv1.Deployment); !ok {
+			t.Logf("%+v", obj)
+			t.Fatal("object is not an appsv1.Deployment")
+		} else {
+			if _, ok := deployment.Labels[shipperV1.ReleaseLabel]; !ok {
+				t.Fatalf("could not find %q in Deployment .metadata.labels", shipperV1.ReleaseLabel)
+			}
+			if _, ok := deployment.Spec.Selector.MatchLabels[shipperV1.ReleaseLabel]; !ok {
+				t.Fatalf("could not find %q in Deployment .spec.selector.matchLabels", shipperV1.ReleaseLabel)
+			}
+			if _, ok := deployment.Spec.Template.Labels[shipperV1.ReleaseLabel]; !ok {
+				t.Fatalf("could not find %q in Deployment .spec.template.labels")
+			}
+		}
+	}
 }
 
 // TestInstallerBrokenChart tests if the installation process fails when the
