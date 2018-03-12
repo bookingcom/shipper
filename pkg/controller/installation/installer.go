@@ -190,10 +190,6 @@ func (i *Installer) installManifests(
 			labelsToInject = label.FilterRelease(labelsToInject)
 		}
 
-		glog.V(6).Infof(`%s "%s/%s": before injecting labels: %v`, kind, ns, name, obj.GetLabels())
-		injectLabels(obj, labelsToInject)
-		glog.V(6).Infof(`%s "%s/%s: after injecting labels: %v`, kind, ns, name, obj.GetLabels())
-
 		// Apply patches to the object based on its resource type.
 		decodedObj = i.patchObject(decodedObj)
 		if newObj, err := toUnstructured(decodedObj); err != nil {
@@ -201,6 +197,10 @@ func (i *Installer) installManifests(
 		} else {
 			obj = newObj
 		}
+
+		glog.V(6).Infof(`%s "%s/%s": before injecting labels: %v`, kind, ns, name, obj.GetLabels())
+		injectLabels(obj, labelsToInject)
+		glog.V(6).Infof(`%s "%s/%s: after injecting labels: %v`, kind, ns, name, obj.GetLabels())
 
 		// Once we've gathered enough information about the document we want to install,
 		// we're able to build a resource client to interact with the target cluster.
