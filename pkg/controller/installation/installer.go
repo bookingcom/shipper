@@ -192,7 +192,8 @@ func (i *Installer) installManifests(
 
 		// Apply patches to the object based on its resource type.
 		decodedObj = i.patchObject(decodedObj)
-		if newObj, err := toUnstructured(decodedObj); err != nil {
+		var newObj *unstructured.Unstructured
+		if newObj, err = toUnstructured(decodedObj); err != nil {
 			return fmt.Errorf("error converting to unstructured: %s", err)
 		} else {
 			obj = newObj

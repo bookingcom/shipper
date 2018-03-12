@@ -200,7 +200,9 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 			continue
 		}
 
-		client, restConfig, err := c.GetClusterAndConfig(clusterName)
+		var client kubernetes.Interface
+		var restConfig *rest.Config
+		client, restConfig, err = c.GetClusterAndConfig(clusterName)
 		if err != nil {
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
