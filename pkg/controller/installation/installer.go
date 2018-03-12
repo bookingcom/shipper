@@ -45,7 +45,13 @@ func (i *Installer) renderManifests(cluster *shipperV1.Cluster) ([]string, error
 	if err != nil {
 		return nil, err
 	}
-	return shipperChart.RenderChart(chrt, vals, options)
+
+	rendered, err := shipperChart.RenderChart(chrt, vals, options)
+	for _, v := range rendered {
+		glog.V(10).Infof("Rendered object:\n%s", v)
+	}
+
+	return rendered, err
 }
 
 // buildResourceClient returns a ResourceClient suitable to manipulate the kind
