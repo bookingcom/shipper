@@ -4,6 +4,7 @@ status:
   phase: WaitingForStrategy
   achievedStep: 0
 metadata:
+  uid: deadbeef
   name: 0.0.1
   namespace: reviews-api
   environment:
