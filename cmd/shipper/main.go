@@ -23,6 +23,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller/traffic"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -135,6 +136,18 @@ func runControllers(cfg *cfg) {
 		Run(int, <-chan struct{})
 	}
 
+	dynamicClientBuilderFunc := func(gvk *schema.GroupVersionKind, config *rest.Config) dynamic.Interface {
+		// Probably this needs to be fixed, according to @asurikov's latest findings.
+		config.APIPath = dynamic.LegacyAPIPathResolverFunc(*gvk)
+		config.GroupVersion = &schema.GroupVersion{Group: gvk.Group, Version: gvk.Version}
+
+		dynamicClient, newClientErr := dynamic.NewClient(config)
+		if newClientErr != nil {
+			glog.Fatal(newClientErr)
+		}
+		return dynamicClient
+	}
+
 	for _, c := range []ctrl{
 		shipmentorder.NewController(cfg.shipperClient, shipperInformerFactory,
 			recorder(shipmentorder.AgentName)),
@@ -143,7 +156,7 @@ func runControllers(cfg *cfg) {
 			recorder(clustersecret.AgentName)),
 
 		// does not use a recorder yet
-		installation.NewController(cfg.shipperClient, shipperInformerFactory, store),
+		installation.NewController(cfg.shipperClient, shipperInformerFactory, store, dynamicClientBuilderFunc),
 
 		capacity.NewController(cfg.kubeClient, cfg.shipperClient, kubeInformerFactory, shipperInformerFactory, store,
 			recorder(capacity.AgentName)),

@@ -1,0 +1,8 @@
+apiVersion: shipper.booking.com/v1
+kind: InstallationTarget
+metadata:
+  name: "0.0.1"
+  namespace: "reviews-api"
+spec:
+  clusters:
+  - minikube

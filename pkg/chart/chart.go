@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"sort"
 
 	"github.com/golang/glog"
 
@@ -107,7 +108,10 @@ func RenderChart(chrt *chart.Chart, chrtVals *chart.Config, options chartutil.Re
 		}
 	}
 
-	return objects, nil
+	ks := newKindSorter(objects, InstallOrder)
+	sort.Sort(ks)
+
+	return ks.Manifests(), nil
 }
 
 // Render renders a chart, with the given values. It returns a list

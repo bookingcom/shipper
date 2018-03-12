@@ -24,20 +24,22 @@ import (
 type Controller struct {
 	shipperclientset shipper.Interface
 	// the Kube clients for each of the target clusters
-	clusterClientStore *clusterclientstore.Store
+	clusterClientStore clusterclientstore.ClientProvider
 
 	workqueue                 workqueue.RateLimitingInterface
 	installationTargetsSynced cache.InformerSynced
 	installationTargetsLister shipperListers.InstallationTargetLister
 	clusterLister             shipperListers.ClusterLister
 	releaseLister             shipperListers.ReleaseLister
+	dynamicClientBuilderFunc  DynamicClientBuilderFunc
 }
 
 // NewController returns a new Installation controller.
 func NewController(
 	shipperclientset shipper.Interface,
 	shipperInformerFactory shipperInformers.SharedInformerFactory,
-	store *clusterclientstore.Store,
+	store clusterclientstore.ClientProvider,
+	dynamicClientBuilderFunc DynamicClientBuilderFunc,
 ) *Controller {
 
 	// Management Cluster InstallationTarget informer
@@ -52,6 +54,7 @@ func NewController(
 		releaseLister:             releaseInformer.Lister(),
 		installationTargetsLister: installationTargetInformer.Lister(),
 		installationTargetsSynced: installationTargetInformer.Informer().HasSynced,
+		dynamicClientBuilderFunc:  dynamicClientBuilderFunc,
 		workqueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "InstallationTargets"),
 	}
 
@@ -184,24 +187,14 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 			status.Message = err.Error()
 			continue
 		}
-
-		var client kubernetes.Interface
-		client, err = c.clusterClientStore.GetClient(clusterName)
+		client, restConfig, err := c.GetClusterAndConfig(clusterName)
 		if err != nil {
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
 			continue
 		}
 
-		var restConfig *rest.Config
-		restConfig, err = c.clusterClientStore.GetConfig(clusterName)
-		if err != nil {
-			status.Status = shipperV1.InstallationStatusFailed
-			status.Message = err.Error()
-			continue
-		}
-
-		if err = handler.installRelease(cluster, client, restConfig); err != nil {
+		if err = handler.installRelease(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
 			continue
@@ -219,4 +212,23 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	}
 
 	return nil
+}
+
+func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interface, *rest.Config, error) {
+	var client kubernetes.Interface
+	var referenceConfig *rest.Config
+	var err error
+
+	if client, err = c.clusterClientStore.GetClient(clusterName); err != nil {
+		return nil, nil, err
+	}
+
+	if referenceConfig, err = c.clusterClientStore.GetConfig(clusterName); err != nil {
+		return nil, nil, err
+	}
+
+	// the client store is just like an informer cache: it's a shared pointer to a read-only struct, so copy it before mutating
+	copy := rest.CopyConfig(referenceConfig)
+
+	return client, copy, nil
 }
