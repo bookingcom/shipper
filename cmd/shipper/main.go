@@ -76,7 +76,7 @@ type cfg struct {
 	ns                string
 	workers           int
 
-	wg     sync.WaitGroup
+	wg     *sync.WaitGroup
 	stopCh <-chan struct{}
 }
 
@@ -114,11 +114,18 @@ func main() {
 		}
 	}
 
+	wg := &sync.WaitGroup{}
+
 	store := clusterclientstore.NewStore(
 		kubeInformerFactory.Core().V1().Secrets(),
 		shipperInformerFactory.Shipper().V1().Clusters(),
 	)
-	go store.Run(stopCh)
+
+	wg.Add(1)
+	go func() {
+		store.Run(stopCh)
+		wg.Done()
+	}()
 
 	cfg := &cfg{
 		enabledControllers: enabledControllers,
@@ -139,7 +146,7 @@ func main() {
 		ns:       *ns,
 		workers:  *workers,
 
-		wg:     sync.WaitGroup{},
+		wg:     wg,
 		stopCh: stopCh,
 	}
 
@@ -226,12 +233,8 @@ func runControllers(cfg *cfg) {
 		close(doneCh)
 	}()
 
-	select {
-	case <-doneCh:
-		glog.Info("controllers have all finished??? shutting down")
-	case <-cfg.stopCh:
-		glog.Info("controller-manager stopped, shutting down...")
-	}
+	<-doneCh
+	glog.Info("Controllers have shut down")
 }
 
 func setupSignalHandler() <-chan struct{} {
@@ -275,8 +278,13 @@ func startShipmentOrderController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		cfg.recorder(shipmentorder.AgentName),
 	)
-	go c.Run(cfg.workers, cfg.stopCh)
+
 	cfg.wg.Add(1)
+	go func() {
+		c.Run(cfg.workers, cfg.stopCh)
+		cfg.wg.Done()
+	}()
+
 	return true, nil
 }
 
@@ -295,8 +303,13 @@ func startClusterSecretController(cfg *cfg) (bool, error) {
 		cfg.ns,
 		cfg.recorder(clustersecret.AgentName),
 	)
-	go c.Run(cfg.workers, cfg.stopCh)
+
 	cfg.wg.Add(1)
+	go func() {
+		c.Run(cfg.workers, cfg.stopCh)
+		cfg.wg.Done()
+	}()
+
 	return true, nil
 }
 
@@ -312,8 +325,13 @@ func startScheduleController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		cfg.recorder(schedulecontroller.AgentName),
 	)
-	go c.Run(cfg.workers, cfg.stopCh)
+
 	cfg.wg.Add(1)
+	go func() {
+		c.Run(cfg.workers, cfg.stopCh)
+		cfg.wg.Done()
+	}()
+
 	return true, nil
 }
 
@@ -329,8 +347,13 @@ func startStrategyController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		dynamic.NewDynamicClientPool(cfg.restCfg),
 	)
-	go c.Run(cfg.workers, cfg.stopCh)
+
 	cfg.wg.Add(1)
+	go func() {
+		c.Run(cfg.workers, cfg.stopCh)
+		cfg.wg.Done()
+	}()
+
 	return true, nil
 }
 
@@ -359,8 +382,13 @@ func startInstallationController(cfg *cfg) (bool, error) {
 		cfg.store,
 		dynamicClientBuilderFunc,
 	)
-	go c.Run(cfg.workers, cfg.stopCh)
+
 	cfg.wg.Add(1)
+	go func() {
+		c.Run(cfg.workers, cfg.stopCh)
+		cfg.wg.Done()
+	}()
+
 	return true, nil
 }
 
@@ -378,8 +406,11 @@ func startCapacityController(cfg *cfg) (bool, error) {
 		cfg.store,
 		cfg.recorder(capacity.AgentName),
 	)
-	go c.Run(cfg.workers, cfg.stopCh)
 	cfg.wg.Add(1)
+	go func() {
+		c.Run(cfg.workers, cfg.stopCh)
+		cfg.wg.Done()
+	}()
 	return true, nil
 }
 
@@ -396,7 +427,12 @@ func startTrafficController(cfg *cfg) (bool, error) {
 		cfg.store,
 		cfg.recorder(traffic.AgentName),
 	)
-	go c.Run(cfg.workers, cfg.stopCh)
+
 	cfg.wg.Add(1)
+	go func() {
+		c.Run(cfg.workers, cfg.stopCh)
+		cfg.wg.Done()
+	}()
+
 	return true, nil
 }
