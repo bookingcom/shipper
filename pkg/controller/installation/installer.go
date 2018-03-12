@@ -2,8 +2,10 @@ package installation
 
 import (
 	"fmt"
+
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperChart "github.com/bookingcom/shipper/pkg/chart"
+
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -14,6 +16,8 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 )
+
+type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *rest.Config) dynamic.Interface
 
 // Installer is an object that knows how to install Helm charts directly
 // into Kubernetes clusters.
@@ -46,20 +50,11 @@ func (i *Installer) renderManifests(cluster *shipperV1.Cluster) ([]string, error
 func (i *Installer) buildResourceClient(
 	cluster *shipperV1.Cluster,
 	client kubernetes.Interface,
-	referenceConfig *rest.Config,
+	restConfig *rest.Config,
+	dynamicClientBuilder DynamicClientBuilderFunc,
 	gvk *schema.GroupVersionKind,
 ) (dynamic.ResourceInterface, error) {
-	config := rest.CopyConfig(referenceConfig)
-
-	config.GroupVersion = &schema.GroupVersion{Group: gvk.Group, Version: gvk.Version}
-	config.APIPath = dynamic.LegacyAPIPathResolverFunc(*gvk)
-	config.ContentConfig = dynamic.ContentConfig()
-
-	// Build the dynamic client based on the built configuration.
-	dynamicClient, err := dynamic.NewClient(config)
-	if err != nil {
-		return nil, err
-	}
+	dynamicClient := dynamicClientBuilder(gvk, restConfig)
 
 	// From the list of resources the target cluster knows about, find the resource for the
 	// kind of object we have at hand.
@@ -91,7 +86,8 @@ func (i *Installer) buildResourceClient(
 func (i *Installer) installManifests(
 	cluster *shipperV1.Cluster,
 	client kubernetes.Interface,
-	config *rest.Config,
+	restConfig *rest.Config,
+	dynamicClientBuilderFunc DynamicClientBuilderFunc,
 	manifests []string,
 ) error {
 
@@ -114,7 +110,7 @@ func (i *Installer) installManifests(
 
 		// Once we've gathered enough information about the document we want to install,
 		// we're able to build a resource client to interact with the target cluster.
-		resourceClient, err := i.buildResourceClient(cluster, client, config, gvk)
+		resourceClient, err := i.buildResourceClient(cluster, client, restConfig, dynamicClientBuilderFunc, gvk)
 		if err != nil {
 			return fmt.Errorf("error building resource client: %s", err)
 		}
@@ -151,7 +147,8 @@ func (i *Installer) installManifests(
 func (i *Installer) installRelease(
 	cluster *shipperV1.Cluster,
 	client kubernetes.Interface,
-	config *rest.Config,
+	restConfig *rest.Config,
+	dynamicClientBuilder DynamicClientBuilderFunc,
 ) error {
 
 	renderedManifests, err := i.renderManifests(cluster)
@@ -159,7 +156,7 @@ func (i *Installer) installRelease(
 		return err
 	}
 
-	return i.installManifests(cluster, client, config, renderedManifests)
+	return i.installManifests(cluster, client, restConfig, dynamicClientBuilder, renderedManifests)
 }
 
 // decodeManifest attempts to deserialize the provided manifest. It returns

@@ -9,9 +9,13 @@ import (
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/controller/installation"
+
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/server"
+	"k8s.io/client-go/dynamic"
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -48,7 +52,20 @@ func main() {
 		shipperInformerFactory.Shipper().V1().Clusters(),
 	)
 
-	controller := installation.NewController(shipperClient, shipperInformerFactory, store)
+	dynamicClientBuilderFunc := func(gvk *schema.GroupVersionKind, config *rest.Config) dynamic.Interface {
+		config.APIPath = dynamic.LegacyAPIPathResolverFunc(*gvk)
+		config.ContentConfig = dynamic.ContentConfig()
+		config.GroupVersion = &schema.GroupVersion{Group: gvk.Group, Version: gvk.Version}
+
+		dynamicClient, newClientErr := dynamic.NewClient(config)
+		if newClientErr != nil {
+			glog.Fatal(newClientErr)
+		}
+		return dynamicClient
+	}
+
+	controller := installation.NewController(
+		shipperClient, shipperInformerFactory, store, dynamicClientBuilderFunc)
 
 	go kubeInformerFactory.Start(stopCh)
 	go shipperInformerFactory.Start(stopCh)
