@@ -106,7 +106,7 @@ func TestInstaller(t *testing.T) {
 				t.Fatalf("could not find %q in Deployment .spec.selector.matchLabels", shipperV1.ReleaseLabel)
 			}
 			if _, ok := deployment.Spec.Template.Labels[shipperV1.ReleaseLabel]; !ok {
-				t.Fatalf("could not find %q in Deployment .spec.template.labels")
+				t.Fatalf("could not find %q in Deployment .spec.template.labels", shipperV1.ReleaseLabel)
 			}
 		}
 	}
