@@ -16,8 +16,9 @@ import (
 	"k8s.io/helm/pkg/proto/hapi/chart"
 	"k8s.io/helm/pkg/timeconv"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	"strings"
+
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
 
 func Download(chart shipperv1.Chart) (*bytes.Buffer, error) {
@@ -61,6 +62,7 @@ func Download(chart shipperv1.Chart) (*bytes.Buffer, error) {
 // RenderChart renders a chart, with the given values. It returns a list
 // of rendered Kubernetes objects.
 func RenderChart(chrt *chart.Chart, chrtVals *chart.Config, options chartutil.ReleaseOptions) ([]string, error) {
+	name := chrt.Metadata.Name
 
 	// Shamelessly copied from k8s.io/helm/cmd/helm/template L153
 	//
@@ -69,20 +71,20 @@ func RenderChart(chrt *chart.Chart, chrtVals *chart.Config, options chartutil.Re
 	// since I don't know if we need to make this validation since `helm
 	// package` itself complains about missing requirements when packaging the
 	// chart.
-	if _, err := chartutil.LoadRequirements(chrt); err != nil {
-		return nil, fmt.Errorf("cannot load requirements: %v", err)
+	if _, err := chartutil.LoadRequirements(chrt); err != nil && err != chartutil.ErrRequirementsNotFound {
+		return nil, fmt.Errorf("load requirements for chart %q: %s", name, err)
 	}
 
 	// Removes disabled charts from the dependencies.
 	err := chartutil.ProcessRequirementsEnabled(chrt, chrtVals)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("process requirements for chart %q: %s", name, err)
 	}
 
 	// Import specified chart values from children to parent.
 	err = chartutil.ProcessRequirementsImportValues(chrt)
-	if err != nil {
-		return nil, err
+	if err != nil && err != chartutil.ErrRequirementsNotFound {
+		return nil, fmt.Errorf("process imports for chart %q: %s", name, err)
 	}
 
 	// ToRenderValues() add all the metadata values that chart can use to
@@ -90,7 +92,7 @@ func RenderChart(chrt *chart.Chart, chrtVals *chart.Config, options chartutil.Re
 	// var above), .Chart.Name (extracted from the chart itself), and others.
 	vals, err := chartutil.ToRenderValues(chrt, chrtVals, options)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("values for chart %q: %s", name, err)
 	}
 
 	// Now we are able to render the chart. `rendered` is a map where the key is
@@ -99,7 +101,7 @@ func RenderChart(chrt *chart.Chart, chrtVals *chart.Config, options chartutil.Re
 	e := engine.New()
 	rendered, err := e.Render(chrt, vals)
 	if err != nil {
-		return nil, fmt.Errorf("could not render the chart: %s", err)
+		return nil, fmt.Errorf("render chart %q: %s", name, err)
 	}
 	objects := make([]string, 0, len(rendered))
 	for n, o := range rendered {
@@ -116,13 +118,23 @@ func RenderChart(chrt *chart.Chart, chrtVals *chart.Config, options chartutil.Re
 
 // Render renders a chart, with the given values. It returns a list
 // of rendered Kubernetes objects.
-func Render(r io.Reader, name, ns string, values *shipperv1.ChartValues) ([]string, error) {
+func Render(r io.Reader, name, ns string, shipperValues *shipperv1.ChartValues) ([]string, error) {
 	helmChart, err := chartutil.LoadArchive(r)
 	if err != nil {
 		return nil, nil
 	}
 
-	chartConfig := &chart.Config{Values: map[string]*chart.Value{}}
+	chartConfig := &chart.Config{}
+	if shipperValues != nil {
+		values := chartutil.Values(*shipperValues)
+
+		var yaml string
+		yaml, err = values.YAML()
+		if err != nil {
+			return nil, err
+		}
+		chartConfig = &chart.Config{Raw: yaml}
+	}
 
 	if err = chartutil.ProcessRequirementsEnabled(helmChart, chartConfig); err != nil {
 		return nil, err

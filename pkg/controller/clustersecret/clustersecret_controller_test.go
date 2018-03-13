@@ -71,7 +71,22 @@ func TestMissingChecksum(t *testing.T) {
 	f.kubeObjects = append(f.kubeObjects, oldSecret)
 
 	f.run()
+}
 
+func TestNoAnnotations(t *testing.T) {
+	f := newFixture(t)
+
+	cluster := newCluster("test-cluster")
+	f.shipperObjects = append(f.shipperObjects, cluster)
+
+	newSecret := newClusterSecret(cluster, tlsPair)
+	f.expectSecretUpdate(newSecret)
+
+	oldSecret := newSecret.DeepCopy()
+	oldSecret.Annotations = nil // simulate missing annotation
+	f.kubeObjects = append(f.kubeObjects, oldSecret)
+
+	f.run()
 }
 
 func TestSecretNotControlledByUs(t *testing.T) {
@@ -133,7 +148,6 @@ func newClusterSecret(cluster *shipperv1.Cluster, p tls.Pair) *corev1.Secret {
 	crt, key, csum, _ := p.GetAll()
 
 	name := cluster.GetName()
-	gvk := cluster.GroupVersionKind()
 
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -145,8 +159,8 @@ func newClusterSecret(cluster *shipperv1.Cluster, p tls.Pair) *corev1.Secret {
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
-					APIVersion: gvk.Version,
-					Kind:       gvk.Kind,
+					APIVersion: "shipper.booking.com/v1",
+					Kind:       "Cluster",
 					Name:       name,
 					UID:        cluster.GetUID(),
 				},

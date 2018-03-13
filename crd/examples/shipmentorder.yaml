@@ -5,14 +5,14 @@ metadata:
 spec:
   clusterSelectors:
   - regions:
-    - foo
-    - bar
-    capabilities:
-    - gpu
-    - pci
+    - local
+    capabilities: []
+  releaseSelector:
+    matchLabels:
+      app: my-complex-app
   chart:
     name: my-complex-app
-    version: 0.1.0
+    version: 0.2.0
     repoUrl: http://127.0.0.1:8879/charts
   strategy: vanguard
   values:

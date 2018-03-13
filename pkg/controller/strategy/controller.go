@@ -2,7 +2,6 @@ package strategy
 
 import (
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/golang/glog"
@@ -114,14 +113,17 @@ func isWorkingOnStrategy(r *v1.Release) (workingOnStrategy bool) {
 }
 
 func (c *Controller) contenderForRelease(r *v1.Release) (*v1.Release, error) {
-	if contenderName, ok := r.GetAnnotations()[v1.ReleaseContenderAnn]; ok {
-		if contender, err := c.releasesLister.Releases(r.Namespace).Get(contenderName); err != nil {
-			return nil, err
-		} else {
-			return contender, nil
-		}
+	pred := r.Status.Successor
+	if pred == nil {
+		return nil, fmt.Errorf("incumbent Release %q: no successor, can't find contender", r.Namespace+"/"+r.Name)
 	}
-	return nil, nil
+
+	contender, err := c.releasesLister.Releases(pred.Namespace).Get(pred.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	return contender, nil
 }
 
 func isInstalled(r *v1.Release) bool {
@@ -129,12 +131,20 @@ func isInstalled(r *v1.Release) bool {
 }
 
 func (c *Controller) getAssociatedRelease(obj *metav1.ObjectMeta) *v1.Release {
-	if rel, err := c.releasesLister.Releases(obj.Namespace).Get(obj.Name); err != nil {
-		glog.V(4).Infof("error fetching release %s: %s", obj.Name, err)
+	if n := len(obj.OwnerReferences); n != 1 {
+		glog.Warningf("expected exactly one OwnerReference for %q but got %d", obj.GetNamespace()+"/"+obj.GetName(), n)
 		return nil
-	} else {
-		return rel
 	}
+
+	owner := obj.OwnerReferences[0]
+
+	rel, err := c.releasesLister.Releases(obj.Namespace).Get(owner.Name)
+	if err != nil {
+		// This target object will soon be GC-ed.
+		return nil
+	}
+
+	return rel
 }
 
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
@@ -296,29 +306,22 @@ func (c *Controller) buildReleaseInfo(ns string, name string) (*releaseInfo, err
 	}, nil
 }
 
-func (c *Controller) incumbentReleaseNameForRelease(ns string, name string) (string, error) {
-	if rel, err := c.releasesLister.Releases(ns).Get(name); err != nil {
-		return "", err
-	} else if incumbentReleaseName, ok := rel.GetAnnotations()[v1.ReleaseIncumbentAnn]; ok {
-		return incumbentReleaseName, nil
-	}
-	return "", os.ErrNotExist
-}
-
 func (c *Controller) buildStrategy(ns string, name string) (*Executor, error) {
-
 	contenderReleaseInfo, err := c.buildReleaseInfo(ns, name)
 	if err != nil {
 		return nil, err
 	}
 
 	var incumbentReleaseInfo *releaseInfo
-	if incumbentReleaseName, err := c.incumbentReleaseNameForRelease(ns, name); !os.IsNotExist(err) {
-		incumbentReleaseInfo, err = c.buildReleaseInfo(ns, incumbentReleaseName)
+	if pred := contenderReleaseInfo.release.Status.Predecessor; pred != nil {
+		// TODO verify UID
+
+		incumbentReleaseInfo, err = c.buildReleaseInfo(pred.Namespace, pred.Name)
 		if err != nil {
 			return nil, err
 		}
 	}
+	// Otherwise it's a new app installed for the first time.
 
 	return &Executor{
 		contender: contenderReleaseInfo,
@@ -354,7 +357,7 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 	)
 
 	if _, ok = obj.(metav1.Object); !ok {
-		_, ok := obj.(cache.DeletedFinalStateUnknown)
+		_, ok = obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
 			runtime.HandleError(fmt.Errorf("neither a Meta object, nor a tombstone: %#v", obj))
 			return

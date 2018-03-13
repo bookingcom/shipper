@@ -93,11 +93,9 @@ func (c *Scheduler) CreateInstallationTarget() error {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      c.Release.Name,
 			Namespace: c.Release.Namespace,
-			Labels: map[string]string{
-				v1.ReleaseLabel: string(c.Release.UID),
-			},
-			Annotations: map[string]string{
-				v1.ReleaseLinkAnn: c.Release.SelfLink,
+			Labels:    c.Release.Labels,
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(c.Release),
 			},
 		},
 		Spec: v1.InstallationTargetSpec{Clusters: c.Clusters()},
@@ -129,11 +127,9 @@ func (c *Scheduler) CreateCapacityTarget() error {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      c.Release.Name,
 			Namespace: c.Release.Namespace,
-			Labels: map[string]string{
-				v1.ReleaseLabel: string(c.Release.UID),
-			},
-			Annotations: map[string]string{
-				v1.ReleaseLinkAnn: c.Release.SelfLink,
+			Labels:    c.Release.Labels,
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(c.Release),
 			},
 		},
 		Spec: v1.CapacityTargetSpec{Clusters: targets},
@@ -166,11 +162,9 @@ func (c *Scheduler) CreateTrafficTarget() error {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      c.Release.Name,
 			Namespace: c.Release.Namespace,
-			Labels: map[string]string{
-				v1.ReleaseLabel: string(c.Release.UID),
-			},
-			Annotations: map[string]string{
-				v1.ReleaseLinkAnn: c.Release.SelfLink,
+			Labels:    c.Release.Labels,
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(c.Release),
 			},
 		},
 		Spec: v1.TrafficTargetSpec{Clusters: trafficTargets},
@@ -208,5 +202,20 @@ func (c *Scheduler) ComputeTargetClusters() error {
 
 		c.SetClusters(clusterNames)
 		return nil
+	}
+}
+
+// the strings here are insane, but if you create a fresh release object for
+// some reason it lands in the work queue with an empty TypeMeta. This is resolved
+// if you restart the controllers, so I'm not sure what's going on.
+// https://github.com/kubernetes/client-go/issues/60#issuecomment-281533822 and
+// https://github.com/kubernetes/client-go/issues/60#issuecomment-281747911 give
+// some potential context.
+func createOwnerRefFromRelease(r *v1.Release) metav1.OwnerReference {
+	return metav1.OwnerReference{
+		APIVersion: "shipper.booking.com/v1",
+		Kind:       "Release",
+		Name:       r.GetName(),
+		UID:        r.GetUID(),
 	}
 }

@@ -124,16 +124,25 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 	releaseName := releaseNameForShipmentOrder(so)
 	releaseNs := so.GetNamespace()
 
-	labels, err := metav1.LabelSelectorAsMap(so.Spec.ReleaseSelector)
+	labels := make(map[string]string)
+	for k, v := range so.GetLabels() {
+		labels[k] = v
+	}
+
+	relSelector, err := metav1.LabelSelectorAsMap(so.Spec.ReleaseSelector)
 	if err != nil {
 		return fmt.Errorf("Release selector for ShipmentOrder %q: %s", metaKey(so), err)
+	} else if relSelector == nil {
+		// TODO this should be replaced with an admission hook
+		return fmt.Errorf("Release selector for ShipmentOrder %q: not specified", metaKey(so))
 	}
+	for k, v := range relSelector {
+		labels[k] = v
+	}
+
 	labels[shipperv1.ReleaseLabel] = releaseNameForShipmentOrder(so)
 
-	selector, err := metav1.LabelSelectorAsSelector(so.Spec.ReleaseSelector)
-	if err != nil {
-		return fmt.Errorf("Release selector for ShipmentOrder %q: %s", metaKey(so), err)
-	}
+	selector, _ := metav1.LabelSelectorAsSelector(so.Spec.ReleaseSelector)
 	glog.V(6).Infof("Using Release selector %q", selector)
 
 	var (

@@ -68,7 +68,6 @@ func (c *Controller) createSecretForCluster(cluster *shipperv1.Cluster, crt, key
 	clusterName := cluster.GetName()
 	secretName := secretNameForCluster(cluster)
 
-	gvk := cluster.GroupVersionKind()
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
@@ -83,8 +82,8 @@ func (c *Controller) createSecretForCluster(cluster *shipperv1.Cluster, crt, key
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
-					APIVersion: gvk.Version,
-					Kind:       gvk.Kind,
+					APIVersion: "shipper.booking.com/v1",
+					Kind:       "Cluster",
 					Name:       cluster.GetName(),
 					UID:        cluster.GetUID(),
 				},
@@ -118,6 +117,11 @@ func (c *Controller) createSecretForCluster(cluster *shipperv1.Cluster, crt, key
 func (c *Controller) updateClusterSecret(secret *corev1.Secret, clusterName string, crt, key, csum []byte) error {
 	secretName := secret.GetName()
 
+	// There may be no annotations set and `metadata.annotations` is tagged as
+	// "omitempty".
+	if secret.Annotations == nil {
+		secret.Annotations = make(map[string]string)
+	}
 	secret.Annotations[shipperv1.SecretChecksumAnnotation] = hex.EncodeToString(csum)
 	secret.Annotations[shipperv1.SecretClusterNameAnnotation] = clusterName
 

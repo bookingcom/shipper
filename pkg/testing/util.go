@@ -31,7 +31,10 @@ func CheckActions(expected, actual []kubetesting.Action, t *testing.T) {
 // CheckAction compares two individual actions and calls Errorf on t if it finds
 // a difference.
 func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
-	if !(expected.Matches(actual.GetVerb(), actual.GetResource().Resource) && actual.GetSubresource() == expected.GetSubresource()) {
+	if !(expected.Matches(actual.GetVerb(), actual.GetResource().Resource) &&
+		actual.GetSubresource() == expected.GetSubresource() &&
+		actual.GetResource() == expected.GetResource()) {
+
 		t.Errorf("expected\n\t%#v\ngot\n\t%#v", expected, actual)
 		return
 	}

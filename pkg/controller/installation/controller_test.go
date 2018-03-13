@@ -50,7 +50,7 @@ func TestInstall(t *testing.T) {
 			release.GetNamespace(),
 			nil),
 		kubetesting.NewCreateAction(
-			schema.GroupVersionResource{Resource: "deployments", Version: "v1beta1"},
+			schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"},
 			release.GetNamespace(),
 			nil),
 	}
@@ -72,7 +72,7 @@ func TestInstall(t *testing.T) {
 	}
 	expectedActions = []kubetesting.Action{
 		kubetesting.NewUpdateAction(
-			schema.GroupVersionResource{Resource: "installationtargets", Version: "v1"},
+			schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"},
 			release.GetNamespace(),
 			it),
 	}
@@ -177,7 +177,7 @@ func TestClientError(t *testing.T) {
 	}
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
-			schema.GroupVersionResource{Resource: "installationtargets", Version: "v1"},
+			schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"},
 			release.GetNamespace(),
 			it),
 	}
@@ -237,7 +237,7 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 	}
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
-			schema.GroupVersionResource{Resource: "installationtargets", Version: "v1"},
+			schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"},
 			release.GetNamespace(),
 			it),
 	}
@@ -296,7 +296,7 @@ func TestManagementServerMissesCluster(t *testing.T) {
 	}
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
-			schema.GroupVersionResource{Resource: "installationtargets", Version: "v1"},
+			schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"},
 			release.GetNamespace(),
 			it),
 	}

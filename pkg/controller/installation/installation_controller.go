@@ -149,7 +149,7 @@ func (c *Controller) syncOne(key string) error {
 		return err
 	}
 
-	return c.processInstallation(it)
+	return c.processInstallation(it.DeepCopy())
 }
 
 func (c *Controller) enqueueInstallationTarget(obj interface{}) {
@@ -164,11 +164,22 @@ func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 
 // processInstallation attempts to install the related release on all target clusters.
 func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error {
+	if n := len(it.OwnerReferences); n != 1 {
+		return fmt.Errorf("expected exactly one owner for InstallationTarget %q, got %d", it.GetName(), n)
+	}
 
-	release, err := c.releaseLister.Releases(it.Namespace).Get(it.Name)
+	owner := it.OwnerReferences[0]
+
+	release, err := c.releaseLister.Releases(it.GetNamespace()).Get(owner.Name)
 	if err != nil {
-		glog.Error(err)
 		return err
+	} else if release.GetUID() != owner.UID {
+		return fmt.Errorf(
+			"the owner Release for InstallationTarget %q is gone; expected UID %s but got %s",
+			it.GetName(),
+			owner.UID,
+			release.GetUID(),
+		)
 	}
 
 	handler := NewInstaller(release)
@@ -185,18 +196,24 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 		if cluster, err = c.clusterLister.Get(clusterName); err != nil {
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
+			glog.Warningf("Get Cluster %q for InstallationTarget: %s", clusterName, metaKey(it), err)
 			continue
 		}
-		client, restConfig, err := c.GetClusterAndConfig(clusterName)
+
+		var client kubernetes.Interface
+		var restConfig *rest.Config
+		client, restConfig, err = c.GetClusterAndConfig(clusterName)
 		if err != nil {
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
+			glog.Warningf("Get config for Cluster %q for InstallationTarget %q: %s", clusterName, metaKey(it), err)
 			continue
 		}
 
 		if err = handler.installRelease(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
+			glog.Warningf("Install InstallationTarget %q for Cluster %q: %s", metaKey(it), clusterName, err)
 			continue
 		}
 
@@ -207,7 +224,7 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 
 	_, err = c.shipperclientset.ShipperV1().InstallationTargets(it.Namespace).Update(it)
 	if err != nil {
-		glog.Error(err)
+		glog.Warningf("Update InstallationTarget %q: %s", metaKey(it), err)
 		return err
 	}
 
@@ -231,4 +248,9 @@ func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interfa
 	copy := rest.CopyConfig(referenceConfig)
 
 	return client, copy, nil
+}
+
+func metaKey(it *shipperV1.InstallationTarget) string {
+	key, _ := cache.MetaNamespaceKeyFunc(it)
+	return key
 }

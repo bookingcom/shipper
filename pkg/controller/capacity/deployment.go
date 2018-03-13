@@ -5,19 +5,17 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/golang/glog"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-
-	"k8s.io/apimachinery/pkg/labels"
-
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-
-	"github.com/golang/glog"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
+
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
 
 type deploymentWorkqueueItem struct {
@@ -100,9 +98,22 @@ func (c *Controller) enqueueDeployment(obj interface{}, clusterName string) {
 }
 
 func (c Controller) NewDeploymentResourceEventHandler(clusterName string) cache.ResourceEventHandler {
-	return cache.ResourceEventHandlerFuncs{
-		UpdateFunc: func(old, new interface{}) {
-			c.enqueueDeployment(new, clusterName)
+	return cache.FilteringResourceEventHandler{
+		FilterFunc: func(obj interface{}) bool {
+			deploy, ok := obj.(*appsv1.Deployment)
+			if !ok {
+				glog.Warningf("Received something that's not a appsv1/Deployment: %v", obj)
+				return false
+			}
+
+			_, ok = deploy.GetLabels()[shipperv1.ReleaseLabel]
+
+			return ok
+		},
+		Handler: cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(old, new interface{}) {
+				c.enqueueDeployment(new, clusterName)
+			},
 		},
 	}
 }
@@ -124,14 +135,13 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 		return err
 	}
 
-	// Only react on this event if the deployment has a `release` label that matches with a release
-	var release string
-	var ok bool
-	if release, ok = targetDeployment.GetLabels()[shipperv1.ReleaseLabel]; !ok {
-		// This deployment is not one of ours, so don't do anything
-		return nil
-	}
-
+	// Using ReleaseLabel here instead of the full set of Deployment labels because
+	// we can't guarantee that there isn't extra stuff there that was put directly
+	// in the chart.
+	// Also not using ObjectReference here because it would go over cluster
+	// boundaries. While technically it's probably ok, I feel like it'd be abusing
+	// the feature.
+	release := targetDeployment.GetLabels()[shipperv1.ReleaseLabel]
 	capacityTarget, err := c.getCapacityTargetForReleaseAndNamespace(release, namespace)
 	if err != nil {
 		return err
@@ -188,14 +198,7 @@ func (c *Controller) updateStatus(capacityTarget *shipperv1.CapacityTarget, clus
 }
 
 func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace string) (*shipperv1.CapacityTarget, error) {
-	selector := labels.NewSelector()
-
-	requirement, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{release})
-	if err != nil {
-		return nil, err
-	}
-	selector = selector.Add(*requirement)
-
+	selector := labels.Set{shipperv1.ReleaseLabel: release}.AsSelector()
 	capacityTargets, err := c.shipperclientset.ShipperV1().CapacityTargets(namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, err
@@ -216,23 +219,10 @@ func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployme
 		return nil, err
 	}
 
-	selector := labels.NewSelector()
-
-	var releaseValue string
-	var ok bool
-	if releaseValue, ok = deployment.GetLabels()[shipperv1.ReleaseLabel]; !ok {
-		return nil, fmt.Errorf("Deployment %s/%s has no label called 'release'", deployment.Namespace, deployment.Name)
-	}
-
-	if releaseValue == "" {
-		return nil, fmt.Errorf("Deployment %s/%s has an empty 'release' label", deployment.Namespace, deployment.Name)
-	}
-
-	requirement, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{releaseValue})
+	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to transform label selector %v into a selector: %s", deployment.Spec.Selector, err)
 	}
-	selector = selector.Add(*requirement)
 
 	pods, err := client.CoreV1().Pods(deployment.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {

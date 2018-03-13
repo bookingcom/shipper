@@ -216,6 +216,11 @@ func (c *Controller) syncHandler(key string) error {
 		return err
 	}
 
+	syncingReleaseName, ok := syncingTT.GetLabels()[shipperv1.ReleaseLabel]
+	if !ok {
+		return fmt.Errorf("TrafficTarget %q has no 'release' label", ttName)
+	}
+
 	// NOTE(btyler) - this will need fixing if we allow multiple applications
 	// per namespace. in that case we should get all the objects with the same
 	// 'app' label, or something similar. Maybe by chart name?
@@ -224,7 +229,7 @@ func (c *Controller) syncHandler(key string) error {
 		return err
 	}
 
-	shifter, err := newPodLabelShifter(namespace, list)
+	shifter, err := newPodLabelShifter(namespace, syncingTT.GetLabels(), list)
 	if err != nil {
 		return err
 	}
@@ -250,7 +255,11 @@ func (c *Controller) syncHandler(key string) error {
 			break
 		}
 
-		errs := shifter.SyncCluster(cluster, clientset, informerFactory.Core().V1().Pods())
+		achievedWeights, errs := shifter.SyncCluster(cluster, clientset, informerFactory.Core().V1().Pods())
+
+		// if the resulting map is missing the release we're working on, there's a significant bug in our code
+		achievedReleaseWeight := achievedWeights[syncingReleaseName]
+		clusterStatus.AchievedTraffic = uint(achievedReleaseWeight)
 		if len(errs) == 0 {
 			clusterStatus.Status = "Synced"
 		} else {

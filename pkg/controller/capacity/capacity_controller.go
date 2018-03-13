@@ -26,7 +26,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
@@ -67,6 +66,9 @@ type Controller struct {
 	capacityTargetsLister listers.CapacityTargetLister
 	capacityTargetsSynced cache.InformerSynced
 
+	releasesLister       listers.ReleaseLister
+	releasesListerSynced cache.InformerSynced
+
 	// capacityTargetWorkqueue is a rate limited work queue. This is used to queue work to be
 	// processed instead of performing it as soon as a change happens. This
 	// means we can ensure we only process a fixed amount of resources at a
@@ -95,11 +97,15 @@ func NewController(
 	// obtain references to shared index informers for the CapacityTarget type
 	capacityTargetInformer := shipperInformerFactory.Shipper().V1().CapacityTargets()
 
+	releaseInformer := shipperInformerFactory.Shipper().V1().Releases()
+
 	controller := &Controller{
 		kubeclientset:           kubeclientset,
 		shipperclientset:        shipperclientset,
 		capacityTargetsLister:   capacityTargetInformer.Lister(),
 		capacityTargetsSynced:   capacityTargetInformer.Informer().HasSynced,
+		releasesLister:          releaseInformer.Lister(),
+		releasesListerSynced:    releaseInformer.Informer().HasSynced,
 		capacityTargetWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "CapacityTargets"),
 		deploymentWorkqueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Deployments"),
 		recorder:                recorder,
@@ -140,7 +146,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer glog.V(2).Info("Shutting down Capacity controller")
 
 	// Wait for the caches to be synced before starting workers
-	if ok := cache.WaitForCacheSync(stopCh, c.capacityTargetsSynced); !ok {
+	if !cache.WaitForCacheSync(stopCh, c.capacityTargetsSynced, c.releasesListerSynced) {
 		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
 		return
 	}
@@ -257,24 +263,8 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		}
 
 		targetNamespace := ct.Namespace
-		selector := labels.NewSelector()
 
-		var releaseValue string
-		var ok bool
-		if releaseValue, ok = ct.GetLabels()[shipperv1.ReleaseLabel]; !ok {
-			return fmt.Errorf("Capacity target %s in namespace %s has no label called 'release'", ct.Name, ct.Namespace)
-		}
-
-		if releaseValue == "" {
-			return fmt.Errorf("The capacity target %s in namespace %s has an empty 'release' label", ct.Name, ct.Namespace)
-		}
-
-		var requirement *labels.Requirement
-		requirement, err = labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{releaseValue})
-		if err != nil {
-			return err
-		}
-		selector = selector.Add(*requirement)
+		selector := labels.Set(ct.Labels).AsSelector()
 
 		var deploymentsList *appsv1.DeploymentList
 		deploymentsList, err = targetClusterClient.AppsV1().Deployments(targetNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
@@ -328,34 +318,25 @@ func (c Controller) convertPercentageToReplicaCountForCluster(capacityTarget *sh
 }
 
 func (c Controller) getReleaseForCapacityTarget(capacityTarget *shipperv1.CapacityTarget) (*shipperv1.Release, error) {
-	selector := labels.NewSelector()
-
-	var releaseValue string
-	var ok bool
-	if releaseValue, ok = capacityTarget.GetLabels()[shipperv1.ReleaseLabel]; !ok {
-		return nil, fmt.Errorf("Capacity target %s in namespace %s has no label called 'release'", capacityTarget.Name, capacityTarget.Namespace)
+	if n := len(capacityTarget.OwnerReferences); n != 1 {
+		return nil, fmt.Errorf("expected exactly one owner for CapacityTarget %q, got %d", capacityTarget.GetName(), n)
 	}
 
-	if releaseValue == "" {
-		return nil, fmt.Errorf("The capacity target %s in namespace %s has an empty 'release' label", capacityTarget.Name, capacityTarget.Namespace)
-	}
+	owner := capacityTarget.OwnerReferences[0]
 
-	requirement, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{releaseValue})
+	release, err := c.releasesLister.Releases(capacityTarget.GetNamespace()).Get(owner.Name)
 	if err != nil {
 		return nil, err
-	}
-	selector = selector.Add(*requirement)
-
-	releaseList, err := c.shipperclientset.ShipperV1().Releases(capacityTarget.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
-	if err != nil {
-		return nil, err
-	}
-
-	if len(releaseList.Items) != 1 {
-		return nil, fmt.Errorf("Expected 1 Release with label '%s', but got %d.", releaseValue, len(releaseList.Items))
+	} else if release.GetUID() != owner.UID {
+		return nil, fmt.Errorf(
+			"the owner Release for CapacityTarget %q is gone; expected UID %s but got %s",
+			capacityTarget.GetName(),
+			owner.UID,
+			release.GetUID(),
+		)
 	}
 
-	return &releaseList.Items[0], nil
+	return release, nil
 }
 
 func (c Controller) calculateAmountFromPercentage(total, percentage int32) int32 {

@@ -59,8 +59,14 @@ func NewStore(
 	return s
 }
 
-func (s *Store) Run(stopCh <-chan struct{}) error {
+func (s *Store) Run(stopCh <-chan struct{}) {
+	defer runtime.HandleCrash()
+	defer s.clusterWorkqueue.ShutDown()
+	defer s.secretWorkqueue.ShutDown()
+	defer s.cache.Stop()
+
 	glog.Info("Waiting for client store informer caches to sync")
+
 	ok := kubecache.WaitForCacheSync(
 		stopCh,
 		s.secretInformer.Informer().HasSynced,
@@ -68,35 +74,20 @@ func (s *Store) Run(stopCh <-chan struct{}) error {
 	)
 
 	if !ok {
-		return fmt.Errorf("failed to wait for caches to sync")
+		runtime.HandleError(fmt.Errorf("failed to sync caches for the ClusterClientStore"))
+		return
 	}
 
 	glog.Info("Starting cluster client store workers")
+
 	go s.cache.Serve()
 	go wait.Until(s.clusterWorker, time.Second, stopCh)
 	go wait.Until(s.secretWorker, time.Second, stopCh)
 
 	glog.Info("client store is running")
-	// We prefer the client store caches to sync before we start the other
-	// controllers so that the clients are likely to be populated. This means
-	// that we ought to block in Run() until caches are synced.
-	//
-	// However, we need to finish blocking so that the other controllers can
-	// start. So, we can either handle shutdown with an internal goroutine, or take
-	// a WaitGroup as param and call store.Run in a goroutine, calling
-	// wg.Done() when caches are synced. I prefer APIs that don't expose
-	// concurrency when possible, so I opted for an internal goroutine.
-	go func() {
-		defer runtime.HandleCrash()
-		defer s.clusterWorkqueue.ShutDown()
-		defer s.secretWorkqueue.ShutDown()
+	defer glog.Info("shutting down client store...")
 
-		<-stopCh
-		glog.Info("shutting down client store...")
-		s.cache.Stop()
-	}()
-
-	return nil
+	<-stopCh
 }
 
 func (s *Store) AddSubscriptionCallback(subscription SubscriptionRegisterFunc) {

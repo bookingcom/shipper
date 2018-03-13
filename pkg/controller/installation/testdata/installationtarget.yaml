@@ -3,6 +3,11 @@ kind: InstallationTarget
 metadata:
   name: "0.0.1"
   namespace: "reviews-api"
+  ownerReferences:
+  - apiVersion: shipper.booking.com/v1
+    kind: Release
+    name: "0.0.1"
+    uid: deadbeef
 spec:
   clusters:
   - minikube
