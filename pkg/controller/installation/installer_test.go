@@ -6,9 +6,12 @@ import (
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 
-	appsv1 "k8s.io/api/apps/v1"
+	appsV1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
 )
@@ -24,11 +27,13 @@ var apiResourceList = []*v1.APIResourceList{
 				Kind:       "Service",
 				Namespaced: true,
 				Name:       "services",
+				Group:      "",
 			},
 			{
 				Kind:       "Pod",
 				Namespaced: true,
 				Name:       "pods",
+				Group:      "",
 			},
 		},
 	},
@@ -92,22 +97,51 @@ func TestInstaller(t *testing.T) {
 	// appsv1.Deployment doesn't work because the runtime.Object stored
 	// in the action isn't the object itself, but a serializable
 	// representation of it.
-	if false {
-		createDeploymentAction := fakeDynamicClient.Actions()[1].(kubetesting.CreateAction)
-		obj := createDeploymentAction.GetObject()
-		if deployment, ok := obj.(*appsv1.Deployment); !ok {
-			t.Logf("%+v", obj)
-			t.Fatal("object is not an appsv1.Deployment")
-		} else {
-			if _, ok := deployment.Labels[shipperV1.ReleaseLabel]; !ok {
-				t.Fatalf("could not find %q in Deployment .metadata.labels", shipperV1.ReleaseLabel)
-			}
-			if _, ok := deployment.Spec.Selector.MatchLabels[shipperV1.ReleaseLabel]; !ok {
-				t.Fatalf("could not find %q in Deployment .spec.selector.matchLabels", shipperV1.ReleaseLabel)
-			}
-			if _, ok := deployment.Spec.Template.Labels[shipperV1.ReleaseLabel]; !ok {
-				t.Fatalf("could not find %q in Deployment .spec.template.labels", shipperV1.ReleaseLabel)
-			}
+	scheme := kubescheme.Scheme
+
+	createServiceAction := fakeDynamicClient.Actions()[0].(kubetesting.CreateAction)
+	obj := createServiceAction.GetObject()
+	if obj.GetObjectKind().GroupVersionKind().Kind != "Service" {
+		t.Logf("%+v", obj)
+		t.Fatal("object is not a corev1.Service")
+	} else {
+		u := &unstructured.Unstructured{}
+		err := scheme.Convert(obj, u, nil)
+		if err != nil {
+			panic(err)
+		}
+		if _, ok := u.GetLabels()[shipperV1.ReleaseLabel]; !ok {
+			t.Fatalf("could not find %q in Deployment .metadata.labels", shipperV1.ReleaseLabel)
+		}
+	}
+
+	createDeploymentAction := fakeDynamicClient.Actions()[1].(kubetesting.CreateAction)
+	obj = createDeploymentAction.GetObject()
+	if obj.GetObjectKind().GroupVersionKind().Kind != "Deployment" {
+		t.Logf("%+v", obj)
+		t.Fatal("object is not an appsv1.Deployment")
+	} else {
+		u := &unstructured.Unstructured{}
+		err := scheme.Convert(obj, u, nil)
+		if err != nil {
+			panic(err)
+		}
+		if _, ok := u.GetLabels()[shipperV1.ReleaseLabel]; !ok {
+			t.Fatalf("could not find %q in Deployment .metadata.labels", shipperV1.ReleaseLabel)
+		}
+
+		deployment := &appsV1.Deployment{}
+		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, deployment); err != nil {
+			t.Fatalf("could not decode deployment from unstructured: %s", err)
+		}
+
+		if _, ok := deployment.Spec.Selector.MatchLabels[shipperV1.ReleaseLabel]; !ok {
+			t.Fatal("deployment .spec.selector.matchLabels doesn't contain shipperV1.ReleaseLabel")
+		}
+
+		if _, ok := deployment.Spec.Template.Labels[shipperV1.ReleaseLabel]; !ok {
+			t.Fatal("deployment .spec.template.labels doesn't contain shipperV1.ReleaseLabel")
+
 		}
 	}
 }
