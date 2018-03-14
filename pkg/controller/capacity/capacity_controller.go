@@ -55,13 +55,10 @@ const (
 
 // Controller is the controller implementation for CapacityTarget resources
 type Controller struct {
-	// kubeclientset is a standard kubernetes clientset
-	kubeclientset kubernetes.Interface
-
 	// shipperclientset is a clientset for our own API group
 	shipperclientset clientset.Interface
 
-	clusterClientStore *clusterclientstore.Store
+	clusterClientStore clusterClientStoreInterface
 
 	capacityTargetsLister listers.CapacityTargetLister
 	capacityTargetsSynced cache.InformerSynced
@@ -86,11 +83,9 @@ type Controller struct {
 
 // NewController returns a new CapacityTarget controller
 func NewController(
-	kubeclientset kubernetes.Interface,
 	shipperclientset clientset.Interface,
-	kubeInformerFactory kubeinformers.SharedInformerFactory,
 	shipperInformerFactory informers.SharedInformerFactory,
-	store *clusterclientstore.Store,
+	store clusterClientStoreInterface,
 	recorder record.EventRecorder,
 ) *Controller {
 
@@ -100,7 +95,6 @@ func NewController(
 	releaseInformer := shipperInformerFactory.Shipper().V1().Releases()
 
 	controller := &Controller{
-		kubeclientset:           kubeclientset,
 		shipperclientset:        shipperclientset,
 		capacityTargetsLister:   capacityTargetInformer.Lister(),
 		capacityTargetsSynced:   capacityTargetInformer.Informer().HasSynced,
@@ -116,11 +110,9 @@ func NewController(
 	// Set up an event handler for when CapacityTarget resources change
 	capacityTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			glog.Info("Got an add event!")
 			controller.enqueueCapacityTarget(obj)
 		},
 		UpdateFunc: func(old, new interface{}) {
-			glog.Info("Got an update event!")
 			controller.enqueueCapacityTarget(new)
 		},
 		// the syncHandler needs to cope with the case where the object was deleted
@@ -170,7 +162,7 @@ func (c *Controller) runCapacityTargetWorker() {
 	}
 }
 
-// processNextWorkCapacityTargetItem will read a single work item off the workqueue and
+// processNextCapacityTargetWorkItem will read a single work item off the workqueue and
 // attempt to process it, by calling the syncHandler.
 func (c *Controller) processNextCapacityTargetWorkItem() bool {
 	obj, shutdown := c.capacityTargetWorkqueue.Get()
@@ -351,4 +343,11 @@ func (c *Controller) registerEventHandlers(informerFactory kubeinformers.SharedI
 
 func (c *Controller) subscribe(informerFactory kubeinformers.SharedInformerFactory) {
 	informerFactory.Apps().V1().Deployments().Informer()
+}
+
+type clusterClientStoreInterface interface {
+	AddSubscriptionCallback(clusterclientstore.SubscriptionRegisterFunc)
+	AddEventHandlerCallback(clusterclientstore.EventHandlerRegisterFunc)
+	GetClient(string) (kubernetes.Interface, error)
+	GetInformerFactory(string) (kubeinformers.SharedInformerFactory, error)
 }

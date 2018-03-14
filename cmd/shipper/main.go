@@ -399,9 +399,7 @@ func startCapacityController(cfg *cfg) (bool, error) {
 	}
 
 	c := capacity.NewController(
-		cfg.kubeClient,
 		cfg.shipperClient,
-		cfg.kubeInformerFactory,
 		cfg.shipperInformerFactory,
 		cfg.store,
 		cfg.recorder(capacity.AgentName),

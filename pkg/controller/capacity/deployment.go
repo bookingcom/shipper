@@ -158,11 +158,16 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 func (c *Controller) updateStatus(capacityTarget *shipperv1.CapacityTarget, clusterName string, availableReplicas int32, sadPods []shipperv1.PodStatus) error {
 	var capacityTargetStatus shipperv1.CapacityTargetStatus
 
-	// We loop over the statuses in capacityTarget.Status.
-	// If the name matches the cluster name we want, we don't add it to the resulting array.
-	// If not, we just add it as-is.
-	// At the end, we just append our own object to the end of the result. Since we originally filtered out the object matching our target cluster, our object will replace the original object.
-	// The reason we make our own results object instead of modifying the original one is that we will use the resulting `capacityTargetStatus` variable for a patch operation
+	// We loop over the statuses in capacityTarget.Status.  If the
+	// name matches the cluster name we want, we don't add it to
+	// the resulting array.  If not, we just add it as-is.  At the
+	// end, we just append our own object to the end of the
+	// result. Since we originally filtered out the object
+	// matching our target cluster, our object will replace the
+	// original object.  The reason we make our own results object
+	// instead of modifying the original one is that we will use
+	// the resulting `capacityTargetStatus` variable for a patch
+	// operation
 	for _, clusterStatus := range capacityTarget.Status.Clusters {
 		if clusterStatus.Name == clusterName {
 			continue
@@ -187,13 +192,19 @@ func (c *Controller) updateStatus(capacityTarget *shipperv1.CapacityTarget, clus
 
 	capacityTargetStatus.Clusters = append(capacityTargetStatus.Clusters, clusterStatus)
 
-	statusJson, err := json.Marshal(capacityTargetStatus)
+	// doing this weird map assignment because we only want to
+	// update the "status" field, and Kubernetes expects a
+	// "status" key to be present in the patch
+	patchData := map[string]shipperv1.CapacityTargetStatus{
+		"status": capacityTargetStatus,
+	}
+	statusJson, err := json.Marshal(patchData)
 	if err != nil {
 		return err
 	}
 
-	json := fmt.Sprintf(`{"status": %s}`, string(statusJson))
-	_, err = c.shipperclientset.ShipperV1().CapacityTargets(capacityTarget.Namespace).Patch(capacityTarget.Name, types.MergePatchType, []byte(json))
+	_, err = c.shipperclientset.ShipperV1().CapacityTargets(capacityTarget.Namespace).Patch(capacityTarget.Name, types.MergePatchType, statusJson)
+
 	return err
 }
 
