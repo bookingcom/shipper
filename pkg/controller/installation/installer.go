@@ -10,6 +10,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/label"
 
 	appsV1 "k8s.io/api/apps/v1"
+	coreV1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -17,7 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
+	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 )
 
@@ -27,15 +28,15 @@ type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *res
 // into Kubernetes clusters.
 type Installer struct {
 	Release *shipperV1.Release
+	Scheme  *runtime.Scheme
 }
 
 // NewInstaller returns a new Installer.
 func NewInstaller(release *shipperV1.Release) *Installer {
-	return &Installer{Release: release}
-}
-
-func (i *Installer) getReleaseName() string {
-	return i.Release.GetName()
+	return &Installer{
+		Release: release,
+		Scheme:  kubescheme.Scheme,
+	}
 }
 
 // renderManifests returns a list of rendered manifests for the given release and
@@ -96,14 +97,16 @@ func (i *Installer) buildResourceClient(
 	return resourceClient, nil
 }
 
-func (i *Installer) patchDeployment(d *appsV1.Deployment) runtime.Object {
+func (i *Installer) patchDeployment(d *appsV1.Deployment, labelsToInject map[string]string) runtime.Object {
 
 	replicas := int32(0)
 	d.Spec.Replicas = &replicas
 
 	// patch .metadata.labels
 	newLabels := d.Labels
-	newLabels[shipperV1.ReleaseLabel] = i.getReleaseName()
+	for k, v := range labelsToInject {
+		newLabels[k] = v
+	}
 	d.SetLabels(newLabels)
 
 	// Patch .spec.selector
@@ -116,30 +119,73 @@ func (i *Installer) patchDeployment(d *appsV1.Deployment) runtime.Object {
 		}
 	}
 
-	newSelector.MatchLabels[shipperV1.ReleaseLabel] = i.getReleaseName()
+	for k, v := range labelsToInject {
+		newSelector.MatchLabels[k] = v
+	}
 	d.Spec.Selector = newSelector
 
-	// Patch .spec.template
-	newTemplate := d.Spec.Template.DeepCopy()
-	newTemplate.Labels[shipperV1.ReleaseLabel] = i.getReleaseName()
-	d.Spec.Template = *newTemplate
+	// Patch .spec.template.metadata.labels
+	podTemplateLabels := make(map[string]string)
+	for k, v := range labelsToInject {
+		podTemplateLabels[k] = v
+	}
+	d.Spec.Template.SetLabels(podTemplateLabels)
 
 	return d
 }
 
-func (i *Installer) patchObject(object runtime.Object) runtime.Object {
-	switch o := object.(type) {
-	case *appsV1.Deployment:
-		return i.patchDeployment(o)
+func (i *Installer) patchService(s *coreV1.Service, labelsToInject map[string]string) runtime.Object {
+
+	// We have a contract with the chart that they create one stably-named
+	// (that is, the name should remain the same from release to release)
+	// Service per application with a special label: 'shipper-lb: production'.
+	// We don't want to add the 'release' label to this service because the
+	// lifetime spans releases: this is an application-scoped object, not
+	// a release-scoped object. Other services are not part of this
+	// contract; user charts can do whatever they want.
+	lbType, ok := s.GetLabels()[shipperV1.LBLabel]
+	if ok && lbType == shipperV1.LBForProduction {
+		labelsToInject = label.FilterRelease(labelsToInject)
 	}
-	return object
+
+	labels := s.GetLabels()
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+
+	for k, v := range labelsToInject {
+		labels[k] = v
+	}
+
+	s.SetLabels(labels)
+	return s
 }
 
-func toUnstructured(obj runtime.Object) (*unstructured.Unstructured, error) {
-	if unstructuredObj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj); err != nil {
-		return nil, err
-	} else {
-		return &unstructured.Unstructured{Object: unstructuredObj}, nil
+func (i *Installer) patchUnstructured(o *unstructured.Unstructured, labelsToInject map[string]string) runtime.Object {
+	labels := o.GetLabels()
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+	for k, v := range labelsToInject {
+		labels[k] = v
+	}
+	o.SetLabels(labels)
+	return o
+}
+
+func (i *Installer) patchObject(object runtime.Object, labelsToInject map[string]string) runtime.Object {
+	switch o := object.(type) {
+	case *appsV1.Deployment:
+		return i.patchDeployment(o, labelsToInject)
+	case *coreV1.Service:
+		return i.patchService(o, labelsToInject)
+	default:
+		unstructuredObj := &unstructured.Unstructured{}
+		err := i.Scheme.Convert(object, unstructuredObj, nil)
+		if err != nil {
+			panic(err)
+		}
+		return i.patchUnstructured(unstructuredObj, labelsToInject)
 	}
 }
 
@@ -158,14 +204,15 @@ func (i *Installer) installManifests(
 	// scalar value, we don't try to install other objects for now.
 	for _, manifest := range manifests {
 
-		// Extract from the rendered object an unstructured representation of the object,
-		// together with its GroupVersionKind that will be used to grab a ResourceClient
-		// for this object.
-		obj, decodedObj, gvk, err := decodeManifest(manifest)
+		// This one was tricky to find out. @asurikov pointed me out to the
+		// UniversalDeserializer, which can decode a []byte representing the
+		// k8s manifest into the proper k8s object (for example, v1.Service).
+		// Haven't tested the decoder with CRDs, so please keep a mental note
+		// that it might not work as expected (meaning more research might be
+		// necessary).
+		decodedObj, gvk, err :=
+			kubescheme.Codecs.UniversalDeserializer().Decode([]byte(manifest), nil, nil)
 		if err != nil {
-			// TODO: Instead of returning an error in here, we should return an internal
-			// error that contains both the reason ("ManifestDecodingError") and the
-			// message (the error string) so callers can fill the appropriate blanks.
 			return fmt.Errorf("error decoding manifest: %s", err)
 		}
 
@@ -174,34 +221,19 @@ func (i *Installer) installManifests(
 		// This may overwrite some of the pre-existing labels. It's not ideal but with
 		// current implementation we require that shipperv1.ReleaseLabel is propagated
 		// correctly. This may be subject to change.
-
-		kind, ns, name := gvk.Kind, obj.GetNamespace(), obj.GetName()
 		labelsToInject := i.Release.Labels
+		decodedObj = i.patchObject(decodedObj, labelsToInject)
 
-		// We have a contract with the chart that they create one stably-named
-		// (that is, the name should remain the same from release to release)
-		// Service per application with a special label: 'shipper-lb: production'.
-		// We don't want to add the 'release' label to this service because the
-		// lifetime spans releases: this is an application-scoped object, not
-		// a release-scoped object. Other services are not part of this
-		// contract; user charts can do whatever they want.
-		lbType, ok := obj.GetLabels()[shipperV1.LBLabel]
-		if kind == "Service" && ok && lbType == shipperV1.LBForProduction {
-			labelsToInject = label.FilterRelease(labelsToInject)
+		// ResourceClient.Create() requires an Unstructured object to work with, so
+		// we need to convert from v1.Service into a map[string]interface{}, which
+		// is what ToUnstrucured() below does. To find this one, I had to find a
+		// Merge Request then track the git history to find out where it was moved
+		// to, since there's no documentation whatsoever about it anywhere.
+		obj := &unstructured.Unstructured{}
+		err = i.Scheme.Convert(decodedObj, obj, nil)
+		if err != nil {
+			return fmt.Errorf("error converting object to unstructured: %s", err)
 		}
-
-		// Apply patches to the object based on its resource type.
-		decodedObj = i.patchObject(decodedObj)
-		var newObj *unstructured.Unstructured
-		if newObj, err = toUnstructured(decodedObj); err != nil {
-			return fmt.Errorf("error converting to unstructured: %s", err)
-		} else {
-			obj = newObj
-		}
-
-		glog.V(6).Infof(`%s "%s/%s": before injecting labels: %v`, kind, ns, name, obj.GetLabels())
-		injectLabels(obj, labelsToInject)
-		glog.V(6).Infof(`%s "%s/%s: after injecting labels: %v`, kind, ns, name, obj.GetLabels())
 
 		// Once we've gathered enough information about the document we want to install,
 		// we're able to build a resource client to interact with the target cluster.
@@ -252,49 +284,4 @@ func (i *Installer) installRelease(
 	}
 
 	return i.installManifests(cluster, client, restConfig, dynamicClientBuilder, renderedManifests)
-}
-
-// decodeManifest attempts to deserialize the provided manifest. It returns
-// an unstructured decoded object, suitable to be used with a ResourceClient
-// and the object's GroupVersionKind, or an error.
-func decodeManifest(manifest string) (*unstructured.Unstructured, runtime.Object, *schema.GroupVersionKind, error) {
-
-	// This one was tricky to find out. @asurikov pointed me out to the
-	// UniversalDeserializer, which can decode a []byte representing the
-	// k8s manifest into the proper k8s object (for example, v1.Service).
-	// Haven't tested the decoder with CRDs, so please keep a mental note
-	// that it might not work as expected (meaning more research might be
-	// necessary).
-	decodedObj, gvk, err := scheme.Codecs.UniversalDeserializer().Decode([]byte(manifest), nil, nil)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	// ResourceClient.Create() requires an Unstructured object to work with, so
-	// we need to convert from v1.Service into a map[string]interface{}, which
-	// is what ToUnstrucured() below does. To find this one, I had to find a
-	// Merge Request then track the git history to find out where it was moved
-	// to, since there's no documentation whatsoever about it anywhere.
-	unstructuredObj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(decodedObj)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	return &unstructured.Unstructured{Object: unstructuredObj}, decodedObj, gvk, nil
-}
-
-// injectLabels labels obj *in-place* with labels from inj, overwriting existing
-// values. That is, if inj has a label with the same key as an existing label in
-// obj, the existing value will be overwritten.
-func injectLabels(obj *unstructured.Unstructured, inj map[string]string) {
-	labels := obj.GetLabels()
-	if labels == nil {
-		labels = make(map[string]string)
-	}
-
-	for k, v := range inj {
-		labels[k] = v
-	}
-
-	obj.SetLabels(labels)
 }
