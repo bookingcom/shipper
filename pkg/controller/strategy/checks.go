@@ -60,11 +60,10 @@ func checkCapacity(capacityTarget *v1.CapacityTarget, stepCapacity uint, compFn 
 		capacityData[status.Name] = cd
 	}
 
-	canProceed := false
+	canProceed := true
 	newSpec := &v1.CapacityTargetSpec{}
 
 	for k, v := range capacityData {
-
 		// Now we can check whether or not the desired target step replicas have
 		// been achieved. If this isn't the case, it means that we need to update
 		// this cluster's desired capacity.
@@ -72,8 +71,9 @@ func checkCapacity(capacityTarget *v1.CapacityTarget, stepCapacity uint, compFn 
 			// Patch capacityTarget .spec to attempt to achieve the desired state.
 			r := v1.ClusterCapacityTarget{Name: k, Percent: int32(v.stepCapacity)}
 			newSpec.Clusters = append(newSpec.Clusters, r)
-		} else if compFn(v.achievedCapacity, v.desiredCapacity) {
-			canProceed = true
+			canProceed = false
+		} else if !compFn(v.achievedCapacity, v.desiredCapacity) {
+			canProceed = false
 		}
 	}
 
@@ -120,21 +120,22 @@ func checkTraffic(trafficTarget *v1.TrafficTarget, stepTrafficWeight uint, compF
 		trafficData[status.Name] = td
 	}
 
-	canContinue := false
+	canProceed := true
 	newSpec := &v1.TrafficTargetSpec{}
 
 	for k, v := range trafficData {
 		if v.desiredTrafficWeight != v.stepTrafficWeight {
 			t := v1.ClusterTrafficTarget{Name: k, TargetTraffic: v.stepTrafficWeight}
 			newSpec.Clusters = append(newSpec.Clusters, t)
-		} else if compFn(v.achievedTrafficWeight, v.desiredTrafficWeight) {
-			canContinue = true
+			canProceed = false
+		} else if !compFn(v.achievedTrafficWeight, v.desiredTrafficWeight) {
+			canProceed = false
 		}
 	}
 
 	if len(newSpec.Clusters) > 0 {
-		return canContinue, newSpec
+		return canProceed, newSpec
 	} else {
-		return canContinue, nil
+		return canProceed, nil
 	}
 }

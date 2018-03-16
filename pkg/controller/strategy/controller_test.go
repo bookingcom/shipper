@@ -32,6 +32,87 @@ func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.
 	f.run()
 }
 
+func TestContenderDoNothingClusterInstallationNotReady(t *testing.T) {
+	f := newFixture(t)
+
+	contender := buildContender()
+	incumbent := buildIncumbent()
+
+	addCluster(contender, "broken-installation-cluster")
+
+	contender.release.Spec.TargetStep = 0
+
+	// the fixture creates installation targets in 'installation succeeded' status, so we'll break one
+	contender.installationTarget.Status.Clusters[1].Status = shipperV1.InstallationStatusFailed
+
+	f.addObjects(contender, incumbent)
+
+	f.run()
+}
+
+func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
+	f := newFixture(t)
+
+	contender := buildContender()
+	incumbent := buildIncumbent()
+
+	addCluster(contender, "broken-capacity-cluster")
+
+	// we'll set cluster 0 to be all set, but make cluster 1 broken
+	contender.release.Spec.TargetStep = 1
+	contender.capacityTarget.Spec.Clusters[0].Percent = 50
+	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+	contender.trafficTarget.Spec.Clusters[0].TargetTraffic = 50
+	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+
+	contender.capacityTarget.Spec.Clusters[1].Percent = 50
+	// no capacity yet
+	contender.capacityTarget.Status.Clusters[1].AchievedPercent = 0
+
+	contender.trafficTarget.Spec.Clusters[1].TargetTraffic = 50
+	contender.trafficTarget.Status.Clusters[1].AchievedTraffic = 50
+
+	incumbent.trafficTarget.Spec.Clusters[0].TargetTraffic = 50
+	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+	incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
+	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+
+	f.addObjects(contender, incumbent)
+
+	f.run()
+}
+
+func TestContenderDoNothingClusterTrafficNotReady(t *testing.T) {
+	f := newFixture(t)
+
+	contender := buildContender()
+	incumbent := buildIncumbent()
+
+	addCluster(contender, "broken-traffic-cluster")
+	// we'll set cluster 0 to be all set, but make cluster 1 broken
+	contender.release.Spec.TargetStep = 1
+	contender.capacityTarget.Spec.Clusters[0].Percent = 50
+	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+	contender.trafficTarget.Spec.Clusters[0].TargetTraffic = 50
+	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+
+	contender.capacityTarget.Spec.Clusters[1].Percent = 50
+	contender.capacityTarget.Status.Clusters[1].AchievedPercent = 50
+
+	contender.trafficTarget.Spec.Clusters[1].TargetTraffic = 50
+	// no traffic yet
+	contender.trafficTarget.Status.Clusters[1].AchievedTraffic = 0
+
+	incumbent.trafficTarget.Spec.Clusters[0].TargetTraffic = 50
+	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+	incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
+	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+
+	f.addObjects(contender, incumbent)
+
+	f.run()
+}
+
 func TestContenderCapacityShouldIncrease(t *testing.T) {
 	f := newFixture(t)
 
