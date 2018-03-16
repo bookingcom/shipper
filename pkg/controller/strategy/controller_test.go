@@ -25,6 +25,9 @@ func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.
 	contender := buildContender()
 	incumbent := buildIncumbent()
 
+	// strategy specifies that step 0 the contender has a minimum number of pods (1), no traffic yet
+	contender.capacityTarget.Spec.Clusters[0].Percent = 1
+
 	f.addObjects(contender, incumbent)
 
 	rel := contender.release.DeepCopy()
