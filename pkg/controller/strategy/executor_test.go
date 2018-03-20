@@ -374,6 +374,28 @@ func buildContender() *releaseInfo {
 	}
 }
 
+func addCluster(ri *releaseInfo, name string) {
+	ri.installationTarget.Spec.Clusters = append(ri.installationTarget.Spec.Clusters, name)
+	ri.installationTarget.Status.Clusters = append(ri.installationTarget.Status.Clusters,
+		&v1.ClusterInstallationStatus{Name: name, Status: v1.InstallationStatusInstalled},
+	)
+
+	ri.capacityTarget.Status.Clusters = append(ri.capacityTarget.Status.Clusters,
+		v1.ClusterCapacityStatus{Name: name, AchievedPercent: 100},
+	)
+
+	ri.capacityTarget.Spec.Clusters = append(ri.capacityTarget.Spec.Clusters,
+		v1.ClusterCapacityTarget{Name: name, Percent: 0},
+	)
+
+	ri.trafficTarget.Spec.Clusters = append(ri.trafficTarget.Spec.Clusters,
+		v1.ClusterTrafficTarget{Name: name, TargetTraffic: 0},
+	)
+	ri.trafficTarget.Status.Clusters = append(ri.trafficTarget.Status.Clusters,
+		&v1.ClusterTrafficStatus{Name: name, AchievedTraffic: 100},
+	)
+}
+
 // ensureCapacityPatch executes the strategy and returns the content of the
 // patch it produced, if any. Returns an error if the number of patches is
 // wrong, the patch doesn't implement the CapacityTargetOutdatedResult

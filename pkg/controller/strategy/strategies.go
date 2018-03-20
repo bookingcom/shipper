@@ -26,7 +26,7 @@ var allInStrategy = &v1.StrategySpec{
 var vanguardStrategy = &v1.StrategySpec{
 	Steps: []v1.StrategyStep{
 		{
-			ContenderCapacity: "0",
+			ContenderCapacity: "1",
 			IncumbentCapacity: "100",
 			ContenderTraffic:  "0",
 			IncumbentTraffic:  "100",

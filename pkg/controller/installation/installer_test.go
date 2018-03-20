@@ -141,7 +141,23 @@ func TestInstaller(t *testing.T) {
 
 		if _, ok := deployment.Spec.Template.Labels[shipperV1.ReleaseLabel]; !ok {
 			t.Fatal("deployment .spec.template.labels doesn't contain shipperV1.ReleaseLabel")
+		}
 
+		const (
+			existingChartLabel      = "app"
+			existingChartLabelValue = "reviews-api"
+		)
+
+		actualChartLabelValue, ok := deployment.Spec.Template.Labels[existingChartLabel]
+		if !ok {
+			t.Fatalf("deployment .spec.template.labels doesn't contain a label (%q) which was present in the chart", existingChartLabel)
+		}
+
+		if actualChartLabelValue != existingChartLabelValue {
+			t.Fatalf(
+				"deployment .spec.template.labels has the right previously-existing label (%q) but wrong value. Expected %q but got %q",
+				existingChartLabel, existingChartLabelValue, actualChartLabelValue,
+			)
 		}
 	}
 }

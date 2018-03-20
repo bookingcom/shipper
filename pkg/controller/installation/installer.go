@@ -125,7 +125,7 @@ func (i *Installer) patchDeployment(d *appsV1.Deployment, labelsToInject map[str
 	d.Spec.Selector = newSelector
 
 	// Patch .spec.template.metadata.labels
-	podTemplateLabels := make(map[string]string)
+	podTemplateLabels := d.Spec.Template.Labels
 	for k, v := range labelsToInject {
 		podTemplateLabels[k] = v
 	}
