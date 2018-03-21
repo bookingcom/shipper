@@ -1,0 +1,21 @@
+apiVersion: shipper.booking.com/v1
+kind: Application
+metadata:
+  name: reviewsapi
+spec:
+  template:
+    clusterSelectors:
+    - regions:
+      - local
+      capabilities: []
+    chart:
+      name: my-complex-app
+      version: 0.2.0
+      repoUrl: http://127.0.0.1:8879/charts
+    strategy: vanguard
+    values:
+      perl:
+        replicaCount: 10
+        image:
+          name: reviewsapi/app
+          version: 6bbb0da1891646e58eb3e6a63af3a6fc3c8eb5a0d44824cba581d2e14a0450cf
