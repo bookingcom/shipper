@@ -25,3 +25,7 @@ required = ["k8s.io/code-generator/cmd/client-gen"]
   name = "k8s.io/gengo"
   revision = "1ef560bbde5195c01629039ad3b337ce63e7b321"
 
+
+[[constraint]]
+  name = "github.com/prometheus/client_golang"
+  version = "0.9.0-pre1"

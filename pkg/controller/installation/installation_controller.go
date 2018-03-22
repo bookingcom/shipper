@@ -55,7 +55,7 @@ func NewController(
 		installationTargetsLister: installationTargetInformer.Lister(),
 		installationTargetsSynced: installationTargetInformer.Informer().HasSynced,
 		dynamicClientBuilderFunc:  dynamicClientBuilderFunc,
-		workqueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "InstallationTargets"),
+		workqueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "installation_controller_installationtargets"),
 	}
 
 	installationTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{

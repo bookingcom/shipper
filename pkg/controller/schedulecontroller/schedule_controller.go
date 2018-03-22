@@ -55,7 +55,7 @@ func NewController(
 		releasesLister:   releaseInformer.Lister(),
 		clustersLister:   clusterInformer.Lister(),
 		releasesSynced:   releaseInformer.Informer().HasSynced,
-		workqueue:        workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Releases"),
+		workqueue:        workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "schedule_controller_releases"),
 		recorder:         recorder,
 	}
 

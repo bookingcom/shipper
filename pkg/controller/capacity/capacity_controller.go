@@ -100,8 +100,8 @@ func NewController(
 		capacityTargetsSynced:   capacityTargetInformer.Informer().HasSynced,
 		releasesLister:          releaseInformer.Lister(),
 		releasesListerSynced:    releaseInformer.Informer().HasSynced,
-		capacityTargetWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "CapacityTargets"),
-		deploymentWorkqueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Deployments"),
+		capacityTargetWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "capacity_controller_capacitytargets"),
+		deploymentWorkqueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "capacity_controller_deployments"),
 		recorder:                recorder,
 		clusterClientStore:      store,
 	}

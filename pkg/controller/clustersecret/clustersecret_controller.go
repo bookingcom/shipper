@@ -43,8 +43,6 @@ import (
 const AgentName = "clustersecret-controller"
 
 const (
-	controllerMetricsName = "clustersecret"
-
 	reasonFailed  = "ClusterSecretError"
 	reasonCreated = "ClusterSecretCreated"
 	reasonUpdated = "ClusterSecretUpdated"
@@ -85,7 +83,7 @@ func NewController(
 		secretLister:  secretInformer.Lister(),
 		secretsSynced: secretInformer.Informer().HasSynced,
 
-		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), controllerMetricsName),
+		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "clustersecret_controller_secrets"),
 		recorder:  recorder,
 
 		tls:          tls.Pair{certPath, keyPath},
