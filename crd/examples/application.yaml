@@ -12,7 +12,8 @@ spec:
       name: my-complex-app
       version: 0.2.0
       repoUrl: http://127.0.0.1:8879/charts
-    strategy: vanguard
+    strategy:
+      name: vanguard
     values:
       perl:
         replicaCount: 10
