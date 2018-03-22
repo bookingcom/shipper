@@ -74,11 +74,11 @@ func NewController(
 
 		soLister:    soInformer.Lister(),
 		soSynced:    soInformer.Informer().HasSynced,
-		soWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "shipmentorder"),
+		soWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "shipmentorder_controller_shipmentorders"),
 
 		relLister:    relInformer.Lister(),
 		relSynced:    relInformer.Informer().HasSynced,
-		relWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "release"),
+		relWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "shipmentorder_controller_releases"),
 
 		recorder: recorder,
 	}

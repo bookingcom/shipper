@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
@@ -22,6 +25,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller/shipmentorder"
 	"github.com/bookingcom/shipper/pkg/controller/strategy"
 	"github.com/bookingcom/shipper/pkg/controller/traffic"
+	shippermetrics "github.com/bookingcom/shipper/pkg/metrics/prometheus"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -32,7 +36,9 @@ import (
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	kuberestmetrics "k8s.io/client-go/tools/metrics"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/workqueue"
 )
 
 var controllers = []string{
@@ -55,7 +61,16 @@ var (
 	enabledControllers  = flag.String("enable", strings.Join(controllers, ","), "comma-seperated list of controllers to run (if not all)")
 	disabledControllers = flag.String("disable", "", "comma-seperated list of controllers to disable")
 	workers             = flag.Int("workers", 2, "Number of workers to start for each controller.")
+	metricsAddr         = flag.String("metrics-addr", ":8889", "Addr to expose /metrics on.")
 )
+
+type metricsCfg struct {
+	readyCh chan struct{}
+
+	wqMetrics   *shippermetrics.PrometheusWorkqueueProvider
+	restLatency *shippermetrics.RESTLatencyMetric
+	restResult  *shippermetrics.RESTResultMetric
+}
 
 type cfg struct {
 	enabledControllers map[string]bool
@@ -78,6 +93,8 @@ type cfg struct {
 
 	wg     *sync.WaitGroup
 	stopCh <-chan struct{}
+
+	metrics *metricsCfg
 }
 
 func main() {
@@ -94,6 +111,7 @@ func main() {
 	}
 
 	stopCh := setupSignalHandler()
+	metricsReadyCh := make(chan struct{})
 
 	kubeInformerFactory := informers.NewSharedInformerFactory(kubeClient, resync)
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(shipperClient, resync)
@@ -148,9 +166,37 @@ func main() {
 
 		wg:     wg,
 		stopCh: stopCh,
+
+		metrics: &metricsCfg{
+			readyCh:     metricsReadyCh,
+			wqMetrics:   shippermetrics.NewProvider(),
+			restLatency: shippermetrics.NewRESTLatencyMetric(),
+			restResult:  shippermetrics.NewRESTResultMetric(),
+		},
 	}
 
+	go func() {
+		glog.V(1).Infof("Metrics will listen on %s", *metricsAddr)
+		<-metricsReadyCh
+
+		glog.V(3).Info("Starting the metrics web server")
+		defer glog.V(3).Info("The metrics web server has shut down")
+
+		runMetrics(cfg.metrics)
+	}()
+
 	runControllers(cfg)
+}
+
+func runMetrics(cfg *metricsCfg) {
+	prometheus.MustRegister(cfg.wqMetrics.GetMetrics()...)
+	prometheus.MustRegister(cfg.restLatency.Summary, cfg.restResult.Counter)
+
+	srv := http.Server{
+		Addr:    *metricsAddr,
+		Handler: promhttp.Handler(),
+	}
+	srv.ListenAndServe()
 }
 
 func buildClients(masterURL, kubeconfig string) (kubernetes.Interface, shipperclientset.Interface, *rest.Config, error) {
@@ -211,6 +257,11 @@ func buildEnabledControllers(enabledControllers, disabledControllers string) map
 func runControllers(cfg *cfg) {
 	controllerInitializers := buildInitializers()
 
+	// This needs to happen before controllers start, so we can start tracking
+	// metrics immediately, even before they're exposed to the world.
+	workqueue.SetProvider(cfg.metrics.wqMetrics)
+	kuberestmetrics.Register(cfg.metrics.restLatency, cfg.metrics.restResult)
+
 	for name, initializer := range controllerInitializers {
 		started, err := initializer(cfg)
 		// TODO make it visible when some controller's aren't starting properly; all of the initializers return 'nil' ATM
@@ -222,6 +273,10 @@ func runControllers(cfg *cfg) {
 			glog.Infof("%q was skipped per config", name)
 		}
 	}
+
+	// Controllers and their workqueues have been created, we can expose the
+	// metrics now.
+	close(cfg.metrics.readyCh)
 
 	go cfg.kubeInformerFactory.Start(cfg.stopCh)
 	go cfg.shipperInformerFactory.Start(cfg.stopCh)

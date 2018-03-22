@@ -53,7 +53,7 @@ func NewController(
 		capacityTargetsSynced:     capacityTargetInformer.Informer().HasSynced,
 		trafficTargetsSynced:      trafficTargetInformer.Informer().HasSynced,
 		installationTargetsSynced: installationTargetInformer.Informer().HasSynced,
-		workqueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Releases"),
+		workqueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "strategy_controller_releases"),
 		dynamicClientPool:         dynamicClientPool,
 	}
 

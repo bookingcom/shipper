@@ -91,7 +91,7 @@ func NewController(
 
 		trafficTargetsLister: trafficTargetInformer.Lister(),
 		trafficTargetsSynced: trafficTargetInformer.Informer().HasSynced,
-		workqueue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "TrafficTargets"),
+		workqueue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "traffic_controller_traffictargets"),
 		recorder:             recorder,
 	}
 
