@@ -17,7 +17,7 @@ func NewRESTLatencyMetric() *RESTLatencyMetric {
 		prom.SummaryOpts{
 			Namespace: ns,
 			Subsystem: restSubsys,
-			Name:      "latency_microseconds",
+			Name:      "latency_seconds",
 			Help:      "How long it takes for the Kubernetes REST client to do a request",
 		},
 		[]string{"verb", "url", "watch"},
@@ -25,8 +25,6 @@ func NewRESTLatencyMetric() *RESTLatencyMetric {
 }
 
 func (m *RESTLatencyMetric) Observe(verb string, u url.URL, latency time.Duration) {
-	const microsecondFactor = 1000000
-
 	watch := u.Query().Get("watch")
 	if watch != "true" {
 		watch = "false"
@@ -45,7 +43,7 @@ func (m *RESTLatencyMetric) Observe(verb string, u url.URL, latency time.Duratio
 
 	// XXX see if there's an easy way to substitute u.Host with cluster name?
 
-	m.Summary.WithLabelValues(verb, u.String(), watch).Observe(latency.Seconds() * microsecondFactor)
+	m.Summary.WithLabelValues(verb, u.String(), watch).Observe(latency.Seconds())
 }
 
 type RESTResultMetric struct {
