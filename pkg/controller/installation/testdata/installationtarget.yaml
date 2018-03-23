@@ -10,4 +10,4 @@ metadata:
     uid: deadbeef
 spec:
   clusters:
-  - minikube
+  - minikube-a

@@ -2,6 +2,7 @@ package installation
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/golang/glog"
@@ -220,6 +221,7 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 		status.Status = shipperV1.InstallationStatusInstalled
 	}
 
+	sort.Sort(byClusterName(clusterStatuses))
 	it.Status.Clusters = clusterStatuses
 
 	_, err = c.shipperclientset.ShipperV1().InstallationTargets(it.Namespace).Update(it)
@@ -245,9 +247,9 @@ func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interfa
 	}
 
 	// the client store is just like an informer cache: it's a shared pointer to a read-only struct, so copy it before mutating
-	copy := rest.CopyConfig(referenceConfig)
+	referenceCopy := rest.CopyConfig(referenceConfig)
 
-	return client, copy, nil
+	return client, referenceCopy, nil
 }
 
 func metaKey(it *shipperV1.InstallationTarget) string {

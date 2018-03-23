@@ -14,10 +14,10 @@ import (
 	kubetesting "k8s.io/client-go/testing"
 )
 
-// TestInstall tests the installation process using the installation.Controller.
-func TestInstall(t *testing.T) {
+// TestInstallOneCluster tests the installation process using the installation.Controller.
+func TestInstallOneCluster(t *testing.T) {
 
-	cluster := loadCluster()
+	cluster := loadCluster("minikube-a")
 	release := loadRelease()
 	installationTarget := loadInstallationTarget()
 
@@ -68,7 +68,81 @@ func TestInstall(t *testing.T) {
 	// patched.
 	it := installationTarget.DeepCopy()
 	it.Status.Clusters = []*shipperV1.ClusterInstallationStatus{
-		{Name: "minikube", Status: shipperV1.InstallationStatusInstalled},
+		{Name: "minikube-a", Status: shipperV1.InstallationStatusInstalled},
+	}
+	expectedActions = []kubetesting.Action{
+		kubetesting.NewUpdateAction(
+			schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"},
+			release.GetNamespace(),
+			it),
+	}
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
+}
+
+func TestInstallMultipleClusters(t *testing.T) {
+	clusterA := loadCluster("minikube-a")
+	clusterB := loadCluster("minikube-b")
+	release := loadRelease()
+	installationTarget := loadInstallationTarget()
+	installationTarget.Spec.Clusters = []string{"minikube-a", "minikube-b"}
+
+	fakeClient, shipperclientset, fakeDynamicClient, fakeDynamicClientBuilder, shipperInformerFactory :=
+		initializeClients(apiResourceList, clusterA, clusterB, release, installationTarget)
+
+	fakeClientProvider := &FakeClientProvider{
+		fakeClient: fakeClient,
+		restConfig: &rest.Config{},
+	}
+
+	c := newController(
+		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder)
+
+	if !c.processNextWorkItem() {
+		t.Fatal("Could not process work item")
+	}
+
+	// The chart contained in the test release produces a service and a
+	// deployment manifest. The events order should be always the same,
+	// since we changed the renderer behavior to always return a
+	// consistently ordered list of manifests, according to Kind and
+	// Name. The actions described below are expected to be executed
+	// against the dynamic client that is returned by the
+	// fakeDynamicClientBuilder function passed to the controller, which
+	// mimics a connection to a Target Cluster.
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewCreateAction(
+			schema.GroupVersionResource{Resource: "services", Version: "v1"},
+			release.GetNamespace(),
+			nil),
+		kubetesting.NewCreateAction(
+			schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"},
+			release.GetNamespace(),
+			nil),
+		kubetesting.NewCreateAction(
+			schema.GroupVersionResource{Resource: "services", Version: "v1"},
+			release.GetNamespace(),
+			nil),
+		kubetesting.NewCreateAction(
+			schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"},
+			release.GetNamespace(),
+			nil),
+	}
+	shippertesting.CheckActions(expectedActions, fakeDynamicClient.Actions(), t)
+
+	// We are interested only in "update" actions here.
+	var filteredActions []kubetesting.Action
+	for _, a := range shipperclientset.Actions() {
+		if a.GetVerb() == "update" {
+			filteredActions = append(filteredActions, a)
+		}
+	}
+
+	// Now we need to check if the installation target process was properly
+	// patched and the clusters are listed in alphabetical order.
+	it := installationTarget.DeepCopy()
+	it.Status.Clusters = []*shipperV1.ClusterInstallationStatus{
+		{Name: "minikube-a", Status: shipperV1.InstallationStatusInstalled},
+		{Name: "minikube-b", Status: shipperV1.InstallationStatusInstalled},
 	}
 	expectedActions = []kubetesting.Action{
 		kubetesting.NewUpdateAction(
@@ -90,7 +164,7 @@ func TestInstall(t *testing.T) {
 func TestMissingRelease(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
 
-	cluster := loadCluster()
+	cluster := loadCluster("minikube-a")
 	installationTarget := loadInstallationTarget()
 
 	fakeClient, shipperclientset, _, fakeDynamicClientBuilder, shipperInformerFactory :=
@@ -139,7 +213,7 @@ func TestMissingRelease(t *testing.T) {
 func TestClientError(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
 
-	cluster := loadCluster()
+	cluster := loadCluster("minikube-a")
 	installationTarget := loadInstallationTarget()
 	release := loadRelease()
 
@@ -173,7 +247,7 @@ func TestClientError(t *testing.T) {
 
 	it := installationTarget.DeepCopy()
 	it.Status.Clusters = []*shipperV1.ClusterInstallationStatus{
-		{Name: "minikube", Status: shipperV1.InstallationStatusFailed, Message: "client error"},
+		{Name: "minikube-a", Status: shipperV1.InstallationStatusFailed, Message: "client error"},
 	}
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
@@ -200,7 +274,7 @@ func TestClientError(t *testing.T) {
 func TestTargetClusterMissesGVK(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
 
-	cluster := loadCluster()
+	cluster := loadCluster("minikube-a")
 	installationTarget := loadInstallationTarget()
 	release := loadRelease()
 
@@ -233,7 +307,7 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 
 	it := installationTarget.DeepCopy()
 	it.Status.Clusters = []*shipperV1.ClusterInstallationStatus{
-		{Name: "minikube", Status: shipperV1.InstallationStatusFailed, Message: "error building resource client: GroupVersion \"v1\" not found"},
+		{Name: "minikube-a", Status: shipperV1.InstallationStatusFailed, Message: "error building resource client: GroupVersion \"v1\" not found"},
 	}
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
@@ -292,7 +366,7 @@ func TestManagementServerMissesCluster(t *testing.T) {
 
 	it := installationTarget.DeepCopy()
 	it.Status.Clusters = []*shipperV1.ClusterInstallationStatus{
-		{Name: "minikube", Status: shipperV1.InstallationStatusFailed, Message: "cluster.shipper.booking.com \"minikube\" not found"},
+		{Name: "minikube-a", Status: shipperV1.InstallationStatusFailed, Message: `cluster.shipper.booking.com "minikube-a" not found`},
 	}
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(

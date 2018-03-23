@@ -66,7 +66,7 @@ var apiResourceList = []*v1.APIResourceList{
 func TestInstaller(t *testing.T) {
 
 	release := loadRelease()
-	cluster := loadCluster()
+	cluster := loadCluster("minikube-a")
 	installer := NewInstaller(release)
 
 	fakeClient, _, fakeDynamicClient, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList)
@@ -168,7 +168,7 @@ func TestInstallerBrokenChart(t *testing.T) {
 	release := loadRelease()
 	release.Environment.Chart.Tarball = "deadbeef"
 
-	cluster := loadCluster()
+	cluster := loadCluster("minikube-a")
 	installer := NewInstaller(release)
 
 	fakeClient, _, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList)

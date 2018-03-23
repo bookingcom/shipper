@@ -80,10 +80,10 @@ func loadInstallationTarget() *shipperV1.InstallationTarget {
 }
 
 // loadCluster returns a cluster.
-func loadCluster() *shipperV1.Cluster {
+func loadCluster(name string) *shipperV1.Cluster {
 	return &shipperV1.Cluster{
 		ObjectMeta: v1.ObjectMeta{
-			Name: "minikube",
+			Name: name,
 		},
 		Status: shipperV1.ClusterStatus{
 			InService: true,
