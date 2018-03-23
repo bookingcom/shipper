@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strings"
 
 	"github.com/golang/glog"
 
@@ -16,9 +17,8 @@ import (
 	"k8s.io/helm/pkg/proto/hapi/chart"
 	"k8s.io/helm/pkg/timeconv"
 
-	"strings"
-
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/metrics/instrumentedclient"
 )
 
 func Download(chart shipperv1.Chart) (*bytes.Buffer, error) {
@@ -34,7 +34,7 @@ func Download(chart shipperv1.Chart) (*bytes.Buffer, error) {
 
 	glog.V(10).Infof("trying to download %s", u)
 
-	resp, err := http.Get(u.String()) // TODO retry, timeout
+	resp, err := instrumentedclient.Get(u.String()) // TODO retry
 	if err != nil {
 		return nil, err
 	}

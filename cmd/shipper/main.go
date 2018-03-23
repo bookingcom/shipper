@@ -25,6 +25,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller/shipmentorder"
 	"github.com/bookingcom/shipper/pkg/controller/strategy"
 	"github.com/bookingcom/shipper/pkg/controller/traffic"
+	"github.com/bookingcom/shipper/pkg/metrics/instrumentedclient"
 	shippermetrics "github.com/bookingcom/shipper/pkg/metrics/prometheus"
 
 	corev1 "k8s.io/api/core/v1"
@@ -188,13 +189,28 @@ func main() {
 	runControllers(cfg)
 }
 
+type glogStdLogger struct{}
+
+func (_ glogStdLogger) Println(v ...interface{}) {
+	// Prometheus only logs errors (which aren't fatal so we downgrade them to
+	// warnings).
+	glog.Warning(v...)
+}
+
 func runMetrics(cfg *metricsCfg) {
 	prometheus.MustRegister(cfg.wqMetrics.GetMetrics()...)
 	prometheus.MustRegister(cfg.restLatency.Summary, cfg.restResult.Counter)
+	prometheus.MustRegister(instrumentedclient.GetMetrics()...)
 
 	srv := http.Server{
-		Addr:    *metricsAddr,
-		Handler: promhttp.Handler(),
+		Addr: *metricsAddr,
+		Handler: promhttp.HandlerFor(
+			prometheus.DefaultGatherer,
+			promhttp.HandlerOpts{
+				ErrorHandling: promhttp.ContinueOnError,
+				ErrorLog:      glogStdLogger{},
+			},
+		),
 	}
 	srv.ListenAndServe()
 }
