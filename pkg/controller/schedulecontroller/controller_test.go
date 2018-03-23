@@ -39,7 +39,7 @@ func newController(fixtures ...runtime.Object) (*Controller, *shipperfake.Client
 
 func TestControllerComputeTargetClusters(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster()
+	cluster := loadCluster("minikube-a")
 	release := loadRelease()
 	fixtures := []runtime.Object{cluster, release}
 
@@ -66,7 +66,7 @@ func TestControllerComputeTargetClusters(t *testing.T) {
 
 func TestControllerCreateAssociatedObjects(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster()
+	cluster := loadCluster("minikube-a")
 	release := loadRelease()
 	release.Environment.Clusters = []string{cluster.GetName()}
 	fixtures := []runtime.Object{release, cluster}
@@ -95,7 +95,7 @@ func TestControllerCreateAssociatedObjects(t *testing.T) {
 
 func TestControllerCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster()
+	cluster := loadCluster("minikube-a")
 	release := loadRelease()
 	release.Environment.Clusters = []string{cluster.GetName()}
 	installationtarget := &shipperV1.InstallationTarget{
@@ -130,7 +130,7 @@ func TestControllerCreateAssociatedObjectsDuplicateInstallationTarget(t *testing
 
 func TestControllerCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster()
+	cluster := loadCluster("minikube-a")
 	release := loadRelease()
 	release.Environment.Clusters = []string{cluster.GetName()}
 	traffictarget := &shipperV1.TrafficTarget{
@@ -165,7 +165,7 @@ func TestControllerCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 
 func TestControllerCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster()
+	cluster := loadCluster("minikube-a")
 	release := loadRelease()
 	release.Environment.Clusters = []string{cluster.GetName()}
 	capacitytarget := &shipperV1.CapacityTarget{

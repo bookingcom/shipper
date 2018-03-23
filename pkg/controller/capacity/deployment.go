@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/golang/glog"
 
@@ -191,6 +192,7 @@ func (c *Controller) updateStatus(capacityTarget *shipperv1.CapacityTarget, clus
 	}
 
 	capacityTargetStatus.Clusters = append(capacityTargetStatus.Clusters, clusterStatus)
+	sort.Sort(byClusterName(capacityTargetStatus.Clusters))
 
 	// doing this weird map assignment because we only want to
 	// update the "status" field, and Kubernetes expects a

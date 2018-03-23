@@ -1,6 +1,8 @@
 package schedulecontroller
 
 import (
+	"sort"
+
 	"github.com/golang/glog"
 	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
@@ -73,6 +75,7 @@ func (c *Scheduler) Clusters() []string {
 }
 
 func (c *Scheduler) SetClusters(clusters []string) {
+	sort.Strings(clusters)
 	c.Release.Environment.Clusters = clusters
 }
 

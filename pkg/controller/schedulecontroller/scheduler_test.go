@@ -1,6 +1,7 @@
 package schedulecontroller
 
 import (
+	"fmt"
 	"io/ioutil"
 	"path/filepath"
 	"testing"
@@ -35,8 +36,9 @@ func loadRelease() *shipperV1.Release {
 	}
 }
 
-func loadCluster() *shipperV1.Cluster {
-	if obj, err := loadObject(&shipperV1.Cluster{}, "testdata", "cluster.yaml"); err != nil {
+func loadCluster(name string) *shipperV1.Cluster {
+	fileName := fmt.Sprintf("cluster-%s.yaml", name)
+	if obj, err := loadObject(&shipperV1.Cluster{}, "testdata", fileName); err != nil {
 		panic(err)
 	} else {
 		return obj.(*shipperV1.Cluster)
@@ -67,15 +69,56 @@ func newScheduler(
 // persisting it under .status.environment.clusters.
 func TestComputeTargetClusters(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster()
+	clusterA := loadCluster("minikube-a")
+	clusterB := loadCluster("minikube-b")
 	release := loadRelease()
-	fixtures := []runtime.Object{cluster, release}
+	fixtures := []runtime.Object{clusterA, clusterB, release}
 
 	// Expected values. The release should have, at the end of the business
-	// logic, a list of clusters containing the sole cluster we've added to
-	// the client.
+	// logic, a list of clusters containing all clusters we've added to
+	// the client in alphabetical order.
 	expected := release.DeepCopy()
-	expected.Environment.Clusters = []string{cluster.GetName()}
+	expected.Environment.Clusters = []string{
+		clusterA.GetName(),
+		clusterB.GetName(),
+	}
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewUpdateAction(
+			shipperV1.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			expected),
+	}
+
+	// Business logic...
+	c, clientset := newScheduler(release, fixtures)
+	if err := c.scheduleRelease(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Check actions
+	filteredActions := filterActions(clientset.Actions(), []string{"update"}, []string{"releases"})
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
+}
+
+// TestComputeTargetClustersSkipUnscheduled tests the first part of the cluster scheduling,
+// which is find out which clusters the release must be installed, and
+// persisting it under .status.environment.clusters but skipping unschedulable
+// clusters this time.
+func TestComputeTargetClustersSkipUnscheduled(t *testing.T) {
+	// Fixtures
+	clusterA := loadCluster("minikube-a")
+	clusterB := loadCluster("minikube-b")
+	clusterB.Spec.Unschedulable = true
+	release := loadRelease()
+	fixtures := []runtime.Object{clusterA, clusterB, release}
+
+	// Expected values. The release should have, at the end of the business
+	// logic, a list of clusters containing the schedulable cluster we've
+	// added to the client.
+	expected := release.DeepCopy()
+	expected.Environment.Clusters = []string{
+		clusterA.GetName(),
+	}
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
 			shipperV1.SchemeGroupVersion.WithResource("releases"),
@@ -118,7 +161,7 @@ func expectedActions(ns string, release *shipperV1.Release) []kubetesting.Action
 
 func TestCreateAssociatedObjects(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster()
+	cluster := loadCluster("minikube-a")
 	release := loadRelease()
 	release.Environment.Clusters = []string{cluster.GetName()}
 	fixtures := []runtime.Object{release, cluster}
@@ -149,7 +192,7 @@ func TestCreateAssociatedObjects(t *testing.T) {
 
 func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster()
+	cluster := loadCluster("minikube-a")
 	release := loadRelease()
 	release.Environment.Clusters = []string{cluster.GetName()}
 	installationtarget := &shipperV1.InstallationTarget{
@@ -186,7 +229,7 @@ func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 
 func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster()
+	cluster := loadCluster("minikube-a")
 	release := loadRelease()
 	release.Environment.Clusters = []string{cluster.GetName()}
 	traffictarget := &shipperV1.TrafficTarget{
@@ -223,7 +266,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 
 func TestCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster()
+	cluster := loadCluster("minikube-a")
 	release := loadRelease()
 	release.Environment.Clusters = []string{cluster.GetName()}
 	capacitytarget := &shipperV1.CapacityTarget{
