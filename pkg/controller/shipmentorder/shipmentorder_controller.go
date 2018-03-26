@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/chart"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
@@ -57,7 +58,8 @@ type Controller struct {
 	relSynced    cache.InformerSynced
 	relWorkqueue workqueue.RateLimitingInterface
 
-	recorder record.EventRecorder
+	recorder   record.EventRecorder
+	fetchChart chart.FetchFunc
 }
 
 // NewController returns a new ShipmentOrder controller.
@@ -65,6 +67,7 @@ func NewController(
 	shipperClientset clientset.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
 	recorder record.EventRecorder,
+	chartFetchFunc chart.FetchFunc,
 ) *Controller {
 	soInformer := shipperInformerFactory.Shipper().V1().ShipmentOrders()
 	relInformer := shipperInformerFactory.Shipper().V1().Releases()
@@ -80,7 +83,8 @@ func NewController(
 		relSynced:    relInformer.Informer().HasSynced,
 		relWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "shipmentorder_controller_releases"),
 
-		recorder: recorder,
+		recorder:   recorder,
+		fetchChart: chartFetchFunc,
 	}
 
 	enqueueRel := func(obj interface{}) { enqueueWorkItem(c.relWorkqueue, obj) }

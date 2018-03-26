@@ -16,7 +16,6 @@ import (
 
 // TestInstallOneCluster tests the installation process using the installation.Controller.
 func TestInstallOneCluster(t *testing.T) {
-
 	cluster := loadCluster("minikube-a")
 	release := loadRelease()
 	installationTarget := loadInstallationTarget()

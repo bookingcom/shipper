@@ -15,51 +15,7 @@ metadata:
     chart:
       name: reviews-api
       version: 0.0.1
-      tarball: |
-        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
-        OgAA
+      repoUrl: localhost
     shipmentOrder:
       clusterSelectors:
       - regions:

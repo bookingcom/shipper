@@ -1,10 +1,7 @@
 package shipmentorder
 
 import (
-	"bytes"
-	"encoding/base64"
 	"fmt"
-	"io"
 
 	"github.com/golang/glog"
 
@@ -13,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
+	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
@@ -108,12 +106,10 @@ func (c *Controller) findLatestRelease(ns string, selector labels.Selector) (*sh
 }
 
 func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) error {
-	chart, err := downloadChartForShipmentOrder(so)
+	chart, err := c.fetchChart(so.Spec.Chart)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to fetch chart for ShipmentOrder %q: %s", metaKey(so), err)
 	}
-
-	b64 := base64.StdEncoding.EncodeToString(chart.Bytes())
 
 	replicas, err := extractReplicasFromChart(chart, so)
 	if err != nil {
@@ -158,10 +154,10 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 				Labels:    labels,
 			},
 			Environment: shipperv1.ReleaseEnvironment{
-				Chart: shipperv1.EmbeddedChart{
+				Chart: shipperv1.Chart{
 					Name:    so.Spec.Chart.Name,
 					Version: so.Spec.Chart.Version,
-					Tarball: b64,
+					RepoURL: so.Spec.Chart.RepoURL,
 				},
 				ShipmentOrder: *so.Spec.DeepCopy(), // XXX use SerializedReference?
 				Replicas:      replicas,
@@ -236,7 +232,7 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 	return nil
 }
 
-func extractReplicasFromChart(chart io.Reader, so *shipperv1.ShipmentOrder) (int32, error) {
+func extractReplicasFromChart(chart *helmchart.Chart, so *shipperv1.ShipmentOrder) (int32, error) {
 	rendered, err := shipperchart.Render(chart, so.ObjectMeta.Name, so.ObjectMeta.Namespace, so.Spec.Values)
 	if err != nil {
 		return 0, fmt.Errorf("extract replicas for ShipmentOrder %q: %s", metaKey(so), err)
@@ -255,15 +251,6 @@ func extractReplicasFromChart(chart io.Reader, so *shipperv1.ShipmentOrder) (int
 	}
 
 	return *replicas, nil
-}
-
-func downloadChartForShipmentOrder(so *shipperv1.ShipmentOrder) (*bytes.Buffer, error) {
-	buf, err := shipperchart.Download(so.Spec.Chart)
-	if err != nil {
-		return nil, fmt.Errorf("download chart for ShipmentOrder %q: %s", metaKey(so), err)
-	}
-
-	return buf, nil
 }
 
 func releaseNameForShipmentOrder(so *shipperv1.ShipmentOrder) string {

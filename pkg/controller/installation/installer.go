@@ -27,32 +27,37 @@ type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *res
 // Installer is an object that knows how to install Helm charts directly
 // into Kubernetes clusters.
 type Installer struct {
+	fetchChart shipperChart.FetchFunc
+
 	Release *shipperV1.Release
 	Scheme  *runtime.Scheme
 }
 
 // NewInstaller returns a new Installer.
-func NewInstaller(release *shipperV1.Release) *Installer {
+func NewInstaller(chartFetchFunc shipperChart.FetchFunc, release *shipperV1.Release) *Installer {
 	return &Installer{
-		Release: release,
-		Scheme:  kubescheme.Scheme,
+		fetchChart: chartFetchFunc,
+		Release:    release,
+		Scheme:     kubescheme.Scheme,
 	}
 }
 
 // renderManifests returns a list of rendered manifests for the given release and
 // cluster, or an error.
-func (i *Installer) renderManifests(cluster *shipperV1.Cluster) ([]string, error) {
-	options := i.Release.Options(cluster)
-	chrt, err := i.Release.Chart()
-	if err != nil {
-		return nil, err
-	}
-	vals, err := i.Release.Values()
+func (i *Installer) renderManifests(_ *shipperV1.Cluster) ([]string, error) {
+	rel := i.Release
+	chart, err := i.fetchChart(rel.Environment.Chart)
 	if err != nil {
 		return nil, err
 	}
 
-	rendered, err := shipperChart.RenderChart(chrt, vals, options)
+	rendered, err := shipperChart.Render(
+		chart,
+		rel.GetName(),
+		rel.GetNamespace(),
+		rel.Environment.ShipmentOrder.Values,
+	)
+
 	for _, v := range rendered {
 		glog.V(10).Infof("Rendered object:\n%s", v)
 	}

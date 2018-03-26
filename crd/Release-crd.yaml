@@ -43,14 +43,11 @@ spec:
               required:
               - name
               - version
-              - tarball
               properties:
                 name:
                   type: string
                 version:
                   type: string
-                tarball:
-                  type: string # base64?
             sidecars:
               type: array
               items:

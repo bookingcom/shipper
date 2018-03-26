@@ -7,6 +7,7 @@ import (
 
 	"github.com/golang/glog"
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperChart "github.com/bookingcom/shipper/pkg/chart"
 	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperInformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperListers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
@@ -33,6 +34,8 @@ type Controller struct {
 	clusterLister             shipperListers.ClusterLister
 	releaseLister             shipperListers.ReleaseLister
 	dynamicClientBuilderFunc  DynamicClientBuilderFunc
+
+	chartFetchFunc shipperChart.FetchFunc
 }
 
 // NewController returns a new Installation controller.
@@ -41,6 +44,7 @@ func NewController(
 	shipperInformerFactory shipperInformers.SharedInformerFactory,
 	store clusterclientstore.ClientProvider,
 	dynamicClientBuilderFunc DynamicClientBuilderFunc,
+	chartFetchFunc shipperChart.FetchFunc,
 ) *Controller {
 
 	// Management Cluster InstallationTarget informer
@@ -57,6 +61,7 @@ func NewController(
 		installationTargetsSynced: installationTargetInformer.Informer().HasSynced,
 		dynamicClientBuilderFunc:  dynamicClientBuilderFunc,
 		workqueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "installation_controller_installationtargets"),
+		chartFetchFunc:            chartFetchFunc,
 	}
 
 	installationTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -183,7 +188,7 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 		)
 	}
 
-	handler := NewInstaller(release)
+	handler := NewInstaller(c.chartFetchFunc, release)
 
 	// The strategy here is try our best to install as many objects as possible
 	// in all target clusters. It is not the Installation Controller job to

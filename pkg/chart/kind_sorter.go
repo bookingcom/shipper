@@ -1,7 +1,7 @@
 package chart
 
 import (
-	"github.com/golang/glog"
+	"fmt"
 
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -86,7 +86,7 @@ type kindSorter struct {
 	extendedManifests []extendedManifest
 }
 
-func newKindSorter(m []string, s SortOrder) *kindSorter {
+func newKindSorter(m []string, s SortOrder) (*kindSorter, error) {
 	o := make(map[string]int, len(s))
 	for v, k := range s {
 		o[k] = v
@@ -95,9 +95,9 @@ func newKindSorter(m []string, s SortOrder) *kindSorter {
 	var ems []extendedManifest
 	for _, s := range m {
 		if decodedManifest, gvk, err := scheme.Codecs.UniversalDeserializer().Decode([]byte(s), nil, nil); err != nil {
-			glog.Fatalf("could not decode manifest: %s", err)
+			return nil, fmt.Errorf("could not decode manifest: %s", err)
 		} else if object, ok := decodedManifest.(metaV1.Object); !ok {
-			glog.Fatal("object does not implement metaV1.Object")
+			return nil, fmt.Errorf("object does not implement metaV1.Object")
 		} else {
 			e := extendedManifest{decodedManifest: decodedManifest, gvk: gvk, object: object, manifest: s}
 			ems = append(ems, e)
@@ -107,7 +107,7 @@ func newKindSorter(m []string, s SortOrder) *kindSorter {
 	return &kindSorter{
 		ordering:          o,
 		extendedManifests: ems,
-	}
+	}, nil
 }
 
 func (k *kindSorter) Manifests() []string {
