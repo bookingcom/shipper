@@ -32,6 +32,38 @@ const (
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
+// Application describes a deployable application
+type Application struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec ApplicationSpec `json:"spec"`
+	// Most recently observed status of the application
+	Status ApplicationStatus `json:"status"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// ApplicationList is a list of Applications. Mostly only useful for
+// admins: regular users interact with exactly one Application at once
+type ApplicationList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
+
+	Items []Application `json:"items"`
+}
+
+type ApplicationSpec struct {
+	Template ReleaseEnvironment `json:"template"`
+}
+
+type ApplicationStatus struct {
+	//Conditions []ApplicationCondition `json:"conditions"`
+}
+
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
 // ShipmentOrder describes a request to deploy an application
 type ShipmentOrder struct {
 	metav1.TypeMeta   `json:",inline"`

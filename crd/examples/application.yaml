@@ -9,8 +9,8 @@ spec:
       - local
       capabilities: []
     chart:
-      name: my-complex-app
-      version: 0.2.0
+      name: nginx
+      version: 0.1.0
       repoUrl: http://127.0.0.1:8879/charts
     strategy:
       name: vanguard

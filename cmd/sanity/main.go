@@ -33,6 +33,15 @@ func main() {
 	}
 
 	switch *resourceType {
+	case "app":
+		list, err := shipperClient.ShipperV1().Applications("default").List(metav1.ListOptions{})
+		if err != nil {
+			glog.Fatalf("Error listing %q: %v", *resourceType, err)
+		}
+
+		for _, item := range list.Items {
+			fmt.Printf("%s %q with this spec: %+v\n", item.Kind, item.Name, item.Spec)
+		}
 	case "so":
 		list, err := shipperClient.ShipperV1().ShipmentOrders("default").List(metav1.ListOptions{})
 		if err != nil {
@@ -97,6 +106,6 @@ func main() {
 			fmt.Printf("%s %q with this spec: %+v\n", item.Kind, item.Name, item.Spec)
 		}
 	default:
-		glog.Fatalf("unknown resource short name %q. try one of: so, rel, strat, it, ct, tt", *resourceType)
+		glog.Fatalf("unknown resource short name %q. try one of: app, so, rel, strat, it, ct, tt", *resourceType)
 	}
 }

@@ -16,6 +16,8 @@ limitations under the License.
 
 package v1
 
+type ApplicationExpansion interface{}
+
 type CapacityTargetExpansion interface{}
 
 type ClusterExpansion interface{}

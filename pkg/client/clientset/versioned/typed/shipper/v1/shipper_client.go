@@ -25,6 +25,7 @@ import (
 
 type ShipperV1Interface interface {
 	RESTClient() rest.Interface
+	ApplicationsGetter
 	CapacityTargetsGetter
 	ClustersGetter
 	InstallationTargetsGetter
@@ -37,6 +38,10 @@ type ShipperV1Interface interface {
 // ShipperV1Client is used to interact with features provided by the shipper.booking.com group.
 type ShipperV1Client struct {
 	restClient rest.Interface
+}
+
+func (c *ShipperV1Client) Applications(namespace string) ApplicationInterface {
+	return newApplications(c, namespace)
 }
 
 func (c *ShipperV1Client) CapacityTargets(namespace string) CapacityTargetInterface {

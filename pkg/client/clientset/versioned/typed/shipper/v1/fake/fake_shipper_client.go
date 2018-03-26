@@ -26,6 +26,10 @@ type FakeShipperV1 struct {
 	*testing.Fake
 }
 
+func (c *FakeShipperV1) Applications(namespace string) v1.ApplicationInterface {
+	return &FakeApplications{c, namespace}
+}
+
 func (c *FakeShipperV1) CapacityTargets(namespace string) v1.CapacityTargetInterface {
 	return &FakeCapacityTargets{c, namespace}
 }
