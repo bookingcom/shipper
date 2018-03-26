@@ -47,7 +47,7 @@ func (s *Executor) event(obj runtime.Object, format string, args ...interface{})
 // successful but no modifications are required.
 func (s *Executor) execute() ([]ExecutorResult, error) {
 
-	strategy := getStrategy(string(s.contender.release.Environment.ShipmentOrder.Strategy))
+	strategy := getStrategy(string(s.contender.release.Environment.Strategy))
 	targetStep := uint(s.contender.release.Spec.TargetStep)
 
 	strategyStep, err := getStrategyStep(strategy, int(targetStep))

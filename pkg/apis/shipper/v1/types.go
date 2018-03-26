@@ -235,17 +235,26 @@ type ReleaseStatus struct {
 }
 
 type ReleaseEnvironment struct {
-	Clusters      []string          `json:"clusters"`
-	Chart         Chart             `json:"chart"`
-	ShipmentOrder ShipmentOrderSpec `json:"shipmentOrder"`
-	Sidecars      []Sidecar         `json:"sidecars"`
-	Replicas      int32             `json:"replicas"`
-}
+	// Chart spec: name, version, repoURL
+	Chart Chart `json:"chart"`
+	// the inlined "values.yaml" to apply to the chart when rendering it
+	// XXX pointer here means it's null-able, do we want that?
+	Values *ChartValues `json:"values"`
 
-type EmbeddedShipmentOrder struct {
+	// how v2 gets the traffic
+	Strategy ReleaseStrategy `json:"strategy"`
+
+	// set of sidecars to inject into the chart on rendering
+	Sidecars []Sidecar `json:"sidecars"`
+
+	// selectors for target clusters for the deployment
+	// XXX what are the semantics when the field is empty/omitted?
 	ClusterSelectors []ClusterSelector `json:"clusterSelectors"`
-	Strategy         string            `json:"strategy"`
-	Values           *ChartValues      `json:"values"`
+
+	// TODO(btyler) should probably be an annotation
+	Replicas int32 `json:"replicas"`
+	// TODO(btyler) should probably also be an annotation
+	Clusters []string `json:"clusters"`
 }
 
 type Sidecar struct {

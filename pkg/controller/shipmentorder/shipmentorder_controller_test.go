@@ -72,8 +72,13 @@ func TestShippingToShipped(t *testing.T) {
 		Version: so.Spec.Chart.Version,
 		RepoURL: so.Spec.Chart.RepoURL,
 	}
-	newRel.Environment.ShipmentOrder = so.DeepCopy().Spec
+	newRel.Environment.Strategy = so.Spec.Strategy
 	newRel.Environment.Replicas = int32(12) // set in the chart
+	newRel.Environment.ClusterSelectors = append(
+		newRel.Environment.ClusterSelectors,
+		so.Spec.ClusterSelectors...,
+	)
+
 	newRel.Status.Phase = shipperv1.ReleasePhaseWaitingForScheduling
 	newRel.Status.Predecessor = &corev1.ObjectReference{
 		Kind:       oldRel.Kind,
@@ -253,6 +258,7 @@ func newShipmentOrder(phase shipperv1.ShipmentOrderPhase) *shipperv1.ShipmentOrd
 					"app": "shipmentorder-controller-test",
 				},
 			},
+			Values: &shipperv1.ChartValues{},
 		},
 		Status: shipperv1.ShipmentOrderStatus{
 			Phase: phase,
@@ -273,9 +279,11 @@ func newRelease(name string) *shipperv1.Release {
 				},
 			},
 			Environment: shipperv1.ReleaseEnvironment{
-				Chart:         shipperv1.Chart{},
-				ShipmentOrder: shipperv1.ShipmentOrderSpec{},
-				Replicas:      int32(21),
+				Chart:            shipperv1.Chart{},
+				Strategy:         "foobar",
+				ClusterSelectors: []shipperv1.ClusterSelector{},
+				Values:           &shipperv1.ChartValues{},
+				Replicas:         int32(21),
 			},
 		},
 	}

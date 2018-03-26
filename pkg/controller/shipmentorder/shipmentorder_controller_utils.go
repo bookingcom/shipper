@@ -159,8 +159,8 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 					Version: so.Spec.Chart.Version,
 					RepoURL: so.Spec.Chart.RepoURL,
 				},
-				ShipmentOrder: *so.Spec.DeepCopy(), // XXX use SerializedReference?
-				Replicas:      replicas,
+				Strategy: so.Spec.Strategy,
+				Replicas: replicas,
 			},
 		},
 		Spec: shipperv1.ReleaseSpec{},
@@ -168,6 +168,16 @@ func (c *Controller) createReleaseForShipmentOrder(so *shipperv1.ShipmentOrder) 
 			Phase: shipperv1.ReleasePhaseWaitingForScheduling,
 		},
 	}
+
+	new.ReleaseMeta.Environment.Values = &shipperv1.ChartValues{}
+	if so.Spec.Values != nil {
+		so.Spec.Values.DeepCopyInto(new.ReleaseMeta.Environment.Values)
+	}
+
+	new.ReleaseMeta.Environment.ClusterSelectors = append(
+		new.ReleaseMeta.Environment.ClusterSelectors,
+		so.Spec.ClusterSelectors...,
+	)
 
 	pred, err = c.findLatestRelease(releaseNs, selector)
 	if err != nil {

@@ -55,7 +55,7 @@ func (i *Installer) renderManifests(_ *shipperV1.Cluster) ([]string, error) {
 		chart,
 		rel.GetName(),
 		rel.GetNamespace(),
-		rel.Environment.ShipmentOrder.Values,
+		rel.Environment.Values,
 	)
 
 	for _, v := range rendered {
