@@ -3,15 +3,16 @@ package installation
 import (
 	"testing"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
-	shippertesting "github.com/bookingcom/shipper/pkg/testing"
-
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	runtimeutil "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/record"
+
+	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
+	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
 // TestInstallOneCluster tests the installation process using the installation.Controller.
@@ -27,9 +28,10 @@ func TestInstallOneCluster(t *testing.T) {
 		fakeClient: fakeClient,
 		restConfig: &rest.Config{},
 	}
+	fakeRecorder := record.NewFakeRecorder(42)
 
 	c := newController(
-		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder)
+		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
 
 	if !c.processNextWorkItem() {
 		t.Fatal("Could not process work item")
@@ -92,9 +94,10 @@ func TestInstallMultipleClusters(t *testing.T) {
 		fakeClient: fakeClient,
 		restConfig: &rest.Config{},
 	}
+	fakeRecorder := record.NewFakeRecorder(42)
 
 	c := newController(
-		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder)
+		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
 
 	if !c.processNextWorkItem() {
 		t.Fatal("Could not process work item")
@@ -173,9 +176,10 @@ func TestMissingRelease(t *testing.T) {
 		fakeClient: fakeClient,
 		restConfig: &rest.Config{},
 	}
+	fakeRecorder := record.NewFakeRecorder(42)
 
 	c := newController(
-		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder)
+		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
 
 	notFoundError := "error syncing \"reviews-api/0.0.1\": release.shipper.booking.com \"0.0.1\" not found"
 	handleErrors := 0
@@ -224,9 +228,10 @@ func TestClientError(t *testing.T) {
 		restConfig:          &rest.Config{},
 		getClientShouldFail: true,
 	}
+	fakeRecorder := record.NewFakeRecorder(42)
 
 	c := newController(
-		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder)
+		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
 
 	handleErrors := 0
 	runtimeutil.ErrorHandlers = []func(error){
@@ -284,9 +289,10 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 		fakeClient: fakeClient,
 		restConfig: &rest.Config{},
 	}
+	fakeRecorder := record.NewFakeRecorder(42)
 
 	c := newController(
-		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder)
+		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
 
 	handleErrors := 0
 	runtimeutil.ErrorHandlers = []func(error){
@@ -343,9 +349,10 @@ func TestManagementServerMissesCluster(t *testing.T) {
 		fakeClient: fakeClient,
 		restConfig: &rest.Config{},
 	}
+	fakeRecorder := record.NewFakeRecorder(42)
 
 	c := newController(
-		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder)
+		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
 
 	handleErrors := 0
 	runtimeutil.ErrorHandlers = []func(error){

@@ -6,12 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	"github.com/bookingcom/shipper/pkg/chart"
-	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
-	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	"github.com/bookingcom/shipper/pkg/clusterclientstore"
-
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -25,6 +19,13 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/record"
+
+	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/chart"
+	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
+	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 )
 
 var chartFetchFunc = chart.FetchRemoteWithCache("testdata/chart-cache", chart.DefaultCacheLimit)
@@ -134,9 +135,11 @@ func newController(
 	shipperInformerFactory shipperinformers.SharedInformerFactory,
 	fakeClientProvider clusterclientstore.ClientProvider,
 	fakeDynamicClientBuilder DynamicClientBuilderFunc,
+	fakeRecorder record.EventRecorder,
 ) *Controller {
 	c := NewController(
 		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, chartFetchFunc,
+		fakeRecorder,
 	)
 
 	stopCh := make(chan struct{})

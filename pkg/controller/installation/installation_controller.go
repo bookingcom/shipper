@@ -6,20 +6,25 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipperChart "github.com/bookingcom/shipper/pkg/chart"
-	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	shipperInformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	shipperListers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
-	"github.com/bookingcom/shipper/pkg/clusterclientstore"
+
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+
+	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperChart "github.com/bookingcom/shipper/pkg/chart"
+	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shipperInformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	shipperListers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 )
+
+const AgentName = "installation-controller"
 
 // Controller is a Kubernetes controller that processes InstallationTarget
 // objects.
@@ -34,8 +39,8 @@ type Controller struct {
 	clusterLister             shipperListers.ClusterLister
 	releaseLister             shipperListers.ReleaseLister
 	dynamicClientBuilderFunc  DynamicClientBuilderFunc
-
-	chartFetchFunc shipperChart.FetchFunc
+	chartFetchFunc            shipperChart.FetchFunc
+	recorder                  record.EventRecorder
 }
 
 // NewController returns a new Installation controller.
@@ -45,6 +50,7 @@ func NewController(
 	store clusterclientstore.ClientProvider,
 	dynamicClientBuilderFunc DynamicClientBuilderFunc,
 	chartFetchFunc shipperChart.FetchFunc,
+	recorder record.EventRecorder,
 ) *Controller {
 
 	// Management Cluster InstallationTarget informer
@@ -62,6 +68,7 @@ func NewController(
 		dynamicClientBuilderFunc:  dynamicClientBuilderFunc,
 		workqueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "installation_controller_installationtargets"),
 		chartFetchFunc:            chartFetchFunc,
+		recorder:                  recorder,
 	}
 
 	installationTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{

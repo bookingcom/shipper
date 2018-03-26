@@ -452,13 +452,13 @@ func startInstallationController(cfg *cfg) (bool, error) {
 		return false, nil
 	}
 
-	// does not use a recorder yet
 	c := installation.NewController(
 		cfg.shipperClient,
 		cfg.shipperInformerFactory,
 		cfg.store,
 		dynamicClientBuilderFunc,
 		cfg.chartFetchFunc,
+		cfg.recorder(installation.AgentName),
 	)
 
 	cfg.wg.Add(1)
