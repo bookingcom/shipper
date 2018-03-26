@@ -5,19 +5,24 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+
+	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+const AgentName = "strategy-controller"
 
 type Controller struct {
 	clientset                 shipperclientset.Interface
@@ -31,12 +36,14 @@ type Controller struct {
 	installationTargetsSynced cache.InformerSynced
 	dynamicClientPool         dynamic.ClientPool
 	workqueue                 workqueue.RateLimitingInterface
+	recorder                  record.EventRecorder
 }
 
 func NewController(
 	shipperClient shipperclientset.Interface,
 	informerFactory informers.SharedInformerFactory,
 	dynamicClientPool dynamic.ClientPool,
+	recorder record.EventRecorder,
 ) *Controller {
 	releaseInformer := informerFactory.Shipper().V1().Releases()
 	capacityTargetInformer := informerFactory.Shipper().V1().CapacityTargets()
@@ -55,6 +62,7 @@ func NewController(
 		installationTargetsSynced: installationTargetInformer.Informer().HasSynced,
 		workqueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "strategy_controller_releases"),
 		dynamicClientPool:         dynamicClientPool,
+		recorder:                  recorder,
 	}
 
 	releaseInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{

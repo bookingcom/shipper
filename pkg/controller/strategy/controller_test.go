@@ -6,17 +6,18 @@ import (
 	"testing"
 	"time"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
-	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	shippertesting "github.com/bookingcom/shipper/pkg/testing"
-
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubetesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/record"
+
+	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
+	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
 func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.T) {
@@ -419,7 +420,9 @@ func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerF
 		Fake: f.client.Fake,
 	}
 
-	c := NewController(f.client, shipperInformerFactory, f.clientPool)
+	fakeRecorder := record.NewFakeRecorder(42)
+
+	c := NewController(f.client, shipperInformerFactory, f.clientPool, fakeRecorder)
 
 	return c, shipperInformerFactory
 }

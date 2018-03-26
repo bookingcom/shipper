@@ -418,11 +418,11 @@ func startStrategyController(cfg *cfg) (bool, error) {
 		return false, nil
 	}
 
-	// does not use a recorder yet
 	c := strategy.NewController(
 		cfg.shipperClient,
 		cfg.shipperInformerFactory,
 		dynamic.NewDynamicClientPool(cfg.restCfg),
+		cfg.recorder(strategy.AgentName),
 	)
 
 	cfg.wg.Add(1)
