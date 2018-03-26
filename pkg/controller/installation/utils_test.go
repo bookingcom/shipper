@@ -7,6 +7,7 @@ import (
 	"time"
 
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/chart"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
@@ -25,6 +26,8 @@ import (
 	"k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
 )
+
+var chartFetchFunc = chart.FetchRemoteWithCache("testdata/chart-cache", chart.DefaultCacheLimit)
 
 // FakeClientProvider implements clusterclientstore.ClientProvider
 type FakeClientProvider struct {
@@ -133,7 +136,8 @@ func newController(
 	fakeDynamicClientBuilder DynamicClientBuilderFunc,
 ) *Controller {
 	c := NewController(
-		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder)
+		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, chartFetchFunc,
+	)
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
@@ -148,4 +152,8 @@ func newController(
 	)
 
 	return c
+}
+
+func newInstaller(release *shipperV1.Release) *Installer {
+	return NewInstaller(chartFetchFunc, release)
 }

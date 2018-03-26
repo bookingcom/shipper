@@ -67,7 +67,7 @@ func TestInstaller(t *testing.T) {
 
 	release := loadRelease()
 	cluster := loadCluster("minikube-a")
-	installer := NewInstaller(release)
+	installer := newInstaller(release)
 
 	fakeClient, _, fakeDynamicClient, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList)
 
@@ -162,19 +162,38 @@ func TestInstaller(t *testing.T) {
 	}
 }
 
-// TestInstallerBrokenChart tests if the installation process fails when the
+// TestInstallerBrokenChartTarball tests if the installation process fails when the
 // release contains an invalid serialized chart.
-func TestInstallerBrokenChart(t *testing.T) {
+func TestInstallerBrokenChartTarball(t *testing.T) {
 	release := loadRelease()
-	release.Environment.Chart.Tarball = "deadbeef"
+	// there is a reviews-api-invalid-tarball.tgz in testdata which contains invalid deployment and service templates
+	release.Environment.Chart.Version = "invalid-tarball"
 
 	cluster := loadCluster("minikube-a")
-	installer := NewInstaller(release)
+	installer := newInstaller(release)
 
 	fakeClient, _, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList)
 
 	restConfig := &rest.Config{}
 	if err := installer.installRelease(cluster, fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
 		t.Fatal("installRelease should fail, invalid tarball")
+	}
+}
+
+// TestInstallerBrokenChartContents tests if the installation process fails when the
+// release contains a valid chart tarball with invalid K8s object templates
+func TestInstallerBrokenChartContents(t *testing.T) {
+	release := loadRelease()
+	// there is a reviews-api-invalid-k8s-objects.tgz in testdata which contains invalid deployment and service templates
+	release.Environment.Chart.Version = "invalid-k8s-objects"
+
+	cluster := loadCluster("minikube-a")
+	installer := newInstaller(release)
+
+	fakeClient, _, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList)
+
+	restConfig := &rest.Config{}
+	if err := installer.installRelease(cluster, fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
+		t.Fatal("installRelease should fail, invalid k8s objects")
 	}
 }

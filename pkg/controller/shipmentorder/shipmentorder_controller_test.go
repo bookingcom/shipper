@@ -14,6 +14,7 @@ import (
 	"k8s.io/helm/pkg/repo/repotest"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/chart"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
@@ -66,11 +67,10 @@ func TestShippingToShipped(t *testing.T) {
 
 	// Expect a new Release created with all the fields set correctly.
 	newRel := newRelease(relName)
-	newRel.Environment.Chart = shipperv1.EmbeddedChart{
+	newRel.Environment.Chart = shipperv1.Chart{
 		Name:    so.Spec.Chart.Name,
 		Version: so.Spec.Chart.Version,
-		// `base64 -i pkg/controller/shipmentorder/testdata/simple-0.0.1.tgz` on OS X
-		Tarball: `H4sIFAAAAAAA/ykAK2FIUjBjSE02THk5NWIzVjBkUzVpWlM5Nk9WVjZNV2xqYW5keVRRbz1IZWxtAOyUz077MAzHd85T+AW2pt26n9TrjyMSByTuXmtYhJNGiVdpb4/SbWUrB5AYoEn9XNLGf2Ir+Toa65my/1sMstij5dn10Vrrf2XZr1rr8arzZTF89/t5sVwVM/iBUj6yi4JhpvV384ybuxHQmycK0bSugi5XDcU6GC/9/+PWeEtOHkJDAerWSWiZKYBQFEDvlUNLFRzekOpOefRCL3L1151NfIWj/oWsZxSKWUOe23269quNg8/0Xxbrkf7L1Xo96f83eDWuqeBuuHR1PhDQ+5h1ubIk2KBgpQAuJA/AuCGOyQDJfbBET3XaDeTZ1BgryAsFEImpljYcAixKvb0/y3CZA+D0LI/uZ2Uk+CJyHAtwqiGRphcaR2Hwnx9bsWjckMJYfKEKkL1xVPWKkMFYt9aia94PnEO2MS4TNAzzZ8ga6jK3Y55m38TExA3wFgAA//9zRQvpAAwAAA==`,
+		RepoURL: so.Spec.Chart.RepoURL,
 	}
 	newRel.Environment.ShipmentOrder = so.DeepCopy().Spec
 	newRel.Environment.Replicas = int32(12) // set in the chart
@@ -273,7 +273,7 @@ func newRelease(name string) *shipperv1.Release {
 				},
 			},
 			Environment: shipperv1.ReleaseEnvironment{
-				Chart:         shipperv1.EmbeddedChart{},
+				Chart:         shipperv1.Chart{},
 				ShipmentOrder: shipperv1.ShipmentOrderSpec{},
 				Replicas:      int32(21),
 			},
@@ -298,7 +298,7 @@ func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerF
 	const noResyncPeriod time.Duration = 0
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(f.client, noResyncPeriod)
 
-	c := NewController(f.client, shipperInformerFactory, record.NewFakeRecorder(42))
+	c := NewController(f.client, shipperInformerFactory, record.NewFakeRecorder(42), chart.FetchRemote())
 
 	return c, shipperInformerFactory
 }

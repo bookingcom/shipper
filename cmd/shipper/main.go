@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -14,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/bookingcom/shipper/pkg/chart"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
@@ -63,6 +65,7 @@ var (
 	disabledControllers = flag.String("disable", "", "comma-seperated list of controllers to disable")
 	workers             = flag.Int("workers", 2, "Number of workers to start for each controller.")
 	metricsAddr         = flag.String("metrics-addr", ":8889", "Addr to expose /metrics on.")
+	chartCacheDir       = flag.String("cachedir", filepath.Join(os.TempDir(), "chart-cache"), "location for the local cache of downloaded charts")
 )
 
 type metricsCfg struct {
@@ -86,7 +89,8 @@ type cfg struct {
 
 	recorder func(string) record.EventRecorder
 
-	store *clusterclientstore.Store
+	store          *clusterclientstore.Store
+	chartFetchFunc chart.FetchFunc
 
 	certPath, keyPath string
 	ns                string
@@ -158,7 +162,8 @@ func main() {
 
 		recorder: recorder,
 
-		store: store,
+		store:          store,
+		chartFetchFunc: chart.FetchRemoteWithCache(*chartCacheDir, chart.DefaultCacheLimit),
 
 		certPath: *certPath,
 		keyPath:  *keyPath,
@@ -348,6 +353,7 @@ func startShipmentOrderController(cfg *cfg) (bool, error) {
 		cfg.shipperClient,
 		cfg.shipperInformerFactory,
 		cfg.recorder(shipmentorder.AgentName),
+		cfg.chartFetchFunc,
 	)
 
 	cfg.wg.Add(1)
@@ -452,6 +458,7 @@ func startInstallationController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		cfg.store,
 		dynamicClientBuilderFunc,
+		cfg.chartFetchFunc,
 	)
 
 	cfg.wg.Add(1)
