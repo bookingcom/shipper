@@ -271,7 +271,7 @@ func buildContender() *releaseInfo {
 				Namespace: namespace,
 			},
 			Environment: v1.ReleaseEnvironment{
-				Strategy: "vanguard",
+				Strategy: v1.ReleaseStrategy{Name: "vanguard"},
 			},
 		},
 		Status: v1.ReleaseStatus{

@@ -44,6 +44,9 @@ spec:
                     items:
                       type: string
             strategy:
-              type: string
+              type: object
+              properties:
+                name:
+                  type: string
             values:
               type: object

@@ -23,7 +23,8 @@ metadata:
       capabilities:
       - gpu
       - pci
-    strategy: vanguard
+    strategy:
+      name: vanguard
     values:
       perl:
         image:

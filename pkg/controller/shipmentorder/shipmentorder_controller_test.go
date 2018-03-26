@@ -252,7 +252,7 @@ func newShipmentOrder(phase shipperv1.ShipmentOrderPhase) *shipperv1.ShipmentOrd
 				Version: "0.0.1",
 				RepoURL: "http://127.0.0.1:8879/charts",
 			},
-			Strategy: shipperv1.ReleaseStrategyVanguard,
+			Strategy: shipperv1.ReleaseStrategy{Name: shipperv1.ReleaseStrategyVanguard},
 			ReleaseSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"app": "shipmentorder-controller-test",
@@ -280,7 +280,7 @@ func newRelease(name string) *shipperv1.Release {
 			},
 			Environment: shipperv1.ReleaseEnvironment{
 				Chart:            shipperv1.Chart{},
-				Strategy:         "foobar",
+				Strategy:         shipperv1.ReleaseStrategy{Name: "foobar"},
 				ClusterSelectors: []shipperv1.ClusterSelector{},
 				Values:           &shipperv1.ChartValues{},
 				Replicas:         int32(21),
