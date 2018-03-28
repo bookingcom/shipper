@@ -24,6 +24,10 @@ const (
 	InstallationStatusInstalled = "Installed"
 	InstallationStatusFailed    = "Failed"
 
+	ReleaseTemplateGenerationAnnotation = "shipper.booking.com/release.template.generation"
+	ReleaseClustersAnnotation           = "shipper.booking.com/release.clusters"
+	ReleaseReplicasAnnotation           = "shipper.booking.com/release.replicas"
+
 	SecretChecksumAnnotation    = "shipper.booking.com/cluster-secret.checksum"
 	SecretClusterNameAnnotation = "shipper.booking.com/cluster-secret.clusterName"
 

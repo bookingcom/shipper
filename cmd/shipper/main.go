@@ -20,6 +20,7 @@ import (
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
+	"github.com/bookingcom/shipper/pkg/controller/application"
 	"github.com/bookingcom/shipper/pkg/controller/capacity"
 	"github.com/bookingcom/shipper/pkg/controller/clustersecret"
 	"github.com/bookingcom/shipper/pkg/controller/installation"
@@ -45,6 +46,7 @@ import (
 )
 
 var controllers = []string{
+	"application",
 	"shipmentorder",
 	"clustersecret",
 	"schedule",
@@ -333,6 +335,7 @@ type initFunc func(*cfg) (bool, error)
 
 func buildInitializers() map[string]initFunc {
 	controllers := map[string]initFunc{}
+	controllers["application"] = startApplicationController
 	controllers["shipmentorder"] = startShipmentOrderController
 	controllers["clustersecret"] = startClusterSecretController
 	controllers["schedule"] = startScheduleController
@@ -341,6 +344,28 @@ func buildInitializers() map[string]initFunc {
 	controllers["capacity"] = startCapacityController
 	controllers["traffic"] = startTrafficController
 	return controllers
+}
+
+func startApplicationController(cfg *cfg) (bool, error) {
+	enabled := cfg.enabledControllers["application"]
+	if !enabled {
+		return false, nil
+	}
+
+	c := application.NewController(
+		cfg.shipperClient,
+		cfg.shipperInformerFactory,
+		cfg.recorder(application.AgentName),
+		cfg.chartFetchFunc,
+	)
+
+	cfg.wg.Add(1)
+	go func() {
+		c.Run(cfg.workers, cfg.stopCh)
+		cfg.wg.Done()
+	}()
+
+	return true, nil
 }
 
 func startShipmentOrderController(cfg *cfg) (bool, error) {
