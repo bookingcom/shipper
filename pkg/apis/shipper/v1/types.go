@@ -10,7 +10,9 @@ const (
 
 	PhaseLabel = "phase"
 
-	ReleaseLabel = "release"
+	ReleaseLabel                = "release"
+	AppLabel                    = "shipper-app"
+	ReleaseEnvironmentHashLabel = "shipper-release-hash"
 
 	ReleasePhaseWaitingForScheduling = "WaitingForScheduling"
 	ReleasePhaseWaitingForStrategy   = "WaitingForStrategy"
