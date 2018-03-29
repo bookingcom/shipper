@@ -14,6 +14,9 @@ const (
 	AppLabel                    = "shipper-app"
 	ReleaseEnvironmentHashLabel = "shipper-release-hash"
 
+	ReleaseRecordWaitingForObject = "WaitingForObject"
+	ReleaseRecordObjectCreated    = "ReleaseCreated"
+
 	ReleasePhaseWaitingForScheduling = "WaitingForScheduling"
 	ReleasePhaseWaitingForStrategy   = "WaitingForStrategy"
 	ReleasePhaseWaitingForCommand    = "WaitingForCommand"
@@ -64,7 +67,12 @@ type ApplicationSpec struct {
 }
 
 type ApplicationStatus struct {
-	//Conditions []ApplicationCondition `json:"conditions"`
+	History []*ReleaseRecord `json:"history"`
+}
+
+type ReleaseRecord struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
 }
 
 // +genclient

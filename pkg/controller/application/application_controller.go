@@ -98,24 +98,6 @@ func NewController(
 		fetchChart: chartFetchFunc,
 	}
 
-	enqueueRel := func(obj interface{}) { enqueueWorkItem(c.relWorkqueue, obj) }
-	relInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: enqueueRel,
-		UpdateFunc: func(_, new interface{}) {
-			// Not checking resource version here because we might need to fix the
-			// successor pointer even when there hasn't been a change to this particular
-			// Release.
-			newRel, newOk := new.(*shipperv1.Release)
-			if newOk && newRel.Status.Successor != nil {
-				enqueueRel(newRel)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			// enqueue predecessor if any
-
-		},
-	})
-
 	enqueueApp := func(obj interface{}) { enqueueWorkItem(c.appWorkqueue, obj) }
 	appInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: enqueueApp,
@@ -130,6 +112,24 @@ func NewController(
 			enqueueApp(new)
 		},
 		DeleteFunc: enqueueApp,
+	})
+
+	relInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: c.enqueueRel,
+		UpdateFunc: func(old, new interface{}) {
+			// Not checking resource version here because we might need to fix the
+			// successor pointer even when there hasn't been a change to this particular
+			// Release.
+			oldRel, oldOk := old.(*shipperv1.Release)
+			newRel, newOk := new.(*shipperv1.Release)
+			if oldOk && newOk && oldRel.ResourceVersion == newRel.ResourceVersion {
+				glog.V(6).Info("Received Release re-sync Update")
+				return
+			}
+
+			c.enqueueRel(newRel)
+		},
+		DeleteFunc: c.enqueueRel,
 	})
 
 	return c
@@ -152,7 +152,6 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.applicationWorker, time.Second, stopCh)
-		go wait.Until(c.releaseWorker, time.Second, stopCh)
 	}
 
 	glog.V(4).Info("Started Application controller")
@@ -162,11 +161,6 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 
 func (c *Controller) applicationWorker() {
 	for processNextWorkItem(c.appWorkqueue, c.syncApplication) {
-	}
-}
-
-func (c *Controller) releaseWorker() {
-	for processNextWorkItem(c.relWorkqueue, c.syncRelease) {
 	}
 }
 
@@ -203,6 +197,29 @@ func processNextWorkItem(wq workqueue.RateLimitingInterface, handler func(string
 	glog.V(6).Infof("Successfully synced %q", key)
 
 	return true
+}
+
+// translate a release update into an application update so that we catch deletes immediately
+func (c *Controller) enqueueRel(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+	rel, ok := obj.(*shipperv1.Release)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("%s is not a shipperv1.Release", key))
+		return
+	}
+
+	if len(rel.OwnerReferences) != 1 {
+		runtime.HandleError(fmt.Errorf("%s does not have a single owner", key))
+		return
+	}
+
+	owner := rel.OwnerReferences[0]
+
+	c.appWorkqueue.AddRateLimited(fmt.Sprintf("%s/%s", rel.GetNamespace(), owner.Name))
 }
 
 func enqueueWorkItem(wq workqueue.RateLimitingInterface, obj interface{}) {
@@ -243,121 +260,49 @@ func (c *Controller) syncApplication(key string) error {
 	return nil
 }
 
-func (c *Controller) syncRelease(key string) error {
-	ns, name, err := cache.SplitMetaNamespaceKey(key)
-	if err != nil {
-		return fmt.Errorf("invalid resource key: %q", key)
-	}
-
-	rel, err := c.relLister.Releases(ns).Get(name)
-	if err != nil {
-		// The Release resource may no longer exist, which is fine. We just stop
-		// processing.
-		if errors.IsNotFound(err) {
-			glog.V(6).Infof("Release %q has been deleted", key)
-			return nil
-		}
-
-		return err
-	}
-
-	if err := c.processRelease(rel); err != nil {
-		c.recorder.Event(rel, corev1.EventTypeWarning, reasonFailed, err.Error())
-		return err
-	}
-
-	return nil
-}
-
 // TODO: status and events updates
 func (c *Controller) processApplication(app *shipperv1.Application) error {
-	glog.V(6).Infof(`Application %q is %q`, metaKey(app), app.Status)
-	leadingSuccessor, err := c.traverseSuccessors(app.GetNamespace(), app.GetName())
-	if err != nil {
-		return err
-	}
+	glog.V(0).Infof(`Application %q is %q`, metaKey(app), app.Status)
+	latestReleaseRecord := c.getEndOfHistory(app)
 
 	// no releases present, so unconditionally trigger a deployment by creating a new release
-	if leadingSuccessor == nil {
+	if latestReleaseRecord == nil {
 		return c.createReleaseForApplication(app)
 	}
 
-	// traverseSuccessors returns the latest valid successor release. so, the
-	// pointer we have here points to a missing release: a dangling pointer. in
-	// this case we should wait for the release informer handlers to fix the
-	// situation after a resync
-	if leadingSuccessor.Status.Successor != nil {
-		return fmt.Errorf(
-			"processApplication got a leadingSuccessor (%q) with a dangling pointer; cannot work with this",
-			metaKey(leadingSuccessor),
-		)
-	}
-
-	// make sure the leadingSuccessor doesn't have any predecessor pointers targeting it (this means there's a newer release)
-	hasInbound, err := c.hasInboundPredecessorPointer(app.GetName(), leadingSuccessor)
+	latestRelease, err := c.relLister.Releases(app.GetNamespace()).Get(latestReleaseRecord.Name)
 	if err != nil {
-		return err
+		if errors.IsNotFound(err) {
+			// this means we failed to create the release after adding the historical entry; try again to create it.
+			if latestReleaseRecord.Status == shipperv1.ReleaseRecordWaitingForObject {
+				return c.createReleaseForApplication(app)
+			}
+
+			// otherwise our history is corrupt: we may be doing a 'crash abort'
+			// where the rolling-out-release was deleted, or there might just be
+			// some nonsense in history. In both cases we should reset the
+			// app.Spec.Template to match the latest existing release, and trim
+			// off any bad history entries before that good one.
+
+			// This prevents us from re-rolling a bad template (as in the
+			// 'crash abort' case) or leaving garbage in the history.
+			return c.rollbackAppTemplate(app)
+		}
+
+		return fmt.Errorf("latestRelease %s for app %q could not be fetched: %q", latestReleaseRecord.Name, metaKey(app), err)
 	}
 
-	if hasInbound {
-		return fmt.Errorf(
-			"processApplication got a leadingSuccessor (%q) with an inbound predecessor link: cannot work with this",
-			metaKey(leadingSuccessor),
-		)
+	// if our template is in sync with the current leading release, we have
+	// nothing to do this should probably also make sure that this release is
+	// active (state 'Installed' instead of 'Superseded'?) somehow if we've
+	// marched further back in time
+	if identicalEnvironments(app.Spec.Template, latestRelease.Environment) {
+		if latestReleaseRecord.Status == shipperv1.ReleaseRecordWaitingForObject {
+			return c.markReleaseCreated(latestRelease.GetName(), app)
+		}
+		return c.cleanHistory(app)
 	}
 
-	// if our template is in sync with the current leading release, we have nothing to do
-	// regardless of the state of the successor pointer
-	if identicalEnvironments(app.Spec.Template, leadingSuccessor.Environment) {
-		return nil
-	}
-
-	// no dangling pointer, _and_ our template is not the same, so we should
-	// trigger a new rollout by creating a new release
+	// our template is not the same, so we should trigger a new rollout by creating a new release
 	return c.createReleaseForApplication(app)
-}
-
-func (c *Controller) processRelease(rel *shipperv1.Release) error {
-	if rel.Status.Successor == nil {
-		glog.V(6).Infof("Release %q does not have a successor, skipping", metaKey(rel))
-		return nil
-	}
-
-	succ, err := c.relLister.Releases(rel.GetNamespace()).Get(rel.Status.Successor.Name)
-	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("check successor pointer for %q: %s", metaKey(rel), err)
-	}
-
-	validSuccessor := true
-	// TODO verify UID
-	if errors.IsNotFound(err) {
-		validSuccessor = false
-		glog.V(6).Infof("Release %q has a dangling successor pointer", metaKey(rel))
-	} else if succ.Status.Phase == shipperv1.ReleasePhaseAborted {
-		validSuccessor = false
-		glog.V(6).Infof("Release %q points to an aborted Release %q", metaKey(rel), metaKey(succ))
-	}
-
-	if validSuccessor {
-		glog.V(6).Infof("Release %q has a valid successor pointer to %q", metaKey(rel), metaKey(succ))
-		return nil
-	}
-
-	// NEVER modify objects from the store. It's a read-only, local cache.
-	rel = rel.DeepCopy()
-	rel.Status.Successor = nil
-	_, err = c.shipperClientset.ShipperV1().Releases(rel.GetNamespace()).Update(rel)
-	if err != nil {
-		return err
-	}
-
-	c.recorder.Eventf(
-		rel,
-		corev1.EventTypeNormal,
-		"ReleaseSuccessorFixed",
-		"Fixed successor pointer for Release %q",
-		metaKey(rel),
-	)
-
-	return nil
 }

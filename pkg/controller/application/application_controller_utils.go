@@ -8,110 +8,16 @@ import (
 
 	"github.com/golang/glog"
 
-	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	metatypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
 	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
 )
-
-// traverseSuccessors, given a namespace and an app name, finds the latest
-// Release by following release.status.successor links.
-// Returns an error if more than one Release is found. Returned Release can be
-// nil even if there's no error (i.e. no installed Releases).
-func (c *Controller) traverseSuccessors(ns string, appName string) (*shipperv1.Release, error) {
-	selector := labels.Set{
-		shipperv1.AppLabel: appName,
-	}.AsSelector()
-
-	releases, err := c.relLister.Releases(ns).List(selector)
-	if err != nil {
-		return nil, fmt.Errorf("find latest Release for %q in %q: %s", selector, ns, err)
-	}
-
-	if len(releases) == 0 {
-		return nil, nil
-	}
-
-	releasesByUID := map[metatypes.UID]*shipperv1.Release{}
-	seenPredecessors := map[metatypes.UID]bool{}
-	var start *shipperv1.Release
-	// find the single release with no predecessor: the start of the lineage
-	for _, r := range releases {
-		releasesByUID[r.GetUID()] = r
-		if r.Status.Predecessor != nil {
-			_, ok := seenPredecessors[r.Status.Predecessor.UID]
-			// prevent branches
-			// TODO(btyler) is this reasonable? do we _never_ have a branch of the tree?
-			if ok {
-				return nil, fmt.Errorf(
-					"Found at least two releases for app '%s/%s' with the same predecessor, %q",
-					ns, appName, r.Status.Predecessor.Name,
-				)
-			}
-			seenPredecessors[r.Status.Predecessor.UID] = true
-			continue
-		}
-
-		// prevent multiple independent graphs
-		if start != nil {
-			return nil, fmt.Errorf("Found at least two releases for app '%s/%s' without predecessors", ns, appName)
-		}
-		start = r
-	}
-
-	var head *shipperv1.Release
-	current := start
-	var i int
-	// traverse foward through the releases following the lineage.
-	// we expect a simple list: stopping at len(releases) + 1 gives us an
-	// indicator if we got trapped in a loop
-	for i = 0; i < len(releases)+1; i++ {
-		if current.Status.Successor == nil {
-			head = current
-			break
-		}
-		successor, ok := releasesByUID[current.Status.Successor.UID]
-		// I have a successor, but it isn't a known release: a dangling pointer
-		if !ok {
-			head = current
-			break
-		}
-		current = successor
-	}
-
-	if i >= len(releases) {
-		return nil, fmt.Errorf("Releases in namespace %q form a cyclic graph, not a linked list", ns)
-	}
-
-	return head, nil
-}
-
-func (c *Controller) hasInboundPredecessorPointer(appName string, release *shipperv1.Release) (bool, error) {
-	selector := labels.Set{
-		shipperv1.AppLabel: appName,
-	}.AsSelector()
-
-	releases, err := c.relLister.Releases(release.GetNamespace()).List(selector)
-	if err != nil {
-		return false, fmt.Errorf("hasInboundPredecessorPointer %q in %q: %s", selector, release.GetNamespace(), err)
-	}
-
-	for _, rel := range releases {
-		if rel.Status.Predecessor != nil {
-			if rel.Status.Predecessor.UID == release.GetUID() {
-				return true, nil
-			}
-		}
-	}
-
-	return false, nil
-}
 
 func (c *Controller) createReleaseForApplication(app *shipperv1.Application) error {
 	chart, err := c.fetchChart(app.Spec.Template.Chart)
@@ -147,12 +53,7 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application) err
 		shipperv1.ReleaseTemplateGenerationAnnotation: strconv.Itoa(generation),
 	}
 
-	var (
-		new  *shipperv1.Release
-		pred *shipperv1.Release
-	)
-
-	new = &shipperv1.Release{
+	new := &shipperv1.Release{
 		ReleaseMeta: shipperv1.ReleaseMeta{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        releaseName,
@@ -171,71 +72,34 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application) err
 		},
 	}
 
-	pred, err = c.traverseSuccessors(releaseNs, app.GetName())
+	// create the entry in release history in state 'WaitingForObject'
+	err = c.appendReleaseToAppHistory(releaseName, app)
 	if err != nil {
 		return err
 	}
 
-	ri := c.shipperClientset.ShipperV1().Releases(releaseNs)
-
-	// It's important that we do Update first. If the update fails, at least there
-	// won't be two Releases without a successor. Recovering from this would
-	// require reasoning about order of things e.g. based on timestamps. In a
-	// distributed system this can be complicated.
-
-	if pred != nil {
-		glog.V(4).Infof("Release %q is the predecessor of %q", releaseName, pred.GetName())
-
-		new.Status.Predecessor = &corev1.ObjectReference{
-			APIVersion: pred.APIVersion,
-			Kind:       pred.Kind,
-			Name:       pred.GetName(),
-			Namespace:  releaseNs,
-		}
-
-		pred.Status.Successor = &corev1.ObjectReference{
-			APIVersion: new.APIVersion,
-			Kind:       new.Kind,
-			Name:       releaseName,
-			Namespace:  releaseNs,
-		}
-
-		// TODO change to UpdateStatus when kubernetes#38113 is merged.
-		// TODO Patch
-		if _, err = ri.Update(pred); err != nil {
-			// If Update failed, we bail out with pred untouched and new is not created.
-			// No recovery needed.
-			return fmt.Errorf("set successor for Release %q: %s", metaKey(pred), err)
-		}
-	} else {
-		// Must be a first deployment of a new app.
-		glog.V(4).Infof("No predecessor for Release %q", metaKey(new))
+	var existingReleaseObject *shipperv1.Release
+	existingReleaseObject, err = c.relLister.Releases(app.GetNamespace()).Get(releaseName)
+	if err != nil && !errors.IsNotFound(err) {
+		return err
 	}
 
-	new, err = ri.Create(new)
+	// this likely means we failed to mark the release created in a previous run
+	if existingReleaseObject != nil {
+		return c.markReleaseCreated(releaseName, app)
+	}
+
+	_, err = c.shipperClientset.ShipperV1().Releases(releaseNs).Create(new)
 	if err != nil {
 		// If Update went through but Create failed, we have pred pointing to a
 		// Release that does not exist. We can recover from this by fixing the
 		// dangling successor pointer.
 		// Requeue pred directly so that we don't need to wait a full re-sync period
 		// before progress can be made.
-		if pred != nil {
-			c.relWorkqueue.AddRateLimited(metaKey(pred))
-		}
 		return fmt.Errorf("create Release for Application %q: %s", metaKey(app), err)
 	}
 
-	/*
-		c.recorder.Eventf(
-			new,
-			corev1.EventTypeNormal,
-			reasonShipping,
-			"Created Release %q",
-			releaseName,
-		)
-	*/
-
-	return nil
+	return c.markReleaseCreated(releaseName, app)
 }
 
 func (c *Controller) releaseNameForApplication(app *shipperv1.Application) (string, int, error) {
@@ -273,6 +137,117 @@ func (c *Controller) releaseNameForApplication(app *shipperv1.Application) (stri
 
 	newGeneration := highestObserved + 1
 	return fmt.Sprintf("%s-%s-%d", app.GetName(), hash, newGeneration), newGeneration, nil
+}
+
+func (c *Controller) appendReleaseToAppHistory(releaseName string, app *shipperv1.Application) error {
+	var last *shipperv1.ReleaseRecord
+	if len(app.Status.History) > 0 {
+		last = app.Status.History[len(app.Status.History)-1]
+	}
+
+	// already here
+	if last != nil && last.Name == releaseName {
+		return nil
+	}
+
+	app.Status.History = append(app.Status.History, &shipperv1.ReleaseRecord{
+		Name:   releaseName,
+		Status: shipperv1.ReleaseRecordWaitingForObject,
+	})
+
+	_, err := c.shipperClientset.ShipperV1().Applications(app.Namespace).Update(app)
+	return err
+}
+
+func (c *Controller) cleanHistory(app *shipperv1.Application) error {
+	cleaned := make([]*shipperv1.ReleaseRecord, 0, len(app.Status.History))
+	changed := false
+	for _, record := range app.Status.History {
+		_, err := c.relLister.Releases(app.GetNamespace()).Get(record.Name)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				changed = true
+				continue
+			}
+			return err
+		}
+
+		cleaned = append(cleaned, record)
+	}
+
+	if !changed {
+		return nil
+	}
+
+	app.Status.History = cleaned
+	_, err := c.shipperClientset.ShipperV1().Applications(app.Namespace).Update(app)
+	return err
+}
+
+func (c *Controller) markReleaseCreated(releaseName string, app *shipperv1.Application) error {
+	changed := false
+	glog.V(0).Infof("marking %s as created on %s", releaseName, metaKey(app))
+	for _, record := range app.Status.History {
+		glog.V(0).Infof("comparing %v to %v, %v", releaseName, record.Name, releaseName == record.Name)
+		if record.Name == releaseName {
+			record.Status = shipperv1.ReleaseRecordObjectCreated
+			changed = true
+		}
+	}
+
+	if !changed {
+		return fmt.Errorf(
+			"could not mark %q as created: it does not have a record in app %q history",
+			releaseName, metaKey(app),
+		)
+	}
+
+	_, err := c.shipperClientset.ShipperV1().Applications(app.Namespace).Update(app)
+	return err
+}
+
+func (c *Controller) getEndOfHistory(app *shipperv1.Application) *shipperv1.ReleaseRecord {
+	if len(app.Status.History) == 0 {
+		return nil
+	}
+
+	return app.Status.History[len(app.Status.History)-1]
+}
+
+func (c *Controller) rollbackAppTemplate(app *shipperv1.Application) error {
+	history := app.Status.History
+	ns := app.GetNamespace()
+
+	// march backwards through history to find a release object which exists.
+	// once we find it, reset app template to that and trim history after that
+	// entry
+
+	// NOTE: if we didn't find _any_ release then the template will remain in
+	// place and we'll end up re-creating a release from current app template.
+	// I think that's the best we can do in this case.
+	var goodRelease *shipperv1.Release
+	i := len(history) - 1
+	for ; i >= 0; i-- {
+		record := history[i]
+		rel, err := c.relLister.Releases(ns).Get(record.Name)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				continue
+			}
+			return err
+		}
+		goodRelease = rel
+		break
+	}
+
+	// truncate history to the release we found (or to empty if we didn't find any)
+	app.Status.History = history[:i+1]
+	if goodRelease != nil {
+		app.Spec.Template = *(goodRelease.Environment.DeepCopy())
+	}
+
+	_, err := c.shipperClientset.ShipperV1().Applications(app.Namespace).Update(app)
+	return err
 }
 
 func extractReplicasFromChart(chart *helmchart.Chart, app *shipperv1.Application) (int, error) {
@@ -316,14 +291,18 @@ func identicalEnvironments(envs ...shipperv1.ReleaseEnvironment) bool {
 }
 
 func hashReleaseEnvironment(env shipperv1.ReleaseEnvironment) string {
-	b, err := json.Marshal(env)
+	copy := env.DeepCopy()
+	// TODO(btyler) move these to a non-environment field
+	copy.Clusters = nil
+	copy.Replicas = 0
+	b, err := json.Marshal(copy)
 	if err != nil {
 		// TODO(btyler) ???
 		panic(err)
 	}
 
 	hash := fnv.New32a()
-	hash.Write(b)
+	_, _ = hash.Write(b)
 	return fmt.Sprintf("%x", hash.Sum32())
 }
 

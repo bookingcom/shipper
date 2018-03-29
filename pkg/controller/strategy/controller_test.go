@@ -381,6 +381,7 @@ func (f *fixture) addObjects(releaseInfos ...*releaseInfo) {
 
 func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerFactory) {
 
+	f.objects = append(f.objects, app)
 	f.client = shipperfake.NewSimpleClientset(f.objects...)
 
 	fakeDiscovery, _ := f.client.Discovery().(*fakediscovery.FakeDiscovery)
@@ -389,6 +390,11 @@ func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerF
 		{
 			GroupVersion: "shipper.booking.com/v1",
 			APIResources: []v1.APIResource{
+				{
+					Kind:       "Application",
+					Namespaced: true,
+					Name:       "applications",
+				},
 				{
 					Kind:       "Release",
 					Namespaced: true,

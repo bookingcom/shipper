@@ -16,6 +16,26 @@ const namespace = "test-namespace"
 const incumbentName = "0.0.1"
 const contenderName = "0.0.2"
 
+var app *v1.Application = &v1.Application{
+	ObjectMeta: metaV1.ObjectMeta{
+		Name:      "test-app",
+		Namespace: namespace,
+		UID:       "foobarbaz",
+	},
+	Status: v1.ApplicationStatus{
+		History: []*v1.ReleaseRecord{
+			{
+				Name:   incumbentName,
+				Status: v1.ReleaseRecordObjectCreated,
+			},
+			{
+				Name:   contenderName,
+				Status: v1.ReleaseRecordObjectCreated,
+			},
+		},
+	},
+}
+
 // TestCompleteStrategy tests the complete "vanguard" strategy, end-to-end.
 // This test exercises only the Executor.execute() method, using hard coded
 // incumbent and contender releases, checking if the generated patches were
@@ -155,6 +175,14 @@ func buildIncumbent() *releaseInfo {
 			ObjectMeta: metaV1.ObjectMeta{
 				Name:      incumbentName,
 				Namespace: namespace,
+				OwnerReferences: []metaV1.OwnerReference{
+					metaV1.OwnerReference{
+						APIVersion: "shipper.booking.com/v1",
+						Kind:       "Application",
+						Name:       app.GetName(),
+						UID:        app.GetUID(),
+					},
+				},
 			},
 		},
 		Status: v1.ReleaseStatus{
@@ -269,7 +297,16 @@ func buildContender() *releaseInfo {
 			ObjectMeta: metaV1.ObjectMeta{
 				Name:      contenderName,
 				Namespace: namespace,
+				OwnerReferences: []metaV1.OwnerReference{
+					metaV1.OwnerReference{
+						APIVersion: "shipper.booking.com/v1",
+						Kind:       "Application",
+						Name:       app.GetName(),
+						UID:        app.GetUID(),
+					},
+				},
 			},
+
 			Environment: v1.ReleaseEnvironment{
 				Strategy: v1.ReleaseStrategy{Name: "vanguard"},
 			},

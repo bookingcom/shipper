@@ -30,7 +30,9 @@ type Controller struct {
 	capacityTargetsLister     listers.CapacityTargetLister
 	installationTargetsLister listers.InstallationTargetLister
 	trafficTargetsLister      listers.TrafficTargetLister
+	applicationsLister        listers.ApplicationLister
 	releasesLister            listers.ReleaseLister
+	applicationsSynced        cache.InformerSynced
 	releasesSynced            cache.InformerSynced
 	capacityTargetsSynced     cache.InformerSynced
 	trafficTargetsSynced      cache.InformerSynced
@@ -56,7 +58,9 @@ func NewController(
 		capacityTargetsLister:     informerFactory.Shipper().V1().CapacityTargets().Lister(),
 		installationTargetsLister: informerFactory.Shipper().V1().InstallationTargets().Lister(),
 		trafficTargetsLister:      informerFactory.Shipper().V1().TrafficTargets().Lister(),
+		applicationsLister:        informerFactory.Shipper().V1().Applications().Lister(),
 		releasesLister:            releaseInformer.Lister(),
+		applicationsSynced:        informerFactory.Shipper().V1().Applications().Informer().HasSynced,
 		releasesSynced:            releaseInformer.Informer().HasSynced,
 		capacityTargetsSynced:     capacityTargetInformer.Informer().HasSynced,
 		trafficTargetsSynced:      trafficTargetInformer.Informer().HasSynced,
@@ -122,12 +126,25 @@ func isWorkingOnStrategy(r *v1.Release) (workingOnStrategy bool) {
 }
 
 func (c *Controller) contenderForRelease(r *v1.Release) (*v1.Release, error) {
-	pred := r.Status.Successor
-	if pred == nil {
-		return nil, fmt.Errorf("incumbent Release %q: no successor, can't find contender", controller.MetaKey(r))
+	app := c.getAssociatedApplication(r)
+	if app == nil {
+		return nil, fmt.Errorf("could not find application associated with %s/%s", r.GetNamespace(), r.GetName())
 	}
 
-	contender, err := c.releasesLister.Releases(pred.Namespace).Get(pred.Name)
+	history := app.Status.History
+	if len(history) <= 1 {
+		return nil, nil
+	}
+
+	expectedIncumbentIndex := len(app.Status.History) - 2
+	incumbentRecord := history[expectedIncumbentIndex]
+	// TODO(btyler) is this a reasonable decision? the strategy only knows how to operate with the latest two releases
+	if incumbentRecord.Name != r.GetName() {
+		return nil, fmt.Errorf("release %s/%s isn't the penultimate record in history, so we shouldn't be touching it", r.GetNamespace(), r.GetName())
+	}
+
+	contenderRecord := app.Status.History[len(app.Status.History)-1]
+	contender, err := c.releasesLister.Releases(r.GetNamespace()).Get(contenderRecord.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -137,6 +154,23 @@ func (c *Controller) contenderForRelease(r *v1.Release) (*v1.Release, error) {
 
 func isInstalled(r *v1.Release) bool {
 	return r.Status.Phase == v1.ReleasePhaseInstalled
+}
+
+func (c *Controller) getAssociatedApplication(rel *v1.Release) *v1.Application {
+	if n := len(rel.OwnerReferences); n != 1 {
+		glog.Warningf("expected exactly one OwnerReference for release '%s/%s', but got %d", rel.GetNamespace(), rel.GetName(), n)
+		return nil
+	}
+
+	owningApp := rel.OwnerReferences[0]
+
+	app, err := c.applicationsLister.Applications(rel.Namespace).Get(owningApp.Name)
+	if err != nil {
+		// This target object will soon be GC-ed.
+		return nil
+	}
+
+	return app
 }
 
 func (c *Controller) getAssociatedRelease(obj *metav1.ObjectMeta) *v1.Release {
@@ -165,6 +199,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 
 	ok := cache.WaitForCacheSync(
 		stopCh,
+		c.applicationsSynced,
 		c.releasesSynced,
 		c.installationTargetsSynced,
 		c.trafficTargetsSynced,
@@ -318,16 +353,36 @@ func (c *Controller) buildStrategy(ns, name string, recorder record.EventRecorde
 		return nil, err
 	}
 
-	var incumbentReleaseInfo *releaseInfo
-	if pred := contenderReleaseInfo.release.Status.Predecessor; pred != nil {
-		// TODO verify UID
-
-		incumbentReleaseInfo, err = c.buildReleaseInfo(pred.Namespace, pred.Name)
-		if err != nil {
-			return nil, err
-		}
+	app := c.getAssociatedApplication(contenderReleaseInfo.release)
+	if app == nil {
+		return nil, fmt.Errorf("no application associated with release %s/%s", ns, name)
 	}
-	// Otherwise it's a new app installed for the first time.
+
+	history := app.Status.History
+	if len(history) == 0 {
+		return nil, fmt.Errorf(
+			"zero release records in app %s/%s (owner of release %s) Status.History: will not execute strategy",
+			app.GetNamespace(), app.GetName(), name,
+		)
+	}
+
+	expectedContenderRecord := history[len(history)-1]
+	if expectedContenderRecord.Name != name {
+		return nil, fmt.Errorf("contender %s/%s is not the latest release in app history: will not execute strategy", ns, name)
+	}
+
+	// no incumbent, only this contender: a new application
+	if len(history) == 1 {
+		return &Executor{
+			contender: contenderReleaseInfo,
+		}, nil
+	}
+
+	incumbentRecord := history[len(history)-2]
+	incumbentReleaseInfo, err := c.buildReleaseInfo(ns, incumbentRecord.Name)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Executor{
 		contender: contenderReleaseInfo,
