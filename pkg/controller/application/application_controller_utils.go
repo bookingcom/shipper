@@ -91,11 +91,6 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application) err
 
 	_, err = c.shipperClientset.ShipperV1().Releases(releaseNs).Create(new)
 	if err != nil {
-		// If Update went through but Create failed, we have pred pointing to a
-		// Release that does not exist. We can recover from this by fixing the
-		// dangling successor pointer.
-		// Requeue pred directly so that we don't need to wait a full re-sync period
-		// before progress can be made.
 		return fmt.Errorf("create Release for Application %q: %s", metaKey(app), err)
 	}
 
@@ -186,9 +181,7 @@ func (c *Controller) cleanHistory(app *shipperv1.Application) error {
 
 func (c *Controller) markReleaseCreated(releaseName string, app *shipperv1.Application) error {
 	changed := false
-	glog.V(0).Infof("marking %s as created on %s", releaseName, metaKey(app))
 	for _, record := range app.Status.History {
-		glog.V(0).Infof("comparing %v to %v, %v", releaseName, record.Name, releaseName == record.Name)
 		if record.Name == releaseName {
 			record.Status = shipperv1.ReleaseRecordObjectCreated
 			changed = true

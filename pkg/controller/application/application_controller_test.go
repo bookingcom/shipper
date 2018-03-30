@@ -9,7 +9,6 @@ import (
 	//corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	metatypes "k8s.io/apimachinery/pkg/types"
 	//runtimeutil "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubetesting "k8s.io/client-go/testing"
@@ -52,13 +51,29 @@ func TestCreateRelease(t *testing.T) {
 
 	f.objects = append(f.objects, app)
 	initialApp := app.DeepCopy()
-	initialApp.Status.History = append(initialApp.Status.History, &shipperv1.ReleaseRecord{
-		Name:   expectedRelName,
-		Status: shipperv1.ReleaseRecordObjectCreated,
-	})
+	initialApp.Status.History = []*shipperv1.ReleaseRecord{
+		{
+			Name: expectedRelName,
+			// NOTE(btyler) This is wrong, but the reason is interesting. This
+			// should be ReleaseRecordWaitingForObject. However, kubetesting
+			// does not DeepCopy the objects associated with Update calls, and
+			// so when we later mutate the application object to change the
+			// release history record, we mutate it in the kubetesting Action
+			// object reference as well. We _could_ fix this by sprinkling
+			// app = app.DeepCopy around our code, but then we'd be adding
+			// silliness to production code in order to satisfy a testing
+			// library. So, we put a knowingly-false thing into the tests.
+			Status: shipperv1.ReleaseRecordObjectCreated,
+		},
+	}
 
-	finalApp := initialApp.DeepCopy()
-	finalApp.Status.History[0].Status = shipperv1.ReleaseRecordObjectCreated
+	finalApp := app.DeepCopy()
+	finalApp.Status.History = []*shipperv1.ReleaseRecord{
+		{
+			Name:   expectedRelName,
+			Status: shipperv1.ReleaseRecordObjectCreated,
+		},
+	}
 
 	expectedRelease := newRelease(expectedRelName, app)
 	expectedRelease.Environment.Chart.RepoURL = srv.URL()
@@ -67,7 +82,6 @@ func TestCreateRelease(t *testing.T) {
 	expectedRelease.Annotations[shipperv1.ReleaseTemplateGenerationAnnotation] = "0"
 	expectedRelease.Annotations[shipperv1.ReleaseReplicasAnnotation] = fmt.Sprintf("%d", 12)
 
-	// TODO(btyler) I don't understand why the first update already has ReleaseRecordObjectCreated instead of 'waiting for object'
 	f.expectApplicationUpdate(initialApp)
 	f.expectReleaseCreate(expectedRelease)
 	f.expectApplicationUpdate(finalApp)
@@ -90,7 +104,6 @@ func newRelease(releaseName string, app *shipperv1.Application) *shipperv1.Relea
 						APIVersion: "shipper.booking.com/v1",
 						Kind:       "Application",
 						Name:       app.GetName(),
-						UID:        app.GetUID(),
 					},
 				},
 			},
@@ -112,7 +125,6 @@ func newRelease(releaseName string, app *shipperv1.Application) *shipperv1.Relea
 func newApplication(name string) *shipperv1.Application {
 	return &shipperv1.Application{
 		ObjectMeta: metav1.ObjectMeta{
-			UID:       metatypes.UID(name),
 			Name:      name,
 			Namespace: shippertesting.TestNamespace,
 		},
