@@ -72,6 +72,8 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application) err
 		},
 	}
 
+	new.Environment.Replicas = int32(replicas)
+
 	// create the entry in release history in state 'WaitingForObject'
 	err = c.appendReleaseToAppHistory(releaseName, app)
 	if err != nil {
