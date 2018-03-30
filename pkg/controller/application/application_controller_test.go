@@ -32,7 +32,7 @@ func TestHashReleaseEnv(t *testing.T) {
 }
 
 // an app with no history should create a release
-func TestCreateRelease(t *testing.T) {
+func TestCreateFirstRelease(t *testing.T) {
 	srv, hh, err := repotest.NewTempServer("testdata/*.tgz")
 	if err != nil {
 		t.Fatal(err)
@@ -80,10 +80,119 @@ func TestCreateRelease(t *testing.T) {
 	expectedRelease.Status.Phase = shipperv1.ReleasePhaseWaitingForScheduling
 	expectedRelease.Labels[shipperv1.ReleaseEnvironmentHashLabel] = envHash
 	expectedRelease.Annotations[shipperv1.ReleaseTemplateGenerationAnnotation] = "0"
-	expectedRelease.Annotations[shipperv1.ReleaseReplicasAnnotation] = fmt.Sprintf("%d", 12)
 
 	f.expectApplicationUpdate(initialApp)
 	f.expectReleaseCreate(expectedRelease)
+	f.expectApplicationUpdate(finalApp)
+	f.run()
+}
+
+// an app with 1 existing release should create a new one when its template has changed
+func TestCreateSecondRelease(t *testing.T) {
+	srv, hh, err := repotest.NewTempServer("testdata/*.tgz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		os.RemoveAll(hh.String())
+		srv.Stop()
+	}()
+
+	f := newFixture(t)
+	app := newApplication(testAppName)
+	app.Spec.Template.Chart.RepoURL = srv.URL()
+	f.objects = append(f.objects, app)
+
+	oldEnvHash := hashReleaseEnvironment(app.Spec.Template)
+	oldRelName := fmt.Sprintf("%s-%s-0", testAppName, oldEnvHash)
+
+	release := newRelease(oldRelName, app)
+	release.Environment.Chart.RepoURL = srv.URL()
+	f.objects = append(f.objects, release)
+
+	app.Status.History = []*shipperv1.ReleaseRecord{
+		{
+			Name:   oldRelName,
+			Status: shipperv1.ReleaseRecordObjectCreated,
+		},
+	}
+
+	app.Spec.Template.Strategy.Name = "purple-orange"
+
+	newEnvHash := hashReleaseEnvironment(app.Spec.Template)
+	newRelName := fmt.Sprintf("%s-%s-0", testAppName, newEnvHash)
+
+	expectedRelease := newRelease(newRelName, app)
+	expectedRelease.Status.Phase = shipperv1.ReleasePhaseWaitingForScheduling
+	expectedRelease.Labels[shipperv1.ReleaseEnvironmentHashLabel] = newEnvHash
+	expectedRelease.Annotations[shipperv1.ReleaseTemplateGenerationAnnotation] = "0"
+
+	finalApp := app.DeepCopy()
+	finalApp.Status.History = []*shipperv1.ReleaseRecord{
+		{
+			Name:   oldRelName,
+			Status: shipperv1.ReleaseRecordObjectCreated,
+		},
+		{
+			Name:   newRelName,
+			Status: shipperv1.ReleaseRecordObjectCreated,
+		},
+	}
+
+	// same silly issue as TestCreateFirstRelease
+	f.expectApplicationUpdate(finalApp)
+	f.expectReleaseCreate(expectedRelease)
+	f.expectApplicationUpdate(finalApp)
+	f.run()
+}
+
+// abort through invalid history entries
+func TestCleanBogusHistory(t *testing.T) {
+	f := newFixture(t)
+	app := newApplication(testAppName)
+	f.objects = append(f.objects, app)
+
+	envHash := hashReleaseEnvironment(app.Spec.Template)
+	relName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
+
+	release := newRelease(relName, app)
+	f.objects = append(f.objects, release)
+
+	finalApp := app.DeepCopy()
+	finalApp.Status.History = []*shipperv1.ReleaseRecord{
+		{
+			Name:   relName,
+			Status: shipperv1.ReleaseRecordObjectCreated,
+		},
+	}
+
+	// this should be reverted to the strategy in the only existing release, which is "foobar"
+	app.Spec.Template.Strategy.Name = "some_crazy_strategy"
+
+	// these nonsense history entries should be deleted
+	app.Status.History = []*shipperv1.ReleaseRecord{
+		{
+			Name:   relName,
+			Status: shipperv1.ReleaseRecordObjectCreated,
+		},
+		{
+			Name:   "bogus",
+			Status: shipperv1.ReleaseRecordObjectCreated,
+		},
+		{
+			Name:   "bits",
+			Status: shipperv1.ReleaseRecordObjectCreated,
+		},
+		{
+			Name:   "bamboozle",
+			Status: shipperv1.ReleaseRecordObjectCreated,
+		},
+		{
+			Name:   "blindingly",
+			Status: shipperv1.ReleaseRecordObjectCreated,
+		},
+	}
+
 	f.expectApplicationUpdate(finalApp)
 	f.run()
 }
@@ -92,9 +201,11 @@ func newRelease(releaseName string, app *shipperv1.Application) *shipperv1.Relea
 	return &shipperv1.Release{
 		ReleaseMeta: shipperv1.ReleaseMeta{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:        releaseName,
-				Namespace:   app.GetNamespace(),
-				Annotations: map[string]string{},
+				Name:      releaseName,
+				Namespace: app.GetNamespace(),
+				Annotations: map[string]string{
+					shipperv1.ReleaseReplicasAnnotation: fmt.Sprintf("%d", app.Spec.Template.Replicas),
+				},
 				Labels: map[string]string{
 					shipperv1.ReleaseLabel: releaseName,
 					shipperv1.AppLabel:     app.GetName(),
@@ -107,17 +218,7 @@ func newRelease(releaseName string, app *shipperv1.Application) *shipperv1.Relea
 					},
 				},
 			},
-			Environment: shipperv1.ReleaseEnvironment{
-				Chart: shipperv1.Chart{
-					Name:    "simple",
-					Version: "0.0.1",
-					RepoURL: "http://127.0.0.1:8879/charts",
-				},
-				Strategy:         shipperv1.ReleaseStrategy{Name: "foobar"},
-				ClusterSelectors: []shipperv1.ClusterSelector{},
-				Values:           &shipperv1.ChartValues{},
-				Replicas:         int32(21),
-			},
+			Environment: *(app.Spec.Template.DeepCopy()),
 		},
 	}
 }
@@ -138,7 +239,7 @@ func newApplication(name string) *shipperv1.Application {
 				Strategy:         shipperv1.ReleaseStrategy{Name: "foobar"},
 				ClusterSelectors: []shipperv1.ClusterSelector{},
 				Values:           &shipperv1.ChartValues{},
-				Replicas:         int32(21),
+				Replicas:         int32(12),
 			},
 		},
 	}
