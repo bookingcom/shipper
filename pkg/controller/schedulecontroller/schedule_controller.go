@@ -20,12 +20,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
-//noinspection GoUnusedConst
-const (
-	AgentName             = "schedule-controller"
-	SuccessSynced         = "Synced"
-	MessageResourceSynced = "Release synced successfully"
-)
+const AgentName = "schedule-controller"
 
 // Controller is a Kubernetes controller that knows how to schedule Releases.
 type Controller struct {
@@ -122,11 +117,11 @@ func (c *Controller) processNextWorkItem() bool {
 		}
 
 		if err := c.syncOne(key); err != nil {
-			return fmt.Errorf("error syncing: '%s': %s", key, err.Error())
+			return fmt.Errorf("error syncing: %q: %s", key, err.Error())
 		}
 
 		c.workqueue.Forget(obj)
-		glog.Infof("Successfully synced '%s'", key)
+		glog.Infof("Successfully synced %q", key)
 		return nil
 	}(obj)
 
@@ -141,14 +136,14 @@ func (c *Controller) processNextWorkItem() bool {
 func (c *Controller) syncOne(key string) error {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
+		runtime.HandleError(fmt.Errorf("invalid resource key: %q", key))
 		return nil
 	}
 
 	release, err := c.releasesLister.Releases(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			runtime.HandleError(fmt.Errorf("release '%s' in work queue no longer exists", key))
+			runtime.HandleError(fmt.Errorf("release %q in work queue no longer exists", key))
 			return nil
 		}
 
@@ -159,14 +154,19 @@ func (c *Controller) syncOne(key string) error {
 		release,
 		c.shipperclientset,
 		c.clustersLister,
+		c.recorder,
 	)
 
-	err = scheduler.scheduleRelease()
-	if err != nil {
+	if err := scheduler.scheduleRelease(); err != nil {
+		c.recorder.Eventf(
+			scheduler.Release,
+			corev1.EventTypeWarning,
+			"FailedReleaseScheduling",
+			err.Error(),
+		)
 		return err
 	}
 
-	c.recorder.Event(scheduler.Release, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
 	return nil
 }
 

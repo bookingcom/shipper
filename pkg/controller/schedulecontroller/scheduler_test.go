@@ -7,15 +7,16 @@ import (
 	"testing"
 	"time"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
-	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	shippertesting "github.com/bookingcom/shipper/pkg/testing"
-
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	kubetesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/record"
+
+	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
+	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
 func loadObject(obj runtime.Object, path ...string) (runtime.Object, error) {
@@ -53,7 +54,7 @@ func newScheduler(
 	informerFactory := shipperinformers.NewSharedInformerFactory(clientset, time.Millisecond*0)
 	clustersLister := informerFactory.Shipper().V1().Clusters().Lister()
 
-	c := NewScheduler(release, clientset, clustersLister)
+	c := NewScheduler(release, clientset, clustersLister, record.NewFakeRecorder(42))
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)

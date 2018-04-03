@@ -4,12 +4,17 @@ import (
 	"sort"
 
 	"github.com/golang/glog"
-	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/tools/record"
+
+	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/controller"
 )
 
 // Scheduler is an object that knows how to schedule releases.
@@ -17,6 +22,7 @@ type Scheduler struct {
 	Release          *v1.Release
 	shipperclientset clientset.Interface
 	clustersLister   listers.ClusterLister
+	recorder         record.EventRecorder
 }
 
 // NewScheduler returns a new Scheduler instance that knows how to
@@ -25,25 +31,40 @@ func NewScheduler(
 	release *v1.Release,
 	shipperclientset clientset.Interface,
 	clusterLister listers.ClusterLister,
+	recorder record.EventRecorder,
 ) *Scheduler {
 	return &Scheduler{
 		Release:          release.DeepCopy(),
 		shipperclientset: shipperclientset,
 		clustersLister:   clusterLister,
+		recorder:         recorder,
 	}
 }
 
 func (c *Scheduler) scheduleRelease() error {
-
-	glog.Infof("Processing release %s/%s", c.Release.Namespace, c.Release.Name)
+	glog.Infof("Processing release %q", controller.MetaKey(c.Release))
+	defer glog.Infof("Finished processing %q", controller.MetaKey(c.Release))
 
 	// Compute target clusters, update the release if it doesn't have any, and bail-out. Since we haven't updated
 	// .Status.Phase yet, this update will trigger a new item on the work queue.
 	if !c.HasClusters() {
-		if err := c.ComputeTargetClusters(); err != nil {
-			return err
+		clusters, err := c.ComputeTargetClusters()
+		if err == nil {
+			err = c.UpdateRelease()
 		}
-		return c.UpdateRelease()
+
+		if err == nil {
+			c.recorder.Eventf(
+				c.Release,
+				corev1.EventTypeNormal,
+				"ReleaseScheduled",
+				"Set clusters for %q to %v",
+				controller.MetaKey(c.Release),
+				clusters,
+			)
+		}
+
+		return err
 	}
 
 	if err := c.CreateInstallationTarget(); err != nil {
@@ -61,7 +82,6 @@ func (c *Scheduler) scheduleRelease() error {
 	// If we get to this point, it means that the clusters have already been selected and persisted in the Release
 	// document, and all the associated Release documents have already been created, so the last operation remaining is
 	// updating the PhaseStatus to ReleasePhaseWaitingForStrategy
-	defer glog.Infof("Finished processing %s/%s", c.Release.Namespace, c.Release.Name)
 	c.SetReleasePhase(v1.ReleasePhaseWaitingForStrategy)
 	return c.UpdateRelease()
 }
@@ -104,17 +124,24 @@ func (c *Scheduler) CreateInstallationTarget() error {
 		Spec: v1.InstallationTargetSpec{Clusters: c.Clusters()},
 	}
 
-	if created, err := c.shipperclientset.ShipperV1().InstallationTargets(c.Release.Namespace).Create(installationTarget); err != nil {
+	_, err := c.shipperclientset.ShipperV1().InstallationTargets(c.Release.Namespace).Create(installationTarget)
+	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			glog.Infof("InstallationTarget %s/%s already exists, moving on", c.Release.Namespace, c.Release.Name)
+			glog.Infof("InstallationTarget %q already exists, moving on", controller.MetaKey(c.Release))
 			return nil
 		}
-		glog.Error(err)
 		return err
-	} else {
-		glog.Infof("InstallationTarget %s/%s created", created.Namespace, created.Name)
-		return nil
 	}
+
+	c.recorder.Eventf(
+		c.Release,
+		corev1.EventTypeNormal,
+		"ReleaseScheduled",
+		"Created InstallationTarget %q",
+		controller.MetaKey(installationTarget),
+	)
+
+	return nil
 }
 
 // CreateCapacityTarget creates a new CapacityTarget object for
@@ -138,17 +165,24 @@ func (c *Scheduler) CreateCapacityTarget() error {
 		Spec: v1.CapacityTargetSpec{Clusters: targets},
 	}
 
-	if created, err := c.shipperclientset.ShipperV1().CapacityTargets(c.Release.Namespace).Create(capacityTarget); err != nil {
+	_, err := c.shipperclientset.ShipperV1().CapacityTargets(c.Release.Namespace).Create(capacityTarget)
+	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			glog.Infof("CapacityTarget %s/%s already exists, moving on", c.Release.Namespace, c.Release.Name)
+			glog.Infof("CapacityTarget %q already exists, moving on", controller.MetaKey(capacityTarget))
 			return nil
 		}
-		glog.Error(err)
 		return err
-	} else {
-		glog.Infof("CapacityTarget %s/%s has been created", created.Namespace, created.Name)
-		return nil
 	}
+
+	c.recorder.Eventf(
+		c.Release,
+		corev1.EventTypeNormal,
+		"ReleaseScheduled",
+		"Created CapacityTarget %q",
+		controller.MetaKey(capacityTarget),
+	)
+
+	return nil
 }
 
 // CreateTrafficTarget creates a new TrafficTarget object for
@@ -173,39 +207,47 @@ func (c *Scheduler) CreateTrafficTarget() error {
 		Spec: v1.TrafficTargetSpec{Clusters: trafficTargets},
 	}
 
-	if created, err := c.shipperclientset.ShipperV1().TrafficTargets(c.Release.Namespace).Create(trafficTarget); err != nil {
+	_, err := c.shipperclientset.ShipperV1().TrafficTargets(c.Release.Namespace).Create(trafficTarget)
+	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			glog.Infof("TrafficTarget %s/%s already exists, moving on", c.Release.Namespace, c.Release.Name)
+			glog.V(4).Infof("TrafficTarget %q already exists, moving on", controller.MetaKey(trafficTarget))
 			return nil
 		}
-		glog.Error(err)
 		return err
-	} else {
-		glog.Infof("TrafficTarget %s/%s created", created.Namespace, created.Name)
-		return nil
 	}
+
+	c.recorder.Eventf(
+		c.Release,
+		corev1.EventTypeNormal,
+		"ReleaseScheduled",
+		"Created TrafficTarget %q",
+		controller.MetaKey(trafficTarget),
+	)
+
+	return nil
 }
 
 // ComputeTargetClusters updates the Release Environment.Clusters property
 // based on its ClusterSelectors.
-func (c *Scheduler) ComputeTargetClusters() error {
-
-	// selectors should be calculated from c.Release.Environment.ShipmentOrder.ClusterSelectors
+func (c *Scheduler) ComputeTargetClusters() ([]string, error) {
+	// TODO selectors should be calculated from
+	// c.Release.Environment.ShipmentOrder.ClusterSelectors
 	selectors := labels.NewSelector()
 
-	if clusters, err := c.clustersLister.List(selectors); err != nil {
-		return err
-	} else {
-		clusterNames := make([]string, 0)
-		for _, v := range clusters {
-			if !v.Spec.Unschedulable {
-				clusterNames = append(clusterNames, v.Name)
-			}
-		}
-
-		c.SetClusters(clusterNames)
-		return nil
+	clusters, err := c.clustersLister.List(selectors)
+	if err != nil {
+		return nil, err
 	}
+
+	var clusterNames []string
+	for _, v := range clusters {
+		if !v.Spec.Unschedulable {
+			clusterNames = append(clusterNames, v.Name)
+		}
+	}
+	c.SetClusters(clusterNames)
+
+	return clusterNames, nil
 }
 
 // the strings here are insane, but if you create a fresh release object for
