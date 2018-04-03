@@ -278,8 +278,3 @@ func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interfa
 
 	return client, referenceCopy, nil
 }
-
-func metaKey(it *shipperV1.InstallationTarget) string {
-	key, _ := cache.MetaNamespaceKeyFunc(it)
-	return key
-}
