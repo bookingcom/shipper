@@ -7,6 +7,7 @@ import (
 
 	"github.com/golang/glog"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -22,6 +23,7 @@ import (
 	shipperInformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperListers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
+	"github.com/bookingcom/shipper/pkg/controller"
 )
 
 const AgentName = "installation-controller"
@@ -134,7 +136,7 @@ func (c *Controller) processNextWorkItem() bool {
 
 		// Do not requeue this object because it's already processed.
 		c.workqueue.Forget(obj)
-		glog.Infof("Successfully synced '%s'", key)
+		glog.Infof("Successfully synced %q", key)
 		return nil
 	}(obj)
 
@@ -189,7 +191,7 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	} else if release.GetUID() != owner.UID {
 		return fmt.Errorf(
 			"the owner Release for InstallationTarget %q is gone; expected UID %s but got %s",
-			it.GetName(),
+			controller.MetaKey(it),
 			owner.UID,
 			release.GetUID(),
 		)
@@ -209,7 +211,7 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 		if cluster, err = c.clusterLister.Get(clusterName); err != nil {
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
-			glog.Warningf("Get Cluster %q for InstallationTarget: %s", clusterName, metaKey(it), err)
+			glog.Warningf("Get Cluster %q for InstallationTarget %q: %s", clusterName, controller.MetaKey(it), err)
 			continue
 		}
 
@@ -219,14 +221,14 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 		if err != nil {
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
-			glog.Warningf("Get config for Cluster %q for InstallationTarget %q: %s", clusterName, metaKey(it), err)
+			glog.Warningf("Get config for Cluster %q for InstallationTarget %q: %s", clusterName, controller.MetaKey(it), err)
 			continue
 		}
 
 		if err = handler.installRelease(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
-			glog.Warningf("Install InstallationTarget %q for Cluster %q: %s", metaKey(it), clusterName, err)
+			glog.Warningf("Install InstallationTarget %q for Cluster %q: %s", controller.MetaKey(it), clusterName, err)
 			continue
 		}
 
@@ -237,12 +239,25 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	it.Status.Clusters = clusterStatuses
 
 	_, err = c.shipperclientset.ShipperV1().InstallationTargets(it.Namespace).Update(it)
-	if err != nil {
-		glog.Warningf("Update InstallationTarget %q: %s", metaKey(it), err)
-		return err
+	if err == nil {
+		c.recorder.Eventf(
+			it,
+			corev1.EventTypeNormal,
+			"InstallationStatusChanged",
+			"Set %q status to %v",
+			controller.MetaKey(it),
+			clusterStatuses,
+		)
+	} else {
+		c.recorder.Event(
+			it,
+			corev1.EventTypeWarning,
+			"FailedInstallationStatusChange",
+			err.Error(),
+		)
 	}
 
-	return nil
+	return err
 }
 
 func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interface, *rest.Config, error) {
