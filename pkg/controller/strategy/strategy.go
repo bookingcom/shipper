@@ -2,8 +2,10 @@ package strategy
 
 import (
 	"encoding/json"
-	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
 
 type ExecutorResult interface {

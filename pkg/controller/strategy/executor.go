@@ -5,7 +5,13 @@ import (
 	"strconv"
 
 	"github.com/golang/glog"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
+
 	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/controller"
 )
 
 type releaseInfo struct {
@@ -18,10 +24,21 @@ type releaseInfo struct {
 type Executor struct {
 	contender *releaseInfo
 	incumbent *releaseInfo
+	recorder  record.EventRecorder
 }
 
 func (s *Executor) info(format string, args ...interface{}) {
-	glog.Infof("release %s/%s: %s", s.contender.release.Namespace, s.contender.release.Name, fmt.Sprintf(format, args...))
+	glog.Infof("Release %q: %s", controller.MetaKey(s.contender.release), fmt.Sprintf(format, args...))
+}
+
+func (s *Executor) event(obj runtime.Object, format string, args ...interface{}) {
+	s.recorder.Eventf(
+		obj,
+		corev1.EventTypeNormal,
+		"StrategyApplied",
+		format,
+		args,
+	)
 }
 
 // execute executes the strategy. It returns an ExecutorResult, if a patch should
@@ -85,7 +102,7 @@ func (s *Executor) execute() ([]interface{}, error) {
 	if releasePatches, err := s.finalizeRelease(targetStep, strategyStep, isLastStep); err != nil {
 		return nil, err
 	} else {
-		s.info("step %d finished", targetStep)
+		s.event(s.contender.release, "step %d finished", targetStep)
 		return releasePatches, nil
 	}
 }

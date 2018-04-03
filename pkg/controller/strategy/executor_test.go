@@ -6,6 +6,7 @@ import (
 
 	coreV1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/record"
 
 	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
@@ -23,6 +24,7 @@ func TestCompleteStrategy(t *testing.T) {
 	executor := &Executor{
 		contender: buildContender(),
 		incumbent: buildIncumbent(),
+		recorder:  record.NewFakeRecorder(42),
 	}
 
 	// Mimic patch to .spec.targetStep

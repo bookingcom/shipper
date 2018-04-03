@@ -6,6 +6,7 @@ import (
 
 	"github.com/golang/glog"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -19,7 +20,7 @@ import (
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"github.com/bookingcom/shipper/pkg/controller"
 )
 
 const AgentName = "strategy-controller"
@@ -123,7 +124,7 @@ func isWorkingOnStrategy(r *v1.Release) (workingOnStrategy bool) {
 func (c *Controller) contenderForRelease(r *v1.Release) (*v1.Release, error) {
 	pred := r.Status.Successor
 	if pred == nil {
-		return nil, fmt.Errorf("incumbent Release %q: no successor, can't find contender", r.Namespace+"/"+r.Name)
+		return nil, fmt.Errorf("incumbent Release %q: no successor, can't find contender", controller.MetaKey(r))
 	}
 
 	contender, err := c.releasesLister.Releases(pred.Namespace).Get(pred.Name)
@@ -140,7 +141,7 @@ func isInstalled(r *v1.Release) bool {
 
 func (c *Controller) getAssociatedRelease(obj *metav1.ObjectMeta) *v1.Release {
 	if n := len(obj.OwnerReferences); n != 1 {
-		glog.Warningf("expected exactly one OwnerReference for %q but got %d", obj.GetNamespace()+"/"+obj.GetName(), n)
+		glog.Warningf("expected exactly one OwnerReference for %q but got %d", controller.MetaKey(obj), n)
 		return nil
 	}
 
@@ -221,7 +222,7 @@ func (c *Controller) syncOne(key string) error {
 		return nil
 	}
 
-	strategy, err := c.buildStrategy(ns, name)
+	strategy, err := c.buildStrategy(ns, name, c.recorder)
 	if err != nil {
 		return err
 	}
@@ -314,7 +315,7 @@ func (c *Controller) buildReleaseInfo(ns string, name string) (*releaseInfo, err
 	}, nil
 }
 
-func (c *Controller) buildStrategy(ns string, name string) (*Executor, error) {
+func (c *Controller) buildStrategy(ns, name string, recorder record.EventRecorder) (*Executor, error) {
 	contenderReleaseInfo, err := c.buildReleaseInfo(ns, name)
 	if err != nil {
 		return nil, err
@@ -334,6 +335,7 @@ func (c *Controller) buildStrategy(ns string, name string) (*Executor, error) {
 	return &Executor{
 		contender: contenderReleaseInfo,
 		incumbent: incumbentReleaseInfo,
+		recorder:  recorder,
 	}, nil
 }
 
