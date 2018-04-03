@@ -105,7 +105,7 @@ func (c *Controller) createSecretForCluster(cluster *shipperv1.Cluster, crt, key
 	c.recorder.Eventf(
 		secret,
 		corev1.EventTypeNormal,
-		reasonCreated,
+		"ClusterSecretCreated",
 		"Created Secret %q for Cluster %q",
 		secret.GetName(),
 		clusterName,
@@ -137,7 +137,7 @@ func (c *Controller) updateClusterSecret(secret *corev1.Secret, clusterName stri
 	c.recorder.Eventf(
 		secret,
 		corev1.EventTypeNormal,
-		reasonUpdated,
+		"ClusterSecretUpdated",
 		"Updated Secret %q for Cluster %q",
 		secretName,
 		clusterName,

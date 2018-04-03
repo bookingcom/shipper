@@ -42,12 +42,6 @@ import (
 
 const AgentName = "clustersecret-controller"
 
-const (
-	reasonFailed  = "ClusterSecretError"
-	reasonCreated = "ClusterSecretCreated"
-	reasonUpdated = "ClusterSecretUpdated"
-)
-
 type Controller struct {
 	clusterLister  shipperlisters.ClusterLister
 	clustersSynced cache.InformerSynced
@@ -237,7 +231,7 @@ func (c *Controller) syncOne(key string) error {
 	}
 
 	if err := c.processCluster(cluster); err != nil {
-		c.recorder.Event(cluster, corev1.EventTypeWarning, reasonFailed, err.Error())
+		c.recorder.Event(cluster, corev1.EventTypeWarning, "ClusterSecretError", err.Error())
 		return err
 	}
 
