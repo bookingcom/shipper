@@ -216,7 +216,6 @@ func (c *Controller) processNextWorkItem() bool {
 
 func (c *Controller) syncOne(key string) error {
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
-
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
 		return nil
@@ -228,28 +227,26 @@ func (c *Controller) syncOne(key string) error {
 	}
 
 	strategy.info("will start processing release")
-	if result, err := strategy.execute(); err != nil {
+
+	result, err := strategy.execute()
+	if err != nil {
 		return err
-	} else if len(result) > 0 {
-		strategy.info("strategy executed, patches to apply")
-		for _, e := range result {
+	}
 
-			r := e.(ExecutorResult)
-
-			// XXX: This is work in progress. result implements the ExecutorResult
-			// interface, and if it is not nil then a patch is required, using the
-			// information from the returned gvk, together with the []byte that
-			// represents the patch encoded in JSON.
-			name, gvk, b := r.PatchSpec()
-
-			if client, err := c.clientForGroupVersionKind(gvk, ns); err != nil {
-				return err
-			} else if _, err = client.Patch(name, types.MergePatchType, b); err != nil {
-				return err
-			}
-		}
-	} else {
+	if len(result) == 0 {
 		strategy.info("strategy verified, nothing to patch")
+		return nil
+	}
+
+	strategy.info("strategy executed, patches to apply")
+	for _, r := range result {
+		name, gvk, b := r.PatchSpec()
+
+		if client, err := c.clientForGroupVersionKind(gvk, ns); err != nil {
+			return err
+		} else if _, err = client.Patch(name, types.MergePatchType, b); err != nil {
+			return err
+		}
 	}
 
 	return nil

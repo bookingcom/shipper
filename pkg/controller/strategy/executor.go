@@ -45,7 +45,7 @@ func (s *Executor) event(obj runtime.Object, format string, args ...interface{})
 // be performed into some of the associated Release objects and an error if an error
 // has happened. Currently if both values are nil it means that the operation was
 // successful but no modifications are required.
-func (s *Executor) execute() ([]interface{}, error) {
+func (s *Executor) execute() ([]ExecutorResult, error) {
 
 	strategy := getStrategy(string(s.contender.release.Environment.ShipmentOrder.Strategy))
 	targetStep := uint(s.contender.release.Spec.TargetStep)
@@ -107,7 +107,7 @@ func (s *Executor) execute() ([]interface{}, error) {
 	}
 }
 
-func (s *Executor) finalizeRelease(targetStep uint, strategyStep v1.StrategyStep, isLastStep bool) ([]interface{}, error) {
+func (s *Executor) finalizeRelease(targetStep uint, strategyStep v1.StrategyStep, isLastStep bool) ([]ExecutorResult, error) {
 	var contenderPhase string
 
 	if isLastStep {
@@ -116,7 +116,7 @@ func (s *Executor) finalizeRelease(targetStep uint, strategyStep v1.StrategyStep
 		contenderPhase = v1.ReleasePhaseWaitingForCommand
 	}
 
-	var releasePatches []interface{}
+	var releasePatches []ExecutorResult
 
 	reportedStep := s.contender.release.Status.AchievedStep
 	reportedPhase := s.contender.release.Status.Phase
@@ -153,8 +153,8 @@ func (s *Executor) finalizeRelease(targetStep uint, strategyStep v1.StrategyStep
 	return releasePatches, nil
 }
 
-func (s *Executor) checkContender(strategyStep v1.StrategyStep) (bool, []interface{}, error) {
-	var patches []interface{}
+func (s *Executor) checkContender(strategyStep v1.StrategyStep) (bool, []ExecutorResult, error) {
+	var patches []ExecutorResult
 
 	capacity, err := strconv.Atoi(strategyStep.ContenderCapacity)
 	if err != nil {
@@ -175,7 +175,7 @@ func (s *Executor) checkContender(strategyStep v1.StrategyStep) (bool, []interfa
 			})
 			return false, patches, nil
 		} else {
-			return false, []interface{}{}, nil
+			return false, nil, nil
 		}
 	} else {
 		s.info("contender %q has achieved capacity", s.contender.release.Name)
@@ -190,17 +190,17 @@ func (s *Executor) checkContender(strategyStep v1.StrategyStep) (bool, []interfa
 			})
 			return false, patches, nil
 		} else {
-			return false, []interface{}{}, nil
+			return false, nil, nil
 		}
 	} else {
 		s.info("contender %q has achieved traffic", s.contender.release.Name)
 	}
 
-	return true, []interface{}{}, nil
+	return true, nil, nil
 }
 
-func (s *Executor) checkIncumbent(strategyStep v1.StrategyStep) (bool, []interface{}, error) {
-	var patches []interface{}
+func (s *Executor) checkIncumbent(strategyStep v1.StrategyStep) (bool, []ExecutorResult, error) {
+	var patches []ExecutorResult
 
 	capacity, err := strconv.Atoi(strategyStep.IncumbentCapacity)
 	if err != nil {
@@ -221,7 +221,7 @@ func (s *Executor) checkIncumbent(strategyStep v1.StrategyStep) (bool, []interfa
 			})
 			return false, patches, nil
 		} else {
-			return false, []interface{}{}, nil
+			return false, nil, nil
 		}
 	} else {
 		s.info("incumbent %q has achieved traffic", s.incumbent.release.Name)
@@ -236,11 +236,11 @@ func (s *Executor) checkIncumbent(strategyStep v1.StrategyStep) (bool, []interfa
 			})
 			return false, patches, nil
 		} else {
-			return false, []interface{}{}, nil
+			return false, nil, nil
 		}
 	} else {
 		s.info("incumbent %q has achieved capacity", s.incumbent.release.Name)
 	}
 
-	return true, []interface{}{}, nil
+	return true, nil, nil
 }
