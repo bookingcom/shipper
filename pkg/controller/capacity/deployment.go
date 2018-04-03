@@ -17,6 +17,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/controller"
 )
 
 type deploymentWorkqueueItem struct {
@@ -206,6 +207,23 @@ func (c *Controller) updateStatus(capacityTarget *shipperv1.CapacityTarget, clus
 	}
 
 	_, err = c.shipperclientset.ShipperV1().CapacityTargets(capacityTarget.Namespace).Patch(capacityTarget.Name, types.MergePatchType, statusJson)
+	if err == nil {
+		c.recorder.Eventf(
+			capacityTarget,
+			corev1.EventTypeNormal,
+			"CapacityStatusChanged",
+			"Set %q status to %v",
+			controller.MetaKey(capacityTarget),
+			capacityTargetStatus,
+		)
+	} else {
+		c.recorder.Eventf(
+			capacityTarget,
+			corev1.EventTypeWarning,
+			"FailedCapacityStatusChange",
+			err.Error(),
+		)
+	}
 
 	return err
 }

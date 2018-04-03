@@ -25,7 +25,9 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
@@ -39,19 +41,10 @@ import (
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
+	"github.com/bookingcom/shipper/pkg/controller"
 )
 
 const AgentName = "capacity-controller"
-
-const (
-	// SuccessSynced is used as part of the Event 'reason' when a ShipmentOrder is synced
-	SuccessSynced = "Synced"
-
-	// MessageResourceSynced is used as part of the 'Event' message when a ShipmentOrder is synced
-	MessageResourceSynced = "CapacityTarget synced successfully"
-)
 
 // Controller is the controller implementation for CapacityTarget resources
 type Controller struct {
@@ -198,7 +191,7 @@ func (c *Controller) processNextCapacityTargetWorkItem() bool {
 		// Run the syncHandler, passing it the namespace/name string of the
 		// CapacityTarget resource to be synced.
 		if err := c.capacityTargetSyncHandler(key); err != nil {
-			return fmt.Errorf("error syncing '%s': %s", key, err.Error())
+			return fmt.Errorf("error syncing %q: %s", key, err.Error())
 		}
 		// Finally, if no error occurs we Forget this item so it does not
 		// get queued again until another change happens.
@@ -232,26 +225,27 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		// The CapacityTarget resource may no longer exist, in which case we stop
 		// processing.
 		if errors.IsNotFound(err) {
-			runtime.HandleError(fmt.Errorf("CapacityTarget '%s' in work queue no longer exists", key))
+			runtime.HandleError(fmt.Errorf("CapacityTarget %q in work queue no longer exists", key))
 			return nil
 		}
 
 		return err
 	}
 
+	var clusterErr error
 	for _, clusterSpec := range ct.Spec.Clusters {
 		// Get the requested percentage of replicas from the capacity object
 		// This is only set by the strategy controller
 		var replicaCount int32
-		replicaCount, err = c.convertPercentageToReplicaCountForCluster(ct, clusterSpec)
-		if err != nil {
-			return err
+		replicaCount, clusterErr = c.convertPercentageToReplicaCountForCluster(ct, clusterSpec)
+		if clusterErr != nil {
+			break
 		}
 
 		var targetClusterClient kubernetes.Interface
-		targetClusterClient, err = c.clusterClientStore.GetClient(clusterSpec.Name)
+		targetClusterClient, clusterErr = c.clusterClientStore.GetClient(clusterSpec.Name)
 		if err != nil {
-			return err
+			break
 		}
 
 		targetNamespace := ct.Namespace
@@ -259,29 +253,38 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		selector := labels.Set(ct.Labels).AsSelector()
 
 		var deploymentsList *appsv1.DeploymentList
-		deploymentsList, err = targetClusterClient.AppsV1().Deployments(targetNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+		deploymentsList, clusterErr = targetClusterClient.AppsV1().Deployments(targetNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 		if err != nil {
-			return err
+			break
 		}
 
 		if len(deploymentsList.Items) != 1 {
-			return fmt.Errorf("Expected a deployment on cluster %s, namespace %s, with label %s, but %d deployments exist.", clusterSpec.Name, targetNamespace, selector.String(), len(deploymentsList.Items))
+			clusterErr = fmt.Errorf("Expected a deployment on cluster %s, namespace %s, with label %s, but %d deployments exist.", clusterSpec.Name, targetNamespace, selector.String(), len(deploymentsList.Items))
+			break
 		}
 
 		targetDeployment := deploymentsList.Items[0]
 		patchString := fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicaCount)
-		_, err = targetClusterClient.AppsV1().Deployments(targetDeployment.Namespace).Patch(targetDeployment.Name, types.StrategicMergePatchType, []byte(patchString))
+		_, clusterErr = targetClusterClient.AppsV1().Deployments(targetDeployment.Namespace).Patch(targetDeployment.Name, types.StrategicMergePatchType, []byte(patchString))
 		if err != nil {
-			return err
+			break
 		}
+
+		c.recorder.Eventf(
+			ct,
+			corev1.EventTypeNormal,
+			"CapacityChanged",
+			"Scaled %q to %d replicas",
+			controller.MetaKey(&targetDeployment),
+			replicaCount,
+		)
 	}
 
-	if err != nil {
-		return err
+	if clusterErr != nil {
+		c.recorder.Event(ct, corev1.EventTypeWarning, "FailedCapacityChange", clusterErr.Error())
 	}
 
-	c.recorder.Event(ct, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
-	return nil
+	return clusterErr
 }
 
 // enqueueCapacityTarget takes a CapacityTarget resource and converts it into a namespace/name
@@ -322,7 +325,7 @@ func (c Controller) getReleaseForCapacityTarget(capacityTarget *shipperv1.Capaci
 	} else if release.GetUID() != owner.UID {
 		return nil, fmt.Errorf(
 			"the owner Release for CapacityTarget %q is gone; expected UID %s but got %s",
-			capacityTarget.GetName(),
+			controller.MetaKey(capacityTarget),
 			owner.UID,
 			release.GetUID(),
 		)
