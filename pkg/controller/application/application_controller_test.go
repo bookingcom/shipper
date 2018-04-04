@@ -282,7 +282,7 @@ func (f *fixture) run() {
 		stopCh,
 	)
 
-	processNextWorkItem(c.appWorkqueue, c.syncApplication)
+	c.processNextWorkItem()
 
 	actual := shippertesting.FilterActions(f.client.Actions())
 	shippertesting.CheckActions(f.actions, actual, f.t)

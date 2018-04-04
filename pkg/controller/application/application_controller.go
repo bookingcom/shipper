@@ -13,19 +13,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-/*
-TODO
-
-when app updated: check if template matches head of lineage release + no dangling pointer. if not, create new one with current template.
-
-1) no dangling pointer, template matches head of lineage: ALL GOOD
-2) no dangling pointer, template does NOT match head of lineage: create new release
-3) dangling pointer, template DOES match head of lineage: fix pointer, ALL GOOD
-4) dangling pointer, template does NOT match head of lineage: fix pointer, ALL GOOD (overwrite existing app template with head of lineage release contents)
-
-if lineage is broken by deleted release, somehow... don't do that?
-
-*/
 
 package application
 
@@ -48,6 +35,7 @@ import (
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/controller"
 )
 
 const (
@@ -65,9 +53,8 @@ type Controller struct {
 	appSynced    cache.InformerSynced
 	appWorkqueue workqueue.RateLimitingInterface
 
-	relLister    listers.ReleaseLister
-	relSynced    cache.InformerSynced
-	relWorkqueue workqueue.RateLimitingInterface
+	relLister listers.ReleaseLister
+	relSynced cache.InformerSynced
 
 	recorder   record.EventRecorder
 	fetchChart chart.FetchFunc
@@ -90,17 +77,15 @@ func NewController(
 		appSynced:    appInformer.Informer().HasSynced,
 		appWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "application_controller_applications"),
 
-		relLister:    relInformer.Lister(),
-		relSynced:    relInformer.Informer().HasSynced,
-		relWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "application_controller_releases"),
+		relLister: relInformer.Lister(),
+		relSynced: relInformer.Informer().HasSynced,
 
 		recorder:   recorder,
 		fetchChart: chartFetchFunc,
 	}
 
-	enqueueApp := func(obj interface{}) { enqueueWorkItem(c.appWorkqueue, obj) }
 	appInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: enqueueApp,
+		AddFunc: c.enqueueApp,
 		UpdateFunc: func(old, new interface{}) {
 			oldApp, oldOk := old.(*shipperv1.Application)
 			newApp, newOk := new.(*shipperv1.Application)
@@ -109,17 +94,14 @@ func NewController(
 				return
 			}
 
-			enqueueApp(new)
+			c.enqueueApp(new)
 		},
-		DeleteFunc: enqueueApp,
+		DeleteFunc: c.enqueueApp,
 	})
 
 	relInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: c.enqueueRel,
 		UpdateFunc: func(old, new interface{}) {
-			// Not checking resource version here because we might need to fix the
-			// successor pointer even when there hasn't been a change to this particular
-			// Release.
 			oldRel, oldOk := old.(*shipperv1.Release)
 			newRel, newOk := new.(*shipperv1.Release)
 			if oldOk && newOk && oldRel.ResourceVersion == newRel.ResourceVersion {
@@ -140,7 +122,6 @@ func NewController(
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.appWorkqueue.ShutDown()
-	defer c.relWorkqueue.ShutDown()
 
 	glog.V(2).Info("Starting Application controller")
 	defer glog.V(2).Info("Shutting down Application controller")
@@ -160,18 +141,18 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 }
 
 func (c *Controller) applicationWorker() {
-	for processNextWorkItem(c.appWorkqueue, c.syncApplication) {
+	for c.processNextWorkItem() {
 	}
 }
 
-func processNextWorkItem(wq workqueue.RateLimitingInterface, handler func(string) error) bool {
-	obj, shutdown := wq.Get()
+func (c *Controller) processNextWorkItem() bool {
+	obj, shutdown := c.appWorkqueue.Get()
 	if shutdown {
 		return false
 	}
 
 	// We're done processing this object.
-	defer wq.Done(obj)
+	defer c.appWorkqueue.Done(obj)
 
 	var (
 		key string
@@ -180,32 +161,33 @@ func processNextWorkItem(wq workqueue.RateLimitingInterface, handler func(string
 
 	if key, ok = obj.(string); !ok {
 		// Do not attempt to process invalid objects again.
-		wq.Forget(obj)
+		c.appWorkqueue.Forget(obj)
 		runtime.HandleError(fmt.Errorf("invalid object key: %#v", obj))
 		return true
 	}
 
-	if err := handler(key); err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing %q: %s", key, err))
-		wq.AddRateLimited(key)
+	if err := c.syncApplication(key); err != nil {
+		runtime.HandleError(fmt.Errorf("error syncing %q (will retry): %s", key, err))
+		c.appWorkqueue.AddRateLimited(key)
 		return true
 	}
 
 	// Do not requeue this object because it's already processed.
-	wq.Forget(obj)
+	c.appWorkqueue.Forget(obj)
 
-	glog.V(6).Infof("Successfully synced %q", key)
+	glog.V(3).Infof("Successfully synced %q", key)
 
 	return true
 }
 
-// translate a release update into an application update so that we catch deletes immediately
+// Translate Release changes into Application changes (to handle e.g. aborts).
 func (c *Controller) enqueueRel(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
+
 	rel, ok := obj.(*shipperv1.Release)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("%s is not a shipperv1.Release", key))
@@ -222,14 +204,14 @@ func (c *Controller) enqueueRel(obj interface{}) {
 	c.appWorkqueue.AddRateLimited(fmt.Sprintf("%s/%s", rel.GetNamespace(), owner.Name))
 }
 
-func enqueueWorkItem(wq workqueue.RateLimitingInterface, obj interface{}) {
+func (c *Controller) enqueueApp(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
 
-	wq.AddRateLimited(key)
+	c.appWorkqueue.AddRateLimited(key)
 }
 
 func (c *Controller) syncApplication(key string) error {
@@ -240,10 +222,8 @@ func (c *Controller) syncApplication(key string) error {
 
 	app, err := c.appLister.Applications(ns).Get(name)
 	if err != nil {
-		// The Application resource may no longer exist, which is fine. We just stop
-		// processing.
 		if errors.IsNotFound(err) {
-			glog.V(6).Infof("Application %q has been deleted", key)
+			glog.V(3).Infof("Application %q has been deleted", key)
 			return nil
 		}
 
@@ -260,12 +240,10 @@ func (c *Controller) syncApplication(key string) error {
 	return nil
 }
 
-// TODO: status and events updates
 func (c *Controller) processApplication(app *shipperv1.Application) error {
-	glog.V(0).Infof(`Application %q is %q`, metaKey(app), app.Status)
 	latestReleaseRecord := c.getEndOfHistory(app)
 
-	// no releases present, so unconditionally trigger a deployment by creating a new release
+	// No history, must be the first rollout of a new application.
 	if latestReleaseRecord == nil {
 		return c.createReleaseForApplication(app)
 	}
@@ -273,36 +251,40 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	latestRelease, err := c.relLister.Releases(app.GetNamespace()).Get(latestReleaseRecord.Name)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// this means we failed to create the release after adding the historical entry; try again to create it.
+			// This means we failed to create the Release after adding the historical
+			// entry; try again to create it.
 			if latestReleaseRecord.Status == shipperv1.ReleaseRecordWaitingForObject {
 				return c.createReleaseForApplication(app)
 			}
 
-			// otherwise our history is corrupt: we may be doing a 'crash abort'
-			// where the rolling-out-release was deleted, or there might just be
-			// some nonsense in history. In both cases we should reset the
-			// app.Spec.Template to match the latest existing release, and trim
-			// off any bad history entries before that good one.
-
-			// This prevents us from re-rolling a bad template (as in the
-			// 'crash abort' case) or leaving garbage in the history.
+			// Otherwise our history is corrupt: we may be doing a 'crash abort' where
+			// the rolling-out-release was deleted, or there might just be some nonsense
+			// in history. In both cases we should reset the app.Spec.Template to match
+			// the latest existing release, and trim off any bad history entries before
+			// that good one.
+			// This prevents us from re-rolling a bad template (as in the 'crash abort'
+			// case) or leaving garbage in the history.
 			return c.rollbackAppTemplate(app)
 		}
 
-		return fmt.Errorf("latestRelease %s for app %q could not be fetched: %q", latestReleaseRecord.Name, metaKey(app), err)
+		return fmt.Errorf("fetch Release %s for Application %q: %s", latestReleaseRecord.Name, controller.MetaKey(app), err)
 	}
 
-	// if our template is in sync with the current leading release, we have
-	// nothing to do this should probably also make sure that this release is
-	// active (state 'Installed' instead of 'Superseded'?) somehow if we've
-	// marched further back in time
+	// XXX this should probably also make sure that this Release is active (state
+	// 'Installed' instead of 'Superseded'?) somehow if we've marched further back
+	// in time.
 	if identicalEnvironments(app.Spec.Template, latestRelease.Environment) {
 		if latestReleaseRecord.Status == shipperv1.ReleaseRecordWaitingForObject {
+			// We've recovered from failing to create a Release for a historical entry,
+			// mark the application accordingly.
 			return c.markReleaseCreated(latestRelease.GetName(), app)
 		}
+
+		// Clean up 'crash abort'-ed Releases from history.
 		return c.cleanHistory(app)
 	}
 
-	// our template is not the same, so we should trigger a new rollout by creating a new release
+	// Our template is not the same, so we should trigger a new rollout by creating
+	// a new release.
 	return c.createReleaseForApplication(app)
 }
