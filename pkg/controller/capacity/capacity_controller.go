@@ -244,7 +244,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 
 		var targetClusterClient kubernetes.Interface
 		targetClusterClient, clusterErr = c.clusterClientStore.GetClient(clusterSpec.Name)
-		if err != nil {
+		if clusterErr != nil {
 			break
 		}
 
@@ -254,7 +254,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 
 		var deploymentsList *appsv1.DeploymentList
 		deploymentsList, clusterErr = targetClusterClient.AppsV1().Deployments(targetNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
-		if err != nil {
+		if clusterErr != nil {
 			break
 		}
 
@@ -266,7 +266,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		targetDeployment := deploymentsList.Items[0]
 		patchString := fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicaCount)
 		_, clusterErr = targetClusterClient.AppsV1().Deployments(targetDeployment.Namespace).Patch(targetDeployment.Name, types.StrategicMergePatchType, []byte(patchString))
-		if err != nil {
+		if clusterErr != nil {
 			break
 		}
 
