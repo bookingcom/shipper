@@ -217,7 +217,8 @@ func (c *Controller) enqueueApp(obj interface{}) {
 func (c *Controller) syncApplication(key string) error {
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		return fmt.Errorf("invalid resource key: %q", key)
+		runtime.HandleError(fmt.Errorf("invalid resource key: %q", key))
+		return nil
 	}
 
 	app, err := c.appLister.Applications(ns).Get(name)
