@@ -231,7 +231,7 @@ func (c *Scheduler) CreateTrafficTarget() error {
 // based on its ClusterSelectors.
 func (c *Scheduler) ComputeTargetClusters() ([]string, error) {
 	// TODO selectors should be calculated from
-	// c.Release.Environment.ShipmentOrder.ClusterSelectors
+	// c.Release.Environment.ClusterSelectors
 	selectors := labels.NewSelector()
 
 	clusters, err := c.clustersLister.List(selectors)

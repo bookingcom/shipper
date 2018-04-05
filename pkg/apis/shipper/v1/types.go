@@ -75,68 +75,6 @@ type ReleaseRecord struct {
 	Status string `json:"status"`
 }
 
-// +genclient
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// ShipmentOrder describes a request to deploy an application
-type ShipmentOrder struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	// Specification of the desired behavior of the order.
-	Spec ShipmentOrderSpec `json:"spec"`
-	// Most recently observed status of the order
-	Status ShipmentOrderStatus `json:"status"`
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// ShipmentOrderList is a list of ShipmentOrders. Mostly only useful for
-// admins: regular users interact with exactly one ShipmentOrder at once
-type ShipmentOrderList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata"`
-
-	Items []ShipmentOrder `json:"items"`
-}
-
-// ShipmentOrderPhase is what's happening with a ShipmentOrder.
-type ShipmentOrderPhase string
-
-const (
-	// ShipmentOrderPhasePending indicates ShipmentOrders that are yet to be picked
-	// by the ShipmentOrder controller.
-	ShipmentOrderPhasePending ShipmentOrderPhase = "Pending"
-	// ShipmentOrderPhaseShipping indicates ShipmentOrders that are being processed
-	// by the ShipmentOrder controller.
-	ShipmentOrderPhaseShipping ShipmentOrderPhase = "Shipping"
-	// ShipmentOrderPhaseShipped indicates ShipmentOrders that have been already
-	// processed by the ShipmentOrder controller.
-	ShipmentOrderPhaseShipped ShipmentOrderPhase = "Shipped"
-)
-
-type ShipmentOrderStatus struct {
-	Phase ShipmentOrderPhase `json:"phase"`
-}
-
-type ShipmentOrderSpec struct {
-	// selectors for target clusters for the deployment
-	// XXX what are the semantics when the field is empty/omitted?
-	ClusterSelectors []ClusterSelector `json:"clusterSelectors"`
-
-	// Chart spec: name and version
-	Chart Chart `json:"chart"`
-
-	// how v2 gets the traffic
-	Strategy ReleaseStrategy `json:"strategy"`
-
-	// the inlined "values.yaml" to apply to the chart when rendering it
-	// XXX pointer here means it's null-able, do we want that?
-	Values *ChartValues `json:"values"`
-
-	ReleaseSelector *metav1.LabelSelector `json:"releaseSelector"`
-}
-
 type ClusterSelector struct {
 	Regions      []string `json:"regions"`
 	Capabilities []string `json:"capabilities"`

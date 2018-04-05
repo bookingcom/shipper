@@ -34,8 +34,6 @@ type Interface interface {
 	InstallationTargets() InstallationTargetInformer
 	// Releases returns a ReleaseInformer.
 	Releases() ReleaseInformer
-	// ShipmentOrders returns a ShipmentOrderInformer.
-	ShipmentOrders() ShipmentOrderInformer
 	// Strategies returns a StrategyInformer.
 	Strategies() StrategyInformer
 	// TrafficTargets returns a TrafficTargetInformer.
@@ -76,11 +74,6 @@ func (v *version) InstallationTargets() InstallationTargetInformer {
 // Releases returns a ReleaseInformer.
 func (v *version) Releases() ReleaseInformer {
 	return &releaseInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
-}
-
-// ShipmentOrders returns a ShipmentOrderInformer.
-func (v *version) ShipmentOrders() ShipmentOrderInformer {
-	return &shipmentOrderInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // Strategies returns a StrategyInformer.

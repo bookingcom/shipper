@@ -54,14 +54,6 @@ type ReleaseListerExpansion interface{}
 // ReleaseNamespaceLister.
 type ReleaseNamespaceListerExpansion interface{}
 
-// ShipmentOrderListerExpansion allows custom methods to be added to
-// ShipmentOrderLister.
-type ShipmentOrderListerExpansion interface{}
-
-// ShipmentOrderNamespaceListerExpansion allows custom methods to be added to
-// ShipmentOrderNamespaceLister.
-type ShipmentOrderNamespaceListerExpansion interface{}
-
 // StrategyListerExpansion allows custom methods to be added to
 // StrategyLister.
 type StrategyListerExpansion interface{}

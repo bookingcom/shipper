@@ -35,8 +35,6 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
 		&Application{},
 		&ApplicationList{},
-		&ShipmentOrder{},
-		&ShipmentOrderList{},
 		&Release{},
 		&ReleaseList{},
 		&Strategy{},

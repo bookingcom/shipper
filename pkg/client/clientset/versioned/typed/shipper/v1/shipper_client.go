@@ -30,7 +30,6 @@ type ShipperV1Interface interface {
 	ClustersGetter
 	InstallationTargetsGetter
 	ReleasesGetter
-	ShipmentOrdersGetter
 	StrategiesGetter
 	TrafficTargetsGetter
 }
@@ -58,10 +57,6 @@ func (c *ShipperV1Client) InstallationTargets(namespace string) InstallationTarg
 
 func (c *ShipperV1Client) Releases(namespace string) ReleaseInterface {
 	return newReleases(c, namespace)
-}
-
-func (c *ShipperV1Client) ShipmentOrders(namespace string) ShipmentOrderInterface {
-	return newShipmentOrders(c, namespace)
 }
 
 func (c *ShipperV1Client) Strategies(namespace string) StrategyInterface {
