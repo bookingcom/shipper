@@ -213,10 +213,6 @@ type ReleaseSpec struct {
 type ReleaseStatus struct {
 	Phase        string `json:"phase"`
 	AchievedStep uint   `json:"achievedStep"`
-	// Successor is a reference to a Release that supersedes this one.
-	Successor *corev1.ObjectReference `json:"successor,omitempty"`
-	// Predecessor is a reference to a known working Release.
-	Predecessor *corev1.ObjectReference `json:"predecessor,omitempty"`
 }
 
 type ReleaseEnvironment struct {
