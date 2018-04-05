@@ -660,11 +660,6 @@ func (in *ReleaseEnvironment) DeepCopyInto(out *ReleaseEnvironment) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
-	if in.Clusters != nil {
-		in, out := &in.Clusters, &out.Clusters
-		*out = make([]string, len(*in))
-		copy(*out, *in)
-	}
 	return
 }
 

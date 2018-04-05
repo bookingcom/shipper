@@ -2,6 +2,7 @@ package schedulecontroller
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/golang/glog"
 
@@ -87,16 +88,21 @@ func (c *Scheduler) scheduleRelease() error {
 }
 
 func (c *Scheduler) HasClusters() bool {
-	return len(c.Release.Environment.Clusters) > 0
+	return len(c.Release.Annotations[v1.ReleaseClustersAnnotation]) > 0
 }
 
 func (c *Scheduler) Clusters() []string {
-	return c.Release.Environment.Clusters
+	clusters := strings.Split(c.Release.Annotations[v1.ReleaseClustersAnnotation], ",")
+	if len(clusters) == 1 && clusters[0] == "" {
+		clusters = []string{}
+	}
+
+	return clusters
 }
 
 func (c *Scheduler) SetClusters(clusters []string) {
 	sort.Strings(clusters)
-	c.Release.Environment.Clusters = clusters
+	c.Release.Annotations[v1.ReleaseClustersAnnotation] = strings.Join(clusters, ",")
 }
 
 func (c *Scheduler) SetReleasePhase(phase string) {

@@ -231,11 +231,6 @@ type ReleaseEnvironment struct {
 	// selectors for target clusters for the deployment
 	// XXX what are the semantics when the field is empty/omitted?
 	ClusterSelectors []ClusterSelector `json:"clusterSelectors"`
-
-	// TODO(btyler) should probably be an annotation
-	Replicas int32 `json:"replicas"`
-	// TODO(btyler) should probably also be an annotation
-	Clusters []string `json:"clusters"`
 }
 
 type Sidecar struct {

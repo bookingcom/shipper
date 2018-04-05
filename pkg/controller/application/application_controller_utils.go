@@ -72,8 +72,6 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application) err
 		},
 	}
 
-	new.Environment.Replicas = int32(replicas)
-
 	// create the entry in release history in state 'WaitingForObject'
 	err = c.appendReleaseToAppHistory(releaseName, app)
 	if err != nil {
@@ -287,9 +285,6 @@ func identicalEnvironments(envs ...shipperv1.ReleaseEnvironment) bool {
 
 func hashReleaseEnvironment(env shipperv1.ReleaseEnvironment) string {
 	copy := env.DeepCopy()
-	// TODO(btyler) move these to a non-environment field
-	copy.Clusters = nil
-	copy.Replicas = 0
 	b, err := json.Marshal(copy)
 	if err != nil {
 		// TODO(btyler) ???

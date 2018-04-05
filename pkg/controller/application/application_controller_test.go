@@ -204,7 +204,7 @@ func newRelease(releaseName string, app *shipperv1.Application) *shipperv1.Relea
 				Name:      releaseName,
 				Namespace: app.GetNamespace(),
 				Annotations: map[string]string{
-					shipperv1.ReleaseReplicasAnnotation: fmt.Sprintf("%d", app.Spec.Template.Replicas),
+					shipperv1.ReleaseReplicasAnnotation: "12", // value from the test chart
 				},
 				Labels: map[string]string{
 					shipperv1.ReleaseLabel: releaseName,
@@ -239,7 +239,6 @@ func newApplication(name string) *shipperv1.Application {
 				Strategy:         shipperv1.ReleaseStrategy{Name: "foobar"},
 				ClusterSelectors: []shipperv1.ClusterSelector{},
 				Values:           &shipperv1.ChartValues{},
-				Replicas:         int32(12),
 			},
 		},
 	}

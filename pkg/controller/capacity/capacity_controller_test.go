@@ -3,24 +3,24 @@ package capacity
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-
-	"k8s.io/client-go/tools/record"
-
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
-	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	kubeinformers "k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	kubetesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/record"
+
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
+	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
 func TestUpdatingCapacityTargetUpdatesDeployment(t *testing.T) {
@@ -257,10 +257,11 @@ func newRelease(name, namespace string, replicas int32) *shipperv1.Release {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Annotations: map[string]string{
+				shipperv1.ReleaseReplicasAnnotation: strconv.Itoa(int(replicas)),
+			},
 		},
-		Environment: shipperv1.ReleaseEnvironment{
-			Replicas: replicas,
-		},
+		Environment: shipperv1.ReleaseEnvironment{},
 	}
 
 	return &shipperv1.Release{

@@ -6,8 +6,9 @@ status:
 metadata:
   name: 0.0.1
   namespace: reviews-api
+  annotations:
+    shipper.booking.com/release.replicas: "10"
   environment:
-    clusters: []
     chart:
       name: reviews-api
       version: 0.0.1
@@ -31,6 +32,5 @@ metadata:
       version: "2.1"
     - name: telegraf
       version: "0.99"
-    replicas: 10
 spec:
   targetStep: 0

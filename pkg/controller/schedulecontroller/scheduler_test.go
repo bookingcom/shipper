@@ -79,10 +79,7 @@ func TestComputeTargetClusters(t *testing.T) {
 	// logic, a list of clusters containing all clusters we've added to
 	// the client in alphabetical order.
 	expected := release.DeepCopy()
-	expected.Environment.Clusters = []string{
-		clusterA.GetName(),
-		clusterB.GetName(),
-	}
+	expected.Annotations[shipperV1.ReleaseClustersAnnotation] = clusterA.GetName() + "," + clusterB.GetName()
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
 			shipperV1.SchemeGroupVersion.WithResource("releases"),
@@ -117,9 +114,8 @@ func TestComputeTargetClustersSkipUnscheduled(t *testing.T) {
 	// logic, a list of clusters containing the schedulable cluster we've
 	// added to the client.
 	expected := release.DeepCopy()
-	expected.Environment.Clusters = []string{
-		clusterA.GetName(),
-	}
+	expected.Annotations[shipperV1.ReleaseClustersAnnotation] = clusterA.GetName()
+
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
 			shipperV1.SchemeGroupVersion.WithResource("releases"),
@@ -164,7 +160,7 @@ func TestCreateAssociatedObjects(t *testing.T) {
 	// Fixtures
 	cluster := loadCluster("minikube-a")
 	release := loadRelease()
-	release.Environment.Clusters = []string{cluster.GetName()}
+	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 	fixtures := []runtime.Object{release, cluster}
 
 	// Expected release and actions. The release should have, at the end of
@@ -195,7 +191,8 @@ func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 	// Fixtures
 	cluster := loadCluster("minikube-a")
 	release := loadRelease()
-	release.Environment.Clusters = []string{cluster.GetName()}
+	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
+
 	installationtarget := &shipperV1.InstallationTarget{
 		ObjectMeta: metaV1.ObjectMeta{
 			Name:      release.GetName(),
@@ -232,7 +229,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	// Fixtures
 	cluster := loadCluster("minikube-a")
 	release := loadRelease()
-	release.Environment.Clusters = []string{cluster.GetName()}
+	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 	traffictarget := &shipperV1.TrafficTarget{
 		ObjectMeta: metaV1.ObjectMeta{
 			Name:      release.GetName(),
@@ -269,7 +266,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 	// Fixtures
 	cluster := loadCluster("minikube-a")
 	release := loadRelease()
-	release.Environment.Clusters = []string{cluster.GetName()}
+	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 	capacitytarget := &shipperV1.CapacityTarget{
 		ObjectMeta: metaV1.ObjectMeta{
 			Name:      release.GetName(),
