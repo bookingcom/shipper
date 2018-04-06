@@ -90,7 +90,7 @@ func NewController(
 			oldApp, oldOk := old.(*shipperv1.Application)
 			newApp, newOk := new.(*shipperv1.Application)
 			if oldOk && newOk && oldApp.ResourceVersion == newApp.ResourceVersion {
-				glog.V(6).Info("Received Application re-sync Update")
+				glog.V(4).Info("Received Application re-sync Update")
 				return
 			}
 
@@ -105,7 +105,7 @@ func NewController(
 			oldRel, oldOk := old.(*shipperv1.Release)
 			newRel, newOk := new.(*shipperv1.Release)
 			if oldOk && newOk && oldRel.ResourceVersion == newRel.ResourceVersion {
-				glog.V(6).Info("Received Release re-sync Update")
+				glog.V(4).Info("Received Release re-sync Update")
 				return
 			}
 
@@ -135,7 +135,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 		go wait.Until(c.applicationWorker, time.Second, stopCh)
 	}
 
-	glog.V(4).Info("Started Application controller")
+	glog.V(2).Info("Started Application controller")
 
 	<-stopCh
 }
@@ -175,7 +175,7 @@ func (c *Controller) processNextWorkItem() bool {
 	// Do not requeue this object because it's already processed.
 	c.appWorkqueue.Forget(obj)
 
-	glog.V(3).Infof("Successfully synced %q", key)
+	glog.V(4).Infof("Successfully synced %q", key)
 
 	return true
 }
@@ -194,8 +194,8 @@ func (c *Controller) enqueueRel(obj interface{}) {
 		return
 	}
 
-	if len(rel.OwnerReferences) != 1 {
-		runtime.HandleError(fmt.Errorf("%s does not have a single owner", key))
+	if n := len(rel.OwnerReferences); n != 1 {
+		runtime.HandleError(fmt.Errorf("expected exactly one owner for Release %q but got %d", key, n))
 		return
 	}
 
@@ -244,17 +244,19 @@ func (c *Controller) syncApplication(key string) error {
 func (c *Controller) processApplication(app *shipperv1.Application) error {
 	latestReleaseRecord := c.getEndOfHistory(app)
 
-	// No history, must be the first rollout of a new application.
 	if latestReleaseRecord == nil {
+		glog.Infof("Application %q is getting its first Release", controller.MetaKey(app))
 		return c.createReleaseForApplication(app)
 	}
 
 	latestRelease, err := c.relLister.Releases(app.GetNamespace()).Get(latestReleaseRecord.Name)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// This means we failed to create the Release after adding the historical
-			// entry; try again to create it.
 			if latestReleaseRecord.Status == shipperv1.ReleaseRecordWaitingForObject {
+				// This means we failed to create the Release after adding the historical
+				// entry; try again to create it.
+				glog.Infof("Application %q has uncommitted history entry %v",
+					controller.MetaKey(app), latestReleaseRecord)
 				return c.createReleaseForApplication(app)
 			}
 
@@ -265,10 +267,14 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 			// that good one.
 			// This prevents us from re-rolling a bad template (as in the 'crash abort'
 			// case) or leaving garbage in the history.
+
+			glog.Infof("Application %q's latest Release (%v) doesn't exist, rolling back",
+				controller.MetaKey(app), latestReleaseRecord)
 			return c.rollbackAppTemplate(app)
 		}
 
-		return fmt.Errorf("fetch Release %s for Application %q: %s", latestReleaseRecord.Name, controller.MetaKey(app), err)
+		return fmt.Errorf("fetch Release %q for Application %q: %s",
+			latestReleaseRecord.Name, controller.MetaKey(app), err)
 	}
 
 	// XXX this should probably also make sure that this Release is active (state
@@ -278,14 +284,19 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		if latestReleaseRecord.Status == shipperv1.ReleaseRecordWaitingForObject {
 			// We've recovered from failing to create a Release for a historical entry,
 			// mark the application accordingly.
+			glog.Infof("Application %q has uncommitted history entry %v",
+				controller.MetaKey(app), latestReleaseRecord)
 			return c.markReleaseCreated(latestRelease.GetName(), app)
 		}
 
 		// Clean up 'crash abort'-ed Releases from history.
+		glog.Infof("Application %q's history contains aborted Releases",
+			controller.MetaKey(app))
 		return c.cleanHistory(app)
 	}
 
 	// Our template is not the same, so we should trigger a new rollout by creating
 	// a new release.
+	glog.Info("Application %q is getting a new Release", controller.MetaKey(app))
 	return c.createReleaseForApplication(app)
 }
