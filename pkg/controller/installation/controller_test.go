@@ -47,6 +47,10 @@ func TestInstallOneCluster(t *testing.T) {
 	// mimics a connection to a Target Cluster.
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewCreateAction(
+			schema.GroupVersionResource{Resource: "namespaces", Version: "v1"},
+			release.GetNamespace(),
+			nil),
+		kubetesting.NewCreateAction(
 			schema.GroupVersionResource{Resource: "services", Version: "v1"},
 			release.GetNamespace(),
 			nil),
@@ -113,11 +117,19 @@ func TestInstallMultipleClusters(t *testing.T) {
 	// mimics a connection to a Target Cluster.
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewCreateAction(
+			schema.GroupVersionResource{Resource: "namespaces", Version: "v1"},
+			release.GetNamespace(),
+			nil),
+		kubetesting.NewCreateAction(
 			schema.GroupVersionResource{Resource: "services", Version: "v1"},
 			release.GetNamespace(),
 			nil),
 		kubetesting.NewCreateAction(
 			schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"},
+			release.GetNamespace(),
+			nil),
+		kubetesting.NewCreateAction(
+			schema.GroupVersionResource{Resource: "namespaces", Version: "v1"},
 			release.GetNamespace(),
 			nil),
 		kubetesting.NewCreateAction(
