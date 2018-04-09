@@ -19,6 +19,7 @@ package capacity
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/golang/glog"
@@ -209,8 +210,7 @@ func (c *Controller) processNextCapacityTargetWorkItem() bool {
 }
 
 // capacityTargetSyncHandler compares the actual state with the desired, and attempts to
-// converge the two. It then updates the Status block of the ShipmentOrder resource
-// with the current status of the resource.
+// converge the two.
 func (c *Controller) capacityTargetSyncHandler(key string) error {
 	// Convert the namespace/name string into a distinct namespace and name
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
@@ -306,10 +306,14 @@ func (c Controller) convertPercentageToReplicaCountForCluster(capacityTarget *sh
 		return 0, err
 	}
 
-	totalReplicaCount := release.Environment.Replicas
+	totalReplicaCount, err := strconv.Atoi(release.Annotations[shipperv1.ReleaseReplicasAnnotation])
+	if err != nil {
+		return 0, err
+	}
+
 	percentage := cluster.Percent
 
-	return c.calculateAmountFromPercentage(totalReplicaCount, percentage), nil
+	return c.calculateAmountFromPercentage(int32(totalReplicaCount), percentage), nil
 }
 
 func (c Controller) getReleaseForCapacityTarget(capacityTarget *shipperv1.CapacityTarget) (*shipperv1.Release, error) {

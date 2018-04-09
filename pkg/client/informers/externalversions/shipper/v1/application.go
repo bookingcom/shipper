@@ -31,59 +31,59 @@ import (
 	cache "k8s.io/client-go/tools/cache"
 )
 
-// ShipmentOrderInformer provides access to a shared informer and lister for
-// ShipmentOrders.
-type ShipmentOrderInformer interface {
+// ApplicationInformer provides access to a shared informer and lister for
+// Applications.
+type ApplicationInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.ShipmentOrderLister
+	Lister() v1.ApplicationLister
 }
 
-type shipmentOrderInformer struct {
+type applicationInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
 	tweakListOptions internalinterfaces.TweakListOptionsFunc
 	namespace        string
 }
 
-// NewShipmentOrderInformer constructs a new informer for ShipmentOrder type.
+// NewApplicationInformer constructs a new informer for Application type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewShipmentOrderInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
-	return NewFilteredShipmentOrderInformer(client, namespace, resyncPeriod, indexers, nil)
+func NewApplicationInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
+	return NewFilteredApplicationInformer(client, namespace, resyncPeriod, indexers, nil)
 }
 
-// NewFilteredShipmentOrderInformer constructs a new informer for ShipmentOrder type.
+// NewFilteredApplicationInformer constructs a new informer for Application type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewFilteredShipmentOrderInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
+func NewFilteredApplicationInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options meta_v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.ShipperV1().ShipmentOrders(namespace).List(options)
+				return client.ShipperV1().Applications(namespace).List(options)
 			},
 			WatchFunc: func(options meta_v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.ShipperV1().ShipmentOrders(namespace).Watch(options)
+				return client.ShipperV1().Applications(namespace).Watch(options)
 			},
 		},
-		&shipper_v1.ShipmentOrder{},
+		&shipper_v1.Application{},
 		resyncPeriod,
 		indexers,
 	)
 }
 
-func (f *shipmentOrderInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewFilteredShipmentOrderInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+func (f *applicationInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+	return NewFilteredApplicationInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
 }
 
-func (f *shipmentOrderInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&shipper_v1.ShipmentOrder{}, f.defaultInformer)
+func (f *applicationInformer) Informer() cache.SharedIndexInformer {
+	return f.factory.InformerFor(&shipper_v1.Application{}, f.defaultInformer)
 }
 
-func (f *shipmentOrderInformer) Lister() v1.ShipmentOrderLister {
-	return v1.NewShipmentOrderLister(f.Informer().GetIndexer())
+func (f *applicationInformer) Lister() v1.ApplicationLister {
+	return v1.NewApplicationLister(f.Informer().GetIndexer())
 }

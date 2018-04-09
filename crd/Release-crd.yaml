@@ -35,8 +35,9 @@ spec:
           type: object
           required:
           - chart
-          - shipmentOrder
-          - sidecars
+          - strategy
+          - values
+          - clusterSelectors
           properties:
             chart:
               type: object
@@ -60,27 +61,23 @@ spec:
                     type: string
                   version:
                     type: string
-            shipmentOrder:
+            clusterSelectors:
+              type: array
+              items:
+                type: object
+                properties:
+                  regions:
+                    type: array
+                    items:
+                      type: string
+                  capabilities:
+                    type: array
+                    items:
+                      type: string
+            strategy:
               type: object
-              required:
-              - clusterSelectors
-              - strategy
-              - values
               properties:
-                clusterSelectors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      regions:
-                        type: array
-                        items:
-                          type: string
-                      capabilities:
-                        type: array
-                        items:
-                          type: string
-                strategy:
+                name:
                   type: string
-                values:
-                  type: object
+            values:
+              type: object

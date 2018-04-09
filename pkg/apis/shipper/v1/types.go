@@ -10,7 +10,12 @@ const (
 
 	PhaseLabel = "phase"
 
-	ReleaseLabel = "release"
+	ReleaseLabel                = "release"
+	AppLabel                    = "shipper-app"
+	ReleaseEnvironmentHashLabel = "shipper-release-hash"
+
+	ReleaseRecordWaitingForObject = "WaitingForObject"
+	ReleaseRecordObjectCreated    = "ReleaseCreated"
 
 	ReleasePhaseWaitingForScheduling = "WaitingForScheduling"
 	ReleasePhaseWaitingForStrategy   = "WaitingForStrategy"
@@ -22,6 +27,10 @@ const (
 	InstallationStatusInstalled = "Installed"
 	InstallationStatusFailed    = "Failed"
 
+	ReleaseTemplateGenerationAnnotation = "shipper.booking.com/release.template.generation"
+	ReleaseClustersAnnotation           = "shipper.booking.com/release.clusters"
+	ReleaseReplicasAnnotation           = "shipper.booking.com/release.replicas"
+
 	SecretChecksumAnnotation    = "shipper.booking.com/cluster-secret.checksum"
 	SecretClusterNameAnnotation = "shipper.booking.com/cluster-secret.clusterName"
 
@@ -32,63 +41,38 @@ const (
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// ShipmentOrder describes a request to deploy an application
-type ShipmentOrder struct {
+// Application describes a deployable application
+type Application struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// Specification of the desired behavior of the order.
-	Spec ShipmentOrderSpec `json:"spec"`
-	// Most recently observed status of the order
-	Status ShipmentOrderStatus `json:"status"`
+	Spec ApplicationSpec `json:"spec"`
+	// Most recently observed status of the application
+	Status ApplicationStatus `json:"status"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// ShipmentOrderList is a list of ShipmentOrders. Mostly only useful for
-// admins: regular users interact with exactly one ShipmentOrder at once
-type ShipmentOrderList struct {
+// ApplicationList is a list of Applications. Mostly only useful for
+// admins: regular users interact with exactly one Application at once
+type ApplicationList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata"`
 
-	Items []ShipmentOrder `json:"items"`
+	Items []Application `json:"items"`
 }
 
-// ShipmentOrderPhase is what's happening with a ShipmentOrder.
-type ShipmentOrderPhase string
-
-const (
-	// ShipmentOrderPhasePending indicates ShipmentOrders that are yet to be picked
-	// by the ShipmentOrder controller.
-	ShipmentOrderPhasePending ShipmentOrderPhase = "Pending"
-	// ShipmentOrderPhaseShipping indicates ShipmentOrders that are being processed
-	// by the ShipmentOrder controller.
-	ShipmentOrderPhaseShipping ShipmentOrderPhase = "Shipping"
-	// ShipmentOrderPhaseShipped indicates ShipmentOrders that have been already
-	// processed by the ShipmentOrder controller.
-	ShipmentOrderPhaseShipped ShipmentOrderPhase = "Shipped"
-)
-
-type ShipmentOrderStatus struct {
-	Phase ShipmentOrderPhase `json:"phase"`
+type ApplicationSpec struct {
+	Template ReleaseEnvironment `json:"template"`
 }
 
-type ShipmentOrderSpec struct {
-	// selectors for target clusters for the deployment
-	// XXX what are the semantics when the field is empty/omitted?
-	ClusterSelectors []ClusterSelector `json:"clusterSelectors"`
+type ApplicationStatus struct {
+	History []*ReleaseRecord `json:"history"`
+}
 
-	// Chart spec: name and version
-	Chart Chart `json:"chart"`
-
-	// how v2 gets the traffic
-	Strategy ReleaseStrategy `json:"strategy"`
-
-	// the inlined "values.yaml" to apply to the chart when rendering it
-	// XXX pointer here means it's null-able, do we want that?
-	Values *ChartValues `json:"values"`
-
-	ReleaseSelector *metav1.LabelSelector `json:"releaseSelector"`
+type ReleaseRecord struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
 }
 
 type ClusterSelector struct {
@@ -102,12 +86,13 @@ type Chart struct {
 	RepoURL string `json:"repoUrl"`
 }
 
-// ReleaseStrategy is how deployments are executed.
-type ReleaseStrategy string
+type ReleaseStrategy struct {
+	Name string `json:"name"`
+}
 
 const (
 	// ReleaseStrategyVanguard is a gradual deployment strategy with custom steps.
-	ReleaseStrategyVanguard ReleaseStrategy = "vanguard"
+	ReleaseStrategyVanguard string = "vanguard"
 )
 
 type ChartValues map[string]interface{}
@@ -228,24 +213,24 @@ type ReleaseSpec struct {
 type ReleaseStatus struct {
 	Phase        string `json:"phase"`
 	AchievedStep uint   `json:"achievedStep"`
-	// Successor is a reference to a Release that supersedes this one.
-	Successor *corev1.ObjectReference `json:"successor,omitempty"`
-	// Predecessor is a reference to a known working Release.
-	Predecessor *corev1.ObjectReference `json:"predecessor,omitempty"`
 }
 
 type ReleaseEnvironment struct {
-	Clusters      []string          `json:"clusters"`
-	Chart         Chart             `json:"chart"`
-	ShipmentOrder ShipmentOrderSpec `json:"shipmentOrder"`
-	Sidecars      []Sidecar         `json:"sidecars"`
-	Replicas      int32             `json:"replicas"`
-}
+	// Chart spec: name, version, repoURL
+	Chart Chart `json:"chart"`
+	// the inlined "values.yaml" to apply to the chart when rendering it
+	// XXX pointer here means it's null-able, do we want that?
+	Values *ChartValues `json:"values"`
 
-type EmbeddedShipmentOrder struct {
+	// how v2 gets the traffic
+	Strategy ReleaseStrategy `json:"strategy"`
+
+	// set of sidecars to inject into the chart on rendering
+	Sidecars []Sidecar `json:"sidecars"`
+
+	// selectors for target clusters for the deployment
+	// XXX what are the semantics when the field is empty/omitted?
 	ClusterSelectors []ClusterSelector `json:"clusterSelectors"`
-	Strategy         string            `json:"strategy"`
-	Values           *ChartValues      `json:"values"`
 }
 
 type Sidecar struct {

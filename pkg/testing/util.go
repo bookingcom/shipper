@@ -85,6 +85,7 @@ func FilterActions(actions []kubetesting.Action) []kubetesting.Action {
 	ignore := func(action kubetesting.Action) bool {
 		for _, v := range []string{"list", "watch"} {
 			for _, r := range []string{
+				"applications",
 				"shipmentorders",
 				"releases",
 				"clusters",

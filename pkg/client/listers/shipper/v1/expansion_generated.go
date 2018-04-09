@@ -18,6 +18,14 @@ limitations under the License.
 
 package v1
 
+// ApplicationListerExpansion allows custom methods to be added to
+// ApplicationLister.
+type ApplicationListerExpansion interface{}
+
+// ApplicationNamespaceListerExpansion allows custom methods to be added to
+// ApplicationNamespaceLister.
+type ApplicationNamespaceListerExpansion interface{}
+
 // CapacityTargetListerExpansion allows custom methods to be added to
 // CapacityTargetLister.
 type CapacityTargetListerExpansion interface{}
@@ -45,14 +53,6 @@ type ReleaseListerExpansion interface{}
 // ReleaseNamespaceListerExpansion allows custom methods to be added to
 // ReleaseNamespaceLister.
 type ReleaseNamespaceListerExpansion interface{}
-
-// ShipmentOrderListerExpansion allows custom methods to be added to
-// ShipmentOrderLister.
-type ShipmentOrderListerExpansion interface{}
-
-// ShipmentOrderNamespaceListerExpansion allows custom methods to be added to
-// ShipmentOrderNamespaceLister.
-type ShipmentOrderNamespaceListerExpansion interface{}
 
 // StrategyListerExpansion allows custom methods to be added to
 // StrategyLister.

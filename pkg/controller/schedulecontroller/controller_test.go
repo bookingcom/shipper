@@ -47,7 +47,7 @@ func TestControllerComputeTargetClusters(t *testing.T) {
 	// logic, a list of clusters containing the sole cluster we've added to
 	// the client.
 	expected := release.DeepCopy()
-	expected.Environment.Clusters = []string{cluster.GetName()}
+	expected.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
 			shipperV1.SchemeGroupVersion.WithResource("releases"),
@@ -68,7 +68,7 @@ func TestControllerCreateAssociatedObjects(t *testing.T) {
 	// Fixtures
 	cluster := loadCluster("minikube-a")
 	release := loadRelease()
-	release.Environment.Clusters = []string{cluster.GetName()}
+	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 	fixtures := []runtime.Object{release, cluster}
 
 	// Expected release and actions. The release should have, at the end of
@@ -97,7 +97,7 @@ func TestControllerCreateAssociatedObjectsDuplicateInstallationTarget(t *testing
 	// Fixtures
 	cluster := loadCluster("minikube-a")
 	release := loadRelease()
-	release.Environment.Clusters = []string{cluster.GetName()}
+	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 	installationtarget := &shipperV1.InstallationTarget{
 		ObjectMeta: metaV1.ObjectMeta{
 			Name:      release.GetName(),
@@ -132,7 +132,7 @@ func TestControllerCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	// Fixtures
 	cluster := loadCluster("minikube-a")
 	release := loadRelease()
-	release.Environment.Clusters = []string{cluster.GetName()}
+	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 	traffictarget := &shipperV1.TrafficTarget{
 		ObjectMeta: metaV1.ObjectMeta{
 			Name:      release.GetName(),
@@ -167,7 +167,7 @@ func TestControllerCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) 
 	// Fixtures
 	cluster := loadCluster("minikube-a")
 	release := loadRelease()
-	release.Environment.Clusters = []string{cluster.GetName()}
+	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 	capacitytarget := &shipperV1.CapacityTarget{
 		ObjectMeta: metaV1.ObjectMeta{
 			Name:      release.GetName(),

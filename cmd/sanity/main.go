@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	resourceType = flag.String("type", "so", "short name for the type you want to query")
+	resourceType = flag.String("type", "app", "short name for the type you want to query")
 	kuberconfig  = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
 	master       = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
 )
@@ -33,8 +33,8 @@ func main() {
 	}
 
 	switch *resourceType {
-	case "so":
-		list, err := shipperClient.ShipperV1().ShipmentOrders("default").List(metav1.ListOptions{})
+	case "app":
+		list, err := shipperClient.ShipperV1().Applications("default").List(metav1.ListOptions{})
 		if err != nil {
 			glog.Fatalf("Error listing %q: %v", *resourceType, err)
 		}
@@ -97,6 +97,6 @@ func main() {
 			fmt.Printf("%s %q with this spec: %+v\n", item.Kind, item.Name, item.Spec)
 		}
 	default:
-		glog.Fatalf("unknown resource short name %q. try one of: so, rel, strat, it, ct, tt", *resourceType)
+		glog.Fatalf("unknown resource short name %q. try one of: app, so, rel, strat, it, ct, tt", *resourceType)
 	}
 }

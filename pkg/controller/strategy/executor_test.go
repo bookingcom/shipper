@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"testing"
 
-	coreV1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 
@@ -15,6 +14,26 @@ const clusterName = "minikube"
 const namespace = "test-namespace"
 const incumbentName = "0.0.1"
 const contenderName = "0.0.2"
+
+var app *v1.Application = &v1.Application{
+	ObjectMeta: metaV1.ObjectMeta{
+		Name:      "test-app",
+		Namespace: namespace,
+		UID:       "foobarbaz",
+	},
+	Status: v1.ApplicationStatus{
+		History: []*v1.ReleaseRecord{
+			{
+				Name:   incumbentName,
+				Status: v1.ReleaseRecordObjectCreated,
+			},
+			{
+				Name:   contenderName,
+				Status: v1.ReleaseRecordObjectCreated,
+			},
+		},
+	},
+}
 
 // TestCompleteStrategy tests the complete "vanguard" strategy, end-to-end.
 // This test exercises only the Executor.execute() method, using hard coded
@@ -155,18 +174,19 @@ func buildIncumbent() *releaseInfo {
 			ObjectMeta: metaV1.ObjectMeta{
 				Name:      incumbentName,
 				Namespace: namespace,
+				OwnerReferences: []metaV1.OwnerReference{
+					metaV1.OwnerReference{
+						APIVersion: "shipper.booking.com/v1",
+						Kind:       "Application",
+						Name:       app.GetName(),
+						UID:        app.GetUID(),
+					},
+				},
 			},
 		},
 		Status: v1.ReleaseStatus{
 			Phase:        v1.ReleasePhaseInstalled,
 			AchievedStep: 2,
-			Successor: &coreV1.ObjectReference{
-				APIVersion: "shipper.booking.com/v1",
-				Kind:       "Release",
-				Name:       contenderName,
-				Namespace:  namespace,
-				// TODO populate UID
-			},
 		},
 		Spec: v1.ReleaseSpec{
 			TargetStep: 2,
@@ -269,23 +289,23 @@ func buildContender() *releaseInfo {
 			ObjectMeta: metaV1.ObjectMeta{
 				Name:      contenderName,
 				Namespace: namespace,
-			},
-			Environment: v1.ReleaseEnvironment{
-				ShipmentOrder: v1.ShipmentOrderSpec{
-					Strategy: "vanguard",
+				OwnerReferences: []metaV1.OwnerReference{
+					metaV1.OwnerReference{
+						APIVersion: "shipper.booking.com/v1",
+						Kind:       "Application",
+						Name:       app.GetName(),
+						UID:        app.GetUID(),
+					},
 				},
+			},
+
+			Environment: v1.ReleaseEnvironment{
+				Strategy: v1.ReleaseStrategy{Name: "vanguard"},
 			},
 		},
 		Status: v1.ReleaseStatus{
 			Phase:        v1.ReleasePhaseWaitingForStrategy,
 			AchievedStep: 0,
-			Predecessor: &coreV1.ObjectReference{
-				APIVersion: "shipper.booking.com/v1",
-				Kind:       "Release",
-				Name:       incumbentName,
-				Namespace:  namespace,
-				// TODO populate UID
-			},
 		},
 		Spec: v1.ReleaseSpec{
 			TargetStep: 0,

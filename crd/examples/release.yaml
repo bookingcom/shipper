@@ -13,20 +13,20 @@ metadata:
       name: reviews-api
       version: 0.0.1
       repoUrl: localhost
-    shipmentOrder:
-      clusterSelectors:
-      - regions:
-        - foo
-        - bar
-        capabilities:
-        - gpu
-        - pci
-      strategy: vanguard
-      values:
-        perl:
-          image:
-            name: reviewsapi/app
-            version: 6bbb0da1891646e58eb3e6a63af3a6fc3c8eb5a0d44824cba581d2e14a0450cf
+    clusterSelectors:
+    - regions:
+      - foo
+      - bar
+      capabilities:
+      - gpu
+      - pci
+    strategy:
+      name: vanguard
+    values:
+      perl:
+        image:
+          name: reviewsapi/app
+          version: 6bbb0da1891646e58eb3e6a63af3a6fc3c8eb5a0d44824cba581d2e14a0450cf
     sidecars:
     - name: envoy
       version: "2.1"

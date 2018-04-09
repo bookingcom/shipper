@@ -24,6 +24,8 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
+	// Applications returns a ApplicationInformer.
+	Applications() ApplicationInformer
 	// CapacityTargets returns a CapacityTargetInformer.
 	CapacityTargets() CapacityTargetInformer
 	// Clusters returns a ClusterInformer.
@@ -32,8 +34,6 @@ type Interface interface {
 	InstallationTargets() InstallationTargetInformer
 	// Releases returns a ReleaseInformer.
 	Releases() ReleaseInformer
-	// ShipmentOrders returns a ShipmentOrderInformer.
-	ShipmentOrders() ShipmentOrderInformer
 	// Strategies returns a StrategyInformer.
 	Strategies() StrategyInformer
 	// TrafficTargets returns a TrafficTargetInformer.
@@ -49,6 +49,11 @@ type version struct {
 // New returns a new Interface.
 func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakListOptions internalinterfaces.TweakListOptionsFunc) Interface {
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
+}
+
+// Applications returns a ApplicationInformer.
+func (v *version) Applications() ApplicationInformer {
+	return &applicationInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // CapacityTargets returns a CapacityTargetInformer.
@@ -69,11 +74,6 @@ func (v *version) InstallationTargets() InstallationTargetInformer {
 // Releases returns a ReleaseInformer.
 func (v *version) Releases() ReleaseInformer {
 	return &releaseInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
-}
-
-// ShipmentOrders returns a ShipmentOrderInformer.
-func (v *version) ShipmentOrders() ShipmentOrderInformer {
-	return &shipmentOrderInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // Strategies returns a StrategyInformer.

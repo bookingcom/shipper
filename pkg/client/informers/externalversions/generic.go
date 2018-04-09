@@ -53,6 +53,8 @@ func (f *genericInformer) Lister() cache.GenericLister {
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
 	// Group=shipper.booking.com, Version=v1
+	case v1.SchemeGroupVersion.WithResource("applications"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().Applications().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("capacitytargets"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().CapacityTargets().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("clusters"):
@@ -61,8 +63,6 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().InstallationTargets().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("releases"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().Releases().Informer()}, nil
-	case v1.SchemeGroupVersion.WithResource("shipmentorders"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().ShipmentOrders().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("strategies"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().Strategies().Informer()}, nil
 	case v1.SchemeGroupVersion.WithResource("traffictargets"):

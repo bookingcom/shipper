@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 
 	"github.com/golang/glog"
 
@@ -183,7 +184,12 @@ func (c *Controller) updateStatus(capacityTarget *shipperv1.CapacityTarget, clus
 		return err
 	}
 
-	achievedPercent := c.calculatePercentageFromAmount(release.Environment.Replicas, availableReplicas)
+	replicas, err := strconv.Atoi(release.Annotations[shipperv1.ReleaseReplicasAnnotation])
+	if err != nil {
+		return err
+	}
+
+	achievedPercent := c.calculatePercentageFromAmount(int32(replicas), availableReplicas)
 
 	clusterStatus := shipperv1.ClusterCapacityStatus{
 		Name:              clusterName,
