@@ -28,7 +28,21 @@ const (
 
 // private method, but other tests make use of it
 func TestHashReleaseEnv(t *testing.T) {
+	app := newApplication(testAppName)
+	rel := newRelease("test-release", app)
 
+	appHash := hashReleaseEnvironment(app.Spec.Template)
+	relHash := hashReleaseEnvironment(rel.Environment)
+	if appHash != relHash {
+		t.Errorf("two identical environments should have hashed to the same value, but they did not: app %q and rel %q", appHash, relHash)
+	}
+
+	distinctApp := newApplication(testAppName)
+	distinctApp.Spec.Template.Strategy.Name = "blorg"
+	distinctHash := hashReleaseEnvironment(distinctApp.Spec.Template)
+	if distinctHash == appHash {
+		t.Errorf("two different environments hashed to the same thing: %q", distinctHash)
+	}
 }
 
 // an app with no history should create a release
