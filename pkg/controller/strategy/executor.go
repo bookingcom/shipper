@@ -3,6 +3,7 @@ package strategy
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/golang/glog"
 
@@ -11,6 +12,7 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/conditions"
 	"github.com/bookingcom/shipper/pkg/controller"
 )
 
@@ -55,43 +57,6 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 		return nil, err
 	}
 
-	//////////////////////////////////////////////////////////////////////////
-	// Installation
-	//
-	if canContinue := checkInstallation(s.contender); !canContinue {
-		s.info("installation pending")
-		return nil, nil
-	} else {
-		s.info("installation finished")
-	}
-
-	// Contender
-	if contenderReady, contenderPatches, err := s.checkContender(strategyStep); err != nil {
-		return nil, err
-	} else if !contenderReady {
-		s.info("contender is not yet ready for release %q, step %d", s.contender.release.Name, targetStep)
-		return contenderPatches, nil
-	} else {
-		s.info("contender is ready for release %q, step %d", s.contender.release.Name, targetStep)
-	}
-
-	// Incumbent
-	if s.incumbent != nil {
-		if incumbentReady, incumbentPatches, err := s.checkIncumbent(strategyStep); err != nil {
-			return nil, err
-		} else if !incumbentReady {
-			s.info("incumbent is not yet ready for release %q, step %d", s.incumbent.release.Name, targetStep)
-			return incumbentPatches, nil
-		} else {
-			s.info("incumbent is ready for step release %q, step %d", s.incumbent.release.Name, targetStep)
-		}
-	} else {
-		s.info("no incumbent, must be a new app")
-	}
-
-	//////////////////////////////////////////////////////////////////////////
-	// Release
-	//
 	lastStepIndex := len(strategy.Spec.Steps) - 1
 	if lastStepIndex < 0 {
 		lastStepIndex = 0
@@ -99,148 +64,316 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 
 	isLastStep := targetStep == uint(lastStepIndex)
 
-	if releasePatches, err := s.finalizeRelease(targetStep, strategyStep, isLastStep); err != nil {
-		return nil, err
+	var releaseStrategyConditions []v1.ReleaseStrategyCondition
+
+	if s.contender.release.Status.Strategy != nil {
+		releaseStrategyConditions = s.contender.release.Status.Strategy.Conditions
+	}
+
+	strategyConditions := conditions.NewStrategyConditions(releaseStrategyConditions...)
+
+	lastTransitionTime := time.Now()
+
+	//////////////////////////////////////////////////////////////////////////
+	// Installation
+	//
+	stepIdx := int32(targetStep)
+
+	if contenderReady, clusters := checkInstallation(s.contender); !contenderReady {
+		s.info("installation pending")
+
+		if len(s.contender.installationTarget.Spec.Clusters) != len(s.contender.installationTarget.Status.Clusters) {
+			strategyConditions.SetUnknown(
+				v1.StrategyConditionContenderAchievedInstallation,
+				conditions.StrategyConditionsUpdate{
+					Step:               stepIdx,
+					LastTransitionTime: lastTransitionTime,
+				})
+		} else {
+			// Contender installation is not ready yet, so we update conditions
+			// accordingly.
+			strategyConditions.SetFalse(
+				v1.StrategyConditionContenderAchievedInstallation,
+				conditions.StrategyConditionsUpdate{
+					Reason:             conditions.ClustersNotReady,
+					Message:            fmt.Sprintf("clusters pending installation: %v", clusters),
+					Step:               stepIdx,
+					LastTransitionTime: lastTransitionTime,
+				})
+		}
+
+		return []ExecutorResult{s.buildContenderStrategyConditionsPatch(strategyConditions, stepIdx, isLastStep)},
+			nil
+
 	} else {
+		s.info("installation finished")
+
+		strategyConditions.SetTrue(
+			v1.StrategyConditionContenderAchievedInstallation,
+			conditions.StrategyConditionsUpdate{
+				LastTransitionTime: lastTransitionTime,
+				Step:               stepIdx,
+			})
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Contender
+	//
+	{
+
+		//////////////////////////////////////////////////////////////////////////
+		// Contender Capacity
+		//
+		capacity, err := strconv.Atoi(strategyStep.ContenderCapacity)
+		if err != nil {
+			return nil, err
+		}
+
+		if achieved, newSpec, clustersNotReady := checkCapacity(s.contender.capacityTarget, uint(capacity), contenderCapacityComparison); !achieved {
+			s.info("contender %q hasn't achieved capacity yet", s.contender.release.Name)
+
+			var patches []ExecutorResult
+
+			strategyConditions.SetFalse(
+				v1.StrategyConditionContenderAchievedCapacity,
+				conditions.StrategyConditionsUpdate{
+					Reason:             conditions.ClustersNotReady,
+					Message:            fmt.Sprintf("clusters pending capacity adjustments: %v", clustersNotReady),
+					Step:               stepIdx,
+					LastTransitionTime: lastTransitionTime,
+				})
+
+			if newSpec != nil {
+				patches = append(patches, &CapacityTargetOutdatedResult{
+					NewSpec: newSpec,
+					Name:    s.contender.release.Name,
+				})
+			}
+
+			patches = append(patches, s.buildContenderStrategyConditionsPatch(strategyConditions, stepIdx, isLastStep))
+
+			return patches, nil
+		} else {
+			s.info("contender %q has achieved capacity", s.contender.release.Name)
+
+			strategyConditions.SetTrue(
+				v1.StrategyConditionContenderAchievedCapacity,
+				conditions.StrategyConditionsUpdate{
+					Step:               stepIdx,
+					LastTransitionTime: lastTransitionTime,
+				})
+		}
+
+		//////////////////////////////////////////////////////////////////////////
+		// Contender Traffic
+		//
+		trafficWeight, err := strconv.Atoi(strategyStep.ContenderTraffic)
+		if err != nil {
+			return nil, err
+		}
+
+		if achieved, newSpec, clustersNotReady := checkTraffic(s.contender.trafficTarget, uint(trafficWeight), contenderTrafficComparison); !achieved {
+			s.info("contender %q hasn't achieved traffic yet", s.contender.release.Name)
+
+			var patches []ExecutorResult
+
+			strategyConditions.SetFalse(
+				v1.StrategyConditionContenderAchievedTraffic,
+				conditions.StrategyConditionsUpdate{
+					Reason:             conditions.ClustersNotReady,
+					Message:            fmt.Sprintf("clusters pending traffic adjustments: %v", clustersNotReady),
+					Step:               stepIdx,
+					LastTransitionTime: lastTransitionTime,
+				})
+
+			if newSpec != nil {
+				patches = append(patches, &TrafficTargetOutdatedResult{
+					NewSpec: newSpec,
+					Name:    s.contender.release.Name,
+				})
+			}
+
+			patches = append(patches, s.buildContenderStrategyConditionsPatch(strategyConditions, stepIdx, isLastStep))
+
+			return patches, nil
+		} else {
+			s.info("contender %q has achieved traffic", s.contender.release.Name)
+
+			strategyConditions.SetTrue(
+				v1.StrategyConditionContenderAchievedTraffic,
+				conditions.StrategyConditionsUpdate{
+					Step:               stepIdx,
+					LastTransitionTime: lastTransitionTime,
+				})
+		}
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Incumbent
+	//
+	if s.incumbent != nil {
+
+		//////////////////////////////////////////////////////////////////////////
+		// Incumbent Traffic
+		//
+		trafficWeight, err := strconv.Atoi(strategyStep.IncumbentTraffic)
+		if err != nil {
+			return nil, err
+		}
+
+		if achieved, newSpec, clustersNotReady := checkTraffic(s.incumbent.trafficTarget, uint(trafficWeight), incumbentTrafficComparison); !achieved {
+			s.info("incumbent %q hasn't achieved traffic yet", s.incumbent.release.Name)
+
+			var patches []ExecutorResult
+
+			strategyConditions.SetFalse(
+				v1.StrategyConditionIncumbentAchievedTraffic,
+				conditions.StrategyConditionsUpdate{
+					Reason:             conditions.ClustersNotReady,
+					Message:            fmt.Sprintf("clusters pending traffic adjustments: %v", clustersNotReady),
+					Step:               stepIdx,
+					LastTransitionTime: lastTransitionTime,
+				})
+
+			if newSpec != nil {
+				patches = append(patches, &TrafficTargetOutdatedResult{
+					NewSpec: newSpec,
+					Name:    s.incumbent.release.Name,
+				})
+			}
+
+			patches = append(patches, s.buildContenderStrategyConditionsPatch(strategyConditions, stepIdx, isLastStep))
+
+			return patches, nil
+		} else {
+			s.info("incumbent %q has achieved traffic", s.incumbent.release.Name)
+
+			strategyConditions.SetTrue(
+				v1.StrategyConditionIncumbentAchievedTraffic,
+				conditions.StrategyConditionsUpdate{
+					Step:               stepIdx,
+					LastTransitionTime: lastTransitionTime,
+				})
+		}
+
+		//////////////////////////////////////////////////////////////////////////
+		// Incumbent Capacity
+		//
+		capacity, err := strconv.Atoi(strategyStep.IncumbentCapacity)
+		if err != nil {
+			return nil, err
+		}
+
+		if achieved, newSpec, clustersNotReady := checkCapacity(s.incumbent.capacityTarget, uint(capacity), incumbentCapacityComparison); !achieved {
+			s.info("incumbent %q hasn't achieved capacity yet", s.incumbent.release.Name)
+
+			var patches []ExecutorResult
+
+			strategyConditions.SetFalse(
+				v1.StrategyConditionIncumbentAchievedCapacity,
+				conditions.StrategyConditionsUpdate{
+					Reason:             conditions.ClustersNotReady,
+					Message:            fmt.Sprintf("clusters pending capacity adjustments: %v", clustersNotReady),
+					Step:               stepIdx,
+					LastTransitionTime: lastTransitionTime,
+				})
+
+			if newSpec != nil {
+				patches = append(patches, &CapacityTargetOutdatedResult{
+					NewSpec: newSpec,
+					Name:    s.incumbent.release.Name,
+				})
+			}
+
+			patches = append(patches, s.buildContenderStrategyConditionsPatch(strategyConditions, stepIdx, isLastStep))
+
+			return patches, nil
+		} else {
+			s.info("incumbent %q has achieved capacity", s.incumbent.release.Name)
+
+			strategyConditions.SetTrue(
+				v1.StrategyConditionIncumbentAchievedCapacity,
+				conditions.StrategyConditionsUpdate{
+					Step:               stepIdx,
+					LastTransitionTime: lastTransitionTime,
+				})
+		}
+	} else {
+		s.info("no incumbent, must be a new app")
+	}
+
+	//////////////////////////////////////////////////////////////////////////
+	// Step wrap up
+	//
+	{
+		var contenderPhase string
+
+		if isLastStep {
+			contenderPhase = v1.ReleasePhaseInstalled
+		} else {
+			contenderPhase = v1.ReleasePhaseWaitingForCommand
+		}
+
+		var releasePatches []ExecutorResult
+
+		reportedStep := s.contender.release.Status.AchievedStep
+		reportedPhase := s.contender.release.Status.Phase
+
+		contenderStatus := s.contender.release.Status.DeepCopy()
+		contenderStatus.Strategy = &v1.ReleaseStrategyStatus{
+			Conditions: strategyConditions.AsReleaseStrategyConditions(),
+			State: strategyConditions.AsReleaseStrategyState(
+				int32(s.contender.release.Spec.TargetStep),
+				s.incumbent != nil,
+				isLastStep),
+		}
+
+		if targetStep != reportedStep || contenderPhase != reportedPhase {
+			contenderStatus.AchievedStep = targetStep
+			contenderStatus.Phase = contenderPhase
+		}
+
+		releasePatches = append(releasePatches, &ReleaseUpdateResult{
+			NewStatus: contenderStatus,
+			Name:      s.contender.release.Name,
+		})
+
+		if s.incumbent != nil {
+			incumbentPhase := v1.ReleasePhaseInstalled
+			if isLastStep {
+				incumbentPhase = v1.ReleasePhaseSuperseded
+			}
+
+			if incumbentPhase != s.incumbent.release.Status.Phase {
+				incumbentStatus := &v1.ReleaseStatus{
+					Phase:        incumbentPhase,
+					AchievedStep: s.incumbent.release.Status.AchievedStep,
+				}
+				releasePatches = append(releasePatches, &ReleaseUpdateResult{
+					NewStatus: incumbentStatus,
+					Name:      s.incumbent.release.Name,
+				})
+			}
+		}
+
 		s.event(s.contender.release, "step %d finished", targetStep)
 		return releasePatches, nil
 	}
 }
 
-func (s *Executor) finalizeRelease(targetStep uint, strategyStep v1.StrategyStep, isLastStep bool) ([]ExecutorResult, error) {
-	var contenderPhase string
-
-	if isLastStep {
-		contenderPhase = v1.ReleasePhaseInstalled
-	} else {
-		contenderPhase = v1.ReleasePhaseWaitingForCommand
+func (s *Executor) buildContenderStrategyConditionsPatch(
+	c conditions.StrategyConditionsMap,
+	step int32,
+	isLastStep bool,
+) *ReleaseUpdateResult {
+	newStatus := s.contender.release.Status.DeepCopy()
+	//newStatus.AchievedStep = uint(step)
+	newStatus.Strategy = &v1.ReleaseStrategyStatus{
+		Conditions: c.AsReleaseStrategyConditions(),
+		State:      c.AsReleaseStrategyState(step, s.incumbent != nil, isLastStep),
 	}
-
-	var releasePatches []ExecutorResult
-
-	reportedStep := s.contender.release.Status.AchievedStep
-	reportedPhase := s.contender.release.Status.Phase
-
-	if targetStep != reportedStep || contenderPhase != reportedPhase {
-		contenderStatus := &v1.ReleaseStatus{
-			AchievedStep: targetStep,
-			Phase:        contenderPhase,
-		}
-		releasePatches = append(releasePatches, &ReleaseUpdateResult{
-			NewStatus: contenderStatus,
-			Name:      s.contender.release.Name,
-		})
+	return &ReleaseUpdateResult{
+		NewStatus: newStatus,
+		Name:      s.contender.release.Name,
 	}
-
-	if s.incumbent != nil {
-		incumbentPhase := v1.ReleasePhaseInstalled
-		if isLastStep {
-			incumbentPhase = v1.ReleasePhaseSuperseded
-		}
-
-		if incumbentPhase != s.incumbent.release.Status.Phase {
-			incumbentStatus := &v1.ReleaseStatus{
-				Phase:        incumbentPhase,
-				AchievedStep: s.incumbent.release.Status.AchievedStep,
-			}
-			releasePatches = append(releasePatches, &ReleaseUpdateResult{
-				NewStatus: incumbentStatus,
-				Name:      s.incumbent.release.Name,
-			})
-		}
-	}
-
-	return releasePatches, nil
-}
-
-func (s *Executor) checkContender(strategyStep v1.StrategyStep) (bool, []ExecutorResult, error) {
-	var patches []ExecutorResult
-
-	capacity, err := strconv.Atoi(strategyStep.ContenderCapacity)
-	if err != nil {
-		return false, nil, err
-	}
-
-	trafficWeight, err := strconv.Atoi(strategyStep.ContenderTraffic)
-	if err != nil {
-		return false, nil, err
-	}
-
-	if achieved, newSpec := checkCapacity(s.contender.capacityTarget, uint(capacity), contenderCapacityComparison); !achieved {
-		s.info("contender %q hasn't achieved capacity yet", s.contender.release.Name)
-		if newSpec != nil {
-			patches = append(patches, &CapacityTargetOutdatedResult{
-				NewSpec: newSpec,
-				Name:    s.contender.release.Name,
-			})
-			return false, patches, nil
-		} else {
-			return false, nil, nil
-		}
-	} else {
-		s.info("contender %q has achieved capacity", s.contender.release.Name)
-	}
-
-	if achieved, newSpec := checkTraffic(s.contender.trafficTarget, uint(trafficWeight), contenderTrafficComparison); !achieved {
-		s.info("contender %q hasn't achieved traffic yet", s.contender.release.Name)
-		if newSpec != nil {
-			patches = append(patches, &TrafficTargetOutdatedResult{
-				NewSpec: newSpec,
-				Name:    s.contender.release.Name,
-			})
-			return false, patches, nil
-		} else {
-			return false, nil, nil
-		}
-	} else {
-		s.info("contender %q has achieved traffic", s.contender.release.Name)
-	}
-
-	return true, nil, nil
-}
-
-func (s *Executor) checkIncumbent(strategyStep v1.StrategyStep) (bool, []ExecutorResult, error) {
-	var patches []ExecutorResult
-
-	capacity, err := strconv.Atoi(strategyStep.IncumbentCapacity)
-	if err != nil {
-		return false, nil, err
-	}
-
-	trafficWeight, err := strconv.Atoi(strategyStep.IncumbentTraffic)
-	if err != nil {
-		return false, nil, err
-	}
-
-	if achieved, newSpec := checkTraffic(s.incumbent.trafficTarget, uint(trafficWeight), incumbentTrafficComparison); !achieved {
-		s.info("incumbent %q hasn't achieved traffic yet", s.incumbent.release.Name)
-		if newSpec != nil {
-			patches = append(patches, &TrafficTargetOutdatedResult{
-				NewSpec: newSpec,
-				Name:    s.incumbent.release.Name,
-			})
-			return false, patches, nil
-		} else {
-			return false, nil, nil
-		}
-	} else {
-		s.info("incumbent %q has achieved traffic", s.incumbent.release.Name)
-	}
-
-	if achieved, newSpec := checkCapacity(s.incumbent.capacityTarget, uint(capacity), incumbentCapacityComparison); !achieved {
-		s.info("incumbent %q hasn't achieved capacity yet", s.incumbent.release.Name)
-		if newSpec != nil {
-			patches = append(patches, &CapacityTargetOutdatedResult{
-				NewSpec: newSpec,
-				Name:    s.incumbent.release.Name,
-			})
-			return false, patches, nil
-		} else {
-			return false, nil, nil
-		}
-	} else {
-		s.info("incumbent %q has achieved capacity", s.incumbent.release.Name)
-	}
-
-	return true, nil, nil
 }

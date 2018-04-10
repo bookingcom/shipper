@@ -20,7 +20,7 @@ import (
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
-	"github.com/bookingcom/shipper/pkg/controller"
+	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 )
 
 const AgentName = "strategy-controller"
@@ -128,7 +128,7 @@ func isWorkingOnStrategy(r *v1.Release) (workingOnStrategy bool) {
 func (c *Controller) contenderForRelease(r *v1.Release) (*v1.Release, error) {
 	app := c.getAssociatedApplication(r)
 	if app == nil {
-		return nil, fmt.Errorf("could not find application associated with %s/%s", r.GetNamespace(), r.GetName())
+		return nil, fmt.Errorf("could not find application associated with %q", shippercontroller.MetaKey(r))
 	}
 
 	history := app.Status.History
@@ -175,7 +175,7 @@ func (c *Controller) getAssociatedApplication(rel *v1.Release) *v1.Application {
 
 func (c *Controller) getAssociatedRelease(obj *metav1.ObjectMeta) *v1.Release {
 	if n := len(obj.OwnerReferences); n != 1 {
-		glog.Warningf("expected exactly one OwnerReference for %q but got %d", controller.MetaKey(obj), n)
+		glog.Warningf("expected exactly one OwnerReference for %q but got %d", shippercontroller.MetaKey(obj), n)
 		return nil
 	}
 
@@ -256,24 +256,24 @@ func (c *Controller) syncOne(key string) error {
 		return nil
 	}
 
-	strategy, err := c.buildStrategy(ns, name, c.recorder)
+	strategyExecutor, err := c.buildExecutor(ns, name, c.recorder)
 	if err != nil {
 		return err
 	}
 
-	strategy.info("will start processing release")
+	strategyExecutor.info("will start processing release")
 
-	result, err := strategy.execute()
+	result, err := strategyExecutor.execute()
 	if err != nil {
 		return err
 	}
 
 	if len(result) == 0 {
-		strategy.info("strategy verified, nothing to patch")
+		strategyExecutor.info("strategy verified, nothing to patch")
 		return nil
 	}
 
-	strategy.info("strategy executed, patches to apply")
+	strategyExecutor.info("strategy executed, patches to apply")
 	for _, r := range result {
 		name, gvk, b := r.PatchSpec()
 
@@ -347,7 +347,7 @@ func (c *Controller) buildReleaseInfo(ns string, name string) (*releaseInfo, err
 	}, nil
 }
 
-func (c *Controller) buildStrategy(ns, name string, recorder record.EventRecorder) (*Executor, error) {
+func (c *Controller) buildExecutor(ns, name string, recorder record.EventRecorder) (*Executor, error) {
 	contenderReleaseInfo, err := c.buildReleaseInfo(ns, name)
 	if err != nil {
 		return nil, err

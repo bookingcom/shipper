@@ -4,16 +4,22 @@ import (
 	"fmt"
 	"testing"
 
+	coreV1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 
 	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/conditions"
 )
 
 const clusterName = "minikube"
 const namespace = "test-namespace"
 const incumbentName = "0.0.1"
 const contenderName = "0.0.2"
+
+func init() {
+	conditions.StrategyConditionsShouldDiscardTimestamps = true
+}
 
 var app *v1.Application = &v1.Application{
 	ObjectMeta: metaV1.ObjectMeta{
@@ -50,7 +56,7 @@ func TestCompleteStrategy(t *testing.T) {
 	executor.contender.release.Spec.TargetStep = 1
 
 	// Execute first part of strategy's first step
-	if newSpec, err := ensureCapacityPatch(executor, contenderName); err != nil {
+	if newSpec, err := ensureCapacityPatch(executor, contenderName, Contender); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.contender.capacityTarget.Spec = *newSpec
@@ -62,7 +68,7 @@ func TestCompleteStrategy(t *testing.T) {
 	}
 
 	// Execute second part of strategy's first step
-	if newSpec, err := ensureTrafficPatch(executor, contenderName); err != nil {
+	if newSpec, err := ensureTrafficPatch(executor, contenderName, Contender); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.contender.trafficTarget.Spec = *newSpec
@@ -74,7 +80,7 @@ func TestCompleteStrategy(t *testing.T) {
 	}
 
 	// Execute third part of strategy's first step
-	if newSpec, err := ensureTrafficPatch(executor, incumbentName); err != nil {
+	if newSpec, err := ensureTrafficPatch(executor, incumbentName, Incumbent); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.incumbent.trafficTarget.Spec = *newSpec
@@ -86,7 +92,7 @@ func TestCompleteStrategy(t *testing.T) {
 	}
 
 	// Execute fourth part of strategy's first step
-	if newSpec, err := ensureCapacityPatch(executor, incumbentName); err != nil {
+	if newSpec, err := ensureCapacityPatch(executor, incumbentName, Incumbent); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.incumbent.capacityTarget.Spec = *newSpec
@@ -108,7 +114,7 @@ func TestCompleteStrategy(t *testing.T) {
 	executor.contender.release.Spec.TargetStep = 2
 
 	// Execute first part of strategy's second step
-	if newSpec, err := ensureCapacityPatch(executor, contenderName); err != nil {
+	if newSpec, err := ensureCapacityPatch(executor, contenderName, Contender); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.contender.capacityTarget.Spec = *newSpec
@@ -120,7 +126,7 @@ func TestCompleteStrategy(t *testing.T) {
 	}
 
 	// Execute second part of strategy's second step
-	if newSpec, err := ensureTrafficPatch(executor, contenderName); err != nil {
+	if newSpec, err := ensureTrafficPatch(executor, contenderName, Contender); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.contender.trafficTarget.Spec = *newSpec
@@ -132,7 +138,7 @@ func TestCompleteStrategy(t *testing.T) {
 	}
 
 	// Execute third part of strategy's second step
-	if newSpec, err := ensureTrafficPatch(executor, incumbentName); err != nil {
+	if newSpec, err := ensureTrafficPatch(executor, incumbentName, Incumbent); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.incumbent.trafficTarget.Spec = *newSpec
@@ -144,7 +150,7 @@ func TestCompleteStrategy(t *testing.T) {
 	}
 
 	// Execute fourth part of strategy's second step
-	if newSpec, err := ensureCapacityPatch(executor, incumbentName); err != nil {
+	if newSpec, err := ensureCapacityPatch(executor, incumbentName, Incumbent); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.incumbent.capacityTarget.Spec = *newSpec
@@ -422,12 +428,31 @@ func addCluster(ri *releaseInfo, name string) {
 // patch it produced, if any. Returns an error if the number of patches is
 // wrong, the patch doesn't implement the CapacityTargetOutdatedResult
 // interface or the name is different than the given expectedName.
-func ensureCapacityPatch(e *Executor, expectedName string) (*v1.CapacityTargetSpec, error) {
+func ensureCapacityPatch(e *Executor, expectedName string, role role) (*v1.CapacityTargetSpec, error) {
 	if patches, err := e.execute(); err != nil {
 		return nil, err
 	} else {
-		if len(patches) != 1 {
-			return nil, fmt.Errorf("expected one patch, got %d patches instead", len(patches))
+
+		aType := v1.StrategyConditionContenderAchievedCapacity
+		releaseRole := "contender"
+
+		if role == Incumbent {
+			aType = v1.StrategyConditionIncumbentAchievedCapacity
+			releaseRole = "incumbent"
+		}
+
+		strategyConditions := firstConditionsFromPatches(patches)
+
+		if strategyConditions == nil {
+			return nil, fmt.Errorf("could not find a ReleaseUpdateResult patch")
+		}
+
+		if s, ok := strategyConditions.GetStatus(aType); ok && s != coreV1.ConditionFalse {
+			return nil, fmt.Errorf("%s shouldn't have achieved traffic", releaseRole)
+		}
+
+		if len(patches) < 2 || len(patches) > 3 {
+			return nil, fmt.Errorf("expected two or three patches, got %d patch(es) instead", len(patches))
 		} else {
 			if p, ok := patches[0].(*CapacityTargetOutdatedResult); !ok {
 				return nil, fmt.Errorf("expected a CapacityTargetOutdatedResult, got something else")
@@ -446,12 +471,27 @@ func ensureCapacityPatch(e *Executor, expectedName string) (*v1.CapacityTargetSp
 // patch it produced, if any. Returns an error if the number of patches is
 // wrong, the patch doesn't implement the TrafficTargetOutdatedResult
 // interface or the name is different than the given expectedName.
-func ensureTrafficPatch(e *Executor, expectedName string) (*v1.TrafficTargetSpec, error) {
+func ensureTrafficPatch(e *Executor, expectedName string, role role) (*v1.TrafficTargetSpec, error) {
 	if patches, err := e.execute(); err != nil {
 		return nil, err
 	} else {
-		if len(patches) != 1 {
-			return nil, fmt.Errorf("expected one patch, got %d patches instead", len(patches))
+
+		aType := v1.StrategyConditionContenderAchievedTraffic
+		releaseRole := "contender"
+
+		if role == Incumbent {
+			aType = v1.StrategyConditionIncumbentAchievedTraffic
+			releaseRole = "incumbent"
+		}
+
+		strategyConditions := firstConditionsFromPatches(patches)
+
+		if s, ok := strategyConditions.GetStatus(aType); ok && s != coreV1.ConditionFalse {
+			return nil, fmt.Errorf("%s shouldn't have achieved traffic", releaseRole)
+		}
+
+		if len(patches) < 2 || len(patches) > 3 {
+			return nil, fmt.Errorf("expected two patches, got %d patch(es) instead", len(patches))
 		} else {
 			if p, ok := patches[0].(*TrafficTargetOutdatedResult); !ok {
 				return nil, fmt.Errorf("expected a TrafficTargetOutdatedResult, got something else")
@@ -474,6 +514,13 @@ func ensureReleasePatch(e *Executor, expectedName string) (*v1.ReleaseStatus, er
 	if patches, err := e.execute(); err != nil {
 		return nil, err
 	} else {
+
+		strategyConditions := firstConditionsFromPatches(patches)
+
+		if !strategyConditions.AllTrue(int32(e.contender.release.Spec.TargetStep)) {
+			return nil, fmt.Errorf("all conditions should have been met")
+		}
+
 		if len(patches) != 1 {
 			return nil, fmt.Errorf("expected one patch, got %d patches instead", len(patches))
 		} else {
@@ -497,6 +544,13 @@ func ensureFinalReleasePatches(e *Executor) error {
 	if patches, err := e.execute(); err != nil {
 		return err
 	} else {
+
+		strategyConditions := firstConditionsFromPatches(patches)
+
+		if !strategyConditions.AllTrue(int32(e.contender.release.Spec.TargetStep)) {
+			return fmt.Errorf("all conditions should be true")
+		}
+
 		if len(patches) != 2 {
 			return fmt.Errorf("expected two patches, got %d patches instead", len(patches))
 		} else {
@@ -532,4 +586,16 @@ func ensureFinalReleasePatches(e *Executor) error {
 		}
 	}
 	return nil
+}
+
+func firstConditionsFromPatches(patches []ExecutorResult) conditions.StrategyConditionsMap {
+	var strategyConditions conditions.StrategyConditionsMap
+	for p := range patches {
+		if patch, ok := patches[p].(*ReleaseUpdateResult); ok {
+			if patch.NewStatus.Strategy != nil {
+				strategyConditions = conditions.NewStrategyConditions(patch.NewStatus.Strategy.Conditions...)
+			}
+		}
+	}
+	return strategyConditions
 }

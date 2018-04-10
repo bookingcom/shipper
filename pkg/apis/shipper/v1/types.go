@@ -1,6 +1,8 @@
 package v1
 
 import (
+	"encoding/json"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -211,8 +213,9 @@ type ReleaseSpec struct {
 
 // this will likely grow into a struct with interesting fields
 type ReleaseStatus struct {
-	Phase        string `json:"phase"`
-	AchievedStep uint   `json:"achievedStep"`
+	Phase        string                 `json:"phase"`
+	AchievedStep uint                   `json:"achievedStep"`
+	Strategy     *ReleaseStrategyStatus `json:"strategy,omitempty"`
 }
 
 type ReleaseEnvironment struct {
@@ -373,4 +376,56 @@ type ClusterTrafficTarget struct {
 	Name string `json:"name"`
 	// apimachinery intstr for percentages?
 	TargetTraffic uint `json:"targetTraffic"`
+}
+
+type ReleaseStrategyStatus struct {
+	State      ReleaseStrategyState       `json:"state,omitempty"`
+	Conditions []ReleaseStrategyCondition `json:"conditions,omitempty"`
+}
+
+type ReleaseStrategyState struct {
+	WaitingForInstallation StrategyState `json:"waitingForInstallation"`
+	WaitingForCapacity     StrategyState `json:"waitingForCapacity"`
+	WaitingForTraffic      StrategyState `json:"waitingForTraffic"`
+	WaitingForCommand      StrategyState `json:"waitingForCommand"`
+}
+
+type ReleaseStrategyCondition struct {
+	Type               StrategyConditionType  `json:"type"`
+	Status             corev1.ConditionStatus `json:"status"`
+	LastTransitionTime metav1.Time            `json:"lastTransitionTime,omitempty"`
+	Reason             string                 `json:"reason,omitempty"`
+	Message            string                 `json:"message,omitempty"`
+	Step               int32                  `json:"step,omitempty"`
+}
+
+type StrategyConditionType string
+
+const (
+	StrategyConditionContenderAchievedInstallation StrategyConditionType = "ContenderAchievedInstallation"
+	StrategyConditionContenderAchievedCapacity     StrategyConditionType = "ContenderAchievedCapacity"
+	StrategyConditionContenderAchievedTraffic      StrategyConditionType = "ContenderAchievedTraffic"
+	StrategyConditionIncumbentAchievedCapacity     StrategyConditionType = "IncumbentAchievedCapacity"
+	StrategyConditionIncumbentAchievedTraffic      StrategyConditionType = "IncumbentAchievedTraffic"
+)
+
+type StrategyState string
+
+const (
+	StrategyStateUnknown StrategyState = "Unknown"
+	StrategyStateTrue    StrategyState = "True"
+	StrategyStateFalse   StrategyState = "False"
+)
+
+func (ss *StrategyState) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	if s == "" {
+		*ss = StrategyStateUnknown
+	} else {
+		*ss = StrategyState(s)
+	}
+	return nil
 }
