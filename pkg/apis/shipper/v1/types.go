@@ -315,9 +315,10 @@ type ClusterCapacityStatus struct {
 }
 
 type PodStatus struct {
-	Name       string                   `json:"name"`
-	Containers []corev1.ContainerStatus `json:"containers"`
-	Condition  corev1.PodCondition      `json:"condition"`
+	Name           string                   `json:"name"`
+	Containers     []corev1.ContainerStatus `json:"containers"`
+	InitContainers []corev1.ContainerStatus `json:"initContainers"`
+	Condition      corev1.PodCondition      `json:"condition"`
 }
 
 // the capacity and traffic controllers need context to pick the right

@@ -591,6 +591,13 @@ func (in *PodStatus) DeepCopyInto(out *PodStatus) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.InitContainers != nil {
+		in, out := &in.InitContainers, &out.InitContainers
+		*out = make([]core_v1.ContainerStatus, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	in.Condition.DeepCopyInto(&out.Condition)
 	return
 }
