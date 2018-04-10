@@ -5,10 +5,6 @@ import (
 
 	"github.com/golang/glog"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipperChart "github.com/bookingcom/shipper/pkg/chart"
-	"github.com/bookingcom/shipper/pkg/label"
-
 	appsV1 "k8s.io/api/apps/v1"
 	coreV1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -20,6 +16,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+
+	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperChart "github.com/bookingcom/shipper/pkg/chart"
+	"github.com/bookingcom/shipper/pkg/label"
 )
 
 type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *rest.Config) dynamic.Interface
@@ -288,5 +288,24 @@ func (i *Installer) installRelease(
 		return err
 	}
 
+	renderedManifests = injectNamespace(i.Release.Namespace, renderedManifests)
+
 	return i.installManifests(cluster, client, restConfig, dynamicClientBuilder, renderedManifests)
+}
+
+// injectNamespace prepends a rendered v1/Namespace called name to manifests and
+// returns the resulting slice. Should be called before manifests are installed.
+func injectNamespace(name string, manifests []string) []string {
+	const ns = `
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: %q
+`
+
+	withNs := make([]string, len(manifests)+1)
+	withNs[0] = fmt.Sprintf(ns, name)
+	copy(withNs[1:], manifests)
+
+	return withNs
 }

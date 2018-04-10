@@ -24,6 +24,12 @@ var apiResourceList = []*v1.APIResourceList{
 		GroupVersion: "v1",
 		APIResources: []v1.APIResource{
 			{
+				Kind:       "Namespace",
+				Namespaced: false,
+				Name:       "namespaces",
+				Group:      "",
+			},
+			{
 				Kind:       "Service",
 				Namespaced: true,
 				Name:       "services",
@@ -83,6 +89,10 @@ func TestInstaller(t *testing.T) {
 	// Name.
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewCreateAction(
+			schema.GroupVersionResource{Resource: "namespaces", Version: "v1"},
+			release.GetNamespace(),
+			nil),
+		kubetesting.NewCreateAction(
 			schema.GroupVersionResource{Resource: "services", Version: "v1"},
 			release.GetNamespace(),
 			nil),
@@ -99,7 +109,7 @@ func TestInstaller(t *testing.T) {
 	// representation of it.
 	scheme := kubescheme.Scheme
 
-	createServiceAction := fakeDynamicClient.Actions()[0].(kubetesting.CreateAction)
+	createServiceAction := fakeDynamicClient.Actions()[1].(kubetesting.CreateAction)
 	obj := createServiceAction.GetObject()
 	if obj.GetObjectKind().GroupVersionKind().Kind != "Service" {
 		t.Logf("%+v", obj)
@@ -115,7 +125,7 @@ func TestInstaller(t *testing.T) {
 		}
 	}
 
-	createDeploymentAction := fakeDynamicClient.Actions()[1].(kubetesting.CreateAction)
+	createDeploymentAction := fakeDynamicClient.Actions()[2].(kubetesting.CreateAction)
 	obj = createDeploymentAction.GetObject()
 	if obj.GetObjectKind().GroupVersionKind().Kind != "Deployment" {
 		t.Logf("%+v", obj)
