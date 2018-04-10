@@ -375,6 +375,7 @@ func (c *Controller) buildExecutor(ns, name string, recorder record.EventRecorde
 	if len(history) == 1 {
 		return &Executor{
 			contender: contenderReleaseInfo,
+			recorder:  recorder,
 		}, nil
 	}
 
