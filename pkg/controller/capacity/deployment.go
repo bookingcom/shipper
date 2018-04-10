@@ -269,9 +269,10 @@ func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployme
 	for _, pod := range pods.Items {
 		if condition, ok := c.getFalsePodCondition(pod); ok {
 			sadPod := shipperv1.PodStatus{
-				Name:       pod.Name,
-				Condition:  *condition,
-				Containers: pod.Status.ContainerStatuses,
+				Name:           pod.Name,
+				Condition:      *condition,
+				InitContainers: pod.Status.InitContainerStatuses,
+				Containers:     pod.Status.ContainerStatuses,
 			}
 
 			sadPods = append(sadPods, sadPod)
