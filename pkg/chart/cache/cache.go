@@ -70,10 +70,10 @@ func (f *fsCache) Store(data []byte, repo, name, version string) error {
 		size += int(fileinfo.Size())
 	}
 
-	// almost but not really LRU cache eviction via reverse mtime sort: we're
+	// almost but not really LRU cache eviction via mtime sort: we're
 	// not using atime so we don't know if it was read recently.
 	sort.SliceStable(versions, func(i, j int) bool {
-		return versions[j].ModTime().Before(versions[i].ModTime())
+		return versions[i].ModTime().Before(versions[j].ModTime())
 	})
 
 	overhead := size - f.chartFamilySizeLimit
