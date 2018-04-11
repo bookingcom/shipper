@@ -250,7 +250,7 @@ func newCapacityTargetForRelease(release *shipperv1.Release, name, namespace str
 
 	clusters := []shipperv1.ClusterCapacityTarget{minikube}
 
-	labels := map[string]string{
+	metaLabels := map[string]string{
 		"release": release.Name,
 	}
 
@@ -258,7 +258,7 @@ func newCapacityTargetForRelease(release *shipperv1.Release, name, namespace str
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			Labels:    labels,
+			Labels:    metaLabels,
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
 					APIVersion: "shipper.booking.com/v1",
@@ -296,15 +296,21 @@ func newDeploymentForRelease(release *shipperv1.Release, name, namespace string,
 		AvailableReplicas: replicas,
 	}
 
-	labels := map[string]string{
+	metaLabels := map[string]string{
 		"release": release.Name,
+	}
+
+	specSelector := &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"release": release.Name,
+		},
 	}
 
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			Labels:    labels,
+			Labels:    metaLabels,
 		},
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "apps/v1",
@@ -312,6 +318,7 @@ func newDeploymentForRelease(release *shipperv1.Release, name, namespace string,
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
+			Selector: specSelector,
 		},
 		Status: status,
 	}

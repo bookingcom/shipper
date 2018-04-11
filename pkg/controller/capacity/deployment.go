@@ -319,22 +319,22 @@ End:
 
 func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace string) (*shipperv1.CapacityTarget, error) {
 	selector := labels.Set{shipperv1.ReleaseLabel: release}.AsSelector()
-	capacityTargets, err := c.shipperclientset.ShipperV1().CapacityTargets(namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	capacityTargets, err := c.capacityTargetsLister.CapacityTargets(namespace).List(selector)
 	if err != nil {
 		return nil, err
 	}
 
-	if l := len(capacityTargets.Items); l != 1 {
+	if l := len(capacityTargets); l != 1 {
 		return nil, NewInvalidCapacityTargetError(release, l)
 	}
 
-	return &capacityTargets.Items[0], nil
+	return capacityTargets[0], nil
 }
 
 func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployment, clusterName string) (int, int, []shipperv1.PodStatus, error) {
 	var sadPods []shipperv1.PodStatus
 
-	client, err := c.clusterClientStore.GetClient(clusterName)
+	informer, err := c.clusterClientStore.GetInformerFactory(clusterName)
 	if err != nil {
 		return 0, 0, nil, err
 	}
@@ -344,12 +344,20 @@ func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployme
 		return 0, 0, nil, fmt.Errorf("failed to transform label selector %v into a selector: %s", deployment.Spec.Selector, err)
 	}
 
-	pods, err := client.CoreV1().Pods(deployment.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	pods, err := informer.Core().V1().Pods().Lister().Pods(deployment.Namespace).List(selector)
 	if err != nil {
 		return 0, 0, nil, err
 	}
 
-	for _, pod := range pods.Items {
+	for _, pod := range pods {
+		// Stop adding sad pods to the status if we reach the
+		// limit. This should, hopefully, be replaced with a
+		// more heuristic way of reporting sad pods in the
+		// future.
+		if len(sadPods) == shipperv1.CapacityTargetSadPodLimit {
+			break
+		}
+
 		if condition, ok := c.getFalsePodCondition(pod); ok {
 			sadPod := shipperv1.PodStatus{
 				Name:           pod.Name,
@@ -365,7 +373,7 @@ func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployme
 	return len(pods.Items), len(sadPods), sadPods, nil
 }
 
-func (c Controller) getFalsePodCondition(pod corev1.Pod) (*corev1.PodCondition, bool) {
+func (c Controller) getFalsePodCondition(pod *corev1.Pod) (*corev1.PodCondition, bool) {
 	var sadCondition *corev1.PodCondition
 
 	// The loop below finds a condition with the `status` set to
