@@ -1,4 +1,5 @@
 .testCoverage.txt
+shipper
 .vscode/
 pkg/chart/testdata/chartmuseum
 pkg/chart/testdata/index.yaml
