@@ -150,6 +150,7 @@ func main() {
 		wg.Done()
 	}()
 
+	glog.V(1).Infof("Chart cache stored at %q", *chartCacheDir)
 	cfg := &cfg{
 		enabledControllers: enabledControllers,
 		restCfg:            restCfg,
