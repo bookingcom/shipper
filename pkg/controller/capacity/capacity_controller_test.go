@@ -251,7 +251,7 @@ func newCapacityTargetForRelease(release *shipperv1.Release, name, namespace str
 	clusters := []shipperv1.ClusterCapacityTarget{minikube}
 
 	metaLabels := map[string]string{
-		"release": release.Name,
+		shipperv1.ReleaseLabel: release.Name,
 	}
 
 	return &shipperv1.CapacityTarget{
@@ -297,12 +297,12 @@ func newDeploymentForRelease(release *shipperv1.Release, name, namespace string,
 	}
 
 	metaLabels := map[string]string{
-		"release": release.Name,
+		shipperv1.ReleaseLabel: release.Name,
 	}
 
 	specSelector := &metav1.LabelSelector{
 		MatchLabels: map[string]string{
-			"release": release.Name,
+			shipperv1.ReleaseLabel: release.Name,
 		},
 	}
 
@@ -342,7 +342,7 @@ func createSadPodForDeployment(deployment *appsv1.Deployment) *corev1.Pod {
 			Name:      "nginx-1a93Y2",
 			Namespace: "reviewsapi",
 			Labels: map[string]string{
-				"release": deployment.Labels["release"],
+				shipperv1.ReleaseLabel: deployment.Labels[shipperv1.ReleaseLabel],
 			},
 		},
 		Status: status,
