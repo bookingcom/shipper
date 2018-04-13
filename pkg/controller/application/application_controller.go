@@ -289,9 +289,6 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 			return c.markReleaseCreated(latestRelease.GetName(), app)
 		}
 
-		// Clean up 'crash abort'-ed Releases from history.
-		glog.Infof("Application %q's history contains aborted Releases",
-			controller.MetaKey(app))
 		return c.cleanHistory(app)
 	}
 

@@ -179,6 +179,10 @@ func (c *Controller) cleanHistory(app *shipperv1.Application) error {
 		return nil
 	}
 
+	// Clean up 'crash abort'-ed Releases from history.
+	glog.Infof("Application %q's history contains aborted Releases",
+		controller.MetaKey(app))
+
 	glog.V(3).Infof("Cleaned up history entries from Application %q: %v",
 		controller.MetaKey(app), removed)
 
