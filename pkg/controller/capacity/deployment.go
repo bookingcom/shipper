@@ -18,6 +18,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/conditions"
 	"github.com/bookingcom/shipper/pkg/controller"
 )
 
@@ -150,16 +151,65 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 		return err
 	}
 
-	sadPods, err := c.getSadPodsForDeploymentOnCluster(targetDeployment, item.ClusterName)
-	if err != nil {
-		return err
+	// From this point on, we can report conditions since we have a CapacityTarget
+	// object to work with.
+	var clusterConditions []shipperv1.ClusterCapacityCondition
+	for _, e := range capacityTarget.Status.Clusters {
+		if e.Name == item.ClusterName {
+			clusterConditions = e.Conditions
+		}
 	}
 
-	return c.updateStatus(capacityTarget, item.ClusterName, targetDeployment.Status.AvailableReplicas, sadPods)
+	podCount, sadPodsCount, sadPods, err := c.getSadPodsForDeploymentOnCluster(targetDeployment, item.ClusterName)
+	if err != nil {
+		clusterConditions = conditions.SetCapacityCondition(
+			clusterConditions,
+			shipperv1.ClusterConditionTypeOperational,
+			corev1.ConditionFalse,
+			conditions.ServerError,
+			err.Error())
+	}
+
+	if sadPodsCount > 0 {
+		clusterConditions = conditions.SetCapacityCondition(
+			clusterConditions,
+			shipperv1.ClusterConditionTypeReady,
+			corev1.ConditionFalse,
+			conditions.PodsNotReady,
+			fmt.Sprintf("there are %d sad pods", sadPodsCount))
+	} else if int(*targetDeployment.Spec.Replicas) != podCount {
+		clusterConditions = conditions.SetCapacityCondition(
+			clusterConditions,
+			shipperv1.ClusterConditionTypeReady,
+			corev1.ConditionFalse,
+			conditions.WrongPodCount,
+			fmt.Sprintf("expected %d replicas but have %d", *targetDeployment.Spec.Replicas, podCount))
+	} else {
+		clusterConditions = conditions.SetCapacityCondition(
+			clusterConditions,
+			shipperv1.ClusterConditionTypeReady,
+			corev1.ConditionTrue,
+			"", "")
+	}
+
+	return c.updateStatus(
+		capacityTarget,
+		item.ClusterName,
+		targetDeployment.Status.AvailableReplicas,
+		sadPods,
+		clusterConditions)
 }
 
-func (c *Controller) updateStatus(capacityTarget *shipperv1.CapacityTarget, clusterName string, availableReplicas int32, sadPods []shipperv1.PodStatus) error {
+func (c *Controller) updateStatus(
+	capacityTarget *shipperv1.CapacityTarget,
+	clusterName string,
+	availableReplicas int32,
+	sadPods []shipperv1.PodStatus,
+	clusterConditions []shipperv1.ClusterCapacityCondition,
+) error {
+	var achievedPercent int32
 	var capacityTargetStatus shipperv1.CapacityTargetStatus
+	var replicas int
 
 	// We loop over the statuses in capacityTarget.Status.  If the
 	// name matches the cluster name we want, we don't add it to
@@ -181,21 +231,54 @@ func (c *Controller) updateStatus(capacityTarget *shipperv1.CapacityTarget, clus
 
 	release, err := c.getReleaseForCapacityTarget(capacityTarget)
 	if err != nil {
-		return err
+		switch err.(type) {
+		case ReleaseIsGoneError:
+			clusterConditions = conditions.SetCapacityCondition(
+				clusterConditions,
+				shipperv1.ClusterConditionTypeReady,
+				corev1.ConditionFalse,
+				conditions.MissingObjects,
+				err.Error(),
+			)
+		case MultipleOwnerReferencesError:
+			clusterConditions = conditions.SetCapacityCondition(
+				clusterConditions,
+				shipperv1.ClusterConditionTypeReady,
+				corev1.ConditionFalse,
+				conditions.InvalidObjects,
+				err.Error(),
+			)
+		default:
+			// After investigating the code path of convertPercentageToReplicaCountForCluster(), the only
+			// error it returns is a NotFound error when the release object associated with the capacity
+			// target doesn't exist.
+			clusterConditions = conditions.SetCapacityCondition(
+				clusterConditions,
+				shipperv1.ClusterConditionTypeReady,
+				corev1.ConditionFalse,
+				conditions.MissingObjects,
+				err.Error(),
+			)
+		}
+
+		goto End
 	}
 
-	replicas, err := strconv.Atoi(release.Annotations[shipperv1.ReleaseReplicasAnnotation])
+	replicas, err = strconv.Atoi(release.Annotations[shipperv1.ReleaseReplicasAnnotation])
 	if err != nil {
 		return err
 	}
 
-	achievedPercent := c.calculatePercentageFromAmount(int32(replicas), availableReplicas)
+	achievedPercent = c.calculatePercentageFromAmount(int32(replicas), availableReplicas)
+
+End:
 
 	clusterStatus := shipperv1.ClusterCapacityStatus{
 		Name:              clusterName,
 		AchievedPercent:   achievedPercent,
 		AvailableReplicas: availableReplicas,
 		SadPods:           sadPods,
+		Conditions:        clusterConditions,
 	}
 
 	capacityTargetStatus.Clusters = append(capacityTargetStatus.Clusters, clusterStatus)
@@ -241,29 +324,29 @@ func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace s
 		return nil, err
 	}
 
-	if len(capacityTargets.Items) != 1 {
-		return nil, fmt.Errorf("Expected exactly 1 capacity target with the label %s, but found %d", release, len(capacityTargets.Items))
+	if l := len(capacityTargets.Items); l != 1 {
+		return nil, NewInvalidCapacityTargetError(release, l)
 	}
 
 	return &capacityTargets.Items[0], nil
 }
 
-func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployment, clusterName string) ([]shipperv1.PodStatus, error) {
+func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployment, clusterName string) (int, int, []shipperv1.PodStatus, error) {
 	var sadPods []shipperv1.PodStatus
 
 	client, err := c.clusterClientStore.GetClient(clusterName)
 	if err != nil {
-		return nil, err
+		return 0, 0, nil, err
 	}
 
 	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
 	if err != nil {
-		return nil, fmt.Errorf("failed to transform label selector %v into a selector: %s", deployment.Spec.Selector, err)
+		return 0, 0, nil, fmt.Errorf("failed to transform label selector %v into a selector: %s", deployment.Spec.Selector, err)
 	}
 
 	pods, err := client.CoreV1().Pods(deployment.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
-		return nil, err
+		return 0, 0, nil, err
 	}
 
 	for _, pod := range pods.Items {
@@ -279,7 +362,7 @@ func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployme
 		}
 	}
 
-	return sadPods, nil
+	return len(pods.Items), len(sadPods), sadPods, nil
 }
 
 func (c Controller) getFalsePodCondition(pod corev1.Pod) (*corev1.PodCondition, bool) {

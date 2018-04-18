@@ -11,12 +11,8 @@ spec:
     chart:
       name: nginx
       version: 0.1.0
-      repoUrl: http://127.0.0.1:8879/charts
+      repoUrl: https://chartmuseum.local/charts
     strategy:
       name: vanguard
     values:
-      perl:
-        replicaCount: 10
-        image:
-          name: reviewsapi/app
-          version: 6bbb0da1891646e58eb3e6a63af3a6fc3c8eb5a0d44824cba581d2e14a0450cf
+      replicaCount: 10

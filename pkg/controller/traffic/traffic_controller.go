@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -38,6 +39,7 @@ import (
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
+	"github.com/bookingcom/shipper/pkg/conditions"
 )
 
 const AgentName = "traffic-controller"
@@ -74,6 +76,7 @@ type Controller struct {
 }
 
 // NewController returns a new TrafficTarget controller
+//noinspection GoUnusedParameter
 func NewController(
 	kubeclientset kubernetes.Interface,
 	shipperclientset shipper.Interface,
@@ -234,41 +237,128 @@ func (c *Controller) syncHandler(key string) error {
 		return err
 	}
 
-	statuses := []*shipperv1.ClusterTrafficStatus{}
+	var statuses []*shipperv1.ClusterTrafficStatus
 	for _, cluster := range shifter.Clusters() {
+		var achievedReleaseWeight int
+		var achievedWeights map[string]int
+		var clientset kubernetes.Interface
+		var clusterConditions []shipperv1.ClusterTrafficCondition
+		var errs []error
+		var informerFactory kubeinformers.SharedInformerFactory
+
+		for _, e := range syncingTT.Status.Clusters {
+			if e.Name == cluster {
+				clusterConditions = e.Conditions
+			}
+		}
+
 		clusterStatus := &shipperv1.ClusterTrafficStatus{
-			Name: cluster,
+			Name:       cluster,
+			Conditions: clusterConditions,
 		}
 
 		statuses = append(statuses, clusterStatus)
 
-		var clientset kubernetes.Interface
 		clientset, err = c.clusterClientStore.GetClient(cluster)
-		if err != nil {
-			clusterStatus.Status = err.Error()
-			break
-		}
-		var informerFactory kubeinformers.SharedInformerFactory
-		informerFactory, err = c.clusterClientStore.GetInformerFactory(cluster)
-		if err != nil {
-			clusterStatus.Status = err.Error()
-			break
-		}
-
-		achievedWeights, errs := shifter.SyncCluster(cluster, clientset, informerFactory.Core().V1().Pods())
-
-		// if the resulting map is missing the release we're working on, there's a significant bug in our code
-		achievedReleaseWeight := achievedWeights[syncingReleaseName]
-		clusterStatus.AchievedTraffic = uint(achievedReleaseWeight)
-		if len(errs) == 0 {
-			clusterStatus.Status = "Synced"
+		if err == nil {
+			clusterStatus.Conditions = conditions.SetTrafficCondition(
+				clusterStatus.Conditions,
+				shipperv1.ClusterConditionTypeOperational,
+				corev1.ConditionTrue,
+				"", "")
 		} else {
-			results := make([]string, 0, len(errs))
-			for _, err := range errs {
-				results = append(results, err.Error())
+			clusterStatus.Conditions = conditions.SetTrafficCondition(
+				clusterStatus.Conditions,
+				shipperv1.ClusterConditionTypeOperational,
+				corev1.ConditionFalse,
+				conditions.ServerError,
+				err.Error())
+
+			clusterStatus.Status = err.Error()
+			continue
+		}
+		informerFactory, err = c.clusterClientStore.GetInformerFactory(cluster)
+		if err == nil {
+			clusterStatus.Conditions = conditions.SetTrafficCondition(
+				clusterStatus.Conditions,
+				shipperv1.ClusterConditionTypeOperational,
+				corev1.ConditionTrue,
+				"", "")
+
+		} else {
+			clusterStatus.Conditions = conditions.SetTrafficCondition(
+				clusterStatus.Conditions,
+				shipperv1.ClusterConditionTypeOperational,
+				corev1.ConditionFalse,
+				conditions.ServerError,
+				err.Error())
+
+			clusterStatus.Status = err.Error()
+			continue
+		}
+
+		achievedWeights, errs, err =
+			shifter.SyncCluster(cluster, clientset, informerFactory.Core().V1().Pods())
+
+		if err != nil {
+			switch err.(type) {
+			case TargetClusterServiceError:
+				clusterStatus.Conditions = conditions.SetTrafficCondition(
+					clusterStatus.Conditions,
+					shipperv1.ClusterConditionTypeReady,
+					corev1.ConditionFalse,
+					conditions.MissingService,
+					err.Error())
+			case TargetClusterPodListingError, TargetClusterTrafficError:
+				clusterStatus.Conditions = conditions.SetTrafficCondition(
+					clusterStatus.Conditions,
+					shipperv1.ClusterConditionTypeReady,
+					corev1.ConditionFalse,
+					conditions.ServerError,
+					err.Error())
+			case TargetClusterMathError:
+				clusterStatus.Conditions = conditions.SetTrafficCondition(
+					clusterStatus.Conditions,
+					shipperv1.ClusterConditionTypeReady,
+					corev1.ConditionFalse,
+					conditions.InternalError,
+					err.Error())
+			default:
+				clusterStatus.Conditions = conditions.SetTrafficCondition(
+					clusterStatus.Conditions,
+					shipperv1.ClusterConditionTypeReady,
+					corev1.ConditionFalse,
+					conditions.UnknownError,
+					err.Error())
 			}
-			sort.Strings(results)
-			clusterStatus.Status = strings.Join(results, ",")
+		} else {
+			// if the resulting map is missing the release we're working on,
+			// there's a significant bug in our code
+			achievedReleaseWeight = achievedWeights[syncingReleaseName]
+			clusterStatus.AchievedTraffic = uint(achievedReleaseWeight)
+			if len(errs) == 0 {
+				clusterStatus.Conditions = conditions.SetTrafficCondition(
+					clusterStatus.Conditions,
+					shipperv1.ClusterConditionTypeReady,
+					corev1.ConditionTrue,
+					"", "")
+
+				clusterStatus.Status = "Synced"
+			} else {
+				results := make([]string, 0, len(errs))
+				for _, err := range errs {
+					results = append(results, err.Error())
+				}
+				sort.Strings(results)
+				clusterStatus.Status = strings.Join(results, ",")
+
+				clusterStatus.Conditions = conditions.SetTrafficCondition(
+					clusterStatus.Conditions,
+					shipperv1.ClusterConditionTypeReady,
+					corev1.ConditionFalse,
+					conditions.PodsNotReady,
+					clusterStatus.Status)
+			}
 		}
 	}
 

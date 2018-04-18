@@ -269,11 +269,18 @@ type InstallationTargetStatus struct {
 }
 
 type ClusterInstallationStatus struct {
-	Name    string `json:"name"`
-	Status  string `json:"status"`
-	Message string `json:"message,omitempty"`
+	Name       string                         `json:"name"`
+	Status     string                         `json:"status"`
+	Message    string                         `json:"message,omitempty"`
+	Conditions []ClusterInstallationCondition `json:"conditions,omitempty"`
+}
 
-	// Conditions []Condition
+type ClusterInstallationCondition struct {
+	Type               ClusterConditionType   `json:"type"`
+	Status             corev1.ConditionStatus `json:"status"`
+	LastTransitionTime metav1.Time            `json:"lastTransitionTime,omitempty"`
+	Reason             string                 `json:"reason,omitempty"`
+	Message            string                 `json:"message,omitempty"`
 }
 
 type InstallationTargetSpec struct {
@@ -308,10 +315,26 @@ type CapacityTargetStatus struct {
 }
 
 type ClusterCapacityStatus struct {
-	Name              string      `json:"name"`
-	AvailableReplicas int32       `json:"availableReplicas"`
-	AchievedPercent   int32       `json:"achievedPercent"`
-	SadPods           []PodStatus `json:"sadPods"`
+	Name              string                     `json:"name"`
+	AvailableReplicas int32                      `json:"availableReplicas"`
+	AchievedPercent   int32                      `json:"achievedPercent"`
+	SadPods           []PodStatus                `json:"sadPods,omitempty"`
+	Conditions        []ClusterCapacityCondition `json:"conditions,omitempty"`
+}
+
+type ClusterConditionType string
+
+const (
+	ClusterConditionTypeOperational ClusterConditionType = "Operational"
+	ClusterConditionTypeReady       ClusterConditionType = "Ready"
+)
+
+type ClusterCapacityCondition struct {
+	Type               ClusterConditionType   `json:"type"`
+	Status             corev1.ConditionStatus `json:"status"`
+	LastTransitionTime metav1.Time            `json:"lastTransitionTime,omitempty"`
+	Reason             string                 `json:"reason,omitempty"`
+	Message            string                 `json:"message,omitempty"`
 }
 
 type PodStatus struct {
@@ -364,9 +387,18 @@ type TrafficTargetStatus struct {
 }
 
 type ClusterTrafficStatus struct {
-	Name            string `json:"name"`
-	AchievedTraffic uint   `json:"achievedTraffic"`
-	Status          string `json:"status"`
+	Name            string                    `json:"name"`
+	AchievedTraffic uint                      `json:"achievedTraffic"`
+	Status          string                    `json:"status"`
+	Conditions      []ClusterTrafficCondition `json:"conditions"`
+}
+
+type ClusterTrafficCondition struct {
+	Type               ClusterConditionType   `json:"type"`
+	Status             corev1.ConditionStatus `json:"status"`
+	LastTransitionTime metav1.Time            `json:"lastTransitionTime,omitempty"`
+	Reason             string                 `json:"reason,omitempty"`
+	Message            string                 `json:"message,omitempty"`
 }
 
 type TrafficTargetSpec struct {

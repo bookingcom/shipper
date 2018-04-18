@@ -19,10 +19,12 @@ package capacity
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"strconv"
 	"time"
 
 	"github.com/golang/glog"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -42,7 +44,8 @@ import (
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
-	"github.com/bookingcom/shipper/pkg/controller"
+	"github.com/bookingcom/shipper/pkg/conditions"
+	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 )
 
 const AgentName = "capacity-controller"
@@ -232,59 +235,195 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		return err
 	}
 
-	var clusterErr error
+	ct = ct.DeepCopy()
+	targetNamespace := ct.Namespace
+	selector := labels.Set(ct.Labels).AsSelector()
+
 	for _, clusterSpec := range ct.Spec.Clusters {
+		var clusterErr error
+		var deploymentsList *appsv1.DeploymentList
+		var patchString string
+		var clusterConditions []shipperv1.ClusterCapacityCondition
+		var targetDeployment appsv1.Deployment
+		var replicaCount int32
+		var targetClusterClient kubernetes.Interface
+
+		for _, e := range ct.Status.Clusters {
+			if e.Name == clusterSpec.Name {
+				clusterConditions = e.Conditions
+			}
+		}
+
+		targetClusterClient, clusterErr = c.clusterClientStore.GetClient(clusterSpec.Name)
+		if clusterErr == nil {
+			clusterConditions = conditions.SetCapacityCondition(
+				clusterConditions,
+				shipperv1.ClusterConditionTypeOperational,
+				corev1.ConditionTrue,
+				"",
+				"")
+		} else {
+			clusterConditions = conditions.SetCapacityCondition(
+				clusterConditions,
+				shipperv1.ClusterConditionTypeOperational,
+				corev1.ConditionFalse,
+				conditions.ServerError,
+				clusterErr.Error(),
+			)
+			goto End
+		}
+
 		// Get the requested percentage of replicas from the capacity object
 		// This is only set by the strategy controller
-		var replicaCount int32
 		replicaCount, clusterErr = c.convertPercentageToReplicaCountForCluster(ct, clusterSpec)
 		if clusterErr != nil {
-			break
+			switch clusterErr.(type) {
+			case ReleaseIsGoneError:
+				clusterConditions = conditions.SetCapacityCondition(
+					clusterConditions,
+					shipperv1.ClusterConditionTypeReady,
+					corev1.ConditionFalse,
+					conditions.MissingObjects,
+					clusterErr.Error(),
+				)
+			case MultipleOwnerReferencesError:
+				clusterConditions = conditions.SetCapacityCondition(
+					clusterConditions,
+					shipperv1.ClusterConditionTypeReady,
+					corev1.ConditionFalse,
+					conditions.InvalidObjects,
+					clusterErr.Error(),
+				)
+			default:
+				// After investigating the code path of convertPercentageToReplicaCountForCluster(), the only
+				// error it returns is a NotFound error when the release object associated with the capacity
+				// target doesn't exist.
+				clusterConditions = conditions.SetCapacityCondition(
+					clusterConditions,
+					shipperv1.ClusterConditionTypeReady,
+					corev1.ConditionFalse,
+					conditions.MissingObjects,
+					clusterErr.Error(),
+				)
+			}
+			goto End
 		}
 
-		var targetClusterClient kubernetes.Interface
-		targetClusterClient, clusterErr = c.clusterClientStore.GetClient(clusterSpec.Name)
+		deploymentsList, clusterErr =
+			targetClusterClient.AppsV1().Deployments(targetNamespace).List(
+				metav1.ListOptions{LabelSelector: selector.String()})
+
 		if clusterErr != nil {
-			break
+			clusterConditions = conditions.SetCapacityCondition(
+				clusterConditions,
+				shipperv1.ClusterConditionTypeOperational,
+				corev1.ConditionFalse,
+				conditions.ServerError,
+				clusterErr.Error(),
+			)
+
+			goto End
 		}
 
-		targetNamespace := ct.Namespace
+		if l := len(deploymentsList.Items); l == 0 {
+			clusterErr = fmt.Errorf(
+				"expected a deployment on cluster %s, namespace %s, with label %s, but %d deployments exist",
+				clusterSpec.Name, targetNamespace, selector.String(), l)
 
-		selector := labels.Set(ct.Labels).AsSelector()
+			clusterConditions = conditions.SetCapacityCondition(
+				clusterConditions,
+				shipperv1.ClusterConditionTypeReady,
+				corev1.ConditionFalse,
+				conditions.MissingDeployment,
+				clusterErr.Error(),
+			)
 
-		var deploymentsList *appsv1.DeploymentList
-		deploymentsList, clusterErr = targetClusterClient.AppsV1().Deployments(targetNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
-		if clusterErr != nil {
-			break
+			goto End
+		} else if l > 1 {
+			clusterErr = fmt.Errorf(
+				"expected a deployment on cluster %s, namespace %s, with label %s, but %d deployments exist",
+				clusterSpec.Name, targetNamespace, selector.String(), l)
+
+			clusterConditions = conditions.SetCapacityCondition(
+				clusterConditions,
+				shipperv1.ClusterConditionTypeReady,
+				corev1.ConditionFalse,
+				conditions.TooManyDeployments,
+				clusterErr.Error(),
+			)
+
+			goto End
 		}
 
-		if len(deploymentsList.Items) != 1 {
-			clusterErr = fmt.Errorf("Expected a deployment on cluster %s, namespace %s, with label %s, but %d deployments exist.", clusterSpec.Name, targetNamespace, selector.String(), len(deploymentsList.Items))
-			break
-		}
-
-		targetDeployment := deploymentsList.Items[0]
-		patchString := fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicaCount)
+		targetDeployment = deploymentsList.Items[0]
+		patchString = fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicaCount)
 		_, clusterErr = targetClusterClient.AppsV1().Deployments(targetDeployment.Namespace).Patch(targetDeployment.Name, types.StrategicMergePatchType, []byte(patchString))
 		if clusterErr != nil {
-			break
+			clusterConditions = conditions.SetCapacityCondition(
+				clusterConditions,
+				shipperv1.ClusterConditionTypeOperational,
+				corev1.ConditionFalse,
+				conditions.ServerError,
+				clusterErr.Error(),
+			)
+
+			goto End
 		}
 
-		c.recorder.Eventf(
-			ct,
-			corev1.EventTypeNormal,
-			"CapacityChanged",
-			"Scaled %q to %d replicas",
-			controller.MetaKey(&targetDeployment),
-			replicaCount,
-		)
+	End:
+		if clusterErr != nil {
+			c.recorder.Event(
+				ct,
+				corev1.EventTypeWarning,
+				"FailedCapacityChange",
+				clusterErr.Error())
+		} else {
+			clusterConditions = conditions.SetCapacityCondition(
+				clusterConditions,
+				shipperv1.ClusterConditionTypeOperational,
+				corev1.ConditionTrue,
+				"",
+				"")
+
+			c.recorder.Eventf(
+				ct,
+				corev1.EventTypeNormal,
+				"CapacityChanged",
+				"Scaled %q to %d replicas",
+				shippercontroller.MetaKey(&targetDeployment),
+				replicaCount)
+		}
+
+		if !reflect.DeepEqual(clusterConditions, ct.Status.Clusters) {
+			ct.Status.Clusters = setClusterConditions(ct.Status.Clusters, clusterSpec.Name, clusterConditions)
+		}
 	}
 
-	if clusterErr != nil {
-		c.recorder.Event(ct, corev1.EventTypeWarning, "FailedCapacityChange", clusterErr.Error())
+	_, err = c.shipperclientset.ShipperV1().CapacityTargets(namespace).Update(ct)
+	return err
+}
+
+func setClusterConditions(
+	clusters []shipperv1.ClusterCapacityStatus,
+	name string,
+	clusterConditions []shipperv1.ClusterCapacityCondition,
+) []shipperv1.ClusterCapacityStatus {
+	seen := false
+	for i, c := range clusters {
+		if c.Name == name {
+			clusters[i].Conditions = clusterConditions
+			seen = true
+		}
 	}
 
-	return clusterErr
+	if !seen {
+		capacityStatus := shipperv1.ClusterCapacityStatus{
+			Name:       name,
+			Conditions: clusterConditions,
+		}
+		clusters = append(clusters, capacityStatus)
+	}
+	return clusters
 }
 
 // enqueueCapacityTarget takes a CapacityTarget resource and converts it into a namespace/name
@@ -318,7 +457,7 @@ func (c Controller) convertPercentageToReplicaCountForCluster(capacityTarget *sh
 
 func (c Controller) getReleaseForCapacityTarget(capacityTarget *shipperv1.CapacityTarget) (*shipperv1.Release, error) {
 	if n := len(capacityTarget.OwnerReferences); n != 1 {
-		return nil, fmt.Errorf("expected exactly one owner for CapacityTarget %q, got %d", capacityTarget.GetName(), n)
+		return nil, NewMultipleOwnerReferencesError(capacityTarget.GetName(), n)
 	}
 
 	owner := capacityTarget.OwnerReferences[0]
@@ -327,12 +466,7 @@ func (c Controller) getReleaseForCapacityTarget(capacityTarget *shipperv1.Capaci
 	if err != nil {
 		return nil, err
 	} else if release.GetUID() != owner.UID {
-		return nil, fmt.Errorf(
-			"the owner Release for CapacityTarget %q is gone; expected UID %s but got %s",
-			controller.MetaKey(capacityTarget),
-			owner.UID,
-			release.GetUID(),
-		)
+		return nil, NewReleaseIsGoneError(shippercontroller.MetaKey(capacityTarget), owner.UID, release.GetUID())
 	}
 
 	return release, nil

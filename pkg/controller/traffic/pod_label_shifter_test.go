@@ -297,7 +297,9 @@ func (f *fixture) run(expectedWeights map[string]int) bool {
 		return false
 	}
 
-	achievedWeights, errs := shifter.SyncCluster(testClusterName, f.client, informers.Core().V1().Pods())
+	achievedWeights, errs, _ :=
+		shifter.SyncCluster(testClusterName, f.client, informers.Core().V1().Pods())
+
 	for _, err := range errs {
 		f.Errorf("failed to sync cluster: %s", err.Error())
 	}
