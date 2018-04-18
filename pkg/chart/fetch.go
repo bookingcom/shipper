@@ -34,22 +34,31 @@ func FetchRemoteWithCache(dir string, perChartFamilyByteLimit int) FetchFunc {
 		}
 
 		if cachedChart != nil && cachedChart.Len() > 0 {
-			return chartutil.LoadArchive(cachedChart)
+			chrt, chartErr := chartutil.LoadArchive(cachedChart)
+			if chartErr != nil {
+				return nil, chartcache.LoadArchiveError(chartErr)
+			}
+			return chrt, nil
 		}
 
 		// 0 bytes returned -> no cache hit. download it
 		data, err := downloadChart(chart.RepoURL, chart.Name, chart.Version)
 		if err != nil {
-			return nil, err
+			return nil, chartcache.DownloadChartError(err)
 		}
 
 		// we didn't find it in the cache earlier and had to fall through to downloading, so write it to the cache
 		err = cache.Store(data, chart.RepoURL, chart.Name, chart.Version)
 		if err != nil {
-			return nil, err
+			return nil, chartcache.CacheStoreChartError(err)
 		}
 
-		return chartutil.LoadArchive(bytes.NewReader(data))
+		chrt, err := chartutil.LoadArchive(bytes.NewReader(data))
+		if err != nil {
+			return nil, chartcache.LoadArchiveError(err)
+		}
+
+		return chrt, nil
 	}
 }
 

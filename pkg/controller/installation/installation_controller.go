@@ -23,7 +23,9 @@ import (
 	shipperInformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperListers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
-	"github.com/bookingcom/shipper/pkg/controller"
+	clientcache "github.com/bookingcom/shipper/pkg/clusterclientstore/cache"
+	"github.com/bookingcom/shipper/pkg/conditions"
+	shipperController "github.com/bookingcom/shipper/pkg/controller"
 )
 
 const AgentName = "installation-controller"
@@ -191,7 +193,7 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	} else if release.GetUID() != owner.UID {
 		return fmt.Errorf(
 			"the owner Release for InstallationTarget %q is gone; expected UID %s but got %s",
-			controller.MetaKey(it),
+			shipperController.MetaKey(it),
 			owner.UID,
 			release.GetUID(),
 		)
@@ -204,14 +206,33 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	// reason about a target cluster status.
 	clusterStatuses := make([]*shipperV1.ClusterInstallationStatus, 0, len(it.Spec.Clusters))
 	for _, clusterName := range it.Spec.Clusters {
-		status := &shipperV1.ClusterInstallationStatus{Name: clusterName}
+		var clusterConditions []shipperV1.ClusterInstallationCondition
+
+		for _, x := range it.Status.Clusters {
+			if x.Name == clusterName {
+				clusterConditions = x.Conditions
+			}
+		}
+
+		status := &shipperV1.ClusterInstallationStatus{
+			Name:       clusterName,
+			Conditions: clusterConditions,
+		}
+
 		clusterStatuses = append(clusterStatuses, status)
 
 		var cluster *shipperV1.Cluster
 		if cluster, err = c.clusterLister.Get(clusterName); err != nil {
+			status.Conditions = conditions.SetInstallationCondition(
+				status.Conditions,
+				shipperV1.ClusterConditionTypeOperational,
+				corev1.ConditionFalse,
+				conditions.ServerError,
+				err.Error())
+
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
-			glog.Warningf("Get Cluster %q for InstallationTarget %q: %s", clusterName, controller.MetaKey(it), err)
+			glog.Warningf("Get Cluster %q for InstallationTarget %q: %s", clusterName, shipperController.MetaKey(it), err)
 			continue
 		}
 
@@ -219,18 +240,51 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 		var restConfig *rest.Config
 		client, restConfig, err = c.GetClusterAndConfig(clusterName)
 		if err != nil {
+			reason := conditions.ServerError
+			if err == clientcache.ErrClusterNotInStore || err == clientcache.ErrClusterNotReady {
+				reason = conditions.TargetClusterClientError
+			}
+			status.Conditions = conditions.SetInstallationCondition(
+				status.Conditions,
+				shipperV1.ClusterConditionTypeOperational,
+				corev1.ConditionFalse,
+				reason,
+				err.Error())
+
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
-			glog.Warningf("Get config for Cluster %q for InstallationTarget %q: %s", clusterName, controller.MetaKey(it), err)
+			glog.Warningf("Get config for Cluster %q for InstallationTarget %q: %s", clusterName, shipperController.MetaKey(it), err)
 			continue
 		}
 
+		// At this point, we got a hold in a connection to the target cluster,
+		// so we assume it's operational until some other signal saying
+		// otherwise arrives.
+		status.Conditions = conditions.SetInstallationCondition(
+			status.Conditions,
+			shipperV1.ClusterConditionTypeOperational,
+			corev1.ConditionTrue,
+			"", "")
+
 		if err = handler.installRelease(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
+			status.Conditions = conditions.SetInstallationCondition(
+				status.Conditions,
+				shipperV1.ClusterConditionTypeReady,
+				corev1.ConditionFalse,
+				conditions.ServerError,
+				err.Error())
+
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
-			glog.Warningf("Install InstallationTarget %q for Cluster %q: %s", controller.MetaKey(it), clusterName, err)
+			glog.Warningf("Install InstallationTarget %q for Cluster %q: %s", shipperController.MetaKey(it), clusterName, err)
 			continue
 		}
+
+		status.Conditions = conditions.SetInstallationCondition(
+			status.Conditions,
+			shipperV1.ClusterConditionTypeOperational,
+			corev1.ConditionTrue,
+			"", "")
 
 		status.Status = shipperV1.InstallationStatusInstalled
 	}
@@ -245,7 +299,7 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 			corev1.EventTypeNormal,
 			"InstallationStatusChanged",
 			"Set %q status to %v",
-			controller.MetaKey(it),
+			shipperController.MetaKey(it),
 			clusterStatuses,
 		)
 	} else {
@@ -273,7 +327,8 @@ func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interfa
 		return nil, nil, err
 	}
 
-	// the client store is just like an informer cache: it's a shared pointer to a read-only struct, so copy it before mutating
+	// the client store is just like an informer cache: it's a shared pointer
+	// to a read-only struct, so copy it before mutating
 	referenceCopy := rest.CopyConfig(referenceConfig)
 
 	return client, referenceCopy, nil

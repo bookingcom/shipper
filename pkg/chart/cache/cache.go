@@ -33,12 +33,12 @@ func (f *fsCache) Fetch(repo, name, version string) (*bytes.Buffer, error) {
 			// it's cool, there's just no cache entry for this one
 			return nil, nil
 		} else {
-			return nil, err
+			return nil, FetchError(err)
 		}
 	}
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, FetchError(err)
 	}
 	return bytes.NewBuffer(data), nil
 }

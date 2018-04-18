@@ -48,7 +48,7 @@ func (i *Installer) renderManifests(_ *shipperV1.Cluster) ([]string, error) {
 	rel := i.Release
 	chart, err := i.fetchChart(rel.Environment.Chart)
 	if err != nil {
-		return nil, err
+		return nil, RenderManifestError(err)
 	}
 
 	rendered, err := shipperChart.Render(
@@ -57,6 +57,10 @@ func (i *Installer) renderManifests(_ *shipperV1.Cluster) ([]string, error) {
 		rel.GetNamespace(),
 		rel.Environment.Values,
 	)
+
+	if err != nil {
+		err = RenderManifestError(err)
+	}
 
 	for _, v := range rendered {
 		glog.V(10).Infof("Rendered object:\n%s", v)
@@ -216,9 +220,12 @@ func (i *Installer) installManifests(
 		// that it might not work as expected (meaning more research might be
 		// necessary).
 		decodedObj, gvk, err :=
-			kubescheme.Codecs.UniversalDeserializer().Decode([]byte(manifest), nil, nil)
+			kubescheme.Codecs.
+				UniversalDeserializer().
+				Decode([]byte(manifest), nil, nil)
+
 		if err != nil {
-			return fmt.Errorf("error decoding manifest: %s", err)
+			return NewDecodeManifestError("error decoding manifest: %s", err)
 		}
 
 		// We label final objects with Release labels so that we can find/filter them
@@ -237,14 +244,14 @@ func (i *Installer) installManifests(
 		obj := &unstructured.Unstructured{}
 		err = i.Scheme.Convert(decodedObj, obj, nil)
 		if err != nil {
-			return fmt.Errorf("error converting object to unstructured: %s", err)
+			return NewConvertUnstructuredError("error converting object to unstructured: %s", err)
 		}
 
 		// Once we've gathered enough information about the document we want to install,
 		// we're able to build a resource client to interact with the target cluster.
 		resourceClient, err := i.buildResourceClient(cluster, client, restConfig, dynamicClientBuilderFunc, gvk)
 		if err != nil {
-			return fmt.Errorf("error building resource client: %s", err)
+			return NewResourceClientError("error building resource client: %s", err)
 		}
 
 		// Now we can create the object using the resource client. Probably all of
@@ -268,7 +275,9 @@ func (i *Installer) installManifests(
 				return fmt.Errorf("error constructing request: %s", rce)
 			}
 
-			return fmt.Errorf(`error creating resource %s "%s/%s": %s`, obj.GetKind(), obj.GetNamespace(), obj.GetName(), err)
+			return NewCreateResourceError(
+				`error creating resource %s "%s/%s": %s`,
+				obj.GetKind(), obj.GetNamespace(), obj.GetName(), err)
 		}
 	}
 

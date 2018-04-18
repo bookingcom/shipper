@@ -58,10 +58,11 @@ func (p *podLabelShifter) SyncCluster(
 	cluster string,
 	clientset kubernetes.Interface,
 	informer corev1informer.PodInformer,
-) (map[string]int, []error) {
+) (map[string]int, []error, error) {
 	releaseWeights, ok := p.clusterReleaseWeights[cluster]
 	if !ok {
-		return nil, []error{fmt.Errorf("podLabelShifter has no weights for cluster %q", cluster)}
+		return nil, nil, fmt.Errorf(
+			"podLabelShifter has no weights for cluster %q", cluster)
 	}
 
 	podsClient := clientset.CoreV1().Pods(p.namespace)
@@ -69,24 +70,17 @@ func (p *podLabelShifter) SyncCluster(
 
 	svcList, err := servicesClient.List(metav1.ListOptions{LabelSelector: p.selector})
 	if err != nil {
-		return nil, []error{fmt.Errorf(
-			`cluster error (%q): failed to fetch Service matching %q in namespace %q: %s`,
-			cluster, p.selector, p.namespace, err,
-		)}
+		return nil, nil, NewTargetClusterFetchServiceFailedError(cluster, p.selector, p.namespace, err)
 	} else if n := len(svcList.Items); n != 1 {
-		return nil, []error{fmt.Errorf(
-			"cluster error (%q): expected exactly one Service in namespace %q matching %q, but got %d",
-			cluster, p.namespace, p.selector, n,
-		)}
+		return nil, nil,
+			NewTargetClusterWrongServiceCountError(cluster, p.selector, p.namespace, n)
 	}
 
 	prodSvc := svcList.Items[0]
 	trafficSelector := prodSvc.Spec.Selector
 	if trafficSelector == nil {
-		return nil, []error{fmt.Errorf(
-			"cluster error (%q): service %s/%s does not have a selector set. this means we cannot do label-based canary deployment",
-			cluster, p.namespace, prodSvc.Name,
-		)}
+		return nil, nil,
+			NewTargetClusterServiceMissesSelectorError(cluster, p.namespace, prodSvc.Name)
 	}
 
 	nsPodLister := informer.Lister().Pods(p.namespace)
@@ -94,10 +88,8 @@ func (p *podLabelShifter) SyncCluster(
 	// NOTE(btyler) namespace == one app (because we're fetching all the pods in the ns)
 	pods, err := nsPodLister.List(labels.Everything())
 	if err != nil {
-		return nil, []error{fmt.Errorf(
-			"cluster error (%q): failed to list pods in '%s': %q",
-			cluster, p.namespace, err,
-		)}
+		return nil, nil,
+			NewTargetClusterPodListingError(cluster, p.namespace, err)
 	}
 
 	totalPods := len(pods)
@@ -109,7 +101,8 @@ func (p *podLabelShifter) SyncCluster(
 	achievedWeights := map[string]int{}
 	errors := []error{}
 	for release, weight := range releaseWeights {
-		releaseReq, err := labels.NewRequirement(shipperv1.ReleaseLabel, selection.Equals, []string{release})
+		releaseReq, err := labels.NewRequirement(
+			shipperv1.ReleaseLabel, selection.Equals, []string{release})
 		if err != nil {
 			// programmer error: this is a static label
 			panic(err)
@@ -118,17 +111,15 @@ func (p *podLabelShifter) SyncCluster(
 		releaseSelector := labels.NewSelector().Add(*releaseReq)
 		releasePods, err := nsPodLister.List(releaseSelector)
 		if err != nil {
-			errors = append(errors, fmt.Errorf(
-				"release error (%q): failed to list pods in '%s/%s': %q",
-				release, cluster, p.namespace, err,
-			))
-			continue
+			return nil, nil,
+				NewTargetClusterReleasePodListingError(
+					release, cluster, p.namespace, err)
 		}
 
 		targetPods := calculateReleasePodTarget(len(releasePods), weight, totalPods, totalWeight)
 
-		trafficPods := []*corev1.Pod{}
-		idlePods := []*corev1.Pod{}
+		var trafficPods []*corev1.Pod
+		var idlePods []*corev1.Pod
 		for _, pod := range releasePods {
 			if getsTraffic(pod, trafficSelector) {
 				trafficPods = append(trafficPods, pod)
@@ -153,10 +144,9 @@ func (p *podLabelShifter) SyncCluster(
 
 				_, err := podsClient.Update(pod)
 				if err != nil {
-					errors = append(errors, fmt.Errorf(
-						"pod error (%s/%s/%s): failed to add traffic label: %q",
-						cluster, p.namespace, pod.Name, err,
-					))
+					errors = append(errors,
+						NewTargetClusterTrafficModifyingLabelError(
+							cluster, p.namespace, pod.Name, err))
 					continue
 				}
 				removedFromLB++
@@ -171,10 +161,8 @@ func (p *podLabelShifter) SyncCluster(
 			missing := targetPods - len(trafficPods)
 			addedToLB := 0
 			if missing > len(idlePods) {
-				errors = append(errors, fmt.Errorf(
-					"release error (%q): the math is broken: there aren't enough idle pods (%d) to meet requested increase in traffic pods (%d).",
-					release, len(idlePods), missing,
-				))
+				errors = append(errors,
+					NewTargetClusterMathError(release, len(idlePods), missing))
 				continue
 			}
 
@@ -185,10 +173,9 @@ func (p *podLabelShifter) SyncCluster(
 
 				_, err := podsClient.Update(pod)
 				if err != nil {
-					errors = append(errors, fmt.Errorf(
-						"pod error (%s/%s/%s): failed to add traffic label: %q",
-						cluster, p.namespace, pod.Name, err,
-					))
+					errors = append(errors,
+						NewTargetClusterTrafficModifyingLabelError(
+							cluster, p.namespace, pod.Name, err))
 					continue
 				}
 				addedToLB++
@@ -199,7 +186,7 @@ func (p *podLabelShifter) SyncCluster(
 		}
 	}
 
-	return achievedWeights, errors
+	return achievedWeights, errors, nil
 }
 
 func getsTraffic(pod *corev1.Pod, trafficSelectors map[string]string) bool {

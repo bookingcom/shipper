@@ -20,8 +20,13 @@ import (
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
+
+func init() {
+	conditions.CapacityConditionsShouldDiscardTimestamps = true
+}
 
 func TestUpdatingCapacityTargetUpdatesDeployment(t *testing.T) {
 	f := NewFixture(t)
@@ -48,7 +53,15 @@ func TestUpdatingDeploymentsUpdatesTheCapacityTargetStatus(t *testing.T) {
 	deployment := newDeploymentForRelease(release, "nginx", "reviewsapi", 5)
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment)
 
-	f.expectCapacityTargetStatusPatch(capacityTarget, 5, 50)
+	clusterConditions := []shipperv1.ClusterCapacityCondition{
+		{
+			Type:    shipperv1.ClusterConditionTypeReady,
+			Status:  corev1.ConditionFalse,
+			Reason:  conditions.WrongPodCount,
+			Message: "expected 5 replicas but have 0",
+		},
+	}
+	f.expectCapacityTargetStatusPatch(capacityTarget, 5, 50, clusterConditions)
 
 	f.runDeploymentSyncHandler()
 }
@@ -67,7 +80,15 @@ func TestSadPodsAreReflectedInCapacityTargetStatus(t *testing.T) {
 	sadPod := createSadPodForDeployment(deployment)
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment, sadPod)
 
-	f.expectCapacityTargetStatusPatch(capacityTarget, 4, 40, createSadPodConditionFromPod(sadPod))
+	clusterConditions := []shipperv1.ClusterCapacityCondition{
+		{
+			Type:    shipperv1.ClusterConditionTypeReady,
+			Status:  corev1.ConditionFalse,
+			Reason:  conditions.PodsNotReady,
+			Message: "there are 1 sad pods",
+		},
+	}
+	f.expectCapacityTargetStatusPatch(capacityTarget, 4, 40, clusterConditions, createSadPodConditionFromPod(sadPod))
 
 	f.runDeploymentSyncHandler()
 }
@@ -183,7 +204,7 @@ func (f *fixture) ExpectDeploymentPatchWithReplicas(deployment *appsv1.Deploymen
 	f.targetClusterActions = append(f.targetClusterActions, patchAction)
 }
 
-func (f *fixture) expectCapacityTargetStatusPatch(capacityTarget *shipperv1.CapacityTarget, availableReplicas, achievedPercent int32, sadPods ...shipperv1.PodStatus) {
+func (f *fixture) expectCapacityTargetStatusPatch(capacityTarget *shipperv1.CapacityTarget, availableReplicas, achievedPercent int32, clusterConditions []shipperv1.ClusterCapacityCondition, sadPods ...shipperv1.PodStatus) {
 	// have to do this for the patches to match, otherwise the
 	// value for "sadPods" will be an empty array, but we expect
 	// null
@@ -195,6 +216,7 @@ func (f *fixture) expectCapacityTargetStatusPatch(capacityTarget *shipperv1.Capa
 		Name:              capacityTarget.Spec.Clusters[0].Name,
 		AvailableReplicas: availableReplicas,
 		AchievedPercent:   achievedPercent,
+		Conditions:        clusterConditions,
 		SadPods:           sadPods,
 	}
 
