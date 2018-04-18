@@ -47,7 +47,10 @@ import (
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 )
 
-const AgentName = "capacity-controller"
+const (
+	AgentName   = "capacity-controller"
+	SadPodLimit = 5
+)
 
 // Controller is the controller implementation for CapacityTarget resources
 type Controller struct {
@@ -243,7 +246,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		var deploymentsList []*appsv1.Deployment
 		var patchString string
 		var clusterConditions []shipperv1.ClusterCapacityCondition
-		var targetDeployment appsv1.Deployment
+		var targetDeployment *appsv1.Deployment
 		var replicaCount int32
 		var targetClusterClient kubernetes.Interface
 		var targetClusterInformer kubeinformers.SharedInformerFactory
@@ -309,7 +312,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 			goto End
 		}
 
-		targetClusterInformer, clusterErr := c.clusterClientStore.GetInformerFactory(clusterSpec.Name)
+		targetClusterInformer, clusterErr = c.clusterClientStore.GetInformerFactory(clusterSpec.Name)
 		if clusterErr != nil {
 			clusterConditions = conditions.SetCapacityCondition(
 				clusterConditions,
@@ -320,8 +323,6 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 			)
 			goto End
 		}
-
-		targetNamespace := ct.Namespace
 
 		deploymentsList, clusterErr = targetClusterInformer.Apps().V1().Deployments().Lister().Deployments(targetNamespace).List(selector)
 		if clusterErr != nil {
@@ -366,8 +367,8 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 			goto End
 		}
 
-		targetDeployment := deploymentsList[0]
-		patchString := fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicaCount)
+		targetDeployment = deploymentsList[0]
+		patchString = fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicaCount)
 
 		_, clusterErr = targetClusterClient.AppsV1().Deployments(targetDeployment.Namespace).Patch(targetDeployment.Name, types.StrategicMergePatchType, []byte(patchString))
 		if clusterErr != nil {
@@ -402,7 +403,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 				corev1.EventTypeNormal,
 				"CapacityChanged",
 				"Scaled %q to %d replicas",
-				shippercontroller.MetaKey(&targetDeployment),
+				shippercontroller.MetaKey(targetDeployment),
 				replicaCount)
 		}
 
@@ -444,7 +445,7 @@ func setClusterConditions(
 func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 	var key string
 	var err error
-	if key, err = cache.DeletionHandlingMetaNamespaceKeyFunc(obj); err != nil {
+	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
 		runtime.HandleError(err)
 		return
 	}

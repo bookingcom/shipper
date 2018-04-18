@@ -331,7 +331,7 @@ func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace s
 	return capacityTargets[0], nil
 }
 
-func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployment, clusterName string) (int, int, []shipperv1.PodStatus, error) {
+func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployment, clusterName string) (numberOfPods, numberOfSadPods int, sadPodConditions []shipperv1.PodStatus, err error) {
 	var sadPods []shipperv1.PodStatus
 
 	informer, err := c.clusterClientStore.GetInformerFactory(clusterName)
@@ -354,7 +354,7 @@ func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployme
 		// limit. This should, hopefully, be replaced with a
 		// more heuristic way of reporting sad pods in the
 		// future.
-		if len(sadPods) == shipperv1.CapacityTargetSadPodLimit {
+		if len(sadPods) == SadPodLimit {
 			break
 		}
 
@@ -370,7 +370,7 @@ func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployme
 		}
 	}
 
-	return len(pods.Items), len(sadPods), sadPods, nil
+	return len(pods), len(sadPods), sadPods, nil
 }
 
 func (c Controller) getFalsePodCondition(pod *corev1.Pod) (*corev1.PodCondition, bool) {

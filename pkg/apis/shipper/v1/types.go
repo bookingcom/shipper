@@ -38,8 +38,6 @@ const (
 
 	LBLabel         = "shipper-lb"
 	LBForProduction = "production"
-
-	CapacityTargetSadPodLimit = 5
 )
 
 // +genclient
