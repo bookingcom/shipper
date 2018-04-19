@@ -250,15 +250,15 @@ func newCapacityTargetForRelease(release *shipperv1.Release, name, namespace str
 
 	clusters := []shipperv1.ClusterCapacityTarget{minikube}
 
-	labels := map[string]string{
-		"release": release.Name,
+	metaLabels := map[string]string{
+		shipperv1.ReleaseLabel: release.Name,
 	}
 
 	return &shipperv1.CapacityTarget{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			Labels:    labels,
+			Labels:    metaLabels,
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
 					APIVersion: "shipper.booking.com/v1",
@@ -296,15 +296,21 @@ func newDeploymentForRelease(release *shipperv1.Release, name, namespace string,
 		AvailableReplicas: replicas,
 	}
 
-	labels := map[string]string{
-		"release": release.Name,
+	metaLabels := map[string]string{
+		shipperv1.ReleaseLabel: release.Name,
+	}
+
+	specSelector := &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			shipperv1.ReleaseLabel: release.Name,
+		},
 	}
 
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			Labels:    labels,
+			Labels:    metaLabels,
 		},
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "apps/v1",
@@ -312,6 +318,7 @@ func newDeploymentForRelease(release *shipperv1.Release, name, namespace string,
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
+			Selector: specSelector,
 		},
 		Status: status,
 	}
@@ -335,7 +342,7 @@ func createSadPodForDeployment(deployment *appsv1.Deployment) *corev1.Pod {
 			Name:      "nginx-1a93Y2",
 			Namespace: "reviewsapi",
 			Labels: map[string]string{
-				"release": deployment.Labels["release"],
+				shipperv1.ReleaseLabel: deployment.Labels[shipperv1.ReleaseLabel],
 			},
 		},
 		Status: status,

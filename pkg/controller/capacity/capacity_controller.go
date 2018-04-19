@@ -28,7 +28,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -48,7 +47,10 @@ import (
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 )
 
-const AgentName = "capacity-controller"
+const (
+	AgentName   = "capacity-controller"
+	SadPodLimit = 5
+)
 
 // Controller is the controller implementation for CapacityTarget resources
 type Controller struct {
@@ -241,12 +243,13 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 
 	for _, clusterSpec := range ct.Spec.Clusters {
 		var clusterErr error
-		var deploymentsList *appsv1.DeploymentList
+		var deploymentsList []*appsv1.Deployment
 		var patchString string
 		var clusterConditions []shipperv1.ClusterCapacityCondition
-		var targetDeployment appsv1.Deployment
+		var targetDeployment *appsv1.Deployment
 		var replicaCount int32
 		var targetClusterClient kubernetes.Interface
+		var targetClusterInformer kubeinformers.SharedInformerFactory
 
 		for _, e := range ct.Status.Clusters {
 			if e.Name == clusterSpec.Name {
@@ -309,10 +312,19 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 			goto End
 		}
 
-		deploymentsList, clusterErr =
-			targetClusterClient.AppsV1().Deployments(targetNamespace).List(
-				metav1.ListOptions{LabelSelector: selector.String()})
+		targetClusterInformer, clusterErr = c.clusterClientStore.GetInformerFactory(clusterSpec.Name)
+		if clusterErr != nil {
+			clusterConditions = conditions.SetCapacityCondition(
+				clusterConditions,
+				shipperv1.ClusterConditionTypeOperational,
+				corev1.ConditionFalse,
+				conditions.ServerError,
+				clusterErr.Error(),
+			)
+			goto End
+		}
 
+		deploymentsList, clusterErr = targetClusterInformer.Apps().V1().Deployments().Lister().Deployments(targetNamespace).List(selector)
 		if clusterErr != nil {
 			clusterConditions = conditions.SetCapacityCondition(
 				clusterConditions,
@@ -325,7 +337,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 			goto End
 		}
 
-		if l := len(deploymentsList.Items); l == 0 {
+		if l := len(deploymentsList); l != 1 {
 			clusterErr = fmt.Errorf(
 				"expected a deployment on cluster %s, namespace %s, with label %s, but %d deployments exist",
 				clusterSpec.Name, targetNamespace, selector.String(), l)
@@ -355,8 +367,9 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 			goto End
 		}
 
-		targetDeployment = deploymentsList.Items[0]
+		targetDeployment = deploymentsList[0]
 		patchString = fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicaCount)
+
 		_, clusterErr = targetClusterClient.AppsV1().Deployments(targetDeployment.Namespace).Patch(targetDeployment.Name, types.StrategicMergePatchType, []byte(patchString))
 		if clusterErr != nil {
 			clusterConditions = conditions.SetCapacityCondition(
@@ -390,7 +403,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 				corev1.EventTypeNormal,
 				"CapacityChanged",
 				"Scaled %q to %d replicas",
-				shippercontroller.MetaKey(&targetDeployment),
+				shippercontroller.MetaKey(targetDeployment),
 				replicaCount)
 		}
 
@@ -484,6 +497,7 @@ func (c *Controller) registerEventHandlers(informerFactory kubeinformers.SharedI
 
 func (c *Controller) subscribe(informerFactory kubeinformers.SharedInformerFactory) {
 	informerFactory.Apps().V1().Deployments().Informer()
+	informerFactory.Core().V1().Pods().Informer()
 }
 
 type clusterClientStoreInterface interface {
