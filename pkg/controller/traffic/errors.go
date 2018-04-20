@@ -23,7 +23,7 @@ func NewTargetClusterWrongServiceCountError(
 ) TargetClusterServiceError {
 	return TargetClusterServiceError(fmt.Errorf(
 		"cluster error (%q): expected exactly one Service in namespace %q matching %q, but got %d",
-		clusterName, selector, namespace, serviceCount))
+		clusterName, namespace, selector, serviceCount))
 }
 
 func NewTargetClusterServiceMissesSelectorError(
