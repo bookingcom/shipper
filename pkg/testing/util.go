@@ -8,7 +8,10 @@ import (
 	kubetesting "k8s.io/client-go/testing"
 )
 
-const TestNamespace = "test-namespace"
+const (
+	TestNamespace = "test-namespace"
+	TestLabel     = "shipper-e2e-test"
+)
 
 // CheckActions takes a slice of expected actions and a slice of observed
 // actions (typically obtained from fakeClient.Actions()) and compares them.
