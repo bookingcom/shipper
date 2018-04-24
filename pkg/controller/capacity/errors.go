@@ -6,14 +6,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-type MultipleOwnerReferencesError error
-
-func NewMultipleOwnerReferencesError(name string, references int) MultipleOwnerReferencesError {
-	return MultipleOwnerReferencesError(fmt.Errorf(
-		"expected exactly one owner for CapacityTarget %q, got %d",
-		name, references))
-}
-
 type ReleaseIsGoneError error
 
 func NewReleaseIsGoneError(name string, expectedUID types.UID, gotUID types.UID) ReleaseIsGoneError {

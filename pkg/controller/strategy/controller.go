@@ -140,7 +140,7 @@ func (c *Controller) contenderForRelease(r *v1.Release) (*v1.Release, error) {
 	incumbentRecord := history[expectedIncumbentIndex]
 	// TODO(btyler) is this a reasonable decision? the strategy only knows how to operate with the latest two releases
 	if incumbentRecord.Name != r.GetName() {
-		return nil, fmt.Errorf("release %s/%s isn't the penultimate record in history, so we shouldn't be touching it", r.GetNamespace(), r.GetName())
+		return nil, fmt.Errorf("release %s isn't the penultimate record in history, so we shouldn't be touching it", shippercontroller.MetaKey(r))
 	}
 
 	contenderRecord := app.Status.History[len(app.Status.History)-1]
@@ -173,21 +173,14 @@ func (c *Controller) getAssociatedApplication(rel *v1.Release) *v1.Application {
 	return app
 }
 
-func (c *Controller) getAssociatedRelease(obj *metav1.ObjectMeta) *v1.Release {
+func (c *Controller) getAssociatedReleaseKey(obj *metav1.ObjectMeta) (string, error) {
 	if n := len(obj.OwnerReferences); n != 1 {
-		glog.Warningf("expected exactly one OwnerReference for %q but got %d", shippercontroller.MetaKey(obj), n)
-		return nil
+		return "", shippercontroller.NewMultipleOwnerReferencesError(obj.Name, n)
 	}
 
 	owner := obj.OwnerReferences[0]
 
-	rel, err := c.releasesLister.Releases(obj.Namespace).Get(owner.Name)
-	if err != nil {
-		// This target object will soon be GC-ed.
-		return nil
-	}
-
-	return rel
+	return fmt.Sprintf("%s/%s", obj.Namespace, owner.Name), nil
 }
 
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
@@ -318,25 +311,20 @@ func (c *Controller) clientForGroupVersionKind(
 	return client.Resource(resource, ns), nil
 }
 
-func (c *Controller) buildReleaseInfo(ns string, name string) (*releaseInfo, error) {
-	release, err := c.releasesLister.Releases(ns).Get(name)
+func (c *Controller) buildReleaseInfo(release *v1.Release) (*releaseInfo, error) {
+	installationTarget, err := c.installationTargetsLister.InstallationTargets(release.Namespace).Get(release.Name)
 	if err != nil {
-		return nil, err
+		return nil, NewRetrievingInstallationTargetForReleaseError(shippercontroller.MetaKey(release), err)
 	}
 
-	installationTarget, err := c.installationTargetsLister.InstallationTargets(ns).Get(name)
+	capacityTarget, err := c.capacityTargetsLister.CapacityTargets(release.Namespace).Get(release.Name)
 	if err != nil {
-		return nil, err
+		return nil, NewRetrievingCapacityTargetForReleaseError(shippercontroller.MetaKey(release), err)
 	}
 
-	capacityTarget, err := c.capacityTargetsLister.CapacityTargets(ns).Get(name)
+	trafficTarget, err := c.trafficTargetsLister.TrafficTargets(release.Namespace).Get(release.Name)
 	if err != nil {
-		return nil, err
-	}
-
-	trafficTarget, err := c.trafficTargetsLister.TrafficTargets(ns).Get(name)
-	if err != nil {
-		return nil, err
+		return nil, NewRetrievingTrafficTargetForReleaseError(shippercontroller.MetaKey(release), err)
 	}
 
 	return &releaseInfo{
@@ -348,14 +336,44 @@ func (c *Controller) buildReleaseInfo(ns string, name string) (*releaseInfo, err
 }
 
 func (c *Controller) buildExecutor(ns, name string, recorder record.EventRecorder) (*Executor, error) {
-	contenderReleaseInfo, err := c.buildReleaseInfo(ns, name)
+	release, err := c.releasesLister.Releases(ns).Get(name)
+	if err != nil {
+		return nil, err
+	}
+
+	if isInstalled(release) {
+		// If the release we got is installed, it means it is
+		// the incumbent, so we need to find the contender
+		// ourselves. This happens because both the contender
+		// and the incumbent end up in the workqueue.
+
+		// Check if there is a contender release for given release.
+		var contenderRelease *v1.Release
+		contenderRelease, err = c.contenderForRelease(release)
+		if err != nil {
+			return nil, err
+		}
+
+		if contenderRelease == nil {
+			return nil, fmt.Errorf("Release %s is already installed, and we couldn't find a contender for it.", shippercontroller.MetaKey(release))
+		}
+
+		if !isWorkingOnStrategy(contenderRelease) {
+			return nil, NewNotWorkingOnStrategyError(shippercontroller.MetaKey(contenderRelease), shippercontroller.MetaKey(release))
+		}
+
+		glog.V(5).Infof("Found %s as a contender for %s, switching to work on the contender", shippercontroller.MetaKey(contenderRelease), shippercontroller.MetaKey(release))
+		release = contenderRelease
+	}
+
+	contenderReleaseInfo, err := c.buildReleaseInfo(release)
 	if err != nil {
 		return nil, err
 	}
 
 	app := c.getAssociatedApplication(contenderReleaseInfo.release)
 	if app == nil {
-		return nil, fmt.Errorf("no application associated with release %s/%s", ns, name)
+		return nil, fmt.Errorf("no application associated with release %s", shippercontroller.MetaKey(release))
 	}
 
 	history := app.Status.History
@@ -367,8 +385,8 @@ func (c *Controller) buildExecutor(ns, name string, recorder record.EventRecorde
 	}
 
 	expectedContenderRecord := history[len(history)-1]
-	if expectedContenderRecord.Name != name {
-		return nil, fmt.Errorf("contender %s/%s is not the latest release in app history: will not execute strategy", ns, name)
+	if expectedContenderRecord.Name != release.GetName() {
+		return nil, fmt.Errorf("contender %s is not the latest release in app history: will not execute strategy", shippercontroller.MetaKey(release))
 	}
 
 	// no incumbent, only this contender: a new application
@@ -380,7 +398,13 @@ func (c *Controller) buildExecutor(ns, name string, recorder record.EventRecorde
 	}
 
 	incumbentRecord := history[len(history)-2]
-	incumbentReleaseInfo, err := c.buildReleaseInfo(ns, incumbentRecord.Name)
+
+	incumbentRelease, err := c.releasesLister.Releases(ns).Get(incumbentRecord.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	incumbentReleaseInfo, err := c.buildReleaseInfo(incumbentRelease)
 	if err != nil {
 		return nil, err
 	}
@@ -394,23 +418,35 @@ func (c *Controller) buildExecutor(ns, name string, recorder record.EventRecorde
 
 func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 	it := obj.(*v1.InstallationTarget)
-	if rel := c.getAssociatedRelease(&it.ObjectMeta); rel != nil {
-		c.enqueueRelease(rel)
+	releaseKey, err := c.getAssociatedReleaseKey(&it.ObjectMeta)
+	if err != nil {
+		glog.Warningln(err)
+		return
 	}
+
+	c.workqueue.AddRateLimited(releaseKey)
 }
 
 func (c *Controller) enqueueTrafficTarget(obj interface{}) {
 	tt := obj.(*v1.TrafficTarget)
-	if rel := c.getAssociatedRelease(&tt.ObjectMeta); rel != nil {
-		c.enqueueRelease(rel)
+	releaseKey, err := c.getAssociatedReleaseKey(&tt.ObjectMeta)
+	if err != nil {
+		glog.Warningln(err)
+		return
 	}
+
+	c.workqueue.AddRateLimited(releaseKey)
 }
 
 func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 	ct := obj.(*v1.CapacityTarget)
-	if rel := c.getAssociatedRelease(&ct.ObjectMeta); rel != nil {
-		c.enqueueRelease(rel)
+	releaseKey, err := c.getAssociatedReleaseKey(&ct.ObjectMeta)
+	if err != nil {
+		glog.Warningln(err)
+		return
 	}
+
+	c.workqueue.AddRateLimited(releaseKey)
 }
 
 func (c *Controller) enqueueRelease(obj interface{}) {
@@ -436,45 +472,14 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 		return
 	}
 
-	glog.V(5).Infof("inspecting release %s/%s", rel.Namespace, rel.Name)
-
-	if isInstalled(rel) {
-		// isInstalled returns true if Release.Status.Phase is Installed. If this
-		// is true, it is really likely that a modification was made in an installed
-		// release, so we check if there's a contender for this release and enqueue
-		// it instead. Now that I think more about it, I'm questioning how often this
-		// code path would be executed... Ah, this code path *will* be executed since
-		// capacity and traffic target objects will be modified when transitioning from
-		// one release to the other. So, this code path will be executed when
-		// CapacityTarget, TrafficTarget objects, for both contender and incumbent
-		// releases, and all those should enqueue only the contender release in the work
-		// queue.
-
-		// Check if there is a contender release for given release.
-		if contenderRel, err := c.contenderForRelease(rel); err != nil {
-			runtime.HandleError(err)
-		} else if contenderRel != nil {
-
-			if isWorkingOnStrategy(contenderRel) {
-				if key, err := cache.MetaNamespaceKeyFunc(contenderRel); err != nil {
-					runtime.HandleError(err)
-				} else {
-					glog.V(5).Infof("enqueued item %q", key)
-					c.workqueue.AddRateLimited(key)
-				}
-			}
-		} else {
-			glog.V(5).Infof("couldn't find a release to enqueue based on %s/%s", rel.Namespace, rel.Name)
-		}
-	} else if isWorkingOnStrategy(rel) {
-		// This release is in the middle of its strategy, so we just enqueue it.
-		if key, err := cache.MetaNamespaceKeyFunc(rel); err != nil {
-			runtime.HandleError(err)
-		} else {
-			glog.V(5).Infof("enqueued item %q", key)
-			c.workqueue.AddRateLimited(key)
-		}
-	} else {
-		glog.V(5).Infof("couldn't find a release to enqueue based on %s/%s", rel.Namespace, rel.Name)
+	key, err := cache.MetaNamespaceKeyFunc(rel)
+	if err != nil {
+		runtime.HandleError(err)
+		return
 	}
+
+	glog.V(5).Infof("enqueued item %q", key)
+	c.workqueue.AddRateLimited(key)
+
+	glog.V(5).Infof("inspecting release %s", shippercontroller.MetaKey(rel))
 }

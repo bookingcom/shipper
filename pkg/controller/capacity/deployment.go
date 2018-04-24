@@ -240,7 +240,7 @@ func (c *Controller) updateStatus(
 				conditions.MissingObjects,
 				err.Error(),
 			)
-		case MultipleOwnerReferencesError:
+		case controller.MultipleOwnerReferencesError:
 			clusterConditions = conditions.SetCapacityCondition(
 				clusterConditions,
 				shipperv1.ClusterConditionTypeReady,

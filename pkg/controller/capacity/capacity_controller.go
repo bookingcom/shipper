@@ -289,7 +289,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 					conditions.MissingObjects,
 					clusterErr.Error(),
 				)
-			case MultipleOwnerReferencesError:
+			case shippercontroller.MultipleOwnerReferencesError:
 				clusterConditions = conditions.SetCapacityCondition(
 					clusterConditions,
 					shipperv1.ClusterConditionTypeReady,
@@ -470,7 +470,7 @@ func (c Controller) convertPercentageToReplicaCountForCluster(capacityTarget *sh
 
 func (c Controller) getReleaseForCapacityTarget(capacityTarget *shipperv1.CapacityTarget) (*shipperv1.Release, error) {
 	if n := len(capacityTarget.OwnerReferences); n != 1 {
-		return nil, NewMultipleOwnerReferencesError(capacityTarget.GetName(), n)
+		return nil, shippercontroller.NewMultipleOwnerReferencesError(capacityTarget.GetName(), n)
 	}
 
 	owner := capacityTarget.OwnerReferences[0]
