@@ -34,18 +34,18 @@ func NewStrategyConditions(conditions ...shipperV1.ReleaseStrategyCondition) Str
 }
 
 // SetTrue transitions an existing condition from its current status to True.
-func (sc StrategyConditionsMap) SetTrue(conditionType shipperV1.StrategyConditionType, update StrategyConditionsUpdate) error {
-	return sc.update(conditionType, coreV1.ConditionTrue, update)
+func (sc StrategyConditionsMap) SetTrue(conditionType shipperV1.StrategyConditionType, update StrategyConditionsUpdate) {
+	sc.update(conditionType, coreV1.ConditionTrue, update)
 }
 
 // SetFalse transitions an existing condition from its current status to False.
-func (sc StrategyConditionsMap) SetFalse(conditionType shipperV1.StrategyConditionType, update StrategyConditionsUpdate) error {
-	return sc.update(conditionType, coreV1.ConditionFalse, update)
+func (sc StrategyConditionsMap) SetFalse(conditionType shipperV1.StrategyConditionType, update StrategyConditionsUpdate) {
+	sc.update(conditionType, coreV1.ConditionFalse, update)
 }
 
 // SetUnknown transitions an existing condition from its current status to Unknown.
-func (sc StrategyConditionsMap) SetUnknown(conditionType shipperV1.StrategyConditionType, update StrategyConditionsUpdate) error {
-	return sc.update(conditionType, coreV1.ConditionUnknown, update)
+func (sc StrategyConditionsMap) SetUnknown(conditionType shipperV1.StrategyConditionType, update StrategyConditionsUpdate) {
+	sc.update(conditionType, coreV1.ConditionUnknown, update)
 }
 
 // Merge merges another StrategyConditionsMap object into the receiver. Conditions
@@ -230,7 +230,7 @@ func (sc StrategyConditionsMap) update(
 	conditionType shipperV1.StrategyConditionType,
 	newStatus coreV1.ConditionStatus,
 	update StrategyConditionsUpdate,
-) error {
+) {
 
 	existingCondition, ok := sc[conditionType]
 	if !ok {
@@ -264,8 +264,6 @@ func (sc StrategyConditionsMap) update(
 
 		sc[conditionType] = newCondition
 	}
-
-	return nil
 }
 
 func (sc StrategyConditionsMap) isState(
