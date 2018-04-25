@@ -76,8 +76,47 @@ spec:
                       type: string
             strategy:
               type: object
+              required:
+              - steps
               properties:
-                name:
-                  type: string
+                steps:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                    - name
+                    - traffic
+                    - capacity
+                    properties:
+                      name:
+                        type: string
+                      capacity:
+                        type: object
+                        required:
+                        - incumbent
+                        - contender
+                        properties:
+                          incumbent:
+                            type: integer
+                            minimum: 0
+                            maximum: 100
+                          contender:
+                            type: integer
+                            minimum: 0
+                            maximum: 100
+                      traffic:
+                        type: object
+                        required:
+                        - incumbent
+                        - contender
+                        properties:
+                          incumbent:
+                            type: integer
+                            minimum: 0
+                            maximum: 100
+                          contender:
+                            type: integer
+                            minimum: 0
+                            maximum: 100
             values:
               type: object

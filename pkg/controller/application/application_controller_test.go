@@ -6,10 +6,8 @@ import (
 	"testing"
 	"time"
 
-	//corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	//runtimeutil "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
@@ -38,7 +36,7 @@ func TestHashReleaseEnv(t *testing.T) {
 	}
 
 	distinctApp := newApplication(testAppName)
-	distinctApp.Spec.Template.Strategy.Name = "blorg"
+	distinctApp.Spec.Template.Strategy = &shipperv1.RolloutStrategy{}
 	distinctHash := hashReleaseEnvironment(distinctApp.Spec.Template)
 	if distinctHash == appHash {
 		t.Errorf("two different environments hashed to the same thing: %q", distinctHash)
@@ -101,7 +99,8 @@ func TestCreateFirstRelease(t *testing.T) {
 	f.run()
 }
 
-// an app with 1 existing release should create a new one when its template has changed
+// An app with 1 existing release should create a new one when its template has
+// changed.
 func TestCreateSecondRelease(t *testing.T) {
 	srv, hh, err := repotest.NewTempServer("testdata/*.tgz")
 	if err != nil {
@@ -131,7 +130,7 @@ func TestCreateSecondRelease(t *testing.T) {
 		},
 	}
 
-	app.Spec.Template.Strategy.Name = "purple-orange"
+	app.Spec.Template.Values = &shipperv1.ChartValues{"foo": "bar"}
 
 	newEnvHash := hashReleaseEnvironment(app.Spec.Template)
 	newRelName := fmt.Sprintf("%s-%s-0", testAppName, newEnvHash)
@@ -160,7 +159,7 @@ func TestCreateSecondRelease(t *testing.T) {
 	f.run()
 }
 
-// abort through invalid history entries
+// Abort through invalid history entries.
 func TestCleanBogusHistory(t *testing.T) {
 	f := newFixture(t)
 	app := newApplication(testAppName)
@@ -180,10 +179,18 @@ func TestCleanBogusHistory(t *testing.T) {
 		},
 	}
 
-	// this should be reverted to the strategy in the only existing release, which is "foobar"
-	app.Spec.Template.Strategy.Name = "some_crazy_strategy"
+	// This should be reverted to the strategy in the only existing release, which
+	// is "vanguard".
+	app.Spec.Template.Strategy = &shipperv1.RolloutStrategy{
+		Steps: []shipperv1.RolloutStrategyStep{
+			{
+				Name:    "some_crazy_strategy",
+				Traffic: shipperv1.RolloutStrategyStepValue{Incumbent: 17, Contender: 42},
+			},
+		},
+	}
 
-	// these nonsense history entries should be deleted
+	// These nonsense history entries should be deleted.
 	app.Status.History = []*shipperv1.ReleaseRecord{
 		{
 			Name:   relName,
@@ -237,6 +244,26 @@ func newRelease(releaseName string, app *shipperv1.Application) *shipperv1.Relea
 	}
 }
 
+var vanguard = shipperv1.RolloutStrategy{
+	Steps: []shipperv1.RolloutStrategyStep{
+		{
+			Name:     "staging",
+			Capacity: shipperv1.RolloutStrategyStepValue{Incumbent: 100, Contender: 1},
+			Traffic:  shipperv1.RolloutStrategyStepValue{Incumbent: 100, Contender: 0},
+		},
+		{
+			Name:     "50/50",
+			Capacity: shipperv1.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
+			Traffic:  shipperv1.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
+		},
+		{
+			Name:     "full on",
+			Capacity: shipperv1.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+			Traffic:  shipperv1.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+		},
+	},
+}
+
 func newApplication(name string) *shipperv1.Application {
 	return &shipperv1.Application{
 		ObjectMeta: metav1.ObjectMeta{
@@ -250,9 +277,9 @@ func newApplication(name string) *shipperv1.Application {
 					Version: "0.0.1",
 					RepoURL: "http://127.0.0.1:8879/charts",
 				},
-				Strategy:         shipperv1.ReleaseStrategy{Name: "foobar"},
 				ClusterSelectors: []shipperv1.ClusterSelector{},
 				Values:           &shipperv1.ChartValues{},
+				Strategy:         &vanguard,
 			},
 		},
 	}

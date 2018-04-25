@@ -26,6 +26,4 @@ type InstallationTargetExpansion interface{}
 
 type ReleaseExpansion interface{}
 
-type StrategyExpansion interface{}
-
 type TrafficTargetExpansion interface{}

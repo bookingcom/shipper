@@ -54,14 +54,6 @@ type ReleaseListerExpansion interface{}
 // ReleaseNamespaceLister.
 type ReleaseNamespaceListerExpansion interface{}
 
-// StrategyListerExpansion allows custom methods to be added to
-// StrategyLister.
-type StrategyListerExpansion interface{}
-
-// StrategyNamespaceListerExpansion allows custom methods to be added to
-// StrategyNamespaceLister.
-type StrategyNamespaceListerExpansion interface{}
-
 // TrafficTargetListerExpansion allows custom methods to be added to
 // TrafficTargetLister.
 type TrafficTargetListerExpansion interface{}

@@ -37,8 +37,6 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&ApplicationList{},
 		&Release{},
 		&ReleaseList{},
-		&Strategy{},
-		&StrategyList{},
 		&Cluster{},
 		&ClusterList{},
 		&InstallationTarget{},
