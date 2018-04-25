@@ -60,15 +60,6 @@ func main() {
 		for _, item := range list.Items {
 			fmt.Printf("%s %q with this spec: %+v\n", item.Kind, item.Name, item.Spec)
 		}
-	case "strategies":
-		list, err := shipperClient.ShipperV1().Strategies("default").List(metav1.ListOptions{})
-		if err != nil {
-			glog.Fatalf("Error listing %q: %v", *resourceType, err)
-		}
-
-		for _, item := range list.Items {
-			fmt.Printf("%s %q with this spec: %+v\n", item.Kind, item.Name, item.Spec)
-		}
 	case "it":
 		list, err := shipperClient.ShipperV1().InstallationTargets("default").List(metav1.ListOptions{})
 		if err != nil {
@@ -97,6 +88,6 @@ func main() {
 			fmt.Printf("%s %q with this spec: %+v\n", item.Kind, item.Name, item.Spec)
 		}
 	default:
-		glog.Fatalf("unknown resource short name %q. try one of: app, so, rel, strat, it, ct, tt", *resourceType)
+		glog.Fatalf("unknown resource short name %q. try one of: app, so, rel, it, ct, tt", *resourceType)
 	}
 }

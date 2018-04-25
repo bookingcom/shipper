@@ -389,11 +389,14 @@ func (c *Controller) buildExecutor(ns, name string, recorder record.EventRecorde
 		return nil, fmt.Errorf("contender %s is not the latest release in app history: will not execute strategy", shippercontroller.MetaKey(release))
 	}
 
+	strategy := *contenderReleaseInfo.release.Environment.Strategy
+
 	// no incumbent, only this contender: a new application
 	if len(history) == 1 {
 		return &Executor{
 			contender: contenderReleaseInfo,
 			recorder:  recorder,
+			strategy:  strategy,
 		}, nil
 	}
 
@@ -413,6 +416,7 @@ func (c *Controller) buildExecutor(ns, name string, recorder record.EventRecorde
 		contender: contenderReleaseInfo,
 		incumbent: incumbentReleaseInfo,
 		recorder:  recorder,
+		strategy:  strategy,
 	}, nil
 }
 

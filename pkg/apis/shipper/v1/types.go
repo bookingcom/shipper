@@ -88,15 +88,6 @@ type Chart struct {
 	RepoURL string `json:"repoUrl"`
 }
 
-type ReleaseStrategy struct {
-	Name string `json:"name"`
-}
-
-const (
-	// ReleaseStrategyVanguard is a gradual deployment strategy with custom steps.
-	ReleaseStrategyVanguard string = "vanguard"
-)
-
 type ChartValues map[string]interface{}
 
 func (in *ChartValues) DeepCopyInto(out *ChartValues) {
@@ -105,39 +96,6 @@ func (in *ChartValues) DeepCopyInto(out *ChartValues) {
 			map[string]interface{}(*in),
 		),
 	)
-}
-
-// +genclient
-// +genclient:noStatus
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-// Strategy defines a sequence of steps to safely deliver a change to production
-type Strategy struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	Spec StrategySpec `json:"spec"`
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
-type StrategyList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata"`
-
-	Items []Strategy `json:"items"`
-}
-
-type StrategySpec struct {
-	Steps []StrategyStep `json:"steps"`
-}
-
-type StrategyStep struct {
-	IncumbentCapacity string `json:"incumbentCapacity"`
-	IncumbentTraffic  string `json:"incumbentTraffic"`
-
-	ContenderCapacity string `json:"contenderCapacity"`
-	ContenderTraffic  string `json:"contenderTraffic"`
 }
 
 // +genclient
@@ -208,13 +166,13 @@ type ReleaseList struct {
 
 type ReleaseSpec struct {
 	// better indicated with labels?
-	TargetStep int `json:"targetStep"`
+	TargetStep int32 `json:"targetStep"`
 }
 
 // this will likely grow into a struct with interesting fields
 type ReleaseStatus struct {
 	Phase        string                 `json:"phase"`
-	AchievedStep uint                   `json:"achievedStep"`
+	AchievedStep int32                  `json:"achievedStep"`
 	Strategy     *ReleaseStrategyStatus `json:"strategy,omitempty"`
 }
 
@@ -225,20 +183,34 @@ type ReleaseEnvironment struct {
 	// XXX pointer here means it's null-able, do we want that?
 	Values *ChartValues `json:"values"`
 
-	// how v2 gets the traffic
-	Strategy ReleaseStrategy `json:"strategy"`
-
 	// set of sidecars to inject into the chart on rendering
 	Sidecars []Sidecar `json:"sidecars"`
 
 	// selectors for target clusters for the deployment
 	// XXX what are the semantics when the field is empty/omitted?
 	ClusterSelectors []ClusterSelector `json:"clusterSelectors"`
+
+	Strategy *RolloutStrategy `json:"strategy,omitempty"`
 }
 
 type Sidecar struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
+}
+
+type RolloutStrategy struct {
+	Steps []RolloutStrategyStep `json:"steps"`
+}
+
+type RolloutStrategyStep struct {
+	Name     string                   `json:"name"`
+	Capacity RolloutStrategyStepValue `json:"capacity"`
+	Traffic  RolloutStrategyStepValue `json:"traffic"`
+}
+
+type RolloutStrategyStepValue struct {
+	Incumbent int32 `json:"incumbent"`
+	Contender int32 `json:"contender"`
 }
 
 // +genclient

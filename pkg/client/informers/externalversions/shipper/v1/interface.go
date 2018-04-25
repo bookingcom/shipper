@@ -34,8 +34,6 @@ type Interface interface {
 	InstallationTargets() InstallationTargetInformer
 	// Releases returns a ReleaseInformer.
 	Releases() ReleaseInformer
-	// Strategies returns a StrategyInformer.
-	Strategies() StrategyInformer
 	// TrafficTargets returns a TrafficTargetInformer.
 	TrafficTargets() TrafficTargetInformer
 }
@@ -74,11 +72,6 @@ func (v *version) InstallationTargets() InstallationTargetInformer {
 // Releases returns a ReleaseInformer.
 func (v *version) Releases() ReleaseInformer {
 	return &releaseInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
-}
-
-// Strategies returns a StrategyInformer.
-func (v *version) Strategies() StrategyInformer {
-	return &strategyInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // TrafficTargets returns a TrafficTargetInformer.

@@ -51,6 +51,26 @@ var (
 	globalTimeout    time.Duration
 )
 
+var vanguard = shipperv1.RolloutStrategy{
+	Steps: []shipperv1.RolloutStrategyStep{
+		{
+			Name:     "staging",
+			Capacity: shipperv1.RolloutStrategyStepValue{Incumbent: 100, Contender: 1},
+			Traffic:  shipperv1.RolloutStrategyStepValue{Incumbent: 100, Contender: 0},
+		},
+		{
+			Name:     "50/50",
+			Capacity: shipperv1.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
+			Traffic:  shipperv1.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
+		},
+		{
+			Name:     "full on",
+			Capacity: shipperv1.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+			Traffic:  shipperv1.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+		},
+	},
+}
+
 func TestMain(m *testing.M) {
 	flag.Parse()
 	var err error
@@ -108,17 +128,13 @@ func TestNewApplicationVanguard(t *testing.T) {
 	newApp.Spec.Template.Values = &shipperv1.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
-	newApp.Spec.Template.Strategy.Name = "vanguard"
 
 	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
 		t.Fatalf("could not create application %q: %q", appName, err)
 	}
 
-	// I think this could be significantly simplified if we had access to the
-	// strategy's instance; we could iterate over it until step n-1 and do this
-	// work repeatedly. To do this properly we'd probably want to change the
-	// strategy controller to read objects rather than use a hardcoded struct
+	//TODO(btyler) replace this with a for loop over vanguard.Steps
 	t.Logf("waiting for a new release for new application %q", appName)
 	rel := f.waitForRelease(appName, 0)
 	relName := rel.GetName()
@@ -165,7 +181,6 @@ func TestRolloutVanguard(t *testing.T) {
 	app.Spec.Template.Values = &shipperv1.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
-	app.Spec.Template.Strategy.Name = "vanguard"
 
 	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -244,7 +259,7 @@ func newFixture(ns string, t *testing.T) *fixture {
 	}
 }
 
-func (f *fixture) targetStep(step int, relName string) {
+func (f *fixture) targetStep(step int32, relName string) {
 	rel, err := shipperClient.ShipperV1().Releases(f.namespace).Get(relName, metav1.GetOptions{})
 	if err != nil {
 		f.t.Fatalf("release for targetStep could not be fetched: %q: %q", relName, err)
@@ -510,7 +525,7 @@ func newApplication(namespace, name string) *shipperv1.Application {
 				Chart: shipperv1.Chart{
 					RepoURL: chartRepo,
 				},
-				Strategy: shipperv1.ReleaseStrategy{},
+				Strategy: &vanguard,
 				// TODO(btyler) implement enough cluster selector stuff to only pick the target cluster we care about
 				// (or just panic if that cluster isn't listed)
 				ClusterSelectors: []shipperv1.ClusterSelector{},

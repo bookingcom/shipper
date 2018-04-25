@@ -12,16 +12,18 @@ import (
 	"github.com/bookingcom/shipper/pkg/conditions"
 )
 
-const clusterName = "minikube"
-const namespace = "test-namespace"
-const incumbentName = "0.0.1"
-const contenderName = "0.0.2"
+const (
+	clusterName   = "minikube"
+	namespace     = "test-namespace"
+	incumbentName = "0.0.1"
+	contenderName = "0.0.2"
+)
 
 func init() {
 	conditions.StrategyConditionsShouldDiscardTimestamps = true
 }
 
-var app *v1.Application = &v1.Application{
+var app = &v1.Application{
 	ObjectMeta: metaV1.ObjectMeta{
 		Name:      "test-app",
 		Namespace: namespace,
@@ -41,6 +43,26 @@ var app *v1.Application = &v1.Application{
 	},
 }
 
+var vanguard = v1.RolloutStrategy{
+	Steps: []v1.RolloutStrategyStep{
+		{
+			Name:     "staging",
+			Capacity: v1.RolloutStrategyStepValue{Incumbent: 100, Contender: 1},
+			Traffic:  v1.RolloutStrategyStepValue{Incumbent: 100, Contender: 0},
+		},
+		{
+			Name:     "50/50",
+			Capacity: v1.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
+			Traffic:  v1.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
+		},
+		{
+			Name:     "full on",
+			Capacity: v1.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+			Traffic:  v1.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+		},
+	},
+}
+
 // TestCompleteStrategy tests the complete "vanguard" strategy, end-to-end.
 // This test exercises only the Executor.execute() method, using hard coded
 // incumbent and contender releases, checking if the generated patches were
@@ -50,6 +72,7 @@ func TestCompleteStrategy(t *testing.T) {
 		contender: buildContender(),
 		incumbent: buildIncumbent(),
 		recorder:  record.NewFakeRecorder(42),
+		strategy:  vanguard,
 	}
 
 	// Mimic patch to .spec.targetStep
@@ -189,6 +212,9 @@ func buildIncumbent() *releaseInfo {
 					},
 				},
 			},
+			Environment: v1.ReleaseEnvironment{
+				Strategy: &vanguard,
+			},
 		},
 		Status: v1.ReleaseStatus{
 			Phase:        v1.ReleasePhaseInstalled,
@@ -306,7 +332,7 @@ func buildContender() *releaseInfo {
 			},
 
 			Environment: v1.ReleaseEnvironment{
-				Strategy: v1.ReleaseStrategy{Name: "vanguard"},
+				Strategy: &vanguard,
 			},
 		},
 		Status: v1.ReleaseStatus{
@@ -517,7 +543,7 @@ func ensureReleasePatch(e *Executor, expectedName string) (*v1.ReleaseStatus, er
 
 		strategyConditions := firstConditionsFromPatches(patches)
 
-		if !strategyConditions.AllTrue(int32(e.contender.release.Spec.TargetStep)) {
+		if !strategyConditions.AllTrue(e.contender.release.Spec.TargetStep) {
 			return nil, fmt.Errorf("all conditions should have been met")
 		}
 
