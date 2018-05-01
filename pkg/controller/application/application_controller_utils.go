@@ -8,7 +8,6 @@ import (
 
 	"github.com/golang/glog"
 
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
@@ -18,7 +17,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller"
 )
 
-func (c *Controller) createReleaseForApplication(app *shipperv1.Application) error {
+func (c *Controller) createReleaseForApplication(app *shipperv1.Application, generation int) error {
 	chart, err := c.fetchChart(app.Spec.Template.Chart)
 	if err != nil {
 		return fmt.Errorf("fetch chart %v for Application %q: %s",
@@ -33,8 +32,8 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application) err
 		controller.MetaKey(app))
 
 	// label releases with their hash; select by that label and increment if needed
-	// appname-hash-of-template-generation
-	releaseName, generation, err := c.releaseNameForApplication(app)
+	// appname-hash-of-template-iteration
+	releaseName, iteration, err := c.releaseNameForApplication(app)
 	if err != nil {
 		return err
 	}
@@ -51,8 +50,9 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application) err
 	labels[shipperv1.ReleaseEnvironmentHashLabel] = hashReleaseEnvironment(app.Spec.Template)
 
 	annotations := map[string]string{
-		shipperv1.ReleaseReplicasAnnotation:           strconv.Itoa(replicas),
-		shipperv1.ReleaseTemplateGenerationAnnotation: strconv.Itoa(generation),
+		shipperv1.ReleaseReplicasAnnotation:          strconv.Itoa(replicas),
+		shipperv1.ReleaseTemplateIterationAnnotation: strconv.Itoa(iteration),
+		shipperv1.ReleaseGenerationAnnotation:        strconv.Itoa(generation),
 	}
 
 	glog.V(4).Infof("Release %q labels: %v", labels)
@@ -77,24 +77,53 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application) err
 		},
 	}
 
-	// Create "uncommitted" history entry.
-	if err := c.appendReleaseToAppHistory(releaseName, app); err != nil {
-		return err
+	_, err = c.shipperClientset.ShipperV1().Releases(releaseNs).Create(new)
+	if err != nil {
+		return fmt.Errorf("create Release for Application %q: %s", controller.MetaKey(app), err)
+	}
+	return nil
+}
+
+func (c *Controller) getLatestReleaseForApp(app *shipperv1.Application) (*shipperv1.Release, error) {
+	sortedReleases, err := c.getSortedAppReleases(app)
+	if err != nil {
+		return nil, err
 	}
 
-	if _, err := c.shipperClientset.ShipperV1().Releases(releaseNs).Create(new); err != nil {
-		if errors.IsAlreadyExists(err) {
-			// This likely means we failed to "commit" history in a previous run.
-		return c.markReleaseCreated(releaseName, app)
-
+	if len(sortedReleases) == 0 {
+		return nil, nil
 	}
 
-		return fmt.Errorf("create Release for Application %q: %s",
-			controller.MetaKey(app), err)
+	return sortedReleases[len(sortedReleases)-1], nil
+}
+
+func (c *Controller) getAppHistory(app *shipperv1.Application) ([]string, error) {
+	releases, err := c.getSortedAppReleases(app)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(releases))
+	for _, rel := range releases {
+		names = append(names, rel.GetName())
+	}
+	return names, nil
+}
+
+func (c *Controller) getSortedAppReleases(app *shipperv1.Application) ([]*shipperv1.Release, error) {
+	selector := labels.Set{
+		shipperv1.AppLabel: app.GetName(),
+	}.AsSelector()
+
+	releases, err := c.relLister.Releases(app.GetNamespace()).List(selector)
+	if err != nil {
+		return nil, err
+	}
+	sorted, err := controller.SortReleasesByGeneration(releases)
+	if err != nil {
+		return nil, err
 	}
 
-	// "Commit" new history entry.
-	return c.markReleaseCreated(releaseName, app)
+	return sorted, nil
 }
 
 func (c *Controller) releaseNameForApplication(app *shipperv1.Application) (string, int, error) {
@@ -117,142 +146,53 @@ func (c *Controller) releaseNameForApplication(app *shipperv1.Application) (stri
 
 	highestObserved := 0
 	for _, rel := range releases {
-		generationStr, ok := rel.GetAnnotations()[shipperv1.ReleaseTemplateGenerationAnnotation]
+		iterationStr, ok := rel.GetAnnotations()[shipperv1.ReleaseTemplateIterationAnnotation]
 		if !ok {
-			return "", 0, fmt.Errorf("generate name for Release %q: no generation annotation",
+			return "", 0, fmt.Errorf("generate name for Release %q: no iteration annotation",
 				controller.MetaKey(rel))
 		}
 
-		generation, err := strconv.Atoi(generationStr)
+		iteration, err := strconv.Atoi(iterationStr)
 		if err != nil {
 			return "", 0, fmt.Errorf("generate name for Release %q: %s",
 				controller.MetaKey(rel), err)
 		}
 
-		if generation > highestObserved {
-			highestObserved = generation
+		if iteration > highestObserved {
+			highestObserved = iteration
 		}
 	}
 
-	newGeneration := highestObserved + 1
-	return fmt.Sprintf("%s-%s-%d", app.GetName(), hash, newGeneration), newGeneration, nil
+	newIteration := highestObserved + 1
+	return fmt.Sprintf("%s-%s-%d", app.GetName(), hash, newIteration), newIteration, nil
 }
 
-func (c *Controller) appendReleaseToAppHistory(releaseName string, app *shipperv1.Application) error {
-	var last *shipperv1.ReleaseRecord
-	if len(app.Status.History) > 0 {
-		last = app.Status.History[len(app.Status.History)-1]
+func (c *Controller) computeState(app *shipperv1.Application) (shipperv1.ApplicationState, error) {
+	state := shipperv1.ApplicationState{}
+
+	latestRelease, err := c.getLatestReleaseForApp(app)
+	if err != nil {
+		return state, err
 	}
 
-	// already here
-	if last != nil && last.Name == releaseName {
-		return nil
+	// If there's no history, it means we are about to rollout app but we haven't
+	// started yet.
+	if latestRelease == nil {
+		return state, nil
 	}
 
-	app.Status.History = append(app.Status.History, &shipperv1.ReleaseRecord{
-		Name:   releaseName,
-		Status: shipperv1.ReleaseRecordWaitingForObject,
-	})
-
-	_, err := c.shipperClientset.ShipperV1().Applications(app.Namespace).Update(app)
-	return err
+	state.RolloutStep, state.RollingOut = isRollingOut(latestRelease)
+	return state, nil
 }
 
-func (c *Controller) cleanHistory(app *shipperv1.Application) error {
-	clean := make([]*shipperv1.ReleaseRecord, 0, len(app.Status.History))
-	removed := make([]*shipperv1.ReleaseRecord, 0, len(app.Status.History))
+func isRollingOut(rel *shipperv1.Release) (*int32, bool) {
+	lastStep := int32(len(rel.Environment.Strategy.Steps) - 1)
 
-	for _, record := range app.Status.History {
-		_, err := c.relLister.Releases(app.GetNamespace()).Get(record.Name)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				removed = append(removed, record)
-				continue
-			}
-			return err
-		}
+	achievedStep := rel.Status.AchievedStep
+	targetStep := rel.Spec.TargetStep
 
-		clean = append(clean, record)
-	}
-
-	if len(clean) == len(app.Status.History) {
-		return nil
-	}
-
-	// Clean up 'crash abort'-ed Releases from history.
-	glog.Infof("Application %q's history contains aborted Releases",
-		controller.MetaKey(app))
-
-	glog.V(3).Infof("Cleaned up history entries from Application %q: %v",
-		controller.MetaKey(app), removed)
-
-	app.Status.History = clean
-	_, err := c.shipperClientset.ShipperV1().Applications(app.Namespace).Update(app)
-	return err
-}
-
-func (c *Controller) markReleaseCreated(releaseName string, app *shipperv1.Application) error {
-	changed := false
-	for _, record := range app.Status.History {
-		if record.Name == releaseName {
-			record.Status = shipperv1.ReleaseRecordObjectCreated
-			changed = true
-		}
-	}
-
-	if !changed {
-		return fmt.Errorf(
-			"mark Release %q as created: not in Application %q's history",
-			releaseName, controller.MetaKey(app),
-		)
-	}
-
-	_, err := c.shipperClientset.ShipperV1().Applications(app.Namespace).Update(app)
-	return err
-}
-
-func (c *Controller) getEndOfHistory(app *shipperv1.Application) *shipperv1.ReleaseRecord {
-	if len(app.Status.History) == 0 {
-		return nil
-	}
-
-	return app.Status.History[len(app.Status.History)-1]
-}
-
-func (c *Controller) rollbackAppTemplate(app *shipperv1.Application) error {
-	history := app.Status.History
-	ns := app.GetNamespace()
-
-	// march backwards through history to find a release object which exists.
-	// once we find it, reset app template to that and trim history after that
-	// entry
-
-	// NOTE: if we didn't find _any_ release then the template will remain in
-	// place and we'll end up re-creating a release from current app template.
-	// I think that's the best we can do in this case.
-	var goodRelease *shipperv1.Release
-	i := len(history) - 1
-	for ; i >= 0; i-- {
-		record := history[i]
-		rel, err := c.relLister.Releases(ns).Get(record.Name)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				continue
-			}
-			return err
-		}
-		goodRelease = rel
-		break
-	}
-
-	// truncate history to the release we found (or to empty if we didn't find any)
-	app.Status.History = history[:i+1]
-	if goodRelease != nil {
-		app.Spec.Template = *(goodRelease.Environment.DeepCopy())
-	}
-
-	_, err := c.shipperClientset.ShipperV1().Applications(app.Namespace).Update(app)
-	return err
+	return &achievedStep, achievedStep != targetStep ||
+		achievedStep != lastStep
 }
 
 func extractReplicasFromChart(chart *helmchart.Chart, app *shipperv1.Application) (int, error) {
@@ -276,6 +216,20 @@ func extractReplicasFromChart(chart *helmchart.Chart, app *shipperv1.Application
 	}
 
 	return int(*replicas), nil
+}
+
+func getAppHighestObservedGeneration(app *shipperv1.Application) (int, error) {
+	rawObserved, ok := app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation]
+	if !ok {
+		return 0, nil
+	}
+
+	generation, err := strconv.Atoi(rawObserved)
+	if err != nil {
+		return 0, err
+	}
+
+	return generation, nil
 }
 
 func identicalEnvironments(envs ...shipperv1.ReleaseEnvironment) bool {
@@ -310,7 +264,7 @@ func hashReleaseEnvironment(env shipperv1.ReleaseEnvironment) string {
 
 func createOwnerRefFromApplication(app *shipperv1.Application) metav1.OwnerReference {
 	// App's TypeMeta can be empty so can't use it to set APIVersion and Kind. See
-// https://github.com/kubernetes/client-go/issues/60#issuecomment-281533822 and
+	// https://github.com/kubernetes/client-go/issues/60#issuecomment-281533822 and
 	// https://github.com/kubernetes/client-go/issues/60#issuecomment-281747911 for
 	// context.
 	return metav1.OwnerReference{

@@ -30,16 +30,7 @@ var app = &v1.Application{
 		UID:       "foobarbaz",
 	},
 	Status: v1.ApplicationStatus{
-		History: []*v1.ReleaseRecord{
-			{
-				Name:   incumbentName,
-				Status: v1.ReleaseRecordObjectCreated,
-			},
-			{
-				Name:   contenderName,
-				Status: v1.ReleaseRecordObjectCreated,
-			},
-		},
+		History: []string{incumbentName, contenderName},
 	},
 }
 
@@ -211,6 +202,13 @@ func buildIncumbent() *releaseInfo {
 						UID:        app.GetUID(),
 					},
 				},
+				Labels: map[string]string{
+					v1.ReleaseLabel: incumbentName,
+					v1.AppLabel:     app.GetName(),
+				},
+				Annotations: map[string]string{
+					v1.ReleaseGenerationAnnotation: "0",
+				},
 			},
 			Environment: v1.ReleaseEnvironment{
 				Strategy: &vanguard,
@@ -328,6 +326,13 @@ func buildContender() *releaseInfo {
 						Name:       app.GetName(),
 						UID:        app.GetUID(),
 					},
+				},
+				Labels: map[string]string{
+					v1.ReleaseLabel: contenderName,
+					v1.AppLabel:     app.GetName(),
+				},
+				Annotations: map[string]string{
+					v1.ReleaseGenerationAnnotation: "1",
 				},
 			},
 
