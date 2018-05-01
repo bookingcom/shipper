@@ -7,6 +7,7 @@ import (
 	"github.com/golang/glog"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -125,30 +126,47 @@ func isWorkingOnStrategy(r *v1.Release) (workingOnStrategy bool) {
 	return workingOnStrategy
 }
 
+func (c *Controller) sortedReleasesForApp(app *v1.Application) ([]*v1.Release, error) {
+	selector := labels.Set{
+		v1.AppLabel: app.GetName(),
+	}.AsSelector()
+
+	releases, err := c.releasesLister.Releases(app.GetNamespace()).List(selector)
+	if err != nil {
+		return nil, err
+	}
+
+	sorted, err := shippercontroller.SortReleasesByGeneration(releases)
+	if err != nil {
+		return nil, err
+	}
+
+	return sorted, nil
+}
+
 func (c *Controller) contenderForRelease(r *v1.Release) (*v1.Release, error) {
 	app := c.getAssociatedApplication(r)
 	if app == nil {
 		return nil, fmt.Errorf("could not find application associated with %q", shippercontroller.MetaKey(r))
 	}
 
-	history := app.Status.History
-	if len(history) <= 1 {
-		return nil, nil
-	}
-
-	expectedIncumbentIndex := len(app.Status.History) - 2
-	incumbentRecord := history[expectedIncumbentIndex]
-	// TODO(btyler) is this a reasonable decision? the strategy only knows how to operate with the latest two releases
-	if incumbentRecord.Name != r.GetName() {
-		return nil, fmt.Errorf("release %s isn't the penultimate record in history, so we shouldn't be touching it", shippercontroller.MetaKey(r))
-	}
-
-	contenderRecord := app.Status.History[len(app.Status.History)-1]
-	contender, err := c.releasesLister.Releases(r.GetNamespace()).Get(contenderRecord.Name)
+	appReleases, err := c.sortedReleasesForApp(app)
 	if err != nil {
 		return nil, err
 	}
 
+	if len(appReleases) <= 1 {
+		return nil, nil
+	}
+
+	expectedIncumbentIndex := len(appReleases) - 2
+	incumbent := appReleases[expectedIncumbentIndex]
+	// TODO(btyler) is this a reasonable decision? the strategy only knows how to operate with the latest two releases
+	if incumbent.GetName() != r.GetName() {
+		return nil, fmt.Errorf("release %q isn't the penultimate generation, so we shouldn't be touching it", shippercontroller.MetaKey(r))
+	}
+
+	contender := appReleases[len(appReleases)-1]
 	return contender, nil
 }
 
@@ -376,23 +394,27 @@ func (c *Controller) buildExecutor(ns, name string, recorder record.EventRecorde
 		return nil, fmt.Errorf("no application associated with release %s", shippercontroller.MetaKey(release))
 	}
 
-	history := app.Status.History
-	if len(history) == 0 {
+	releases, err := c.sortedReleasesForApp(app)
+	if err != nil {
+		return nil, fmt.Errorf("could not get sorted releases for app %q: %s", shippercontroller.MetaKey(app), err)
+	}
+
+	if len(releases) == 0 {
 		return nil, fmt.Errorf(
-			"zero release records in app %s/%s (owner of release %s) Status.History: will not execute strategy",
-			app.GetNamespace(), app.GetName(), name,
+			"zero releases for app %q (owner of release %q): will not execute strategy",
+			shippercontroller.MetaKey(app), name,
 		)
 	}
 
-	expectedContenderRecord := history[len(history)-1]
-	if expectedContenderRecord.Name != release.GetName() {
-		return nil, fmt.Errorf("contender %s is not the latest release in app history: will not execute strategy", shippercontroller.MetaKey(release))
+	expectedContender := releases[len(releases)-1]
+	if expectedContender.GetName() != release.GetName() {
+		return nil, fmt.Errorf("contender %s/%s is not the latest generation in app history: will not execute strategy", ns, name)
 	}
 
 	strategy := *contenderReleaseInfo.release.Environment.Strategy
 
 	// no incumbent, only this contender: a new application
-	if len(history) == 1 {
+	if len(releases) == 1 {
 		return &Executor{
 			contender: contenderReleaseInfo,
 			recorder:  recorder,
@@ -400,14 +422,8 @@ func (c *Controller) buildExecutor(ns, name string, recorder record.EventRecorde
 		}, nil
 	}
 
-	incumbentRecord := history[len(history)-2]
-
-	incumbentRelease, err := c.releasesLister.Releases(ns).Get(incumbentRecord.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	incumbentReleaseInfo, err := c.buildReleaseInfo(incumbentRelease)
+	incumbent := releases[len(releases)-2]
+	incumbentReleaseInfo, err := c.buildReleaseInfo(incumbent)
 	if err != nil {
 		return nil, err
 	}

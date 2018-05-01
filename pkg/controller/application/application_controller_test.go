@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -17,12 +18,17 @@ import (
 	"github.com/bookingcom/shipper/pkg/chart"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
 const (
 	testAppName = "test-app"
 )
+
+func init() {
+	conditions.ApplicationConditionsShouldDiscardTimestamps = true
+}
 
 // private method, but other tests make use of it
 func TestHashReleaseEnv(t *testing.T) {
@@ -62,40 +68,79 @@ func TestCreateFirstRelease(t *testing.T) {
 	expectedRelName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
 
 	f.objects = append(f.objects, app)
-	initialApp := app.DeepCopy()
-	initialApp.Status.History = []*shipperv1.ReleaseRecord{
-		{
-			Name: expectedRelName,
-			// NOTE(btyler) This is wrong, but the reason is interesting. This
-			// should be ReleaseRecordWaitingForObject. However, kubetesting
-			// does not DeepCopy the objects associated with Update calls, and
-			// so when we later mutate the application object to change the
-			// release history record, we mutate it in the kubetesting Action
-			// object reference as well. We _could_ fix this by sprinkling
-			// app = app.DeepCopy around our code, but then we'd be adding
-			// silliness to production code in order to satisfy a testing
-			// library. So, we put a knowingly-false thing into the tests.
-			Status: shipperv1.ReleaseRecordObjectCreated,
+	expectedApp := app.DeepCopy()
+	expectedApp.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
+	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
+			Status: corev1.ConditionTrue,
 		},
 	}
+	expectedApp.Status.History = []string{}
 
-	finalApp := app.DeepCopy()
-	finalApp.Status.History = []*shipperv1.ReleaseRecord{
-		{
-			Name:   expectedRelName,
-			Status: shipperv1.ReleaseRecordObjectCreated,
-		},
-	}
+	// we do not expect entries in the history or 'RollingOut: true' in the state because
+	// the testing client does not update listers after Create actions.
 
 	expectedRelease := newRelease(expectedRelName, app)
 	expectedRelease.Environment.Chart.RepoURL = srv.URL()
 	expectedRelease.Status.Phase = shipperv1.ReleasePhaseWaitingForScheduling
 	expectedRelease.Labels[shipperv1.ReleaseEnvironmentHashLabel] = envHash
-	expectedRelease.Annotations[shipperv1.ReleaseTemplateGenerationAnnotation] = "0"
+	expectedRelease.Annotations[shipperv1.ReleaseTemplateIterationAnnotation] = "0"
+	expectedRelease.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
 
-	f.expectApplicationUpdate(initialApp)
 	f.expectReleaseCreate(expectedRelease)
-	f.expectApplicationUpdate(finalApp)
+	f.expectApplicationUpdate(expectedApp)
+	f.run()
+}
+
+func TestStatusStableState(t *testing.T) {
+	f := newFixture(t)
+	app := newApplication(testAppName)
+
+	envHashA := hashReleaseEnvironment(app.Spec.Template)
+	expectedRelNameA := fmt.Sprintf("%s-%s-0", testAppName, envHashA)
+	releaseA := newRelease(expectedRelNameA, app)
+	releaseA.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
+	releaseA.Spec.TargetStep = 2
+	releaseA.Status.AchievedStep = 2
+
+	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "1"
+	app.Spec.Template.Chart.RepoURL = "http://localhost"
+	envHashB := hashReleaseEnvironment(app.Spec.Template)
+	expectedRelNameB := fmt.Sprintf("%s-%s-0", testAppName, envHashB)
+	releaseB := newRelease(expectedRelNameB, app)
+	releaseB.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
+	releaseB.Spec.TargetStep = 2
+	releaseB.Status.AchievedStep = 2
+
+	f.objects = append(f.objects, app, releaseA, releaseB)
+	expectedApp := app.DeepCopy()
+	expectedApp.Status.History = []string{
+		expectedRelNameA,
+		expectedRelNameB,
+	}
+	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeAborting,
+			Status: corev1.ConditionFalse,
+		},
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
+			Status: corev1.ConditionTrue,
+		},
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeValidHistory,
+			Status: corev1.ConditionTrue,
+		},
+	}
+
+	var step int32 = 2
+	expectedApp.Status.State = shipperv1.ApplicationState{
+		RolloutStep: &step,
+		RollingOut:  false,
+	}
+
+	f.expectApplicationUpdate(expectedApp)
 	f.run()
 }
 
@@ -121,16 +166,16 @@ func TestCreateSecondRelease(t *testing.T) {
 
 	release := newRelease(oldRelName, app)
 	release.Environment.Chart.RepoURL = srv.URL()
+	release.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
+	release.Spec.TargetStep = 2
+	release.Status.AchievedStep = 2
 	f.objects = append(f.objects, release)
 
-	app.Status.History = []*shipperv1.ReleaseRecord{
-		{
-			Name:   oldRelName,
-			Status: shipperv1.ReleaseRecordObjectCreated,
-		},
-	}
+	app.Status.History = []string{oldRelName}
 
-	app.Spec.Template.Values = &shipperv1.ChartValues{"foo": "bar"}
+	app.Spec.Template.ClusterSelectors = append(app.Spec.Template.ClusterSelectors,
+		shipperv1.ClusterSelector{Regions: []string{"foo"}},
+	)
 
 	newEnvHash := hashReleaseEnvironment(app.Spec.Template)
 	newRelName := fmt.Sprintf("%s-%s-0", testAppName, newEnvHash)
@@ -138,83 +183,171 @@ func TestCreateSecondRelease(t *testing.T) {
 	expectedRelease := newRelease(newRelName, app)
 	expectedRelease.Status.Phase = shipperv1.ReleasePhaseWaitingForScheduling
 	expectedRelease.Labels[shipperv1.ReleaseEnvironmentHashLabel] = newEnvHash
-	expectedRelease.Annotations[shipperv1.ReleaseTemplateGenerationAnnotation] = "0"
+	expectedRelease.Annotations[shipperv1.ReleaseTemplateIterationAnnotation] = "0"
+	expectedRelease.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
 
-	finalApp := app.DeepCopy()
-	finalApp.Status.History = []*shipperv1.ReleaseRecord{
-		{
-			Name:   oldRelName,
-			Status: shipperv1.ReleaseRecordObjectCreated,
+	expectedApp := app.DeepCopy()
+	expectedApp.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "1"
+	expectedApp.Status.History = []string{
+		oldRelName,
+		// ought to have newRelName, but kubetesting doesn't catch Create actions in the lister
+	}
+
+	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeAborting,
+			Status: corev1.ConditionFalse,
 		},
-		{
-			Name:   newRelName,
-			Status: shipperv1.ReleaseRecordObjectCreated,
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
+			Status: corev1.ConditionTrue,
+		},
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeValidHistory,
+			Status: corev1.ConditionTrue,
 		},
 	}
 
-	// same silly issue as TestCreateFirstRelease
-	f.expectApplicationUpdate(finalApp)
+	// this still refers to the incumbent's state on this first update
+	var step int32 = 2
+	expectedApp.Status.State = shipperv1.ApplicationState{
+		RolloutStep: &step,
+		RollingOut:  false,
+	}
+
 	f.expectReleaseCreate(expectedRelease)
-	f.expectApplicationUpdate(finalApp)
+	f.expectApplicationUpdate(expectedApp)
 	f.run()
 }
 
-// Abort through invalid history entries.
-func TestCleanBogusHistory(t *testing.T) {
+// An app's template should be rolled back to the previous release if the previous-highest was deleted.
+func TestAbort(t *testing.T) {
+	srv, hh, err := repotest.NewTempServer("testdata/*.tgz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		os.RemoveAll(hh.String())
+		srv.Stop()
+	}()
+
 	f := newFixture(t)
 	app := newApplication(testAppName)
+	app.Spec.Template.Chart.RepoURL = srv.URL()
+	// highest observed is higher than any known release. we have an older
+	// release (gen 0) with a different cluster selector. we expect app template
+	// to be reverted
+	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "1"
+	app.Spec.Template.ClusterSelectors = []shipperv1.ClusterSelector{
+		shipperv1.ClusterSelector{Regions: []string{"foo"}},
+	}
+
 	f.objects = append(f.objects, app)
 
 	envHash := hashReleaseEnvironment(app.Spec.Template)
 	relName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
 
 	release := newRelease(relName, app)
+	release.Environment.Chart.RepoURL = srv.URL()
+	release.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
+	release.Spec.TargetStep = 2
+	release.Status.AchievedStep = 2
+	release.Environment.ClusterSelectors = []shipperv1.ClusterSelector{
+		shipperv1.ClusterSelector{Regions: []string{"bar"}},
+	}
+
 	f.objects = append(f.objects, release)
 
-	finalApp := app.DeepCopy()
-	finalApp.Status.History = []*shipperv1.ReleaseRecord{
-		{
-			Name:   relName,
-			Status: shipperv1.ReleaseRecordObjectCreated,
+	app.Status.History = []string{relName, "blorgblorgblorg"}
+
+	expectedApp := app.DeepCopy()
+	expectedApp.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
+	// should have overwritten the old template with the generation 0 one
+	expectedApp.Spec.Template = release.Environment
+
+	expectedApp.Status.History = []string{relName}
+
+	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
+		shipperv1.ApplicationCondition{
+			Type:    shipperv1.ApplicationConditionTypeAborting,
+			Status:  corev1.ConditionTrue,
+			Reason:  "",
+			Message: fmt.Sprintf("abort in progress, returning state to release %q", relName),
 		},
 	}
 
-	// This should be reverted to the strategy in the only existing release, which
-	// is "vanguard".
-	app.Spec.Template.Strategy = &shipperv1.RolloutStrategy{
-		Steps: []shipperv1.RolloutStrategyStep{
-			{
-				Name:    "some_crazy_strategy",
-				Traffic: shipperv1.RolloutStrategyStepValue{Incumbent: 17, Contender: 42},
-			},
+	// this still refers to the incumbent's state on this first update
+	var step int32 = 2
+	expectedApp.Status.State = shipperv1.ApplicationState{
+		RolloutStep: &step,
+		RollingOut:  false,
+	}
+
+	f.expectApplicationUpdate(expectedApp)
+	f.run()
+}
+
+func TestStateRollingOut(t *testing.T) {
+	srv, hh, err := repotest.NewTempServer("testdata/*.tgz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		os.RemoveAll(hh.String())
+		srv.Stop()
+	}()
+
+	f := newFixture(t)
+
+	// App with two Releases: one installed and running, and one being rolled out.
+
+	app := newApplication(testAppName)
+	app.Spec.Template.Chart.RepoURL = srv.URL()
+	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "1"
+
+	envHash := hashReleaseEnvironment(app.Spec.Template)
+	incumbentName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
+	contenderName := fmt.Sprintf("%s-%s-1", testAppName, envHash)
+	app.Status.History = []string{incumbentName, contenderName}
+
+	f.objects = append(f.objects, app)
+
+	incumbent := newRelease(incumbentName, app)
+	incumbent.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
+	incumbent.Status.Phase = shipperv1.ReleasePhaseInstalled
+	f.objects = append(f.objects, incumbent)
+
+	contender := newRelease(contenderName, app)
+	contender.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
+	contender.Spec.TargetStep = 1
+	contender.Status.AchievedStep = 0
+	contender.Status.Phase = shipperv1.ReleasePhaseWaitingForCommand
+	f.objects = append(f.objects, contender)
+
+	appRollingOut := app.DeepCopy()
+	// TODO(btyler) this is 0 because there's an invalid strategy name; it will be fixed when we inline strategies
+	var step int32 = 0
+	appRollingOut.Status.State = shipperv1.ApplicationState{
+		RolloutStep: &step,
+	}
+
+	appRollingOut.Status.State.RollingOut = true
+	appRollingOut.Status.Conditions = []shipperv1.ApplicationCondition{
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeAborting,
+			Status: corev1.ConditionFalse,
+		},
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
+			Status: corev1.ConditionTrue,
+		},
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeValidHistory,
+			Status: corev1.ConditionTrue,
 		},
 	}
 
-	// These nonsense history entries should be deleted.
-	app.Status.History = []*shipperv1.ReleaseRecord{
-		{
-			Name:   relName,
-			Status: shipperv1.ReleaseRecordObjectCreated,
-		},
-		{
-			Name:   "bogus",
-			Status: shipperv1.ReleaseRecordObjectCreated,
-		},
-		{
-			Name:   "bits",
-			Status: shipperv1.ReleaseRecordObjectCreated,
-		},
-		{
-			Name:   "bamboozle",
-			Status: shipperv1.ReleaseRecordObjectCreated,
-		},
-		{
-			Name:   "blindingly",
-			Status: shipperv1.ReleaseRecordObjectCreated,
-		},
-	}
-
-	f.expectApplicationUpdate(finalApp)
+	f.expectApplicationUpdate(appRollingOut)
 	f.run()
 }
 
@@ -267,8 +400,9 @@ var vanguard = shipperv1.RolloutStrategy{
 func newApplication(name string) *shipperv1.Application {
 	return &shipperv1.Application{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: shippertesting.TestNamespace,
+			Name:        name,
+			Namespace:   shippertesting.TestNamespace,
+			Annotations: map[string]string{},
 		},
 		Spec: shipperv1.ApplicationSpec{
 			Template: shipperv1.ReleaseEnvironment{

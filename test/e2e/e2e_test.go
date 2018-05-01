@@ -40,7 +40,7 @@ var (
 	inspectFailed = flag.Bool("inspectfailed", false, "Set this flag to skip deleting the namespaces for failed tests. Useful for debugging.")
 	kubeconfig    = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
 	targetCluster = flag.String("targetcluster", "minikube", "The application cluster that E2E tests will check to determine success/failure")
-	timeoutFlag   = flag.String("timeout", "30s", "timeout when waiting for things to change")
+	timeoutFlag   = flag.String("progresstimeout", "30s", "timeout when waiting for things to change")
 )
 
 var (
@@ -298,15 +298,10 @@ func (f *fixture) waitForRelease(appName string, historyIndex int) *shipperv1.Re
 			return false, nil
 		}
 
-		if app.Status.History[historyIndex].Status != shipperv1.ReleaseRecordObjectCreated {
-			state = fmt.Sprintf("history entry for index %v is not ObjectCreated", historyIndex)
-			return false, nil
-		}
-
-		relName := app.Status.History[historyIndex].Name
+		relName := app.Status.History[historyIndex]
 		rel, err := shipperClient.ShipperV1().Releases(f.namespace).Get(relName, metav1.GetOptions{})
 		if err != nil {
-			f.t.Fatalf("release which was marked as created in app history was not fetched: %q: %q", relName, err)
+			f.t.Fatalf("release which was in app history was not fetched: %q: %q", relName, err)
 		}
 
 		newRelease = rel

@@ -29,9 +29,12 @@ const (
 	InstallationStatusInstalled = "Installed"
 	InstallationStatusFailed    = "Failed"
 
-	ReleaseTemplateGenerationAnnotation = "shipper.booking.com/release.template.generation"
-	ReleaseClustersAnnotation           = "shipper.booking.com/release.clusters"
-	ReleaseReplicasAnnotation           = "shipper.booking.com/release.replicas"
+	AppHighestObservedGenerationAnnotation = "shipper.booking.com/app.highestObservedGeneration"
+
+	ReleaseGenerationAnnotation        = "shipper.booking.com/release.generation"
+	ReleaseTemplateIterationAnnotation = "shipper.booking.com/release.template.iteration"
+	ReleaseClustersAnnotation          = "shipper.booking.com/release.clusters"
+	ReleaseReplicasAnnotation          = "shipper.booking.com/release.replicas"
 
 	SecretChecksumAnnotation    = "shipper.booking.com/cluster-secret.checksum"
 	SecretClusterNameAnnotation = "shipper.booking.com/cluster-secret.clusterName"
@@ -69,12 +72,30 @@ type ApplicationSpec struct {
 }
 
 type ApplicationStatus struct {
-	History []*ReleaseRecord `json:"history"`
+	State      ApplicationState       `json:"state"`
+	Conditions []ApplicationCondition `json:"conditions,omitempty"`
+	History    []string               `json:"history,omitempty"`
 }
 
-type ReleaseRecord struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
+type ApplicationState struct {
+	RollingOut  bool   `json:"rollingOut"`
+	RolloutStep *int32 `json:"rolloutStep,omitempty"`
+}
+
+type ApplicationConditionType string
+
+const (
+	ApplicationConditionTypeValidHistory  ApplicationConditionType = "ValidHistory"
+	ApplicationConditionTypeReleaseSynced ApplicationConditionType = "ReleaseSynced"
+	ApplicationConditionTypeAborting      ApplicationConditionType = "Aborting"
+)
+
+type ApplicationCondition struct {
+	Type               ApplicationConditionType `json:"type"`
+	Status             corev1.ConditionStatus   `json:"status"`
+	LastTransitionTime metav1.Time              `json:"lastTransitionTime,omitempty"`
+	Reason             string                   `json:"reason,omitempty"`
+	Message            string                   `json:"message,omitempty"`
 }
 
 type ClusterSelector struct {

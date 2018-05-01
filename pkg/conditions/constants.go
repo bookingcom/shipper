@@ -20,4 +20,9 @@ const (
 	InternalError = "InternalError"
 
 	TargetClusterClientError = "TargetClusterClientError"
+
+	CreateReleaseFailed                 = "CreateReleaseFailed"
+	FetchReleaseFailed                  = "FetchReleaseFailed"
+	BrokenReleaseGeneration             = "BrokenReleaseGeneration"
+	BrokenApplicationObservedGeneration = "BrokenApplicationObservedGeneration"
 )

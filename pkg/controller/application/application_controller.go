@@ -18,12 +18,13 @@ package application
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/golang/glog"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -35,11 +36,8 @@ import (
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/conditions"
 	"github.com/bookingcom/shipper/pkg/controller"
-)
-
-const (
-	reasonFailed = "placeholder error message"
 )
 
 const AgentName = "application-controller"
@@ -86,14 +84,7 @@ func NewController(
 
 	appInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: c.enqueueApp,
-		UpdateFunc: func(old, new interface{}) {
-			oldApp, oldOk := old.(*shipperv1.Application)
-			newApp, newOk := new.(*shipperv1.Application)
-			if oldOk && newOk && oldApp.ResourceVersion == newApp.ResourceVersion {
-				glog.V(4).Info("Received Application re-sync Update")
-				return
-			}
-
+		UpdateFunc: func(_, new interface{}) {
 			c.enqueueApp(new)
 		},
 		DeleteFunc: c.enqueueApp,
@@ -166,8 +157,7 @@ func (c *Controller) processNextWorkItem() bool {
 		return true
 	}
 
-	if err := c.syncApplication(key); err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing %q (will retry): %s", key, err))
+	if shouldRetry := c.syncApplication(key); shouldRetry {
 		c.appWorkqueue.AddRateLimited(key)
 		return true
 	}
@@ -205,7 +195,7 @@ func (c *Controller) enqueueRel(obj interface{}) {
 }
 
 func (c *Controller) enqueueApp(obj interface{}) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	key, err := cache.MetaNamespaceKeyFunc(obj)
 	if err != nil {
 		runtime.HandleError(err)
 		return
@@ -214,86 +204,222 @@ func (c *Controller) enqueueApp(obj interface{}) {
 	c.appWorkqueue.AddRateLimited(key)
 }
 
-func (c *Controller) syncApplication(key string) error {
+func (c *Controller) syncApplication(key string) bool {
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("invalid resource key: %q", key))
-		return nil
+		return false
 	}
 
 	app, err := c.appLister.Applications(ns).Get(name)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if kerrors.IsNotFound(err) {
 			glog.V(3).Infof("Application %q has been deleted", key)
-			return nil
+			return false
 		}
 
-		return err
+		runtime.HandleError(fmt.Errorf("error fetching %q from lister (will retry): %s", key, err))
+		return true
 	}
 
 	// NEVER modify objects from the store. It's a read-only, local cache.
+	// do process application
+	// transform any error it has into a condition for status
+	// get the update history list
+	// apply it to the status
+	// update status
 	app = app.DeepCopy()
-	if err := c.processApplication(app); err != nil {
-		c.recorder.Event(app, corev1.EventTypeWarning, reasonFailed, err.Error())
+	// processApplication will mutate the app struct for status condition updates and annotation changes
+	// an err may be returned to signal a retry, but it will also be expressed as a condition
+	err = c.processApplication(app)
+	shouldRetry := false
+	if err != nil {
+		shouldRetry = true
+		runtime.HandleError(fmt.Errorf("error syncing %q (will retry): %s", key, err))
+		c.recorder.Event(app, corev1.EventTypeWarning, "FailedApplication", err.Error())
+	}
+
+	newHistory, err := c.getAppHistory(app)
+	if err == nil {
+		app.Status.History = newHistory
+	} else {
+		shouldRetry = true
+		runtime.HandleError(fmt.Errorf("error fetching history for app %q (will retry): %s", key, err))
+	}
+
+	newState, err := c.computeState(app)
+	if err == nil {
+		app.Status.State = newState
+	} else {
+		shouldRetry = true
+		runtime.HandleError(fmt.Errorf("error computing state for app %q (will retry): %s", key, err))
+	}
+
+	// TODO(asurikov): change to UpdateStatus when it's available.
+	_, err = c.shipperClientset.ShipperV1().Applications(app.Namespace).Update(app)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("error updating %q (will retry): %s", key, err))
+		shouldRetry = true
+	}
+
+	return shouldRetry
+}
+
+/*
+* get all the releases owned by this application
+* if 0, create new one (generation 0), return
+* if >1, find latest (highest generation #), compare hash of that one to application template hash
+* if same, do nothing
+* if different, create new release (highest generation # + 1)
+ */
+func (c *Controller) processApplication(app *shipperv1.Application) error {
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
+	}
+
+	latestRelease, err := c.getLatestReleaseForApp(app)
+	if err != nil {
+		app.Status.Conditions = conditions.SetApplicationCondition(
+			app.Status.Conditions,
+			shipperv1.ApplicationConditionTypeValidHistory,
+			corev1.ConditionFalse,
+			conditions.FetchReleaseFailed,
+			fmt.Sprintf("could not fetch the latest release: %q", err),
+		)
 		return err
 	}
 
-	return nil
-}
+	if latestRelease == nil {
+		err = c.createReleaseForApplication(app, 0)
+		if err != nil {
+			app.Status.Conditions = conditions.SetApplicationCondition(
+				app.Status.Conditions,
+				shipperv1.ApplicationConditionTypeReleaseSynced,
+				corev1.ConditionFalse,
+				conditions.CreateReleaseFailed,
+				fmt.Sprintf("could not create a new release: %q", err),
+			)
 
-func (c *Controller) processApplication(app *shipperv1.Application) error {
-	latestReleaseRecord := c.getEndOfHistory(app)
-
-	if latestReleaseRecord == nil {
-		glog.Infof("Application %q is getting its first Release", controller.MetaKey(app))
-		return c.createReleaseForApplication(app)
+			return err
+		}
+		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
+		app.Status.Conditions = conditions.SetApplicationCondition(
+			app.Status.Conditions,
+			shipperv1.ApplicationConditionTypeReleaseSynced,
+			corev1.ConditionTrue,
+			"", "",
+		)
+		return nil
 	}
 
-	latestRelease, err := c.relLister.Releases(app.GetNamespace()).Get(latestReleaseRecord.Name)
+	generation, err := controller.GetReleaseGeneration(latestRelease)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			if latestReleaseRecord.Status == shipperv1.ReleaseRecordWaitingForObject {
-				// This means we failed to create the Release after adding the historical
-				// entry; try again to create it.
-				glog.Infof("Application %q has uncommitted history entry %v",
-					controller.MetaKey(app), latestReleaseRecord)
-				return c.createReleaseForApplication(app)
-			}
+		app.Status.Conditions = conditions.SetApplicationCondition(
+			app.Status.Conditions,
+			shipperv1.ApplicationConditionTypeValidHistory,
+			corev1.ConditionFalse,
+			conditions.BrokenReleaseGeneration,
+			fmt.Sprintf("could not get the generation annotation from release %q: %q", latestRelease.GetName(), err),
+		)
 
-			// Otherwise our history is corrupt: we may be doing a 'crash abort' where
-			// the rolling-out-release was deleted, or there might just be some nonsense
-			// in history. In both cases we should reset the app.Spec.Template to match
-			// the latest existing release, and trim off any bad history entries before
-			// that good one.
-			// This prevents us from re-rolling a bad template (as in the 'crash abort'
-			// case) or leaving garbage in the history.
-
-			glog.Infof("Application %q's latest Release (%v) doesn't exist, rolling back",
-				controller.MetaKey(app), latestReleaseRecord)
-			return c.rollbackAppTemplate(app)
-		}
-
-		return fmt.Errorf("fetch Release %q for Application %q: %s",
-			latestReleaseRecord.Name, controller.MetaKey(app), err)
+		return err
 	}
 
-	// XXX this should probably also make sure that this Release is active (state
-	// 'Installed' instead of 'Superseded'?) somehow if we've marched further back
-	// in time.
+	highestObserved, err := getAppHighestObservedGeneration(app)
+	if err != nil {
+		app.Status.Conditions = conditions.SetApplicationCondition(
+			app.Status.Conditions,
+			shipperv1.ApplicationConditionTypeValidHistory,
+			corev1.ConditionFalse,
+			conditions.BrokenApplicationObservedGeneration,
+			fmt.Sprintf("could not get the generation annotation: %q", err),
+		)
+
+		return err
+	}
+
+	// rollback: reset app template & reset latest observed
+	if generation < highestObserved {
+		app.Spec.Template = *(latestRelease.Environment.DeepCopy())
+		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
+		app.Status.Conditions = conditions.SetApplicationCondition(
+			app.Status.Conditions,
+			shipperv1.ApplicationConditionTypeAborting,
+			corev1.ConditionTrue,
+			"",
+			fmt.Sprintf("abort in progress, returning state to release %q", latestRelease.GetName()),
+		)
+
+		return nil
+	}
+
+	app.Status.Conditions = conditions.SetApplicationCondition(
+		app.Status.Conditions,
+		shipperv1.ApplicationConditionTypeAborting,
+		corev1.ConditionFalse,
+		"", "",
+	)
+
+	// assume history is ok
+	app.Status.Conditions = conditions.SetApplicationCondition(
+		app.Status.Conditions,
+		shipperv1.ApplicationConditionTypeValidHistory,
+		corev1.ConditionTrue, "", "",
+	)
+
+	// ... but overwrite that condition if it is not. this means something is
+	// screwy; likely a human changed an annotation themselves, or the process
+	// was abnormally exited by some weird reason between the new release was
+	// created and app updated with the new water mark.
+	//
+	// I think the best we can do is bump up to this new high water mark and then proceed as normal
+	if generation > highestObserved {
+		highestObserved = generation
+		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
+
+		app.Status.Conditions = conditions.SetApplicationCondition(
+			app.Status.Conditions,
+			shipperv1.ApplicationConditionTypeValidHistory,
+			corev1.ConditionFalse,
+			conditions.BrokenReleaseGeneration,
+			fmt.Sprintf("the generation on release %q (%d) is higher than the highest observed by this application (%d). syncing application's highest observed generation to match. this should self-heal.", latestRelease.GetName(), generation, highestObserved),
+		)
+	}
+
+	// great! nothing to do. highestObserved == latestRelease && the templates are identical
 	if identicalEnvironments(app.Spec.Template, latestRelease.Environment) {
-		if latestReleaseRecord.Status == shipperv1.ReleaseRecordWaitingForObject {
-			// We've recovered from failing to create a Release for a historical entry,
-			// mark the application accordingly.
-			glog.Infof("Application %q has uncommitted history entry %v",
-				controller.MetaKey(app), latestReleaseRecord)
-			return c.markReleaseCreated(latestRelease.GetName(), app)
-		}
-
-		return c.cleanHistory(app)
+		// explicitly setting the annotation here helps recover from a broken 0 case
+		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
+		app.Status.Conditions = conditions.SetApplicationCondition(
+			app.Status.Conditions,
+			shipperv1.ApplicationConditionTypeReleaseSynced,
+			corev1.ConditionTrue,
+			"", "",
+		)
+		return nil
 	}
 
-	// Our template is not the same, so we should trigger a new rollout by creating
-	// a new release.
-	glog.Info("Application %q is getting a new Release", controller.MetaKey(app))
-	return c.createReleaseForApplication(app)
+	// the normal case: the application template has changed so we should create a new release
+	newGen := highestObserved + 1
+	err = c.createReleaseForApplication(app, newGen)
+	if err != nil {
+		app.Status.Conditions = conditions.SetApplicationCondition(
+			app.Status.Conditions,
+			shipperv1.ApplicationConditionTypeReleaseSynced,
+			corev1.ConditionFalse,
+			conditions.CreateReleaseFailed,
+			fmt.Sprintf("could not create a new release: %q", err),
+		)
+		return err
+	}
+
+	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(newGen)
+	app.Status.Conditions = conditions.SetApplicationCondition(
+		app.Status.Conditions,
+		shipperv1.ApplicationConditionTypeReleaseSynced,
+		corev1.ConditionTrue,
+		"", "",
+	)
+
+	return nil
 }
