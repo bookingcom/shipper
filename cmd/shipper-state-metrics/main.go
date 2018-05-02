@@ -50,8 +50,8 @@ func main() {
 
 	resync, err := time.ParseDuration(*resyncPeriod)
 	if err != nil {
-		glog.Warningf("Couldn't parse resync period %q, defaulting to 1 minute", *resyncPeriod)
-		resync = 1 * time.Minute
+		glog.Warningf("Couldn't parse resync period %q, defaulting to 5 minutes", *resyncPeriod)
+		resync = 5 * time.Minute
 	}
 
 	stopCh := setupSignalHandler()
