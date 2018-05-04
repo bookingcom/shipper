@@ -10,23 +10,23 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 
-	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	"github.com/bookingcom/shipper/pkg/controller"
 )
 
 type releaseInfo struct {
-	release            *v1.Release
-	installationTarget *v1.InstallationTarget
-	trafficTarget      *v1.TrafficTarget
-	capacityTarget     *v1.CapacityTarget
+	release            *shipperv1.Release
+	installationTarget *shipperv1.InstallationTarget
+	trafficTarget      *shipperv1.TrafficTarget
+	capacityTarget     *shipperv1.CapacityTarget
 }
 
 type Executor struct {
 	contender *releaseInfo
 	incumbent *releaseInfo
 	recorder  record.EventRecorder
-	strategy  v1.RolloutStrategy
+	strategy  shipperv1.RolloutStrategy
 }
 
 func (s *Executor) info(format string, args ...interface{}) {
@@ -43,15 +43,21 @@ func (s *Executor) event(obj runtime.Object, format string, args ...interface{})
 	)
 }
 
+type ReleaseStrategyStateTransition struct {
+	State    string
+	Previous shipperv1.StrategyState
+	New      shipperv1.StrategyState
+}
+
 // execute executes the strategy. It returns an ExecutorResult, if a patch should
 // be performed into some of the associated Release objects and an error if an error
 // has happened. Currently if both values are nil it means that the operation was
 // successful but no modifications are required.
-func (s *Executor) execute() ([]ExecutorResult, error) {
+func (s *Executor) execute() ([]ExecutorResult, []ReleaseStrategyStateTransition, error) {
 	targetStep := s.contender.release.Spec.TargetStep
 
 	if targetStep >= int32(len(s.strategy.Steps)) {
-		return nil, fmt.Errorf("no step %d in strategy for Release %q", targetStep,
+		return nil, nil, fmt.Errorf("no step %d in strategy for Release %q", targetStep,
 			controller.MetaKey(s.contender.release))
 	}
 	strategyStep := s.strategy.Steps[targetStep]
@@ -63,7 +69,7 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 
 	isLastStep := targetStep == lastStepIndex
 
-	var releaseStrategyConditions []v1.ReleaseStrategyCondition
+	var releaseStrategyConditions []shipperv1.ReleaseStrategyCondition
 
 	if s.contender.release.Status.Strategy != nil {
 		releaseStrategyConditions = s.contender.release.Status.Strategy.Conditions
@@ -81,7 +87,7 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 
 		if len(s.contender.installationTarget.Spec.Clusters) != len(s.contender.installationTarget.Status.Clusters) {
 			strategyConditions.SetUnknown(
-				v1.StrategyConditionContenderAchievedInstallation,
+				shipperv1.StrategyConditionContenderAchievedInstallation,
 				conditions.StrategyConditionsUpdate{
 					Step:               targetStep,
 					LastTransitionTime: lastTransitionTime,
@@ -90,7 +96,7 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 			// Contender installation is not ready yet, so we update conditions
 			// accordingly.
 			strategyConditions.SetFalse(
-				v1.StrategyConditionContenderAchievedInstallation,
+				shipperv1.StrategyConditionContenderAchievedInstallation,
 				conditions.StrategyConditionsUpdate{
 					Reason:             conditions.ClustersNotReady,
 					Message:            fmt.Sprintf("clusters pending installation: %v", clusters),
@@ -100,13 +106,14 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 		}
 
 		return []ExecutorResult{s.buildContenderStrategyConditionsPatch(strategyConditions, targetStep, isLastStep)},
+			nil,
 			nil
 
 	} else {
 		s.info("installation finished")
 
 		strategyConditions.SetTrue(
-			v1.StrategyConditionContenderAchievedInstallation,
+			shipperv1.StrategyConditionContenderAchievedInstallation,
 			conditions.StrategyConditionsUpdate{
 				LastTransitionTime: lastTransitionTime,
 				Step:               targetStep,
@@ -129,7 +136,7 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 			var patches []ExecutorResult
 
 			strategyConditions.SetFalse(
-				v1.StrategyConditionContenderAchievedCapacity,
+				shipperv1.StrategyConditionContenderAchievedCapacity,
 				conditions.StrategyConditionsUpdate{
 					Reason:             conditions.ClustersNotReady,
 					Message:            fmt.Sprintf("clusters pending capacity adjustments: %v", clustersNotReady),
@@ -146,12 +153,12 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 
 			patches = append(patches, s.buildContenderStrategyConditionsPatch(strategyConditions, targetStep, isLastStep))
 
-			return patches, nil
+			return patches, nil, nil
 		} else {
 			s.info("contender %q has achieved capacity", s.contender.release.Name)
 
 			strategyConditions.SetTrue(
-				v1.StrategyConditionContenderAchievedCapacity,
+				shipperv1.StrategyConditionContenderAchievedCapacity,
 				conditions.StrategyConditionsUpdate{
 					Step:               targetStep,
 					LastTransitionTime: lastTransitionTime,
@@ -169,7 +176,7 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 			var patches []ExecutorResult
 
 			strategyConditions.SetFalse(
-				v1.StrategyConditionContenderAchievedTraffic,
+				shipperv1.StrategyConditionContenderAchievedTraffic,
 				conditions.StrategyConditionsUpdate{
 					Reason:             conditions.ClustersNotReady,
 					Message:            fmt.Sprintf("clusters pending traffic adjustments: %v", clustersNotReady),
@@ -186,12 +193,12 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 
 			patches = append(patches, s.buildContenderStrategyConditionsPatch(strategyConditions, targetStep, isLastStep))
 
-			return patches, nil
+			return patches, nil, nil
 		} else {
 			s.info("contender %q has achieved traffic", s.contender.release.Name)
 
 			strategyConditions.SetTrue(
-				v1.StrategyConditionContenderAchievedTraffic,
+				shipperv1.StrategyConditionContenderAchievedTraffic,
 				conditions.StrategyConditionsUpdate{
 					Step:               targetStep,
 					LastTransitionTime: lastTransitionTime,
@@ -215,7 +222,7 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 			var patches []ExecutorResult
 
 			strategyConditions.SetFalse(
-				v1.StrategyConditionIncumbentAchievedTraffic,
+				shipperv1.StrategyConditionIncumbentAchievedTraffic,
 				conditions.StrategyConditionsUpdate{
 					Reason:             conditions.ClustersNotReady,
 					Message:            fmt.Sprintf("clusters pending traffic adjustments: %v", clustersNotReady),
@@ -232,12 +239,12 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 
 			patches = append(patches, s.buildContenderStrategyConditionsPatch(strategyConditions, targetStep, isLastStep))
 
-			return patches, nil
+			return patches, nil, nil
 		} else {
 			s.info("incumbent %q has achieved traffic", s.incumbent.release.Name)
 
 			strategyConditions.SetTrue(
-				v1.StrategyConditionIncumbentAchievedTraffic,
+				shipperv1.StrategyConditionIncumbentAchievedTraffic,
 				conditions.StrategyConditionsUpdate{
 					Step:               targetStep,
 					LastTransitionTime: lastTransitionTime,
@@ -255,7 +262,7 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 			var patches []ExecutorResult
 
 			strategyConditions.SetFalse(
-				v1.StrategyConditionIncumbentAchievedCapacity,
+				shipperv1.StrategyConditionIncumbentAchievedCapacity,
 				conditions.StrategyConditionsUpdate{
 					Reason:             conditions.ClustersNotReady,
 					Message:            fmt.Sprintf("clusters pending capacity adjustments: %v", clustersNotReady),
@@ -272,12 +279,12 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 
 			patches = append(patches, s.buildContenderStrategyConditionsPatch(strategyConditions, targetStep, isLastStep))
 
-			return patches, nil
+			return patches, nil, nil
 		} else {
 			s.info("incumbent %q has achieved capacity", s.incumbent.release.Name)
 
 			strategyConditions.SetTrue(
-				v1.StrategyConditionIncumbentAchievedCapacity,
+				shipperv1.StrategyConditionIncumbentAchievedCapacity,
 				conditions.StrategyConditionsUpdate{
 					Step:               targetStep,
 					LastTransitionTime: lastTransitionTime,
@@ -294,23 +301,38 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 		var contenderPhase string
 
 		if isLastStep {
-			contenderPhase = v1.ReleasePhaseInstalled
+			contenderPhase = shipperv1.ReleasePhaseInstalled
 		} else {
-			contenderPhase = v1.ReleasePhaseWaitingForCommand
+			contenderPhase = shipperv1.ReleasePhaseWaitingForCommand
 		}
 
 		var releasePatches []ExecutorResult
+		var releaseStrategyStateTransitions []ReleaseStrategyStateTransition
 
 		reportedStep := s.contender.release.Status.AchievedStep
 		reportedPhase := s.contender.release.Status.Phase
 
 		contenderStatus := s.contender.release.Status.DeepCopy()
-		contenderStatus.Strategy = &v1.ReleaseStrategyStatus{
+
+		newReleaseStrategyState := strategyConditions.AsReleaseStrategyState(
+			s.contender.release.Spec.TargetStep,
+			s.incumbent != nil,
+			isLastStep)
+
+		oldReleaseStrategyState := shipperv1.ReleaseStrategyState{}
+		if contenderStatus.Strategy != nil {
+			oldReleaseStrategyState = contenderStatus.Strategy.State
+		}
+
+		releaseStrategyStateTransitions =
+			getReleaseStrategyStateTransitions(
+				oldReleaseStrategyState,
+				newReleaseStrategyState,
+				releaseStrategyStateTransitions)
+
+		contenderStatus.Strategy = &shipperv1.ReleaseStrategyStatus{
 			Conditions: strategyConditions.AsReleaseStrategyConditions(),
-			State: strategyConditions.AsReleaseStrategyState(
-				s.contender.release.Spec.TargetStep,
-				s.incumbent != nil,
-				isLastStep),
+			State:      newReleaseStrategyState,
 		}
 
 		if targetStep != reportedStep || contenderPhase != reportedPhase {
@@ -324,13 +346,13 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 		})
 
 		if s.incumbent != nil {
-			incumbentPhase := v1.ReleasePhaseInstalled
+			incumbentPhase := shipperv1.ReleasePhaseInstalled
 			if isLastStep {
-				incumbentPhase = v1.ReleasePhaseSuperseded
+				incumbentPhase = shipperv1.ReleasePhaseSuperseded
 			}
 
 			if incumbentPhase != s.incumbent.release.Status.Phase {
-				incumbentStatus := &v1.ReleaseStatus{
+				incumbentStatus := &shipperv1.ReleaseStatus{
 					Phase:        incumbentPhase,
 					AchievedStep: s.incumbent.release.Status.AchievedStep,
 				}
@@ -342,8 +364,35 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 		}
 
 		s.event(s.contender.release, "step %d finished", targetStep)
-		return releasePatches, nil
+		return releasePatches, releaseStrategyStateTransitions, nil
 	}
+}
+
+func getReleaseStrategyStateTransitions(
+	oldState shipperv1.ReleaseStrategyState,
+	newState shipperv1.ReleaseStrategyState,
+	stateTransitions []ReleaseStrategyStateTransition,
+) []ReleaseStrategyStateTransition {
+	if oldState.WaitingForCapacity != newState.WaitingForCapacity {
+		stateTransitions = append(stateTransitions, ReleaseStrategyStateTransition{State: "WaitingForCapacity", New: newState.WaitingForCapacity, Previous: valueOrUnknown(oldState.WaitingForCapacity)})
+	}
+	if oldState.WaitingForCommand != newState.WaitingForCommand {
+		stateTransitions = append(stateTransitions, ReleaseStrategyStateTransition{State: "WaitingForCommand", New: newState.WaitingForCommand, Previous: valueOrUnknown(oldState.WaitingForCapacity)})
+	}
+	if oldState.WaitingForInstallation != newState.WaitingForInstallation {
+		stateTransitions = append(stateTransitions, ReleaseStrategyStateTransition{State: "WaitingForInstallation", New: newState.WaitingForInstallation, Previous: valueOrUnknown(oldState.WaitingForCapacity)})
+	}
+	if oldState.WaitingForTraffic != newState.WaitingForTraffic {
+		stateTransitions = append(stateTransitions, ReleaseStrategyStateTransition{State: "WaitingForTraffic", New: newState.WaitingForTraffic, Previous: valueOrUnknown(oldState.WaitingForCapacity)})
+	}
+	return stateTransitions
+}
+
+func valueOrUnknown(v shipperv1.StrategyState) shipperv1.StrategyState {
+	if len(v) < 1 {
+		v = shipperv1.StrategyStateUnknown
+	}
+	return v
 }
 
 func (s *Executor) buildContenderStrategyConditionsPatch(
@@ -353,7 +402,7 @@ func (s *Executor) buildContenderStrategyConditionsPatch(
 ) *ReleaseUpdateResult {
 	newStatus := s.contender.release.Status.DeepCopy()
 	//newStatus.AchievedStep = uint(step)
-	newStatus.Strategy = &v1.ReleaseStrategyStatus{
+	newStatus.Strategy = &shipperv1.ReleaseStrategyStatus{
 		Conditions: c.AsReleaseStrategyConditions(),
 		State:      c.AsReleaseStrategyState(step, s.incumbent != nil, isLastStep),
 	}

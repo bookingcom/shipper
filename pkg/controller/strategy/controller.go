@@ -274,7 +274,7 @@ func (c *Controller) syncOne(key string) error {
 
 	strategyExecutor.info("will start processing release")
 
-	result, err := strategyExecutor.execute()
+	result, _, err := strategyExecutor.execute()
 	if err != nil {
 		return err
 	}
