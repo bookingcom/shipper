@@ -198,7 +198,7 @@ func (c *Scheduler) CreateTrafficTarget() error {
 	count := len(c.Clusters())
 	trafficTargets := make([]v1.ClusterTrafficTarget, count)
 	for i, v := range c.Clusters() {
-		trafficTargets[i] = v1.ClusterTrafficTarget{Name: v, TargetTraffic: 0}
+		trafficTargets[i] = v1.ClusterTrafficTarget{Name: v, Weight: 0}
 	}
 
 	trafficTarget := &v1.TrafficTarget{

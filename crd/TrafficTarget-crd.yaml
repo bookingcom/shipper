@@ -34,10 +34,10 @@ spec:
                 type: object
                 required:
                 - name
-                - targetTraffic
+                - weight
                 properties:
                   name:
                     type: string
-                  targetTraffic:
+                  weight:
                     minimum: 0
                     type: integer

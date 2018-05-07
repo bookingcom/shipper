@@ -22,7 +22,7 @@ type podLabelShifter struct {
 	clusterReleaseWeights clusterReleaseWeights
 }
 
-type clusterReleaseWeights map[string]map[string]int
+type clusterReleaseWeights map[string]map[string]uint32
 
 func newPodLabelShifter(
 	namespace string,
@@ -58,7 +58,7 @@ func (p *podLabelShifter) SyncCluster(
 	cluster string,
 	clientset kubernetes.Interface,
 	informer corev1informer.PodInformer,
-) (map[string]int, []error, error) {
+) (map[string]uint32, []error, error) {
 	releaseWeights, ok := p.clusterReleaseWeights[cluster]
 	if !ok {
 		return nil, nil, fmt.Errorf(
@@ -93,12 +93,12 @@ func (p *podLabelShifter) SyncCluster(
 	}
 
 	totalPods := len(pods)
-	totalWeight := 0
+	var totalWeight uint32 = 0
 	for _, weight := range releaseWeights {
 		totalWeight += weight
 	}
 
-	achievedWeights := map[string]int{}
+	achievedWeights := map[string]uint32{}
 	errors := []error{}
 	for release, weight := range releaseWeights {
 		releaseReq, err := labels.NewRequirement(
@@ -153,7 +153,7 @@ func (p *podLabelShifter) SyncCluster(
 			}
 			finalTrafficPods := len(trafficPods) - removedFromLB
 			proportion := float64(finalTrafficPods) / float64(totalPods)
-			achievedWeights[release] = int(round(proportion * float64(totalWeight)))
+			achievedWeights[release] = uint32(round(proportion * float64(totalWeight)))
 			continue
 		}
 
@@ -182,7 +182,7 @@ func (p *podLabelShifter) SyncCluster(
 			}
 			finalTrafficPods := len(trafficPods) + addedToLB
 			proportion := float64(finalTrafficPods) / float64(totalPods)
-			achievedWeights[release] = int(round(proportion * float64(totalWeight)))
+			achievedWeights[release] = uint32(round(proportion * float64(totalWeight)))
 		}
 	}
 
@@ -214,7 +214,7 @@ func removeFromLB(pod *corev1.Pod, trafficSelector map[string]string) {
 	}
 }
 
-func calculateReleasePodTarget(releasePods, releaseWeight, totalPods, totalWeight int) int {
+func calculateReleasePodTarget(releasePods int, releaseWeight uint32, totalPods int, totalWeight uint32) int {
 	// what percentage of the entire fleet (across all releases) should this set of pods represent
 	var targetPercent float64
 	if totalWeight == 0 {
@@ -250,7 +250,7 @@ func calculateReleasePodTarget(releasePods, releaseWeight, totalPods, totalWeigh
 	}
 */
 func buildClusterReleaseWeights(trafficTargets []*shipperv1.TrafficTarget) (clusterReleaseWeights, error) {
-	clusterReleases := map[string]map[string]int{}
+	clusterReleases := map[string]map[string]uint32{}
 	releaseTT := map[string]*shipperv1.TrafficTarget{}
 	for _, tt := range trafficTargets {
 		release, ok := tt.Labels[shipperv1.ReleaseLabel]
@@ -272,10 +272,10 @@ func buildClusterReleaseWeights(trafficTargets []*shipperv1.TrafficTarget) (clus
 		for _, cluster := range tt.Spec.Clusters {
 			weights, ok := clusterReleases[cluster.Name]
 			if !ok {
-				weights = map[string]int{}
+				weights = map[string]uint32{}
 				clusterReleases[cluster.Name] = weights
 			}
-			weights[release] += int(cluster.TargetTraffic)
+			weights[release] += cluster.Weight
 		}
 	}
 	return clusterReleaseWeights(clusterReleases), nil

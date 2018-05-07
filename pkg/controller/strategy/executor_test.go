@@ -292,8 +292,8 @@ func buildIncumbent() *releaseInfo {
 		Spec: v1.TrafficTargetSpec{
 			Clusters: []v1.ClusterTrafficTarget{
 				{
-					Name:          clusterName,
-					TargetTraffic: 100,
+					Name:   clusterName,
+					Weight: 100,
 				},
 			},
 		},
@@ -418,8 +418,8 @@ func buildContender() *releaseInfo {
 		Spec: v1.TrafficTargetSpec{
 			Clusters: []v1.ClusterTrafficTarget{
 				{
-					Name:          clusterName,
-					TargetTraffic: 0,
+					Name:   clusterName,
+					Weight: 0,
 				},
 			},
 		},
@@ -448,7 +448,7 @@ func addCluster(ri *releaseInfo, name string) {
 	)
 
 	ri.trafficTarget.Spec.Clusters = append(ri.trafficTarget.Spec.Clusters,
-		v1.ClusterTrafficTarget{Name: name, TargetTraffic: 0},
+		v1.ClusterTrafficTarget{Name: name, Weight: 0},
 	)
 	ri.trafficTarget.Status.Clusters = append(ri.trafficTarget.Status.Clusters,
 		&v1.ClusterTrafficStatus{Name: name, AchievedTraffic: 100},

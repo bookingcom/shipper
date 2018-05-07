@@ -163,7 +163,7 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 		//
 		trafficWeight := strategyStep.Traffic.Contender
 
-		if achieved, newSpec, clustersNotReady := checkTraffic(s.contender.trafficTarget, uint(trafficWeight), contenderTrafficComparison); !achieved {
+		if achieved, newSpec, clustersNotReady := checkTraffic(s.contender.trafficTarget, uint32(trafficWeight), contenderTrafficComparison); !achieved {
 			s.info("contender %q hasn't achieved traffic yet", s.contender.release.Name)
 
 			var patches []ExecutorResult
@@ -209,7 +209,7 @@ func (s *Executor) execute() ([]ExecutorResult, error) {
 		//
 		trafficWeight := strategyStep.Traffic.Incumbent
 
-		if achieved, newSpec, clustersNotReady := checkTraffic(s.incumbent.trafficTarget, uint(trafficWeight), incumbentTrafficComparison); !achieved {
+		if achieved, newSpec, clustersNotReady := checkTraffic(s.incumbent.trafficTarget, uint32(trafficWeight), incumbentTrafficComparison); !achieved {
 			s.info("incumbent %q hasn't achieved traffic yet", s.incumbent.release.Name)
 
 			var patches []ExecutorResult
