@@ -239,8 +239,8 @@ func (c *Controller) syncHandler(key string) error {
 
 	var statuses []*shipperv1.ClusterTrafficStatus
 	for _, cluster := range shifter.Clusters() {
-		var achievedReleaseWeight int
-		var achievedWeights map[string]int
+		var achievedReleaseWeight uint32
+		var achievedWeights map[string]uint32
 		var clientset kubernetes.Interface
 		var clusterConditions []shipperv1.ClusterTrafficCondition
 		var errs []error
@@ -335,7 +335,7 @@ func (c *Controller) syncHandler(key string) error {
 			// if the resulting map is missing the release we're working on,
 			// there's a significant bug in our code
 			achievedReleaseWeight = achievedWeights[syncingReleaseName]
-			clusterStatus.AchievedTraffic = uint(achievedReleaseWeight)
+			clusterStatus.AchievedTraffic = achievedReleaseWeight
 			if len(errs) == 0 {
 				clusterStatus.Conditions = conditions.SetTrafficCondition(
 					clusterStatus.Conditions,

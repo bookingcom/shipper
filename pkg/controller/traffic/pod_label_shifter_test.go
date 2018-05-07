@@ -22,10 +22,10 @@ const (
 	testApplicationName = "test-app"
 )
 
-type releaseWeights []uint
+type releaseWeights []uint32
 type releasePodCounts []int
 type releaseExpectedTrafficPods []int
-type releaseExpectedWeights []int
+type releaseExpectedWeights []uint32
 
 // this is a private func, but other tests make use of it, so it's better tested in isolation
 func TestGetsTraffic(t *testing.T) {
@@ -202,7 +202,7 @@ func clusterSyncTestCase(
 		f.addPods(releaseNames[i], podCount)
 	}
 
-	expectedWeightsByName := map[string]int{}
+	expectedWeightsByName := map[string]uint32{}
 	for i, expectedWeight := range expectedWeights {
 		expectedWeightsByName[releaseNames[i]] = expectedWeight
 	}
@@ -242,8 +242,8 @@ func (f *fixture) Errorf(template string, args ...interface{}) {
 }
 
 // each TT pertains to exactly one release
-func (f *fixture) addTrafficTarget(release string, weight uint) {
-	tt := newTrafficTarget(release, map[string]uint{
+func (f *fixture) addTrafficTarget(release string, weight uint32) {
+	tt := newTrafficTarget(release, map[string]uint32{
 		testClusterName: weight,
 	})
 	f.trafficTargets = append(f.trafficTargets, tt)
@@ -276,7 +276,7 @@ func (f *fixture) addService() {
 	f.objects = append(f.objects, svc)
 }
 
-func (f *fixture) run(expectedWeights map[string]int) bool {
+func (f *fixture) run(expectedWeights map[string]uint32) bool {
 	clientset := kubefake.NewSimpleClientset(f.objects...)
 	f.client = clientset
 
@@ -360,7 +360,7 @@ func (f *fixture) checkReleasePodsWithTraffic(release string, expectedCount int)
 	}
 }
 
-func newTrafficTarget(release string, clusterWeights map[string]uint) *shipperv1.TrafficTarget {
+func newTrafficTarget(release string, clusterWeights map[string]uint32) *shipperv1.TrafficTarget {
 	tt := &shipperv1.TrafficTarget{
 		ObjectMeta: metav1.ObjectMeta{
 			// NOTE(btyler) using release name for TTs?
@@ -375,8 +375,8 @@ func newTrafficTarget(release string, clusterWeights map[string]uint) *shipperv1
 
 	for cluster, weight := range clusterWeights {
 		tt.Spec.Clusters = append(tt.Spec.Clusters, shipperv1.ClusterTrafficTarget{
-			Name:          cluster,
-			TargetTraffic: weight,
+			Name:   cluster,
+			Weight: weight,
 		})
 	}
 	return tt

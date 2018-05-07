@@ -172,8 +172,8 @@ type Release struct {
 }
 
 type ReleaseMeta struct {
-	metav1.ObjectMeta `json:",inline"`
-	Environment       ReleaseEnvironment `json:"environment"`
+	metav1.ObjectMeta              `json:",inline"`
+	Environment ReleaseEnvironment `json:"environment"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -381,7 +381,7 @@ type TrafficTargetStatus struct {
 
 type ClusterTrafficStatus struct {
 	Name            string                    `json:"name"`
-	AchievedTraffic uint                      `json:"achievedTraffic"`
+	AchievedTraffic uint32                    `json:"achievedTraffic"`
 	Status          string                    `json:"status"`
 	Conditions      []ClusterTrafficCondition `json:"conditions"`
 }
@@ -401,7 +401,7 @@ type TrafficTargetSpec struct {
 type ClusterTrafficTarget struct {
 	Name string `json:"name"`
 	// apimachinery intstr for percentages?
-	TargetTraffic uint `json:"targetTraffic"`
+	Weight uint32 `json:"weight"`
 }
 
 type ReleaseStrategyStatus struct {

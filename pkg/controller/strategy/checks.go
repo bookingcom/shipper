@@ -121,15 +121,15 @@ func checkCapacity(
 }
 
 type trafficState struct {
-	achievedTrafficWeight uint
-	desiredTrafficWeight  uint
-	stepTrafficWeight     uint
+	achievedTrafficWeight uint32
+	desiredTrafficWeight  uint32
+	stepTrafficWeight     uint32
 }
 
 func checkTraffic(
 	trafficTarget *v1.TrafficTarget,
-	stepTrafficWeight uint,
-	compFn func(achieved uint, desired uint) bool,
+	stepTrafficWeight uint32,
+	compFn func(achieved uint32, desired uint32) bool,
 ) (
 	bool,
 	*v1.TrafficTargetSpec,
@@ -141,7 +141,7 @@ func checkTraffic(
 	specs := trafficTarget.Spec.Clusters
 	for _, spec := range specs {
 		clusterTrafficData[spec.Name] = trafficState{
-			desiredTrafficWeight: spec.TargetTraffic,
+			desiredTrafficWeight: spec.Weight,
 			stepTrafficWeight:    stepTrafficWeight,
 		}
 	}
@@ -170,7 +170,7 @@ func checkTraffic(
 
 	for clusterName, trafficData := range clusterTrafficData {
 		if trafficData.desiredTrafficWeight != trafficData.stepTrafficWeight {
-			t := v1.ClusterTrafficTarget{Name: clusterName, TargetTraffic: trafficData.stepTrafficWeight}
+			t := v1.ClusterTrafficTarget{Name: clusterName, Weight: trafficData.stepTrafficWeight}
 			newSpec.Clusters = append(newSpec.Clusters, t)
 			canProceed = false
 			clustersNotReady = append(clustersNotReady, clusterName)
