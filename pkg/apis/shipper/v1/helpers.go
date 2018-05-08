@@ -12,6 +12,9 @@ import (
 // deepCopyJSON deep copies the passed value, assuming it is a valid JSON representation i.e. only contains
 // types produced by json.Unmarshal().
 func deepCopyJSON(x map[string]interface{}) map[string]interface{} {
+	// NOTE(isutton) We don't check the type assertion in here since we want it
+	// to crash in runtime. That is, until someone raises the point during
+	// code review :)
 	return deepCopyJSONValue(x).(map[string]interface{})
 }
 

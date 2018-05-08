@@ -58,7 +58,10 @@ func NewController(
 	releaseInformer.Informer().AddEventHandler(
 		cache.FilteringResourceEventHandler{
 			FilterFunc: func(obj interface{}) bool {
-				release := obj.(*v1.Release)
+				release, ok := obj.(*v1.Release)
+				if !ok {
+					return false
+				}
 				return release.Status.Phase == v1.ReleasePhaseWaitingForScheduling
 			},
 			Handler: cache.ResourceEventHandlerFuncs{

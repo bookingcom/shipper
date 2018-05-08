@@ -74,11 +74,13 @@ func NewController(
 	releaseInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueRelease,
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			rel := newObj.(*v1.Release)
-			if isWorkingOnStrategy(rel) {
-				// We should enqueue only releases that have been modified AND
-				// are in the middle of a strategy execution.
-				controller.enqueueRelease(rel)
+			rel, ok := newObj.(*v1.Release)
+			if ok {
+				if isWorkingOnStrategy(rel) {
+					// We should enqueue only releases that have been modified AND
+					// are in the middle of a strategy execution.
+					controller.enqueueRelease(rel)
+				}
 			}
 		},
 	})
@@ -437,7 +439,12 @@ func (c *Controller) buildExecutor(ns, name string, recorder record.EventRecorde
 }
 
 func (c *Controller) enqueueInstallationTarget(obj interface{}) {
-	it := obj.(*v1.InstallationTarget)
+	it, ok := obj.(*v1.InstallationTarget)
+	if !ok {
+		glog.Warningln(fmt.Errorf("object passed to enqueueInstallationTarget is _not_ a v1.InstallationTarget: %v", obj))
+		return
+	}
+
 	releaseKey, err := c.getAssociatedReleaseKey(&it.ObjectMeta)
 	if err != nil {
 		glog.Warningln(err)
@@ -448,7 +455,12 @@ func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 }
 
 func (c *Controller) enqueueTrafficTarget(obj interface{}) {
-	tt := obj.(*v1.TrafficTarget)
+	tt, ok := obj.(*v1.TrafficTarget)
+	if !ok {
+		glog.Warningln(fmt.Errorf("object passed to enqueueTrafficTarget is _not_ a v1.TrafficTarget: %v", obj))
+		return
+	}
+
 	releaseKey, err := c.getAssociatedReleaseKey(&tt.ObjectMeta)
 	if err != nil {
 		glog.Warningln(err)
@@ -459,7 +471,11 @@ func (c *Controller) enqueueTrafficTarget(obj interface{}) {
 }
 
 func (c *Controller) enqueueCapacityTarget(obj interface{}) {
-	ct := obj.(*v1.CapacityTarget)
+	ct, ok := obj.(*v1.CapacityTarget)
+	if !ok {
+		glog.Warningln(fmt.Errorf("object passed to enqueueCapacityTarget is _not_ a v1.CapacityTarget: %v", obj))
+		return
+	}
 	releaseKey, err := c.getAssociatedReleaseKey(&ct.ObjectMeta)
 	if err != nil {
 		glog.Warningln(err)

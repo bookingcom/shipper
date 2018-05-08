@@ -27,10 +27,13 @@ func (s *Store) bindEventHandlers() {
 	enqueueSecret := func(obj interface{}) { enqueueWorkItem(s.secretWorkqueue, obj) }
 	s.secretInformer.Informer().AddEventHandler(kubecache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
-			secret := obj.(*corev1.Secret)
+			secret, ok := obj.(*corev1.Secret)
+			if !ok {
+				return false
+			}
 			// NOTE(btyler) this is a bit aggressive, but I think it makes sense;
 			// otherwise we get logs about the service account token
-			_, ok := secret.GetAnnotations()[shipperv1.SecretChecksumAnnotation]
+			_, ok = secret.GetAnnotations()[shipperv1.SecretChecksumAnnotation]
 			return ok && secret.Namespace == shipperv1.ShipperNamespace
 		},
 		Handler: kubecache.ResourceEventHandlerFuncs{
