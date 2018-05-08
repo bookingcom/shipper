@@ -3,6 +3,7 @@ kind: Application
 metadata:
   name: reviewsapi
 spec:
+  revisionHistoryLimit: 10
   template:
     clusterSelectors:
     - regions:

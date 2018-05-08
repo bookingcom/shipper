@@ -25,6 +25,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -40,7 +41,12 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller"
 )
 
-const AgentName = "application-controller"
+const (
+	AgentName                   = "application-controller"
+	DefaultRevisionHistoryLimit = 20
+	MinRevisionHistoryLimit     = 1
+	MaxRevisionHistoryLimit     = 1000
+)
 
 // Controller is a Kubernetes controller that creates Releases from
 // Applications.
@@ -277,6 +283,45 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		app.Annotations = map[string]string{}
 	}
 
+	if app.Spec.RevisionHistoryLimit == nil {
+		var i int32 = DefaultRevisionHistoryLimit
+		app.Spec.RevisionHistoryLimit = &i
+	}
+
+	// this would be better as OpenAPI validation, but it does not support
+	// 'nullable' so it cannot be an optional field
+	if *app.Spec.RevisionHistoryLimit < MinRevisionHistoryLimit {
+		var min int32 = MinRevisionHistoryLimit
+		app.Spec.RevisionHistoryLimit = &min
+	}
+
+	if *app.Spec.RevisionHistoryLimit > MaxRevisionHistoryLimit {
+		var max int32 = MaxRevisionHistoryLimit
+		app.Spec.RevisionHistoryLimit = &max
+	}
+
+	// clean up excessive releases regardless of exit path
+	defer func() {
+		releases, err := c.getSortedAppReleases(app)
+		if err != nil {
+			runtime.HandleError(err)
+			return
+		}
+
+		// delete the first X ordered by generation. bail out on any error so that
+		// we maintain the invariant that we always delete oldest first (rather than
+		// failing to delete A and successfully deleting B and C in an 'A B C' history)
+		overhead := len(releases) - int(*app.Spec.RevisionHistoryLimit)
+		for i := 0; i < overhead; i++ {
+			rel := releases[i]
+			err = c.shipperClientset.ShipperV1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})
+			if err != nil {
+				runtime.HandleError(err)
+				return
+			}
+		}
+	}()
+
 	latestRelease, err := c.getLatestReleaseForApp(app)
 	if err != nil {
 		app.Status.Conditions = conditions.SetApplicationCondition(
@@ -385,6 +430,13 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 			fmt.Sprintf("the generation on release %q (%d) is higher than the highest observed by this application (%d). syncing application's highest observed generation to match. this should self-heal.", latestRelease.GetName(), generation, highestObserved),
 		)
 	}
+
+	app.Status.Conditions = conditions.SetApplicationCondition(
+		app.Status.Conditions,
+		shipperv1.ApplicationConditionTypeValidHistory,
+		corev1.ConditionTrue,
+		"", "",
+	)
 
 	// great! nothing to do. highestObserved == latestRelease && the templates are identical
 	if identicalEnvironments(app.Spec.Template, latestRelease.Environment) {

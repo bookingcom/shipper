@@ -144,6 +144,60 @@ func TestStatusStableState(t *testing.T) {
 	f.run()
 }
 
+func TestRevisionHistoryLimit(t *testing.T) {
+	f := newFixture(t)
+	app := newApplication(testAppName)
+	one := int32(1)
+	app.Spec.RevisionHistoryLimit = &one
+	f.objects = append(f.objects, app)
+
+	releaseFoo := newRelease("foo", app)
+	releaseFoo.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
+
+	releaseBar := newRelease("bar", app)
+	releaseBar.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
+
+	releaseBaz := newRelease("baz", app)
+	releaseBaz.Annotations[shipperv1.ReleaseGenerationAnnotation] = "2"
+	releaseBaz.Spec.TargetStep = 2
+	releaseBaz.Status.AchievedStep = 2
+
+	f.objects = append(f.objects, releaseFoo, releaseBar, releaseBaz)
+
+	app.Status.History = []string{"foo", "bar", "baz"}
+
+	expectedApp := app.DeepCopy()
+	expectedApp.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "2"
+
+	// this ought to be true, but deletes don't filter through the kubetesting lister
+	//expectedApp.Status.History = []string{"baz"}
+	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeAborting,
+			Status: corev1.ConditionFalse,
+		},
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
+			Status: corev1.ConditionTrue,
+		},
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeValidHistory,
+			Status: corev1.ConditionTrue,
+		},
+	}
+
+	var step int32 = 2
+	expectedApp.Status.State = shipperv1.ApplicationState{
+		RolloutStep: &step,
+		RollingOut:  false,
+	}
+
+	f.expectReleaseDelete(releaseFoo)
+	f.expectReleaseDelete(releaseBar)
+	f.expectApplicationUpdate(expectedApp)
+	f.run()
+}
+
 // An app with 1 existing release should create a new one when its template has
 // changed.
 func TestCreateSecondRelease(t *testing.T) {
@@ -398,6 +452,7 @@ var vanguard = shipperv1.RolloutStrategy{
 }
 
 func newApplication(name string) *shipperv1.Application {
+	five := int32(5)
 	return &shipperv1.Application{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
@@ -405,6 +460,7 @@ func newApplication(name string) *shipperv1.Application {
 			Annotations: map[string]string{},
 		},
 		Spec: shipperv1.ApplicationSpec{
+			RevisionHistoryLimit: &five,
 			Template: shipperv1.ReleaseEnvironment{
 				Chart: shipperv1.Chart{
 					Name:    "simple",
@@ -465,6 +521,13 @@ func (f *fixture) run() {
 func (f *fixture) expectReleaseCreate(rel *shipperv1.Release) {
 	gvr := shipperv1.SchemeGroupVersion.WithResource("releases")
 	action := kubetesting.NewCreateAction(gvr, rel.GetNamespace(), rel)
+
+	f.actions = append(f.actions, action)
+}
+
+func (f *fixture) expectReleaseDelete(rel *shipperv1.Release) {
+	gvr := shipperv1.SchemeGroupVersion.WithResource("releases")
+	action := kubetesting.NewDeleteAction(gvr, rel.GetNamespace(), rel.GetName())
 
 	f.actions = append(f.actions, action)
 }
