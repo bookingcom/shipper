@@ -68,7 +68,8 @@ type ApplicationList struct {
 }
 
 type ApplicationSpec struct {
-	Template ReleaseEnvironment `json:"template"`
+	RevisionHistoryLimit *int32             `json:"revisionHistoryLimit"`
+	Template             ReleaseEnvironment `json:"template"`
 }
 
 type ApplicationStatus struct {
