@@ -399,7 +399,7 @@ type fixture struct {
 }
 
 func newFixture(t *testing.T) *fixture {
-	return &fixture{t: t}
+	return &fixture{t: t, receivedEvents: []string{}}
 }
 
 func (f *fixture) addObjects(releaseInfos ...*releaseInfo) {
@@ -574,6 +574,8 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipperV1.CapacityTarget, r *shi
 		r.GetName(),
 		patch)
 	f.actions = append(f.actions, action)
+
+	f.expectedOrderedEvents = []string{}
 }
 
 func (f *fixture) expectTrafficStatusPatch(tt *shipperV1.TrafficTarget, r *shipperV1.Release, value uint, role role) {
@@ -656,6 +658,8 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipperV1.TrafficTarget, r *shipp
 		r.GetName(),
 		patch)
 	f.actions = append(f.actions, action)
+
+	f.expectedOrderedEvents = []string{}
 }
 
 func (f *fixture) expectReleaseSuperseded(rel *shipperV1.Release) {
@@ -819,6 +823,8 @@ func (f *fixture) expectInstallationNotReady(rel *shipperV1.Release, step int32,
 	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), patch)
 
 	f.actions = append(f.actions, action)
+
+	f.expectedOrderedEvents = []string{}
 }
 
 func (f *fixture) expectCapacityNotReady(rel *shipperV1.Release, targetStep, achievedStep int32, role role, brokenClusterName string) {
@@ -905,6 +911,8 @@ func (f *fixture) expectCapacityNotReady(rel *shipperV1.Release, targetStep, ach
 	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), patch)
 
 	f.actions = append(f.actions, action)
+
+	f.expectedOrderedEvents = []string{}
 }
 
 func (f *fixture) expectTrafficNotReady(rel *shipperV1.Release, targetStep, achievedStep int32, role role, brokenClusterName string) {
@@ -990,4 +998,6 @@ func (f *fixture) expectTrafficNotReady(rel *shipperV1.Release, targetStep, achi
 	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), patch)
 
 	f.actions = append(f.actions, action)
+
+	f.expectedOrderedEvents = []string{}
 }

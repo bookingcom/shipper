@@ -54,11 +54,11 @@ var vanguard = v1.RolloutStrategy{
 	},
 }
 
-// TestCompleteStrategy tests the complete "vanguard" strategy, end-to-end.
+// TestCompleteStrategyNoController tests the complete "vanguard" strategy, end-to-end.
 // This test exercises only the Executor.execute() method, using hard coded
 // incumbent and contender releases, checking if the generated patches were
 // the expected for the strategy at a given moment.
-func TestCompleteStrategy(t *testing.T) {
+func TestCompleteStrategyNoController(t *testing.T) {
 	executor := &Executor{
 		contender: buildContender(),
 		incumbent: buildIncumbent(),
