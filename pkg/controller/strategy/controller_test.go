@@ -387,12 +387,15 @@ func TestShouldNotProducePatches(t *testing.T) {
 }
 
 type fixture struct {
-	t          *testing.T
-	client     *shipperfake.Clientset
-	discovery  *fakediscovery.FakeDiscovery
-	clientPool *dynamicfake.FakeClientPool
-	actions    []kubetesting.Action
-	objects    []runtime.Object
+	t                     *testing.T
+	client                *shipperfake.Clientset
+	discovery             *fakediscovery.FakeDiscovery
+	clientPool            *dynamicfake.FakeClientPool
+	actions               []kubetesting.Action
+	objects               []runtime.Object
+	receivedEvents        []string
+	expectedOrderedEvents []string
+	recorder              *record.FakeRecorder
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -456,9 +459,9 @@ func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerF
 		Fake: f.client.Fake,
 	}
 
-	fakeRecorder := record.NewFakeRecorder(42)
+	f.recorder = record.NewFakeRecorder(42)
 
-	c := NewController(f.client, shipperInformerFactory, f.clientPool, fakeRecorder)
+	c := NewController(f.client, shipperInformerFactory, f.clientPool, f.recorder)
 
 	return c, shipperInformerFactory
 }
@@ -478,10 +481,17 @@ func (f *fixture) run() {
 		stopCh,
 	)
 
+	go func(f *fixture) {
+		for e := range f.recorder.Events {
+			f.receivedEvents = append(f.receivedEvents, e)
+		}
+	}(f)
+
 	c.processNextWorkItem()
 
 	actual := shippertesting.FilterActions(f.clientPool.Actions())
 	shippertesting.CheckActions(f.actions, actual, f.t)
+	shippertesting.CheckEvents(f.expectedOrderedEvents, f.receivedEvents, f.t)
 }
 
 func (f *fixture) expectCapacityStatusPatch(ct *shipperV1.CapacityTarget, r *shipperV1.Release, value uint, role role) {
@@ -712,6 +722,14 @@ func (f *fixture) expectReleaseInstalled(rel *shipperV1.Release, targetStep int3
 	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), patch)
 
 	f.actions = append(f.actions, action)
+
+	f.expectedOrderedEvents = []string{
+		fmt.Sprintf("Normal StrategyApplied step [%d] finished", targetStep),
+		`Normal ReleaseStateTransitioned Release "test-namespace/0.0.2" had its state "WaitingForCapacity" transitioned to "False"`,
+		`Normal ReleaseStateTransitioned Release "test-namespace/0.0.2" had its state "WaitingForCommand" transitioned to "False"`,
+		`Normal ReleaseStateTransitioned Release "test-namespace/0.0.2" had its state "WaitingForInstallation" transitioned to "False"`,
+		`Normal ReleaseStateTransitioned Release "test-namespace/0.0.2" had its state "WaitingForTraffic" transitioned to "False"`,
+	}
 }
 
 func (f *fixture) expectReleasePhaseWaitingForCommand(rel *shipperV1.Release, step int32) {
@@ -760,8 +778,15 @@ func (f *fixture) expectReleasePhaseWaitingForCommand(rel *shipperV1.Release, st
 
 	patch, _ := json.Marshal(newStatus)
 	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), patch)
-
 	f.actions = append(f.actions, action)
+
+	f.expectedOrderedEvents = []string{
+		fmt.Sprintf("Normal StrategyApplied step [%d] finished", step),
+		`Normal ReleaseStateTransitioned Release "test-namespace/0.0.2" had its state "WaitingForCapacity" transitioned to "False"`,
+		`Normal ReleaseStateTransitioned Release "test-namespace/0.0.2" had its state "WaitingForCommand" transitioned to "True"`,
+		`Normal ReleaseStateTransitioned Release "test-namespace/0.0.2" had its state "WaitingForInstallation" transitioned to "False"`,
+		`Normal ReleaseStateTransitioned Release "test-namespace/0.0.2" had its state "WaitingForTraffic" transitioned to "False"`,
+	}
 }
 
 func (f *fixture) expectInstallationNotReady(rel *shipperV1.Release, step int32, role role) {

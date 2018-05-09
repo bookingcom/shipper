@@ -7,6 +7,7 @@ import (
 	"github.com/golang/glog"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -274,9 +275,20 @@ func (c *Controller) syncOne(key string) error {
 
 	strategyExecutor.info("will start processing release")
 
-	result, _, err := strategyExecutor.execute()
+	result, transitions, err := strategyExecutor.execute()
 	if err != nil {
 		return err
+	}
+
+	for _, t := range transitions {
+		c.recorder.Eventf(
+			strategyExecutor.contender.release,
+			corev1.EventTypeNormal,
+			"ReleaseStateTransitioned",
+			"Release %q had its state %q transitioned to %q",
+			shippercontroller.MetaKey(strategyExecutor.contender.release),
+			t.State, t.New,
+		)
 	}
 
 	if len(result) == 0 {
