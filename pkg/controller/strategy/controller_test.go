@@ -481,13 +481,17 @@ func (f *fixture) run() {
 		stopCh,
 	)
 
-	go func(f *fixture) {
+	readyCh := make(chan struct{})
+	go func() {
 		for e := range f.recorder.Events {
 			f.receivedEvents = append(f.receivedEvents, e)
 		}
-	}(f)
+		close(readyCh)
+	}()
 
 	c.processNextWorkItem()
+	close(f.recorder.Events)
+	<-readyCh
 
 	actual := shippertesting.FilterActions(f.clientPool.Actions())
 	shippertesting.CheckActions(f.actions, actual, f.t)
