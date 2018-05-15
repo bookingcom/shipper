@@ -119,3 +119,9 @@ func FilterActions(actions []kubetesting.Action) []kubetesting.Action {
 
 	return ret
 }
+
+func CheckEvents(expectedOrderedEvents []string, receivedEvents []string, t *testing.T) {
+	if !reflect.DeepEqual(expectedOrderedEvents, receivedEvents) {
+		t.Errorf("Events don't match expectation:\n\n%s", diff.ObjectGoPrintDiff(expectedOrderedEvents, receivedEvents))
+	}
+}

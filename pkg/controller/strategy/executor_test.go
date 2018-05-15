@@ -54,11 +54,11 @@ var vanguard = v1.RolloutStrategy{
 	},
 }
 
-// TestCompleteStrategy tests the complete "vanguard" strategy, end-to-end.
+// TestCompleteStrategyNoController tests the complete "vanguard" strategy, end-to-end.
 // This test exercises only the Executor.execute() method, using hard coded
 // incumbent and contender releases, checking if the generated patches were
 // the expected for the strategy at a given moment.
-func TestCompleteStrategy(t *testing.T) {
+func TestCompleteStrategyNoController(t *testing.T) {
 	executor := &Executor{
 		contender: buildContender(),
 		incumbent: buildIncumbent(),
@@ -460,7 +460,7 @@ func addCluster(ri *releaseInfo, name string) {
 // wrong, the patch doesn't implement the CapacityTargetOutdatedResult
 // interface or the name is different than the given expectedName.
 func ensureCapacityPatch(e *Executor, expectedName string, role role) (*v1.CapacityTargetSpec, error) {
-	if patches, err := e.execute(); err != nil {
+	if patches, _, err := e.execute(); err != nil {
 		return nil, err
 	} else {
 
@@ -503,7 +503,7 @@ func ensureCapacityPatch(e *Executor, expectedName string, role role) (*v1.Capac
 // wrong, the patch doesn't implement the TrafficTargetOutdatedResult
 // interface or the name is different than the given expectedName.
 func ensureTrafficPatch(e *Executor, expectedName string, role role) (*v1.TrafficTargetSpec, error) {
-	if patches, err := e.execute(); err != nil {
+	if patches, _, err := e.execute(); err != nil {
 		return nil, err
 	} else {
 
@@ -542,7 +542,7 @@ func ensureTrafficPatch(e *Executor, expectedName string, role role) (*v1.Traffi
 // wrong, the patch doesn't implement the ReleaseUpdateResult interface or
 // the name is different than the given expectedName.
 func ensureReleasePatch(e *Executor, expectedName string) (*v1.ReleaseStatus, error) {
-	if patches, err := e.execute(); err != nil {
+	if patches, _, err := e.execute(); err != nil {
 		return nil, err
 	} else {
 
@@ -572,7 +572,7 @@ func ensureReleasePatch(e *Executor, expectedName string) (*v1.ReleaseStatus, er
 // the number of patches is wrong, the patches' phases are wrong for either
 // incumbent or contender.
 func ensureFinalReleasePatches(e *Executor) error {
-	if patches, err := e.execute(); err != nil {
+	if patches, _, err := e.execute(); err != nil {
 		return err
 	} else {
 
