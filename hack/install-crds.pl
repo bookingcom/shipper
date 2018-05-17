@@ -13,7 +13,7 @@ GetOptions(
 
 for my $crd (sort glob "crd/*.yaml") {
     if ($clean) {
-        system("kubectl delete -f $crd &>/dev/null");
+        system("kubectl delete -f $crd");
     }
     system("kubectl", "create", "-f", $crd);
 }
@@ -21,6 +21,6 @@ for my $crd (sort glob "crd/*.yaml") {
 exit 0 if !$examples;
 
 for my $example (sort glob "crd/examples/*.yaml") {
-    system("kubectl delete -f $example &>/dev/null");
+    system("kubectl delete -f $example");
     system("kubectl", "create", "-f", $example);
 }

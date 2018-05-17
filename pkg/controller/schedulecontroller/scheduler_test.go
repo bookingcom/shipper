@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -16,8 +17,13 @@ import (
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
+
+func init() {
+	conditions.ReleaseConditionsShouldDiscardTimestamps = true
+}
 
 func loadObject(obj runtime.Object, path ...string) (runtime.Object, error) {
 	yamlPath := filepath.Join(path...)
@@ -170,6 +176,9 @@ func TestCreateAssociatedObjects(t *testing.T) {
 	// all the associated target objects.
 	expected := release.DeepCopy()
 	expected.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
+	expected.Status.Conditions = []shipperV1.ReleaseCondition{
+		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
 	expectedActions := expectedActions(release.GetNamespace(), expected)
 
 	// Business logic...
@@ -208,6 +217,9 @@ func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 	// objects.
 	expected := release.DeepCopy()
 	expected.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
+	expected.Status.Conditions = []shipperV1.ReleaseCondition{
+		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
 	expectedActions := expectedActions(release.GetNamespace(), expected)
 
 	// Business logic...
@@ -245,6 +257,9 @@ func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	// objects.
 	expected := release.DeepCopy()
 	expected.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
+	expected.Status.Conditions = []shipperV1.ReleaseCondition{
+		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
 	expectedActions := expectedActions(release.GetNamespace(), expected)
 
 	// Business logic...
@@ -282,6 +297,9 @@ func TestCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 	// objects.
 	expected := release.DeepCopy()
 	expected.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
+	expected.Status.Conditions = []shipperV1.ReleaseCondition{
+		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
 	expectedActions := expectedActions(release.GetNamespace(), expected)
 
 	// Business logic...
