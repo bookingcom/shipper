@@ -12,7 +12,7 @@ const (
 
 	PhaseLabel = "phase"
 
-	ReleaseLabel                = "release"
+	ReleaseLabel                = "shipper-release"
 	AppLabel                    = "shipper-app"
 	ReleaseEnvironmentHashLabel = "shipper-release-hash"
 

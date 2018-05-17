@@ -6,7 +6,7 @@ status:
 metadata:
   name: 0.0.1
   labels:
-    release: reviewsapi-4
+    shipper-release: reviewsapi-4
   environment:
     clusters: []
     chart:
