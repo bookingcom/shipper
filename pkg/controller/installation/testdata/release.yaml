@@ -8,7 +8,7 @@ metadata:
   name: 0.0.1
   namespace: reviews-api
   labels:
-    release: 0.0.1
+    shipper-release: 0.0.1
   environment:
     clusters:
     - minikube
