@@ -196,6 +196,21 @@ type ReleaseStatus struct {
 	Phase        string                 `json:"phase"`
 	AchievedStep int32                  `json:"achievedStep"`
 	Strategy     *ReleaseStrategyStatus `json:"strategy,omitempty"`
+	Conditions   []ReleaseCondition     `json:"conditions,omitempty"`
+}
+
+type ReleaseConditionType string
+
+const (
+	ReleaseConditionTypeScheduled ReleaseConditionType = "Scheduled"
+)
+
+type ReleaseCondition struct {
+	Type               ReleaseConditionType   `json:"type"`
+	Status             corev1.ConditionStatus `json:"status"`
+	LastTransitionTime metav1.Time            `json:"lastTransitionTime,omitempty"`
+	Reason             string                 `json:"reason,omitempty"`
+	Message            string                 `json:"message,omitempty"`
 }
 
 type ReleaseEnvironment struct {

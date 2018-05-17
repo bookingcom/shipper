@@ -3,6 +3,7 @@ use warnings;
 
 use Data::Dumper qw(Dumper);
 use File::Temp;
+use File::Spec;
 use MIME::Base64;
 use Getopt::Long;
 
@@ -13,14 +14,14 @@ use constant {
     CLUSTER_TEMPLATE => 1
 };
 
-my $home = $ENV{"HOME"};
+my $home = $^O eq 'MSWin32' ? $ENV{USERPROFILE} : $ENV{HOME};
 my $host = `minikube ip`;
 
 my $cluster_name = "minikube";
 my $namespace = "shipper-system";
-my $client_key_file = "$home/.minikube/client.key";
-my $client_cert_file = "$home/.minikube/client.crt";
-my $ca_cert_file = "$home/.minikube/ca.crt";
+my $client_key_file = File::Spec->catfile($home, ".minikube", "client.key");
+my $client_cert_file = File::Spec->catfile($home, ".minikube", "client.crt");
+my $ca_cert_file = File::Spec->catfile($home, ".minikube", "ca.crt");
 
 my $clean = '';
 

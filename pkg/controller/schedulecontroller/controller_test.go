@@ -8,12 +8,13 @@ import (
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
-	"k8s.io/client-go/tools/record"
 
+	corev1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	kubetesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/record"
 )
 
 func newController(fixtures ...runtime.Object) (*Controller, *shipperfake.Clientset) {
@@ -78,6 +79,9 @@ func TestControllerCreateAssociatedObjects(t *testing.T) {
 	// all the associated target objects.
 	expected := release.DeepCopy()
 	expected.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
+	expected.Status.Conditions = []shipperV1.ReleaseCondition{
+		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
 	expectedActions := expectedActions(release.GetNamespace(), expected)
 
 	// Business logic...
@@ -113,6 +117,9 @@ func TestControllerCreateAssociatedObjectsDuplicateInstallationTarget(t *testing
 	// objects.
 	expected := release.DeepCopy()
 	expected.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
+	expected.Status.Conditions = []shipperV1.ReleaseCondition{
+		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
 	expectedActions := expectedActions(release.GetNamespace(), expected)
 
 	// Business logic...
@@ -148,6 +155,9 @@ func TestControllerCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	// objects.
 	expected := release.DeepCopy()
 	expected.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
+	expected.Status.Conditions = []shipperV1.ReleaseCondition{
+		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
 	expectedActions := expectedActions(release.GetNamespace(), expected)
 
 	// Business logic...
@@ -183,6 +193,9 @@ func TestControllerCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) 
 	// objects.
 	expected := release.DeepCopy()
 	expected.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
+	expected.Status.Conditions = []shipperV1.ReleaseCondition{
+		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
 	expectedActions := expectedActions(release.GetNamespace(), expected)
 
 	// Business logic...

@@ -343,6 +343,9 @@ func buildContender() *releaseInfo {
 		Status: v1.ReleaseStatus{
 			Phase:        v1.ReleasePhaseWaitingForStrategy,
 			AchievedStep: 0,
+			Conditions: []v1.ReleaseCondition{
+				{Type: v1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
+			},
 		},
 		Spec: v1.ReleaseSpec{
 			TargetStep: 0,

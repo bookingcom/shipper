@@ -687,6 +687,9 @@ func (f *fixture) expectReleaseInstalled(rel *shipperV1.Release, targetStep int3
 		"status": shipperV1.ReleaseStatus{
 			AchievedStep: rel.Spec.TargetStep,
 			Phase:        shipperV1.ReleasePhaseInstalled,
+			Conditions: []shipperV1.ReleaseCondition{
+				{Type: shipperV1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
+			},
 			Strategy: &shipperV1.ReleaseStrategyStatus{
 				State: shipperV1.ReleaseStrategyState{
 					WaitingForInstallation: shipperV1.StrategyStateFalse,
@@ -746,6 +749,9 @@ func (f *fixture) expectReleasePhaseWaitingForCommand(rel *shipperV1.Release, st
 		"status": shipperV1.ReleaseStatus{
 			AchievedStep: step,
 			Phase:        shipperV1.ReleasePhaseWaitingForCommand,
+			Conditions: []shipperV1.ReleaseCondition{
+				{Type: shipperV1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
+			},
 			Strategy: &shipperV1.ReleaseStrategyStatus{
 				State: shipperV1.ReleaseStrategyState{
 					WaitingForInstallation: shipperV1.StrategyStateFalse,
@@ -803,6 +809,9 @@ func (f *fixture) expectInstallationNotReady(rel *shipperV1.Release, step int32,
 		"status": shipperV1.ReleaseStatus{
 			AchievedStep: step,
 			Phase:        shipperV1.ReleasePhaseWaitingForStrategy,
+			Conditions: []shipperV1.ReleaseCondition{
+				{Type: shipperV1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
+			},
 			Strategy: &shipperV1.ReleaseStrategyStatus{
 				State: shipperV1.ReleaseStrategyState{
 					WaitingForInstallation: shipperV1.StrategyStateTrue,
@@ -841,6 +850,9 @@ func (f *fixture) expectCapacityNotReady(rel *shipperV1.Release, targetStep, ach
 			"status": shipperV1.ReleaseStatus{
 				AchievedStep: achievedStep,
 				Phase:        shipperV1.ReleasePhaseWaitingForStrategy,
+				Conditions: []shipperV1.ReleaseCondition{
+					{Type: shipperV1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
+				},
 				Strategy: &shipperV1.ReleaseStrategyStatus{
 					State: shipperV1.ReleaseStrategyState{
 						WaitingForInstallation: shipperV1.StrategyStateFalse,
@@ -870,6 +882,9 @@ func (f *fixture) expectCapacityNotReady(rel *shipperV1.Release, targetStep, ach
 			"status": shipperV1.ReleaseStatus{
 				AchievedStep: achievedStep,
 				Phase:        shipperV1.ReleasePhaseWaitingForStrategy,
+				Conditions: []shipperV1.ReleaseCondition{
+					{Type: shipperV1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
+				},
 				Strategy: &shipperV1.ReleaseStrategyStatus{
 					State: shipperV1.ReleaseStrategyState{
 						WaitingForInstallation: shipperV1.StrategyStateFalse,
@@ -928,6 +943,9 @@ func (f *fixture) expectTrafficNotReady(rel *shipperV1.Release, targetStep, achi
 			"status": shipperV1.ReleaseStatus{
 				AchievedStep: achievedStep,
 				Phase:        shipperV1.ReleasePhaseWaitingForStrategy,
+				Conditions: []shipperV1.ReleaseCondition{
+					{Type: shipperV1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
+				},
 				Strategy: &shipperV1.ReleaseStrategyStatus{
 					State: shipperV1.ReleaseStrategyState{
 						WaitingForInstallation: shipperV1.StrategyStateFalse,
@@ -962,6 +980,9 @@ func (f *fixture) expectTrafficNotReady(rel *shipperV1.Release, targetStep, achi
 			"status": shipperV1.ReleaseStatus{
 				AchievedStep: achievedStep,
 				Phase:        shipperV1.ReleasePhaseWaitingForStrategy,
+				Conditions: []shipperV1.ReleaseCondition{
+					{Type: shipperV1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
+				},
 				Strategy: &shipperV1.ReleaseStrategyStatus{
 					State: shipperV1.ReleaseStrategyState{
 						WaitingForInstallation: shipperV1.StrategyStateFalse,

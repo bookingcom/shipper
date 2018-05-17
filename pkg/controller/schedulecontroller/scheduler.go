@@ -15,6 +15,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/conditions"
 	"github.com/bookingcom/shipper/pkg/controller"
 )
 
@@ -84,6 +85,13 @@ func (c *Scheduler) scheduleRelease() error {
 	// document, and all the associated Release documents have already been created, so the last operation remaining is
 	// updating the PhaseStatus to ReleasePhaseWaitingForStrategy
 	c.SetReleasePhase(v1.ReleasePhaseWaitingForStrategy)
+
+	c.Release.Status.Conditions = conditions.SetReleaseCondition(
+		c.Release.Status.Conditions,
+		v1.ReleaseConditionTypeScheduled,
+		corev1.ConditionTrue,
+		"", "")
+
 	return c.UpdateRelease()
 }
 

@@ -22,6 +22,7 @@ import (
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/conditions"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 )
 
@@ -72,19 +73,21 @@ func NewController(
 		recorder:                  recorder,
 	}
 
-	releaseInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: controller.enqueueRelease,
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			rel, ok := newObj.(*v1.Release)
-			if ok {
-				if isWorkingOnStrategy(rel) {
-					// We should enqueue only releases that have been modified AND
-					// are in the middle of a strategy execution.
+	releaseInformer.Informer().AddEventHandler(
+		cache.FilteringResourceEventHandler{
+			FilterFunc: func(obj interface{}) bool {
+				rel, ok := obj.(*v1.Release)
+				return ok && isScheduled(rel)
+			},
+			Handler: cache.ResourceEventHandlerFuncs{
+				AddFunc: controller.enqueueRelease,
+				UpdateFunc: func(oldObj, newObj interface{}) {
+					rel := newObj.(*v1.Release)
 					controller.enqueueRelease(rel)
-				}
-			}
+				},
+			},
 		},
-	})
+	)
 
 	// The InstallationTarget object should have the same name as the Release
 	// object it is associated with.
@@ -116,17 +119,8 @@ func NewController(
 	return controller
 }
 
-func isWorkingOnStrategy(r *v1.Release) (workingOnStrategy bool) {
-	switch r.Status.Phase {
-	case
-		v1.ReleasePhaseWaitingForCommand,
-		v1.ReleasePhaseWaitingForStrategy:
-		workingOnStrategy = true
-	default:
-		workingOnStrategy = false
-	}
-
-	return workingOnStrategy
+func isScheduled(r *v1.Release) bool {
+	return conditions.IsReleaseConditionTrue(r.Status.Conditions, v1.ReleaseConditionTypeScheduled)
 }
 
 func (c *Controller) sortedReleasesForApp(app *v1.Application) ([]*v1.Release, error) {
@@ -170,6 +164,7 @@ func (c *Controller) contenderForRelease(r *v1.Release) (*v1.Release, error) {
 	}
 
 	contender := appReleases[len(appReleases)-1]
+
 	return contender, nil
 }
 
@@ -390,7 +385,7 @@ func (c *Controller) buildExecutor(ns, name string, recorder record.EventRecorde
 			return nil, fmt.Errorf("Release %s is already installed, and we couldn't find a contender for it.", shippercontroller.MetaKey(release))
 		}
 
-		if !isWorkingOnStrategy(contenderRelease) {
+		if !isScheduled(contenderRelease) {
 			return nil, NewNotWorkingOnStrategyError(shippercontroller.MetaKey(contenderRelease), shippercontroller.MetaKey(release))
 		}
 
@@ -408,27 +403,23 @@ func (c *Controller) buildExecutor(ns, name string, recorder record.EventRecorde
 		return nil, fmt.Errorf("no application associated with release %s", shippercontroller.MetaKey(release))
 	}
 
-	releases, err := c.sortedReleasesForApp(app)
-	if err != nil {
-		return nil, fmt.Errorf("could not get sorted releases for app %q: %s", shippercontroller.MetaKey(app), err)
-	}
-
-	if len(releases) == 0 {
+	history := app.Status.History
+	if len(history) == 0 {
 		return nil, fmt.Errorf(
-			"zero releases for app %q (owner of release %q): will not execute strategy",
-			shippercontroller.MetaKey(app), name,
+			"zero release records in app %s/%s (owner of release %s) Status.History: will not execute strategy",
+			app.GetNamespace(), app.GetName(), name,
 		)
 	}
 
-	expectedContender := releases[len(releases)-1]
-	if expectedContender.GetName() != release.GetName() {
-		return nil, fmt.Errorf("contender %s/%s is not the latest generation in app history: will not execute strategy", ns, name)
+	expectedContenderRecord := history[len(history)-1]
+	if expectedContenderRecord != release.GetName() {
+		return nil, fmt.Errorf("contender %s is not the latest release in app history: will not execute strategy", shippercontroller.MetaKey(release))
 	}
 
 	strategy := *contenderReleaseInfo.release.Environment.Strategy
 
 	// no incumbent, only this contender: a new application
-	if len(releases) == 1 {
+	if len(history) == 1 {
 		return &Executor{
 			contender: contenderReleaseInfo,
 			recorder:  recorder,
@@ -436,8 +427,14 @@ func (c *Controller) buildExecutor(ns, name string, recorder record.EventRecorde
 		}, nil
 	}
 
-	incumbent := releases[len(releases)-2]
-	incumbentReleaseInfo, err := c.buildReleaseInfo(incumbent)
+	incumbentRecord := history[len(history)-2]
+
+	incumbentRelease, err := c.releasesLister.Releases(ns).Get(incumbentRecord)
+	if err != nil {
+		return nil, err
+	}
+
+	incumbentReleaseInfo, err := c.buildReleaseInfo(incumbentRelease)
 	if err != nil {
 		return nil, err
 	}
