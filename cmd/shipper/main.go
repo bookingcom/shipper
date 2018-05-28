@@ -14,6 +14,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/bookingcom/shipper/pkg/controller/janitor"
 
 	"github.com/bookingcom/shipper/pkg/chart"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
@@ -52,6 +53,7 @@ var controllers = []string{
 	"installation",
 	"capacity",
 	"traffic",
+	"janitor",
 }
 
 var (
@@ -341,6 +343,7 @@ func buildInitializers() map[string]initFunc {
 	controllers["installation"] = startInstallationController
 	controllers["capacity"] = startCapacityController
 	controllers["traffic"] = startTrafficController
+	controllers["janitor"] = startJanitorController
 	return controllers
 }
 
@@ -503,6 +506,29 @@ func startTrafficController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		cfg.store,
 		cfg.recorder(traffic.AgentName),
+	)
+
+	cfg.wg.Add(1)
+	go func() {
+		c.Run(cfg.workers, cfg.stopCh)
+		cfg.wg.Done()
+	}()
+
+	return true, nil
+}
+
+func startJanitorController(cfg *cfg) (bool, error) {
+	enabled := cfg.enabledControllers["janitor"]
+	if !enabled {
+		return false, nil
+	}
+
+	c := janitor.NewController(
+		cfg.kubeClient,
+		cfg.shipperClient,
+		cfg.shipperInformerFactory,
+		cfg.store,
+		cfg.recorder(janitor.AgentName),
 	)
 
 	cfg.wg.Add(1)

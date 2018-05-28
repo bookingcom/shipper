@@ -157,6 +157,6 @@ func newController(
 	return c
 }
 
-func newInstaller(release *shipperV1.Release) *Installer {
-	return NewInstaller(chartFetchFunc, release)
+func newInstaller(release *shipperV1.Release, it *shipperV1.InstallationTarget) *Installer {
+	return NewInstaller(chartFetchFunc, release, it)
 }

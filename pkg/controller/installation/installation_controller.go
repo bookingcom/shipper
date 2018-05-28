@@ -199,7 +199,7 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 		)
 	}
 
-	handler := NewInstaller(c.chartFetchFunc, release)
+	handler := NewInstaller(c.chartFetchFunc, release, it)
 
 	// The strategy here is try our best to install as many objects as possible
 	// in all target clusters. It is not the Installation Controller job to

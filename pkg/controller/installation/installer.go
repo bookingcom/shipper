@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/golang/glog"
+	"github.com/bookingcom/shipper/pkg/controller/janitor"
 
 	appsV1 "k8s.io/api/apps/v1"
 	coreV1 "k8s.io/api/core/v1"
@@ -29,16 +30,21 @@ type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *res
 type Installer struct {
 	fetchChart shipperChart.FetchFunc
 
-	Release *shipperV1.Release
-	Scheme  *runtime.Scheme
+	Release            *shipperV1.Release
+	InstallationTarget *shipperV1.InstallationTarget
+	Scheme             *runtime.Scheme
 }
 
 // NewInstaller returns a new Installer.
-func NewInstaller(chartFetchFunc shipperChart.FetchFunc, release *shipperV1.Release) *Installer {
+func NewInstaller(chartFetchFunc shipperChart.FetchFunc,
+	release *shipperV1.Release,
+	it *shipperV1.InstallationTarget,
+) *Installer {
 	return &Installer{
-		fetchChart: chartFetchFunc,
-		Release:    release,
-		Scheme:     kubescheme.Scheme,
+		fetchChart:         chartFetchFunc,
+		Release:            release,
+		InstallationTarget: it,
+		Scheme:             kubescheme.Scheme,
 	}
 }
 
@@ -106,7 +112,13 @@ func (i *Installer) buildResourceClient(
 	return resourceClient, nil
 }
 
-func (i *Installer) patchDeployment(d *appsV1.Deployment, labelsToInject map[string]string) runtime.Object {
+func (i *Installer) patchDeployment(
+	d *appsV1.Deployment,
+	labelsToInject map[string]string,
+	ownerReference *metaV1.OwnerReference,
+) runtime.Object {
+
+	d.OwnerReferences = []metaV1.OwnerReference{*ownerReference}
 
 	replicas := int32(0)
 	d.Spec.Replicas = &replicas
@@ -143,7 +155,14 @@ func (i *Installer) patchDeployment(d *appsV1.Deployment, labelsToInject map[str
 	return d
 }
 
-func (i *Installer) patchService(s *coreV1.Service, labelsToInject map[string]string) runtime.Object {
+func (i *Installer) patchService(
+	s *coreV1.Service,
+	labelsToInject map[string]string,
+	ownerReference *metaV1.OwnerReference,
+) runtime.Object {
+
+	// Add the reference to the anchor object
+	s.OwnerReferences = []metaV1.OwnerReference{*ownerReference}
 
 	// We have a contract with the chart that they create one stably-named
 	// (that is, the name should remain the same from release to release)
@@ -170,7 +189,14 @@ func (i *Installer) patchService(s *coreV1.Service, labelsToInject map[string]st
 	return s
 }
 
-func (i *Installer) patchUnstructured(o *unstructured.Unstructured, labelsToInject map[string]string) runtime.Object {
+func (i *Installer) patchUnstructured(
+	o *unstructured.Unstructured,
+	labelsToInject map[string]string,
+	ownerReference *metaV1.OwnerReference,
+) runtime.Object {
+
+	o.SetOwnerReferences([]metaV1.OwnerReference{*ownerReference})
+
 	labels := o.GetLabels()
 	if labels == nil {
 		labels = make(map[string]string)
@@ -182,19 +208,23 @@ func (i *Installer) patchUnstructured(o *unstructured.Unstructured, labelsToInje
 	return o
 }
 
-func (i *Installer) patchObject(object runtime.Object, labelsToInject map[string]string) runtime.Object {
+func (i *Installer) patchObject(
+	object runtime.Object,
+	labelsToInject map[string]string,
+	ownerReference *metaV1.OwnerReference,
+) runtime.Object {
 	switch o := object.(type) {
 	case *appsV1.Deployment:
-		return i.patchDeployment(o, labelsToInject)
+		return i.patchDeployment(o, labelsToInject, ownerReference)
 	case *coreV1.Service:
-		return i.patchService(o, labelsToInject)
+		return i.patchService(o, labelsToInject, ownerReference)
 	default:
 		unstructuredObj := &unstructured.Unstructured{}
 		err := i.Scheme.Convert(object, unstructuredObj, nil)
 		if err != nil {
 			panic(err)
 		}
-		return i.patchUnstructured(unstructuredObj, labelsToInject)
+		return i.patchUnstructured(unstructuredObj, labelsToInject, ownerReference)
 	}
 }
 
@@ -206,6 +236,36 @@ func (i *Installer) installManifests(
 	dynamicClientBuilderFunc DynamicClientBuilderFunc,
 	manifests []string,
 ) error {
+
+	var createdConfigMap *coreV1.ConfigMap
+
+	// Create a ConfigMap to act as the Deployment owner.
+	if configMap, err := janitor.CreateConfigMapAnchor(i.InstallationTarget); err != nil {
+		return NewCreateResourceError("error creating anchor config map: %s ", err)
+	} else if createdConfigMap, err = client.CoreV1().ConfigMaps(configMap.Namespace).Create(configMap); err != nil {
+		// If the anchor exists in the cluster, then it is likely that a failure
+		// after its creation has happened. We should not exit just yet.
+		if errors.IsAlreadyExists(err) {
+			createdConfigMap, err = client.CoreV1().ConfigMaps(i.Release.Namespace).Get(configMap.Name, metaV1.GetOptions{})
+			if err != nil {
+				return NewCreateResourceError(
+					`error getting anchor %q: %s`,
+					configMap.Name, err)
+			}
+		} else {
+			return NewCreateResourceError(
+				`error creating resource %s "%s/%s": %s`,
+				configMap.Kind, configMap.Namespace, configMap.Name, err)
+		}
+	}
+
+	// Create the OwnerReference for the manifest objects
+	ownerReference := metaV1.OwnerReference{
+		UID:        createdConfigMap.UID,
+		Name:       createdConfigMap.Name,
+		Kind:       "ConfigMap",
+		APIVersion: "v1",
+	}
 
 	// Try to install all the rendered objects in the target cluster. We should
 	// fail in the first error to report that this cluster has an issue. Since
@@ -234,7 +294,7 @@ func (i *Installer) installManifests(
 		// current implementation we require that shipperv1.ReleaseLabel is propagated
 		// correctly. This may be subject to change.
 		labelsToInject := i.Release.Labels
-		decodedObj = i.patchObject(decodedObj, labelsToInject)
+		decodedObj = i.patchObject(decodedObj, labelsToInject, &ownerReference)
 
 		// ResourceClient.Create() requires an Unstructured object to work with, so
 		// we need to convert from v1.Service into a map[string]interface{}, which
