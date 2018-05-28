@@ -231,22 +231,7 @@ func (s *Store) syncSecret(key string) error {
 }
 
 func (s *Store) create(cluster *shipperv1.Cluster, secret *corev1.Secret) error {
-	clusterName := cluster.Name
-	config := &rest.Config{
-		Host: cluster.Spec.APIMaster,
-	}
-
-	// the cluster secret controller does not include the CA in the secret:
-	// you end up using the system CA trust store. However, it's much handier
-	// for integration testing to be able to create a secret that is
-	// independent of the underlying system trust store.
-	if ca, ok := secret.Data["tls.ca"]; ok {
-		config.CAData = ca
-	}
-
-	config.CertData = secret.Data["tls.crt"]
-	config.KeyData = secret.Data["tls.key"]
-
+	config := buildConfig(cluster.Spec.APIMaster, secret)
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return err
@@ -264,6 +249,7 @@ func (s *Store) create(cluster *shipperv1.Cluster, secret *corev1.Secret) error 
 		cb(informerFactory)
 	}
 
+	clusterName := cluster.Name
 	newCachedCluster := cache.NewCluster(clusterName, checksum, client, config, informerFactory, func() {
 		// if/when the informer cache finishes syncing, bind all of the event handler callbacks from the controllers
 		// if it does not finish (because the cluster was Shutdown) this will not be called
@@ -274,4 +260,45 @@ func (s *Store) create(cluster *shipperv1.Cluster, secret *corev1.Secret) error 
 
 	s.cache.Store(newCachedCluster)
 	return nil
+}
+
+// TODO(btyler) error here or let any invalid data get picked up by errors from
+// kube.NewForConfig or auth problems at connection time?
+func buildConfig(host string, secret *corev1.Secret) *rest.Config {
+	config := &rest.Config{
+		Host: host,
+	}
+
+	// can't use the ServiceAccountToken type because we don't want the service
+	// account controller to touch it
+	_, tokenOK := secret.Data["token"]
+	if tokenOK {
+		ca := secret.Data["ca.crt"]
+		config.CAData = ca
+
+		token := secret.Data["token"]
+		config.BearerToken = string(token)
+		return config
+	}
+
+	// let's figure it's either a TLS secret or an opaque thing formatted like a TLS secret
+	// TODO(btyler) support basic auth, I guess?
+
+	// the cluster secret controller does not include the CA in the secret:
+	// you end up using the system CA trust store. However, it's much handier
+	// for integration testing to be able to create a secret that is
+	// independent of the underlying system trust store.
+	if ca, ok := secret.Data["tls.ca"]; ok {
+		config.CAData = ca
+	}
+
+	if crt, ok := secret.Data["tls.crt"]; ok {
+		config.CertData = crt
+	}
+
+	if key, ok := secret.Data["tls.key"]; ok {
+		config.KeyData = key
+	}
+
+	return config
 }
