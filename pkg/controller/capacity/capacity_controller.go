@@ -108,14 +108,10 @@ func NewController(
 	glog.Info("Setting up event handlers")
 	// Set up an event handler for when CapacityTarget resources change
 	capacityTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			controller.enqueueCapacityTarget(obj)
-		},
+		AddFunc: controller.enqueueCapacityTarget,
 		UpdateFunc: func(old, new interface{}) {
 			controller.enqueueCapacityTarget(new)
 		},
-		// the syncHandler needs to cope with the case where the object was deleted
-		DeleteFunc: controller.enqueueCapacityTarget,
 	})
 
 	store.AddSubscriptionCallback(controller.subscribe)
