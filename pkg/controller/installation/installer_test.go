@@ -73,7 +73,8 @@ func TestInstaller(t *testing.T) {
 
 	release := loadRelease()
 	cluster := loadCluster("minikube-a")
-	installer := newInstaller(release)
+	it := loadInstallationTarget()
+	installer := newInstaller(release, it)
 
 	fakeClient, _, fakeDynamicClient, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList)
 
@@ -180,7 +181,8 @@ func TestInstallerBrokenChartTarball(t *testing.T) {
 	release.Environment.Chart.Version = "invalid-tarball"
 
 	cluster := loadCluster("minikube-a")
-	installer := newInstaller(release)
+	it := loadInstallationTarget()
+	installer := newInstaller(release, it)
 
 	fakeClient, _, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList)
 
@@ -198,7 +200,8 @@ func TestInstallerBrokenChartContents(t *testing.T) {
 	release.Environment.Chart.Version = "invalid-k8s-objects"
 
 	cluster := loadCluster("minikube-a")
-	installer := newInstaller(release)
+	it := loadInstallationTarget()
+	installer := newInstaller(release, it)
 
 	fakeClient, _, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList)
 

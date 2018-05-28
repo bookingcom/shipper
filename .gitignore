@@ -1,5 +1,5 @@
 .testCoverage.txt
-shipper
+#shipper
 e2e.test
 .vscode/
 pkg/chart/testdata/chartmuseum

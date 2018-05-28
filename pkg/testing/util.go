@@ -78,6 +78,14 @@ func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
 			t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
 				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expObject, object))
 		}
+
+	case kubetesting.DeleteAction:
+		expAction := expected.(kubetesting.DeleteAction)
+		action := actual.(kubetesting.DeleteAction)
+		if action.GetName() != expAction.GetName() || action.GetNamespace() != expAction.GetNamespace() {
+			t.Errorf("Action %s %s has wrong object\nDiff\n %s",
+				a.GetVerb(), a.GetResource().Resource, diff.ObjectReflectDiff(expAction, actual))
+		}
 	}
 }
 
