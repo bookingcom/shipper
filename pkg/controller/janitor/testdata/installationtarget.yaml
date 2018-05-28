@@ -10,7 +10,7 @@ metadata:
     name: "0.0.1"
     uid: release-uid
   labels:
-    release: "0.0.1"
+    shipper-release: "0.0.1"
 spec:
   clusters:
   - minikube-a
