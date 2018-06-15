@@ -52,21 +52,23 @@ func (c *Scheduler) scheduleRelease() error {
 	if !c.HasClusters() {
 		clusters, err := c.ComputeTargetClusters()
 		if err == nil {
-			err = c.UpdateRelease()
+			newRelease, updateErr := c.UpdateRelease()
+			if updateErr != nil {
+				return updateErr
+			}
+			c.Release = newRelease
 		}
 
 		if err == nil {
 			c.recorder.Eventf(
 				c.Release,
 				corev1.EventTypeNormal,
-				"ReleaseScheduled",
+				"ClustersSelected",
 				"Set clusters for %q to %v",
 				controller.MetaKey(c.Release),
 				clusters,
 			)
 		}
-
-		return err
 	}
 
 	if err := c.CreateInstallationTarget(); err != nil {
@@ -92,7 +94,14 @@ func (c *Scheduler) scheduleRelease() error {
 		corev1.ConditionTrue,
 		"", "")
 
-	return c.UpdateRelease()
+	if len(c.Release.Status.Conditions) == 0 {
+		glog.Errorf(
+			"Conditions don't seem right here for Release %q",
+			controller.MetaKey(c.Release))
+	}
+
+	_, err := c.UpdateRelease()
+	return err
 }
 
 func (c *Scheduler) HasClusters() bool {
@@ -117,9 +126,8 @@ func (c *Scheduler) SetReleasePhase(phase string) {
 	c.Release.Status.Phase = phase
 }
 
-func (c *Scheduler) UpdateRelease() error {
-	_, err := c.shipperclientset.ShipperV1().Releases(c.Release.Namespace).Update(c.Release)
-	return err
+func (c *Scheduler) UpdateRelease() (*v1.Release, error) {
+	return c.shipperclientset.ShipperV1().Releases(c.Release.Namespace).Update(c.Release)
 }
 
 // CreateInstallationTarget creates a new InstallationTarget object for

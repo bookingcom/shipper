@@ -86,11 +86,24 @@ func TestComputeTargetClusters(t *testing.T) {
 	// the client in alphabetical order.
 	expected := release.DeepCopy()
 	expected.Annotations[shipperV1.ReleaseClustersAnnotation] = clusterA.GetName() + "," + clusterB.GetName()
+
+	relWithConditions := expected.DeepCopy()
+	relWithConditions.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
+	relWithConditions.Status.Conditions = conditions.SetReleaseCondition(
+		relWithConditions.Status.Conditions,
+		shipperV1.ReleaseConditionTypeScheduled,
+		corev1.ConditionTrue,
+		"", "")
+
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
 			shipperV1.SchemeGroupVersion.WithResource("releases"),
 			release.GetNamespace(),
 			expected),
+		kubetesting.NewUpdateAction(
+			shipperV1.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			relWithConditions),
 	}
 
 	// Business logic...
@@ -122,11 +135,23 @@ func TestComputeTargetClustersSkipUnscheduled(t *testing.T) {
 	expected := release.DeepCopy()
 	expected.Annotations[shipperV1.ReleaseClustersAnnotation] = clusterA.GetName()
 
+	relWithConditions := expected.DeepCopy()
+	relWithConditions.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
+	relWithConditions.Status.Conditions = conditions.SetReleaseCondition(
+		relWithConditions.Status.Conditions,
+		shipperV1.ReleaseConditionTypeScheduled,
+		corev1.ConditionTrue,
+		"", "")
+
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
 			shipperV1.SchemeGroupVersion.WithResource("releases"),
 			release.GetNamespace(),
 			expected),
+		kubetesting.NewUpdateAction(
+			shipperV1.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			relWithConditions),
 	}
 
 	// Business logic...
