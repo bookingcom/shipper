@@ -32,5 +32,5 @@ func CreateConfigMapAnchor(it *shipperV1.InstallationTarget) (*coreV1.ConfigMap,
 }
 
 func CreateAnchorName(it *shipperV1.InstallationTarget) (string, error) {
-	return fmt.Sprintf("%s-anchor", it.Name), nil
+	return fmt.Sprintf("%s%s", it.Name, AnchorSuffix), nil
 }
