@@ -103,6 +103,7 @@ func TestStatusStableState(t *testing.T) {
 	releaseA.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
 	releaseA.Spec.TargetStep = 2
 	releaseA.Status.AchievedStep = 2
+	releaseA.Status.Phase = shipperv1.ReleasePhaseInstalled
 
 	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "1"
 	app.Spec.Template.Chart.RepoURL = "http://localhost"
@@ -112,6 +113,7 @@ func TestStatusStableState(t *testing.T) {
 	releaseB.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
 	releaseB.Spec.TargetStep = 2
 	releaseB.Status.AchievedStep = 2
+	releaseB.Status.Phase = shipperv1.ReleasePhaseInstalled
 
 	f.objects = append(f.objects, app, releaseA, releaseB)
 	expectedApp := app.DeepCopy()
@@ -402,6 +404,55 @@ func TestStateRollingOut(t *testing.T) {
 	}
 
 	f.expectApplicationUpdate(appRollingOut)
+	f.run()
+}
+
+// If a release which is not installed is in the app history and it's
+// not the latest release, it should be nuked
+func TestDeletingAbortedReleases(t *testing.T) {
+	f := newFixture(t)
+	app := newApplication(testAppName)
+	f.objects = append(f.objects, app)
+
+	releaseFoo := newRelease("foo", app)
+	releaseFoo.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
+
+	releaseBar := newRelease("bar", app)
+	releaseBar.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
+	releaseBar.Spec.TargetStep = 2
+	releaseBar.Status.AchievedStep = 2
+	releaseBar.Status.Phase = shipperv1.ReleasePhaseInstalled
+
+	f.objects = append(f.objects, releaseFoo, releaseBar)
+
+	app.Status.History = []string{"foo", "bar"}
+
+	expectedApp := app.DeepCopy()
+	expectedApp.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "1"
+
+	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeAborting,
+			Status: corev1.ConditionFalse,
+		},
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
+			Status: corev1.ConditionTrue,
+		},
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeValidHistory,
+			Status: corev1.ConditionTrue,
+		},
+	}
+
+	var step int32 = 2
+	expectedApp.Status.State = shipperv1.ApplicationState{
+		RolloutStep: &step,
+		RollingOut:  false,
+	}
+
+	f.expectReleaseDelete(releaseFoo)
+	f.expectApplicationUpdate(expectedApp)
 	f.run()
 }
 

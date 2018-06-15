@@ -301,26 +301,7 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	}
 
 	// clean up excessive releases regardless of exit path
-	defer func() {
-		releases, err := c.getSortedAppReleases(app)
-		if err != nil {
-			runtime.HandleError(err)
-			return
-		}
-
-		// delete the first X ordered by generation. bail out on any error so that
-		// we maintain the invariant that we always delete oldest first (rather than
-		// failing to delete A and successfully deleting B and C in an 'A B C' history)
-		overhead := len(releases) - int(*app.Spec.RevisionHistoryLimit)
-		for i := 0; i < overhead; i++ {
-			rel := releases[i]
-			err = c.shipperClientset.ShipperV1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})
-			if err != nil {
-				runtime.HandleError(err)
-				return
-			}
-		}
-	}()
+	defer c.cleanUpReleasesForApplication(app)
 
 	latestRelease, err := c.getLatestReleaseForApp(app)
 	if err != nil {
@@ -474,4 +455,52 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	)
 
 	return nil
+}
+
+func (c *Controller) cleanUpReleasesForApplication(app *shipperv1.Application) {
+	installedReleases := []*shipperv1.Release{}
+
+	releases, err := c.getSortedAppReleases(app)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	// Delete any releases that are not installed. Don't touch the
+	// latest release because a release that isn't installed and
+	// is the last release just means that the user is rolling out
+	// the application
+	for i := 0; i < len(releases)-1; i++ {
+		rel := releases[i]
+		if conditions.IsReleaseInstalled(releases[i]) {
+			installedReleases = append(installedReleases, releases[i])
+			continue
+		}
+
+		err = c.shipperClientset.ShipperV1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})
+		if err != nil {
+			if kerrors.IsNotFound(err) {
+				// Skip this release: it's already deleted
+				continue
+			}
+
+			// Handle the error, but keep on going
+			runtime.HandleError(err)
+		}
+	}
+
+	// Delete the first X ordered by generation. bail out
+	// on any error so that we maintain the invariant that
+	// we always delete oldest first (rather than failing
+	// to delete A and successfully deleting B and C in an
+	// 'A B C' history)
+	overhead := len(installedReleases) - int(*app.Spec.RevisionHistoryLimit)
+	for i := 0; i < overhead; i++ {
+		rel := installedReleases[i]
+		err = c.shipperClientset.ShipperV1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})
+		if err != nil {
+			runtime.HandleError(err)
+			return
+		}
+	}
 }

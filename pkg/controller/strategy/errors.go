@@ -6,9 +6,9 @@ import (
 
 type NotWorkingOnStrategyError error
 
-func NewNotWorkingOnStrategyError(contenderReleaseKey, releaseKey string) error {
+func NewNotWorkingOnStrategyError(contenderReleaseKey string) error {
 	return NotWorkingOnStrategyError(fmt.Errorf(
-		"Found %s as a contender for %s, but it is not currently working on any strategy", contenderReleaseKey, releaseKey))
+		"Found %s as a contender, but it is not currently working on any strategy", contenderReleaseKey))
 }
 
 type RetrievingInstallationTargetForReleaseError error

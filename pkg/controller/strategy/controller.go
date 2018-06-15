@@ -6,8 +6,8 @@ import (
 
 	"github.com/golang/glog"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -141,35 +141,49 @@ func (c *Controller) sortedReleasesForApp(app *v1.Application) ([]*v1.Release, e
 	return sorted, nil
 }
 
-func (c *Controller) contenderForRelease(r *v1.Release) (*v1.Release, error) {
-	app := c.getAssociatedApplication(r)
-	if app == nil {
-		return nil, fmt.Errorf("could not find application associated with %q", shippercontroller.MetaKey(r))
-	}
-
+func (c *Controller) getIncumbentForApplication(app *v1.Application) (*v1.Release, error) {
 	appReleases, err := c.sortedReleasesForApp(app)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(appReleases) <= 1 {
+	if len(appReleases) == 0 {
+		return nil, fmt.Errorf(
+			"zero release records in app %s/%s: will not execute strategy",
+			app.GetNamespace(), app.GetName(),
+		)
+	}
+
+	// If the last release is installed (i.e. there are no
+	// contenders) this function will return it even though it is
+	// not conceptually the incumbent.
+	for i := len(appReleases) - 1; i >= 0; i-- {
+		if conditions.IsReleaseInstalled(appReleases[i]) {
+			return appReleases[i], nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (c *Controller) getContenderForApplication(app *v1.Application) (*v1.Release, error) {
+	appReleases, err := c.sortedReleasesForApp(app)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(appReleases) == 0 {
 		return nil, nil
 	}
 
-	expectedIncumbentIndex := len(appReleases) - 2
-	incumbent := appReleases[expectedIncumbentIndex]
-	// TODO(btyler) is this a reasonable decision? the strategy only knows how to operate with the latest two releases
-	if incumbent.GetName() != r.GetName() {
-		return nil, fmt.Errorf("release %q isn't the penultimate generation, so we shouldn't be touching it", shippercontroller.MetaKey(r))
+	contender := appReleases[len(appReleases)-1]
+	if conditions.IsReleaseInstalled(contender) {
+		// This is not really the contender because it's
+		// already installed
+		return nil, nil
 	}
 
-	contender := appReleases[len(appReleases)-1]
-
 	return contender, nil
-}
-
-func isInstalled(r *v1.Release) bool {
-	return r.Status.Phase == v1.ReleasePhaseInstalled
 }
 
 func (c *Controller) getAssociatedApplication(rel *v1.Release) *v1.Application {
@@ -265,7 +279,30 @@ func (c *Controller) syncOne(key string) error {
 		return nil
 	}
 
-	strategyExecutor, err := c.buildExecutor(ns, name, c.recorder)
+	release, err := c.releasesLister.Releases(ns).Get(name)
+	if err != nil {
+		return err
+	}
+
+	app := c.getAssociatedApplication(release)
+	if app == nil {
+		return nil
+	}
+
+	incumbent, err := c.getIncumbentForApplication(app)
+	if err != nil {
+		return err
+	}
+
+	contender, err := c.getContenderForApplication(app)
+	if err != nil {
+		return err
+	}
+	if contender == nil {
+		return nil
+	}
+
+	strategyExecutor, err := c.buildExecutor(incumbent, contender, c.recorder)
 	if err != nil {
 		return err
 	}
@@ -362,76 +399,25 @@ func (c *Controller) buildReleaseInfo(release *v1.Release) (*releaseInfo, error)
 	}, nil
 }
 
-func (c *Controller) buildExecutor(ns, name string, recorder record.EventRecorder) (*Executor, error) {
-	release, err := c.releasesLister.Releases(ns).Get(name)
+func (c *Controller) buildExecutor(incumbentRelease, contenderRelease *v1.Release, recorder record.EventRecorder) (*Executor, error) {
+	if !isScheduled(contenderRelease) {
+		return nil, NewNotWorkingOnStrategyError(shippercontroller.MetaKey(contenderRelease))
+	}
+
+	contenderReleaseInfo, err := c.buildReleaseInfo(contenderRelease)
 	if err != nil {
 		return nil, err
-	}
-
-	if isInstalled(release) {
-		// If the release we got is installed, it means it is
-		// the incumbent, so we need to find the contender
-		// ourselves. This happens because both the contender
-		// and the incumbent end up in the workqueue.
-
-		// Check if there is a contender release for given release.
-		var contenderRelease *v1.Release
-		contenderRelease, err = c.contenderForRelease(release)
-		if err != nil {
-			return nil, err
-		}
-
-		if contenderRelease == nil {
-			return nil, fmt.Errorf("Release %s is already installed, and we couldn't find a contender for it.", shippercontroller.MetaKey(release))
-		}
-
-		if !isScheduled(contenderRelease) {
-			return nil, NewNotWorkingOnStrategyError(shippercontroller.MetaKey(contenderRelease), shippercontroller.MetaKey(release))
-		}
-
-		glog.V(5).Infof("Found %s as a contender for %s, switching to work on the contender", shippercontroller.MetaKey(contenderRelease), shippercontroller.MetaKey(release))
-		release = contenderRelease
-	}
-
-	contenderReleaseInfo, err := c.buildReleaseInfo(release)
-	if err != nil {
-		return nil, err
-	}
-
-	app := c.getAssociatedApplication(contenderReleaseInfo.release)
-	if app == nil {
-		return nil, fmt.Errorf("no application associated with release %s", shippercontroller.MetaKey(release))
-	}
-
-	history := app.Status.History
-	if len(history) == 0 {
-		return nil, fmt.Errorf(
-			"zero release records in app %s/%s (owner of release %s) Status.History: will not execute strategy",
-			app.GetNamespace(), app.GetName(), name,
-		)
-	}
-
-	expectedContenderRecord := history[len(history)-1]
-	if expectedContenderRecord != release.GetName() {
-		return nil, fmt.Errorf("contender %s is not the latest release in app history: will not execute strategy", shippercontroller.MetaKey(release))
 	}
 
 	strategy := *contenderReleaseInfo.release.Environment.Strategy
 
 	// no incumbent, only this contender: a new application
-	if len(history) == 1 {
+	if incumbentRelease == nil {
 		return &Executor{
 			contender: contenderReleaseInfo,
 			recorder:  recorder,
 			strategy:  strategy,
 		}, nil
-	}
-
-	incumbentRecord := history[len(history)-2]
-
-	incumbentRelease, err := c.releasesLister.Releases(ns).Get(incumbentRecord)
-	if err != nil {
-		return nil, err
 	}
 
 	incumbentReleaseInfo, err := c.buildReleaseInfo(incumbentRelease)
