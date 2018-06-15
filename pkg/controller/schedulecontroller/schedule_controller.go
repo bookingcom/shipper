@@ -62,7 +62,9 @@ func NewController(
 				if !ok {
 					return false
 				}
-				return release.Status.Phase == v1.ReleasePhaseWaitingForScheduling
+
+				return release.Status.Phase == v1.ReleasePhaseWaitingForScheduling ||
+					(release.Status.Phase == v1.ReleasePhaseWaitingForStrategy && len(release.Status.Conditions) == 0)
 			},
 			Handler: cache.ResourceEventHandlerFuncs{
 				AddFunc: controller.enqueueRelease,

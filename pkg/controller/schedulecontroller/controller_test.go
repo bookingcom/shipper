@@ -7,6 +7,7 @@ import (
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -49,11 +50,24 @@ func TestControllerComputeTargetClusters(t *testing.T) {
 	// the client.
 	expected := release.DeepCopy()
 	expected.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
+
+	relWithConditions := expected.DeepCopy()
+	relWithConditions.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
+	relWithConditions.Status.Conditions = conditions.SetReleaseCondition(
+		relWithConditions.Status.Conditions,
+		shipperV1.ReleaseConditionTypeScheduled,
+		corev1.ConditionTrue,
+		"", "")
+
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
 			shipperV1.SchemeGroupVersion.WithResource("releases"),
 			release.GetNamespace(),
 			expected),
+		kubetesting.NewUpdateAction(
+			shipperV1.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			relWithConditions),
 	}
 
 	// Business logic...
