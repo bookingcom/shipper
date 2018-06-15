@@ -3,6 +3,7 @@ package janitor
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +38,8 @@ type Controller struct {
 	itLister shipperListers.InstallationTargetLister
 	itSynced cache.InformerSynced
 }
+
+const AnchorSuffix = "-anchor"
 
 const InstallationTargetUID = "InstallationTargetUID"
 
@@ -79,7 +82,7 @@ func NewController(
 					Key:        key,
 					Namespace:  namespace,
 					Name:       name,
-					AnchorName: fmt.Sprintf("%s-anchor", releaseName),
+					AnchorName: fmt.Sprintf("%s%s", releaseName, AnchorSuffix),
 					Clusters:   it.Spec.Clusters,
 				}
 				controller.workqueue.Add(wi)
@@ -105,15 +108,16 @@ func NewController(
 				// config maps that don't have it.
 				FilterFunc: func(obj interface{}) bool {
 					cm := obj.(*coreV1.ConfigMap)
+					hasRightName := strings.HasSuffix(cm.GetName(), AnchorSuffix)
 					_, hasReleaseLabel := cm.GetLabels()[shipperV1.ReleaseLabel]
 					_, hasUID := cm.Data[InstallationTargetUID]
-					if hasReleaseLabel && !hasUID {
+					if hasRightName && hasReleaseLabel && !hasUID {
 						controller.recorder.Eventf(cm,
 							coreV1.EventTypeWarning,
 							"ConfigMapIncomplete",
 							"Anchor config map doesn't have %q key, skipping", InstallationTargetUID)
 					}
-					return hasReleaseLabel && hasUID
+					return hasRightName && hasReleaseLabel && hasUID
 				},
 				Handler: cache.ResourceEventHandlerFuncs{
 					// Enqueue all the config maps that have a
