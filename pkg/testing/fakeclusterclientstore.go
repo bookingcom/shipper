@@ -45,7 +45,7 @@ func (s *FakeClusterClientStore) AddEventHandlerCallback(eventHandlerCallback cl
 	s.eventHandlerCallbacks = append(s.eventHandlerCallbacks, eventHandlerCallback)
 }
 
-func (s *FakeClusterClientStore) Run(stopCh <-chan struct{}) error {
+func (s *FakeClusterClientStore) Run(stopCh <-chan struct{}) {
 	for _, subscriptionCallback := range s.subscriptionCallbacks {
 		subscriptionCallback(s.informerFactory)
 	}
@@ -53,8 +53,6 @@ func (s *FakeClusterClientStore) Run(stopCh <-chan struct{}) error {
 	for _, eventHandlerCallback := range s.eventHandlerCallbacks {
 		eventHandlerCallback(s.informerFactory, s.FakeClusterName)
 	}
-
-	return nil
 }
 
 func (s *FakeClusterClientStore) GetClient(clusterName string) (kubernetes.Interface, error) {
