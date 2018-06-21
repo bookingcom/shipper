@@ -298,7 +298,15 @@ func (c *Controller) syncOne(key string) error {
 	if err != nil {
 		return err
 	}
+
 	if contender == nil {
+		return nil
+	}
+
+	releaseIsContender := contender.GetName() == release.GetName() &&
+		contender.GetNamespace() == release.GetNamespace()
+
+	if !releaseIsContender {
 		return nil
 	}
 
