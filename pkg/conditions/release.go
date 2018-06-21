@@ -74,5 +74,6 @@ func SetReleaseCondition(
 }
 
 func IsReleaseInstalled(release *shipperV1.Release) bool {
-	return release.Status.Phase == shipperV1.ReleasePhaseInstalled
+	return release.Status.Phase == shipperV1.ReleasePhaseInstalled ||
+		release.Status.Phase == shipperV1.ReleasePhaseSuperseded
 }
