@@ -3,6 +3,7 @@ package e2e
 import (
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -145,7 +146,6 @@ func TestNewAppAllIn(t *testing.T) {
 		t.Fatalf("could not create application %q: %q", appName, err)
 	}
 
-	//TODO(btyler) replace this with a for loop over vanguard.Steps
 	t.Logf("waiting for a new release for new application %q", appName)
 	rel := f.waitForRelease(appName, 0)
 	relName := rel.GetName()
@@ -188,7 +188,6 @@ func TestRolloutAllIn(t *testing.T) {
 		t.Fatalf("could not create application %q: %q", appName, err)
 	}
 
-	//TODO(btyler) replace this with a for loop over vanguard.Steps
 	t.Logf("waiting for a new release for new application %q", appName)
 	rel := f.waitForRelease(appName, 0)
 	relName := rel.GetName()
@@ -246,28 +245,22 @@ func TestNewApplicationVanguard(t *testing.T) {
 		t.Fatalf("could not create application %q: %q", appName, err)
 	}
 
-	//TODO(btyler) replace this with a for loop over vanguard.Steps
 	t.Logf("waiting for a new release for new application %q", appName)
 	rel := f.waitForRelease(appName, 0)
 	relName := rel.GetName()
-	t.Logf("waiting for new release %q to reach state 'waiting for command'", relName)
-	f.waitForCommand(relName)
-	t.Logf("checking that release %q has 1 pod (strategy step 0)", relName)
-	f.checkPods(relName, 1)
 
-	t.Logf("setting release %q targetStep to 1", relName)
-	f.targetStep(1, relName)
-	t.Logf("waiting for release %q to achieve waitingForCommand for targetStep 1", relName)
-	f.waitForCommand(relName)
-	t.Logf("checking that release %q has %d pods (strategy step 1)", relName, targetReplicas/2)
-	f.checkPods(relName, targetReplicas/2)
+	for i, step := range vanguard.Steps {
+		t.Logf("setting release %q targetStep to %d", relName, i)
+		f.targetStep(i, relName)
+		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
+		f.waitForCommand(relName)
+		expectedCapacity := capacityInPods(step.Capacity.Contender, targetReplicas)
+		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
+		f.checkPods(relName, expectedCapacity)
+	}
 
-	t.Logf("setting release %q targetStep to 2", relName)
-	f.targetStep(2, rel.GetName())
 	t.Logf("waiting for release %q to reach phase 'installed'", relName)
-	f.waitForInstalled(rel.GetName())
-	t.Logf("checking that release %q has %d pods (strategy step 2 -- finished)", relName, targetReplicas)
-	f.checkPods(relName, targetReplicas)
+	f.waitForInstalled(relName)
 }
 
 func TestRolloutVanguard(t *testing.T) {
@@ -289,7 +282,8 @@ func TestRolloutVanguard(t *testing.T) {
 		teardownNamespace(ns.GetName())
 	}()
 
-	app := newApplication(ns.GetName(), appName, &vanguard)
+	// start with allIn to jump through the first release
+	app := newApplication(ns.GetName(), appName, &allIn)
 	app.Spec.Template.Values = &shipperv1.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
@@ -300,11 +294,9 @@ func TestRolloutVanguard(t *testing.T) {
 	}
 
 	incumbent := f.waitForRelease(appName, 0)
-	f.waitForCommand(incumbent.GetName())
-	// immediately to step 2 to install ASAP
-	f.targetStep(2, incumbent.GetName())
-	f.waitForInstalled(incumbent.GetName())
-	f.checkPods(incumbent.GetName(), targetReplicas)
+	incumbentName := incumbent.GetName()
+	f.waitForInstalled(incumbentName)
+	f.checkPods(incumbentName, targetReplicas)
 
 	// refetch so that the update has a fresh version to work with
 	app, err = shipperClient.ShipperV1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
@@ -312,6 +304,7 @@ func TestRolloutVanguard(t *testing.T) {
 		t.Fatalf("could not refetch app: %q", err)
 	}
 
+	app.Spec.Template.Strategy = &vanguard
 	app.Spec.Template.Chart.Version = "0.0.2"
 	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Update(app)
 	if err != nil {
@@ -320,36 +313,27 @@ func TestRolloutVanguard(t *testing.T) {
 
 	t.Logf("waiting for contender release to appear after editing app %q", app.GetName())
 	contender := f.waitForRelease(appName, 1)
-	t.Logf("waiting for contender %q to reach 'waiting for command' (strategy step 0)", contender.GetName())
-	f.waitForCommand(contender.GetName())
-	t.Logf(
-		"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step 0 -- 100/1)",
-		incumbent.GetName(), targetReplicas, contender.GetName(), 1,
-	)
-	f.checkPods(incumbent.GetName(), targetReplicas)
-	f.checkPods(contender.GetName(), 1)
+	contenderName := contender.GetName()
 
-	f.targetStep(1, contender.GetName())
-	t.Logf("waiting for contender %q to reach 'waiting for command' (strategy step 1)", contender.GetName())
-	f.waitForCommand(contender.GetName())
-	t.Logf(
-		"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step 1 -- 50/50)",
-		incumbent.GetName(), targetReplicas/2, contender.GetName(), targetReplicas/2,
-	)
-	f.checkPods(contender.GetName(), targetReplicas/2)
-	// TODO(btyler): this is disabled because the conditions indicate that the incumbent has achieved capacity for step 1 when it hasn't yet
-	// f.checkPods(incumbent.GetName(), targetReplicas/2)
+	for i, step := range vanguard.Steps {
+		t.Logf("setting release %q targetStep to %d", contenderName, i)
+		f.targetStep(i, contenderName)
+		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
+		f.waitForCommand(contenderName)
+		expectedContenderCapacity := capacityInPods(step.Capacity.Contender, targetReplicas)
+		expectedIncumbentCapacity := capacityInPods(step.Capacity.Incumbent, targetReplicas)
 
-	f.targetStep(2, contender.GetName())
-	t.Logf("waiting for contender %q to reach phase 'installed'", contender.GetName())
-	f.waitForInstalled(contender.GetName())
-	t.Logf(
-		"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step 2 -- finished)",
-		incumbent.GetName(), 0, contender.GetName(), targetReplicas,
-	)
-	// TODO(btyler): this is disabled because the conditions indicate that the incumbent has achieved capacity for step 2 when it hasn't yet
-	// f.checkPods(incumbent.GetName(), 0)
-	f.checkPods(contender.GetName(), targetReplicas)
+		t.Logf(
+			"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step %d -- %d/%d)",
+			incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, i, step.Capacity.Incumbent, step.Capacity.Contender,
+		)
+
+		f.checkPods(contenderName, expectedContenderCapacity)
+		f.checkPods(incumbentName, expectedIncumbentCapacity)
+	}
+
+	t.Logf("waiting for release %q to reach phase 'installed'", contenderName)
+	f.waitForInstalled(contenderName)
 }
 
 //TODO(btyler): cover a variety of broken chart cases as soon as we report those outcomes somewhere other than stderr
@@ -371,12 +355,12 @@ func newFixture(ns string, t *testing.T) *fixture {
 	}
 }
 
-func (f *fixture) targetStep(step int32, relName string) {
+func (f *fixture) targetStep(step int, relName string) {
 	rel, err := shipperClient.ShipperV1().Releases(f.namespace).Get(relName, metav1.GetOptions{})
 	if err != nil {
 		f.t.Fatalf("release for targetStep could not be fetched: %q: %q", relName, err)
 	}
-	rel.Spec.TargetStep = step
+	rel.Spec.TargetStep = int32(step)
 	_, err = shipperClient.ShipperV1().Releases(f.namespace).Update(rel)
 	if err != nil {
 		f.t.Fatalf("could not update release with targetStep %v: %q", step, err)
@@ -647,4 +631,10 @@ func newApplication(namespace, name string, strategy *shipperv1.RolloutStrategy)
 			},
 		},
 	}
+}
+
+func capacityInPods(percentage int32, targetReplicas int) int {
+	mult := float64(percentage) / 100
+	// round up to nearest whole pod
+	return int(math.Ceil(mult * float64(targetReplicas)))
 }
