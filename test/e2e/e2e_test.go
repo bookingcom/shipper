@@ -252,15 +252,19 @@ func TestNewApplicationVanguard(t *testing.T) {
 	for i, step := range vanguard.Steps {
 		t.Logf("setting release %q targetStep to %d", relName, i)
 		f.targetStep(i, relName)
-		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
-		f.waitForCommand(relName)
+
+		if i == len(vanguard.Steps)-1 {
+			t.Logf("waiting for release %q to reach phase 'installed'", relName)
+			f.waitForInstalled(relName)
+		} else {
+			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
+			f.waitForCommand(relName)
+		}
+
 		expectedCapacity := capacityInPods(step.Capacity.Contender, targetReplicas)
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
 		f.checkPods(relName, expectedCapacity)
 	}
-
-	t.Logf("waiting for release %q to reach phase 'installed'", relName)
-	f.waitForInstalled(relName)
 }
 
 func TestRolloutVanguard(t *testing.T) {
@@ -318,8 +322,15 @@ func TestRolloutVanguard(t *testing.T) {
 	for i, step := range vanguard.Steps {
 		t.Logf("setting release %q targetStep to %d", contenderName, i)
 		f.targetStep(i, contenderName)
-		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
-		f.waitForCommand(contenderName)
+
+		if i == len(vanguard.Steps)-1 {
+			t.Logf("waiting for release %q to reach phase 'installed'", contenderName)
+			f.waitForInstalled(contenderName)
+		} else {
+			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
+			f.waitForCommand(contenderName)
+		}
+
 		expectedContenderCapacity := capacityInPods(step.Capacity.Contender, targetReplicas)
 		expectedIncumbentCapacity := capacityInPods(step.Capacity.Incumbent, targetReplicas)
 
@@ -331,9 +342,6 @@ func TestRolloutVanguard(t *testing.T) {
 		f.checkPods(contenderName, expectedContenderCapacity)
 		f.checkPods(incumbentName, expectedIncumbentCapacity)
 	}
-
-	t.Logf("waiting for release %q to reach phase 'installed'", contenderName)
-	f.waitForInstalled(contenderName)
 }
 
 //TODO(btyler): cover a variety of broken chart cases as soon as we report those outcomes somewhere other than stderr
