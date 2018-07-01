@@ -375,15 +375,24 @@ func (f *fixture) targetStep(step int, relName string) {
 	}
 }
 
-func (f *fixture) checkPods(relName string, count int) {
+func (f *fixture) checkPods(relName string, expectedCount int) {
 	selector := labels.Set{shipperv1.ReleaseLabel: relName}.AsSelector()
 	podList, err := targetKubeClient.CoreV1().Pods(f.namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		f.t.Fatalf("could not list pods %q: %q", f.namespace, err)
 	}
 
-	if len(podList.Items) != count {
-		f.t.Fatalf("checking pods on release %q: expected %d but got %d", relName, count, len(podList.Items))
+	readyCount := 0
+	for _, pod := range podList.Items {
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == "Ready" && condition.Status == "True" {
+				readyCount++
+			}
+		}
+	}
+
+	if readyCount != expectedCount {
+		f.t.Fatalf("checking pods on release %q: expected %d but got %d", relName, expectedCount, readyCount)
 	}
 }
 
