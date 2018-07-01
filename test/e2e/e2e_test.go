@@ -412,7 +412,7 @@ func (f *fixture) waitForRelease(appName string, historyIndex int) *shipperv1.Re
 		f.t.Fatalf("error waiting for release to be scheduled: %q", err)
 	}
 
-	f.t.Logf("waiting for release took %s", time.Now().Sub(start))
+	f.t.Logf("waiting for release took %s", time.Since(start))
 	return newRelease
 }
 
@@ -445,7 +445,7 @@ func (f *fixture) waitForCommand(releaseName string) {
 		f.t.Fatalf("error waiting for release to be 'waitingForCommand': %q", err)
 	}
 
-	f.t.Logf("waiting for command took %s", time.Now().Sub(start))
+	f.t.Logf("waiting for command took %s", time.Since(start))
 }
 
 func (f *fixture) waitForInstalled(releaseName string) {
@@ -466,7 +466,7 @@ func (f *fixture) waitForInstalled(releaseName string) {
 	if err != nil {
 		f.t.Fatalf("error waiting for release to be installed: %q", err)
 	}
-	f.t.Logf("waiting for installed took %s", time.Now().Sub(start))
+	f.t.Logf("waiting for installed took %s", time.Since(start))
 }
 
 func poll(timeout time.Duration, waitCondition func() (bool, error)) error {
