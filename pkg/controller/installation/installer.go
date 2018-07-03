@@ -125,6 +125,10 @@ func (i *Installer) patchDeployment(
 
 	// patch .metadata.labels
 	newLabels := d.Labels
+	if newLabels == nil {
+		newLabels = map[string]string{}
+	}
+
 	for k, v := range labelsToInject {
 		newLabels[k] = v
 	}

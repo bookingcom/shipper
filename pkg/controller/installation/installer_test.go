@@ -71,104 +71,108 @@ var apiResourceList = []*v1.APIResourceList{
 // using the chart found in testdata/release.yaml.
 func TestInstaller(t *testing.T) {
 
-	release := loadRelease()
-	cluster := loadCluster("minikube-a")
-	it := loadInstallationTarget()
-	installer := newInstaller(release, it)
+	// these are both valid charts that we expect to work
+	for _, testChart := range []string{"0.0.1", "missing-labels"} {
+		release := loadRelease()
+		release.Environment.Chart.Version = testChart
+		cluster := loadCluster("minikube-a")
+		it := loadInstallationTarget()
+		installer := newInstaller(release, it)
 
-	fakeClient, _, fakeDynamicClient, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList)
+		fakeClient, _, fakeDynamicClient, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList)
 
-	restConfig := &rest.Config{}
-	if err := installer.installRelease(cluster, fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
-		t.Fatal(err)
-	}
-
-	// The chart contained in the test release produces a service and a
-	// deployment manifest. The events order should be always the same,
-	// since we changed the renderer behavior to always return a
-	// consistently ordered list of manifests, according to Kind and
-	// Name.
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewCreateAction(
-			schema.GroupVersionResource{Resource: "namespaces", Version: "v1"},
-			release.GetNamespace(),
-			nil),
-		kubetesting.NewCreateAction(
-			schema.GroupVersionResource{Resource: "services", Version: "v1"},
-			release.GetNamespace(),
-			nil),
-		kubetesting.NewCreateAction( // TODO: Feed deployment object for comparison
-			schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"},
-			release.GetNamespace(),
-			nil),
-	}
-	shippertesting.CheckActions(expectedActions, fakeDynamicClient.Actions(), t)
-
-	// The following tests are currently disabled. It seems the cast to
-	// appsv1.Deployment doesn't work because the runtime.Object stored
-	// in the action isn't the object itself, but a serializable
-	// representation of it.
-	scheme := kubescheme.Scheme
-
-	createServiceAction := fakeDynamicClient.Actions()[1].(kubetesting.CreateAction)
-	obj := createServiceAction.GetObject()
-	if obj.GetObjectKind().GroupVersionKind().Kind != "Service" {
-		t.Logf("%+v", obj)
-		t.Fatal("object is not a corev1.Service")
-	} else {
-		u := &unstructured.Unstructured{}
-		err := scheme.Convert(obj, u, nil)
-		if err != nil {
-			panic(err)
-		}
-		if _, ok := u.GetLabels()[shipperV1.ReleaseLabel]; !ok {
-			t.Fatalf("could not find %q in Deployment .metadata.labels", shipperV1.ReleaseLabel)
-		}
-	}
-
-	createDeploymentAction := fakeDynamicClient.Actions()[2].(kubetesting.CreateAction)
-	obj = createDeploymentAction.GetObject()
-	if obj.GetObjectKind().GroupVersionKind().Kind != "Deployment" {
-		t.Logf("%+v", obj)
-		t.Fatal("object is not an appsv1.Deployment")
-	} else {
-		u := &unstructured.Unstructured{}
-		err := scheme.Convert(obj, u, nil)
-		if err != nil {
-			panic(err)
-		}
-		if _, ok := u.GetLabels()[shipperV1.ReleaseLabel]; !ok {
-			t.Fatalf("could not find %q in Deployment .metadata.labels", shipperV1.ReleaseLabel)
+		restConfig := &rest.Config{}
+		if err := installer.installRelease(cluster, fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+			t.Fatal(err)
 		}
 
-		deployment := &appsV1.Deployment{}
-		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, deployment); err != nil {
-			t.Fatalf("could not decode deployment from unstructured: %s", err)
+		// The chart contained in the test release produces a service and a
+		// deployment manifest. The events order should be always the same,
+		// since we changed the renderer behavior to always return a
+		// consistently ordered list of manifests, according to Kind and
+		// Name.
+		expectedActions := []kubetesting.Action{
+			kubetesting.NewCreateAction(
+				schema.GroupVersionResource{Resource: "namespaces", Version: "v1"},
+				release.GetNamespace(),
+				nil),
+			kubetesting.NewCreateAction(
+				schema.GroupVersionResource{Resource: "services", Version: "v1"},
+				release.GetNamespace(),
+				nil),
+			kubetesting.NewCreateAction( // TODO: Feed deployment object for comparison
+				schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"},
+				release.GetNamespace(),
+				nil),
+		}
+		shippertesting.CheckActions(expectedActions, fakeDynamicClient.Actions(), t)
+
+		// The following tests are currently disabled. It seems the cast to
+		// appsv1.Deployment doesn't work because the runtime.Object stored
+		// in the action isn't the object itself, but a serializable
+		// representation of it.
+		scheme := kubescheme.Scheme
+
+		createServiceAction := fakeDynamicClient.Actions()[1].(kubetesting.CreateAction)
+		obj := createServiceAction.GetObject()
+		if obj.GetObjectKind().GroupVersionKind().Kind != "Service" {
+			t.Logf("%+v", obj)
+			t.Fatal("object is not a corev1.Service")
+		} else {
+			u := &unstructured.Unstructured{}
+			err := scheme.Convert(obj, u, nil)
+			if err != nil {
+				panic(err)
+			}
+			if _, ok := u.GetLabels()[shipperV1.ReleaseLabel]; !ok {
+				t.Fatalf("could not find %q in Deployment .metadata.labels", shipperV1.ReleaseLabel)
+			}
 		}
 
-		if _, ok := deployment.Spec.Selector.MatchLabels[shipperV1.ReleaseLabel]; !ok {
-			t.Fatal("deployment .spec.selector.matchLabels doesn't contain shipperV1.ReleaseLabel")
-		}
+		createDeploymentAction := fakeDynamicClient.Actions()[2].(kubetesting.CreateAction)
+		obj = createDeploymentAction.GetObject()
+		if obj.GetObjectKind().GroupVersionKind().Kind != "Deployment" {
+			t.Logf("%+v", obj)
+			t.Fatal("object is not an appsv1.Deployment")
+		} else {
+			u := &unstructured.Unstructured{}
+			err := scheme.Convert(obj, u, nil)
+			if err != nil {
+				panic(err)
+			}
+			if _, ok := u.GetLabels()[shipperV1.ReleaseLabel]; !ok {
+				t.Fatalf("could not find %q in Deployment .metadata.labels", shipperV1.ReleaseLabel)
+			}
 
-		if _, ok := deployment.Spec.Template.Labels[shipperV1.ReleaseLabel]; !ok {
-			t.Fatal("deployment .spec.template.labels doesn't contain shipperV1.ReleaseLabel")
-		}
+			deployment := &appsV1.Deployment{}
+			if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, deployment); err != nil {
+				t.Fatalf("could not decode deployment from unstructured: %s", err)
+			}
 
-		const (
-			existingChartLabel      = "app"
-			existingChartLabelValue = "reviews-api"
-		)
+			if _, ok := deployment.Spec.Selector.MatchLabels[shipperV1.ReleaseLabel]; !ok {
+				t.Fatal("deployment .spec.selector.matchLabels doesn't contain shipperV1.ReleaseLabel")
+			}
 
-		actualChartLabelValue, ok := deployment.Spec.Template.Labels[existingChartLabel]
-		if !ok {
-			t.Fatalf("deployment .spec.template.labels doesn't contain a label (%q) which was present in the chart", existingChartLabel)
-		}
+			if _, ok := deployment.Spec.Template.Labels[shipperV1.ReleaseLabel]; !ok {
+				t.Fatal("deployment .spec.template.labels doesn't contain shipperV1.ReleaseLabel")
+			}
 
-		if actualChartLabelValue != existingChartLabelValue {
-			t.Fatalf(
-				"deployment .spec.template.labels has the right previously-existing label (%q) but wrong value. Expected %q but got %q",
-				existingChartLabel, existingChartLabelValue, actualChartLabelValue,
+			const (
+				existingChartLabel      = "app"
+				existingChartLabelValue = "reviews-api"
 			)
+
+			actualChartLabelValue, ok := deployment.Spec.Template.Labels[existingChartLabel]
+			if !ok {
+				t.Fatalf("deployment .spec.template.labels doesn't contain a label (%q) which was present in the chart", existingChartLabel)
+			}
+
+			if actualChartLabelValue != existingChartLabelValue {
+				t.Fatalf(
+					"deployment .spec.template.labels has the right previously-existing label (%q) but wrong value. Expected %q but got %q",
+					existingChartLabel, existingChartLabelValue, actualChartLabelValue,
+				)
+			}
 		}
 	}
 }
