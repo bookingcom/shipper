@@ -1,11 +1,8 @@
 package capacity
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
-	"sort"
-	"strconv"
 
 	"github.com/golang/glog"
 
@@ -13,13 +10,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	"github.com/bookingcom/shipper/pkg/conditions"
-	"github.com/bookingcom/shipper/pkg/controller"
 )
 
 type deploymentWorkqueueItem struct {
@@ -151,170 +145,9 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 		return err
 	}
 
-	// From this point on, we can report conditions since we have a CapacityTarget
-	// object to work with.
-	var clusterConditions []shipperv1.ClusterCapacityCondition
-	for _, e := range capacityTarget.Status.Clusters {
-		if e.Name == item.ClusterName {
-			clusterConditions = e.Conditions
-		}
-	}
+	c.enqueueCapacityTarget(capacityTarget)
 
-	podCount, sadPodsCount, sadPods, err := c.getSadPodsForDeploymentOnCluster(targetDeployment, item.ClusterName)
-	if err != nil {
-		clusterConditions = conditions.SetCapacityCondition(
-			clusterConditions,
-			shipperv1.ClusterConditionTypeOperational,
-			corev1.ConditionFalse,
-			conditions.ServerError,
-			err.Error())
-	}
-
-	if sadPodsCount > 0 {
-		clusterConditions = conditions.SetCapacityCondition(
-			clusterConditions,
-			shipperv1.ClusterConditionTypeReady,
-			corev1.ConditionFalse,
-			conditions.PodsNotReady,
-			fmt.Sprintf("there are %d sad pods", sadPodsCount))
-	} else if int(*targetDeployment.Spec.Replicas) != podCount {
-		clusterConditions = conditions.SetCapacityCondition(
-			clusterConditions,
-			shipperv1.ClusterConditionTypeReady,
-			corev1.ConditionFalse,
-			conditions.WrongPodCount,
-			fmt.Sprintf("expected %d replicas but have %d", *targetDeployment.Spec.Replicas, podCount))
-	} else {
-		clusterConditions = conditions.SetCapacityCondition(
-			clusterConditions,
-			shipperv1.ClusterConditionTypeReady,
-			corev1.ConditionTrue,
-			"", "")
-	}
-
-	return c.updateStatus(
-		capacityTarget,
-		item.ClusterName,
-		targetDeployment.Status.AvailableReplicas,
-		sadPods,
-		clusterConditions)
-}
-
-func (c *Controller) updateStatus(
-	capacityTarget *shipperv1.CapacityTarget,
-	clusterName string,
-	availableReplicas int32,
-	sadPods []shipperv1.PodStatus,
-	clusterConditions []shipperv1.ClusterCapacityCondition,
-) error {
-	var achievedPercent int32
-	var capacityTargetStatus shipperv1.CapacityTargetStatus
-	var replicas int
-
-	// We loop over the statuses in capacityTarget.Status.  If the
-	// name matches the cluster name we want, we don't add it to
-	// the resulting array.  If not, we just add it as-is.  At the
-	// end, we just append our own object to the end of the
-	// result. Since we originally filtered out the object
-	// matching our target cluster, our object will replace the
-	// original object.  The reason we make our own results object
-	// instead of modifying the original one is that we will use
-	// the resulting `capacityTargetStatus` variable for a patch
-	// operation
-	for _, clusterStatus := range capacityTarget.Status.Clusters {
-		if clusterStatus.Name == clusterName {
-			continue
-		}
-
-		capacityTargetStatus.Clusters = append(capacityTargetStatus.Clusters, clusterStatus)
-	}
-
-	release, err := c.getReleaseForCapacityTarget(capacityTarget)
-	if err != nil {
-		switch err.(type) {
-		case ReleaseIsGoneError:
-			clusterConditions = conditions.SetCapacityCondition(
-				clusterConditions,
-				shipperv1.ClusterConditionTypeReady,
-				corev1.ConditionFalse,
-				conditions.MissingObjects,
-				err.Error(),
-			)
-		case controller.MultipleOwnerReferencesError:
-			clusterConditions = conditions.SetCapacityCondition(
-				clusterConditions,
-				shipperv1.ClusterConditionTypeReady,
-				corev1.ConditionFalse,
-				conditions.InvalidObjects,
-				err.Error(),
-			)
-		default:
-			// After investigating the code path of convertPercentageToReplicaCountForCluster(), the only
-			// error it returns is a NotFound error when the release object associated with the capacity
-			// target doesn't exist.
-			clusterConditions = conditions.SetCapacityCondition(
-				clusterConditions,
-				shipperv1.ClusterConditionTypeReady,
-				corev1.ConditionFalse,
-				conditions.MissingObjects,
-				err.Error(),
-			)
-		}
-
-		goto End
-	}
-
-	replicas, err = strconv.Atoi(release.Annotations[shipperv1.ReleaseReplicasAnnotation])
-	if err != nil {
-		return err
-	}
-
-	achievedPercent = c.calculatePercentageFromAmount(int32(replicas), availableReplicas)
-
-End:
-
-	clusterStatus := shipperv1.ClusterCapacityStatus{
-		Name:              clusterName,
-		AchievedPercent:   achievedPercent,
-		AvailableReplicas: availableReplicas,
-		SadPods:           sadPods,
-		Conditions:        clusterConditions,
-	}
-
-	capacityTargetStatus.Clusters = append(capacityTargetStatus.Clusters, clusterStatus)
-	sort.Sort(byClusterName(capacityTargetStatus.Clusters))
-
-	// doing this weird map assignment because we only want to
-	// update the "status" field, and Kubernetes expects a
-	// "status" key to be present in the patch
-	patchData := map[string]shipperv1.CapacityTargetStatus{
-		"status": capacityTargetStatus,
-	}
-	statusJson, err := json.Marshal(patchData)
-	if err != nil {
-		return err
-	}
-
-	_, err = c.shipperclientset.ShipperV1().CapacityTargets(capacityTarget.Namespace).Patch(capacityTarget.Name, types.MergePatchType, statusJson)
-	if err == nil {
-		c.recorder.Eventf(
-			capacityTarget,
-			corev1.EventTypeNormal,
-			"CapacityStatusChanged",
-			"Set %q status to %v",
-			controller.MetaKey(capacityTarget),
-			capacityTargetStatus,
-		)
-	} else {
-		c.recorder.Eventf(
-			capacityTarget,
-			corev1.EventTypeWarning,
-			"FailedCapacityStatusChange",
-			err.Error(),
-		)
-	}
-
-	return err
+	return nil
 }
 
 func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace string) (*shipperv1.CapacityTarget, error) {
