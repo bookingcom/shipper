@@ -1,7 +1,6 @@
 package capacity
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"testing"
@@ -35,12 +34,25 @@ func TestUpdatingCapacityTargetUpdatesDeployment(t *testing.T) {
 	capacityTarget := newCapacityTargetForRelease(release, "capacity-v0.0.1", "reviewsapi", 50)
 	f.managementObjects = append(f.managementObjects, release, capacityTarget)
 
-	deployment := newDeploymentForRelease(release, "nginx", "reviewsapi", 0)
+	deployment := newDeploymentForRelease(release, "nginx", "reviewsapi", 0, 0)
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment)
 
 	f.ExpectDeploymentPatchWithReplicas(deployment, 5)
 
-	f.RunCapacityTargetSyncHandler()
+	expectedClusterConditions := []shipperv1.ClusterCapacityCondition{
+		{
+			Type:   shipperv1.ClusterConditionTypeOperational,
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:   shipperv1.ClusterConditionTypeReady,
+			Status: corev1.ConditionTrue,
+		},
+	}
+
+	f.expectCapacityTargetStatusUpdate(capacityTarget, 0, 0, expectedClusterConditions)
+
+	f.runCapacityTargetSyncHandler()
 }
 
 func TestUpdatingDeploymentsUpdatesTheCapacityTargetStatus(t *testing.T) {
@@ -50,7 +62,7 @@ func TestUpdatingDeploymentsUpdatesTheCapacityTargetStatus(t *testing.T) {
 	capacityTarget := newCapacityTargetForRelease(release, "capacity-v0.0.1", "reviewsapi", 50)
 	f.managementObjects = append(f.managementObjects, release, capacityTarget)
 
-	deployment := newDeploymentForRelease(release, "nginx", "reviewsapi", 5)
+	deployment := newDeploymentForRelease(release, "nginx", "reviewsapi", 5, 5)
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment)
 
 	clusterConditions := []shipperv1.ClusterCapacityCondition{
@@ -61,9 +73,9 @@ func TestUpdatingDeploymentsUpdatesTheCapacityTargetStatus(t *testing.T) {
 			Message: "expected 5 replicas but have 0",
 		},
 	}
-	f.expectCapacityTargetStatusPatch(capacityTarget, 5, 50, clusterConditions)
+	f.expectCapacityTargetStatusUpdate(capacityTarget, 5, 50, clusterConditions)
 
-	f.runDeploymentSyncHandler()
+	f.runCapacityTargetSyncHandler()
 }
 
 // TestSadPodsAreReflectedInCapacityTargetStatus tests a case where
@@ -72,13 +84,14 @@ func TestUpdatingDeploymentsUpdatesTheCapacityTargetStatus(t *testing.T) {
 func TestSadPodsAreReflectedInCapacityTargetStatus(t *testing.T) {
 	f := NewFixture(t)
 
-	release := newRelease("0.0.1", "reviewsapi", 10)
-	capacityTarget := newCapacityTargetForRelease(release, "capacity-v0.0.1", "reviewsapi", 50)
+	release := newRelease("0.0.1", "reviewsapi", 2)
+	capacityTarget := newCapacityTargetForRelease(release, "capacity-v0.0.1", "reviewsapi", 100)
 	f.managementObjects = append(f.managementObjects, release, capacityTarget)
 
-	deployment := newDeploymentForRelease(release, "nginx", "reviewsapi", 4)
+	deployment := newDeploymentForRelease(release, "nginx", "reviewsapi", 2, 1)
+	happyPod := createHappyPodForDeployment(deployment)
 	sadPod := createSadPodForDeployment(deployment)
-	f.targetClusterObjects = append(f.targetClusterObjects, deployment, sadPod)
+	f.targetClusterObjects = append(f.targetClusterObjects, deployment, happyPod, sadPod)
 
 	clusterConditions := []shipperv1.ClusterCapacityCondition{
 		{
@@ -88,9 +101,9 @@ func TestSadPodsAreReflectedInCapacityTargetStatus(t *testing.T) {
 			Message: "there are 1 sad pods",
 		},
 	}
-	f.expectCapacityTargetStatusPatch(capacityTarget, 4, 40, clusterConditions, createSadPodConditionFromPod(sadPod))
+	f.expectCapacityTargetStatusUpdate(capacityTarget, 1, 50, clusterConditions, createSadPodConditionFromPod(sadPod))
 
-	f.runDeploymentSyncHandler()
+	f.runCapacityTargetSyncHandler()
 }
 
 func NewFixture(t *testing.T) *fixture {
@@ -157,41 +170,17 @@ func (f *fixture) runInternal() *Controller {
 	return controller
 }
 
-func (f *fixture) RunCapacityTargetSyncHandler() {
+func (f *fixture) runCapacityTargetSyncHandler() {
 	controller := f.runInternal()
 	if err := controller.capacityTargetSyncHandler("reviewsapi/capacity-v0.0.1"); err != nil {
 		f.t.Error(err)
 	}
 
 	targetClusterActual := shippertesting.FilterActions(f.targetClusterClientset.Actions())
-
-	if len(f.targetClusterActions) == 0 {
-		f.t.Error("The list of expected target cluster actions is empty!")
-	}
-
-	shippertesting.CheckActions(f.targetClusterActions, targetClusterActual, f.t)
-}
-
-func (f *fixture) runDeploymentSyncHandler() {
-	controller := f.runInternal()
-	if err := controller.deploymentSyncHandler(f.createDeploymentWorkQueueItem()); err != nil {
-		f.t.Error(err)
-	}
-
 	managementClusterActual := shippertesting.FilterActions(f.managementClientset.Actions())
 
-	if len(f.managementClusterActions) == 0 {
-		f.t.Error("The list of expected management cluster actions is empty!")
-	}
-
+	shippertesting.CheckActions(f.targetClusterActions, targetClusterActual, f.t)
 	shippertesting.CheckActions(f.managementClusterActions, managementClusterActual, f.t)
-}
-
-func (f *fixture) createDeploymentWorkQueueItem() deploymentWorkqueueItem {
-	return deploymentWorkqueueItem{
-		Key:         "reviewsapi/nginx",
-		ClusterName: "minikube",
-	}
 }
 
 func (f *fixture) ExpectDeploymentPatchWithReplicas(deployment *appsv1.Deployment, replicas int32) {
@@ -204,15 +193,8 @@ func (f *fixture) ExpectDeploymentPatchWithReplicas(deployment *appsv1.Deploymen
 	f.targetClusterActions = append(f.targetClusterActions, patchAction)
 }
 
-func (f *fixture) expectCapacityTargetStatusPatch(capacityTarget *shipperv1.CapacityTarget, availableReplicas, achievedPercent int32, clusterConditions []shipperv1.ClusterCapacityCondition, sadPods ...shipperv1.PodStatus) {
-	// have to do this for the patches to match, otherwise the
-	// value for "sadPods" will be an empty array, but we expect
-	// null
-	if len(sadPods) == 0 {
-		sadPods = nil
-	}
-
-	cluster := shipperv1.ClusterCapacityStatus{
+func (f *fixture) expectCapacityTargetStatusUpdate(capacityTarget *shipperv1.CapacityTarget, availableReplicas, achievedPercent int32, clusterConditions []shipperv1.ClusterCapacityCondition, sadPods ...shipperv1.PodStatus) {
+	clusterStatus := shipperv1.ClusterCapacityStatus{
 		Name:              capacityTarget.Spec.Clusters[0].Name,
 		AvailableReplicas: availableReplicas,
 		AchievedPercent:   achievedPercent,
@@ -220,26 +202,15 @@ func (f *fixture) expectCapacityTargetStatusPatch(capacityTarget *shipperv1.Capa
 		SadPods:           sadPods,
 	}
 
-	status := shipperv1.CapacityTargetStatus{
-		Clusters: []shipperv1.ClusterCapacityStatus{cluster},
-	}
+	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, clusterStatus)
 
-	// Doing this weird assignment here because Kubernetes expects
-	// the patch to be a key-value pair, with the key being set to
-	// "status"
-	patchData := map[string]shipperv1.CapacityTargetStatus{
-		"status": status,
-	}
-	patchBytes, _ := json.Marshal(patchData)
-
-	patchAction := kubetesting.NewPatchSubresourceAction(
+	updateAction := kubetesting.NewUpdateAction(
 		schema.GroupVersionResource{Group: "shipper.booking.com", Version: "v1", Resource: "capacitytargets"},
 		capacityTarget.GetNamespace(),
-		capacityTarget.GetName(),
-		patchBytes,
+		capacityTarget,
 	)
 
-	f.managementClusterActions = append(f.managementClusterActions, patchAction)
+	f.managementClusterActions = append(f.managementClusterActions, updateAction)
 }
 
 func newCapacityTargetForRelease(release *shipperv1.Release, name, namespace string, percent int32) *shipperv1.CapacityTarget {
@@ -291,9 +262,9 @@ func newRelease(name, namespace string, replicas int32) *shipperv1.Release {
 	}
 }
 
-func newDeploymentForRelease(release *shipperv1.Release, name, namespace string, replicas int32) *appsv1.Deployment {
+func newDeploymentForRelease(release *shipperv1.Release, name, namespace string, replicas int32, availableReplicas int32) *appsv1.Deployment {
 	status := appsv1.DeploymentStatus{
-		AvailableReplicas: replicas,
+		AvailableReplicas: availableReplicas,
 	}
 
 	metaLabels := map[string]string{
@@ -339,7 +310,30 @@ func createSadPodForDeployment(deployment *appsv1.Deployment) *corev1.Pod {
 
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "nginx-1a93Y2",
+			Name:      "nginx-1a93Y2-sad",
+			Namespace: "reviewsapi",
+			Labels: map[string]string{
+				shipperv1.ReleaseLabel: deployment.Labels[shipperv1.ReleaseLabel],
+			},
+		},
+		Status: status,
+	}
+}
+
+func createHappyPodForDeployment(deployment *appsv1.Deployment) *corev1.Pod {
+	sadCondition := corev1.PodCondition{
+		Type:   corev1.PodReady,
+		Status: corev1.ConditionTrue,
+	}
+
+	status := corev1.PodStatus{
+		Phase:      corev1.PodRunning,
+		Conditions: []corev1.PodCondition{sadCondition},
+	}
+
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "nginx-1a93Y2-happy",
 			Namespace: "reviewsapi",
 			Labels: map[string]string{
 				shipperv1.ReleaseLabel: deployment.Labels[shipperv1.ReleaseLabel],

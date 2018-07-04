@@ -31,3 +31,11 @@ func NewInvalidCapacityTargetError(releaseName string, count int) InvalidCapacit
 	}
 	return InvalidCapacityTargetError(message)
 }
+
+type InvalidPodCountError error
+
+func NewInvalidPodCountError(expected, actual int32) InvalidPodCountError {
+	error := fmt.Errorf("expected %d replicas but have %d", expected, actual)
+
+	return InvalidPodCountError(error)
+}
