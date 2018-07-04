@@ -41,8 +41,10 @@ type Controller struct {
 	trafficTargetsSynced      cache.InformerSynced
 	installationTargetsSynced cache.InformerSynced
 	dynamicClientPool         dynamic.ClientPool
-	workqueue                 workqueue.RateLimitingInterface
-	recorder                  record.EventRecorder
+
+	releaseWorkqueue workqueue.RateLimitingInterface
+	appWorkqueue     workqueue.RateLimitingInterface
+	recorder         record.EventRecorder
 }
 
 func NewController(
@@ -68,7 +70,8 @@ func NewController(
 		capacityTargetsSynced:     capacityTargetInformer.Informer().HasSynced,
 		trafficTargetsSynced:      trafficTargetInformer.Informer().HasSynced,
 		installationTargetsSynced: installationTargetInformer.Informer().HasSynced,
-		workqueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "strategy_controller_releases"),
+		releaseWorkqueue:          workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "strategy_controller_releases"),
+		appWorkqueue:              workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "strategy_controller_applications"),
 		dynamicClientPool:         dynamicClientPool,
 		recorder:                  recorder,
 	}
@@ -141,66 +144,43 @@ func (c *Controller) sortedReleasesForApp(app *v1.Application) ([]*v1.Release, e
 	return sorted, nil
 }
 
-func (c *Controller) getIncumbentForApplication(app *v1.Application) (*v1.Release, error) {
+func (c *Controller) getWorkingReleasePair(app *v1.Application) (*v1.Release, *v1.Release, error) {
 	appReleases, err := c.sortedReleasesForApp(app)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if len(appReleases) == 0 {
-		return nil, fmt.Errorf(
+		return nil, nil, fmt.Errorf(
 			"zero release records in app %s/%s: will not execute strategy",
 			app.GetNamespace(), app.GetName(),
 		)
 	}
 
-	// If the last release is installed (i.e. there are no
-	// contenders) this function will return it even though it is
-	// not conceptually the incumbent.
+	contender := appReleases[len(appReleases)-1]
+	var incumbent *v1.Release
+	// walk backwards until we find an installed release that isn't the head of history
+	// (for releases A -> B -> C, if B was never finished this allows C to
+	// ignore it and let it get deleted so the transition is A->C)
 	for i := len(appReleases) - 1; i >= 0; i-- {
-		if conditions.IsReleaseInstalled(appReleases[i]) {
-			return appReleases[i], nil
+		if conditions.IsReleaseInstalled(appReleases[i]) && contender != appReleases[i] {
+			incumbent = appReleases[i]
+			break
 		}
 	}
 
-	return nil, nil
+	// it is totally OK if incumbent is nil; that just means this is our first rollout
+	return incumbent, contender, nil
 }
 
-func (c *Controller) getContenderForApplication(app *v1.Application) (*v1.Release, error) {
-	appReleases, err := c.sortedReleasesForApp(app)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(appReleases) == 0 {
-		return nil, nil
-	}
-
-	contender := appReleases[len(appReleases)-1]
-	if conditions.IsReleaseInstalled(contender) {
-		// This is not really the contender because it's
-		// already installed
-		return nil, nil
-	}
-
-	return contender, nil
-}
-
-func (c *Controller) getAssociatedApplication(rel *v1.Release) *v1.Application {
+func (c *Controller) getAssociatedApplicationKey(rel *v1.Release) string {
 	if n := len(rel.OwnerReferences); n != 1 {
 		glog.Warningf("expected exactly one OwnerReference for release '%s/%s', but got %d", rel.GetNamespace(), rel.GetName(), n)
-		return nil
+		return ""
 	}
 
 	owningApp := rel.OwnerReferences[0]
-
-	app, err := c.applicationsLister.Applications(rel.Namespace).Get(owningApp.Name)
-	if err != nil {
-		// This target object will soon be GC-ed.
-		return nil
-	}
-
-	return app
+	return fmt.Sprintf("%s/%s", rel.Namespace, owningApp.Name)
 }
 
 func (c *Controller) getAssociatedReleaseKey(obj *metav1.ObjectMeta) (string, error) {
@@ -215,7 +195,7 @@ func (c *Controller) getAssociatedReleaseKey(obj *metav1.ObjectMeta) (string, er
 
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
-	defer c.workqueue.ShutDown()
+	defer c.appWorkqueue.ShutDown()
 
 	glog.V(2).Info("Starting Strategy controller")
 	defer glog.V(2).Info("Shutting down Strategy controller")
@@ -235,7 +215,8 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	}
 
 	for i := 0; i < threadiness; i++ {
-		go wait.Until(c.runWorker, time.Second, stopCh)
+		go wait.Until(c.runReleaseWorker, time.Second, stopCh)
+		go wait.Until(c.runAppWorker, time.Second, stopCh)
 	}
 
 	glog.V(4).Info("Started Strategy controller")
@@ -243,22 +224,66 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
-func (c *Controller) runWorker() {
-	for c.processNextWorkItem() {
+func (c *Controller) runAppWorker() {
+	for c.processNextAppWorkItem() {
 	}
 }
 
-func (c *Controller) processNextWorkItem() bool {
-	obj, shutdown := c.workqueue.Get()
+func (c *Controller) runReleaseWorker() {
+	for c.processNextReleaseWorkItem() {
+	}
+}
+
+func (c *Controller) processNextReleaseWorkItem() bool {
+	obj, shutdown := c.releaseWorkqueue.Get()
 
 	if shutdown {
 		return false
 	}
 
-	defer c.workqueue.Done(obj)
+	defer c.releaseWorkqueue.Done(obj)
+	defer c.releaseWorkqueue.Forget(obj)
+
+	var (
+		key string
+		ok  bool
+	)
+
+	if key, ok = obj.(string); !ok {
+		runtime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
+		return true
+	}
+
+	ns, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
+		return true
+	}
+
+	rel, err := c.releasesLister.Releases(ns).Get(name)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("failed to fetch release %s: %s", key, err))
+		return true
+	}
+
+	appKey := c.getAssociatedApplicationKey(rel)
+	if appKey != "" {
+		c.appWorkqueue.Add(appKey)
+	}
+	return true
+}
+
+func (c *Controller) processNextAppWorkItem() bool {
+	obj, shutdown := c.appWorkqueue.Get()
+
+	if shutdown {
+		return false
+	}
+
+	defer c.appWorkqueue.Done(obj)
 
 	if key, ok := obj.(string); !ok {
-		c.workqueue.Forget(obj)
+		c.appWorkqueue.Forget(obj)
 		runtime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
 		return false
 	} else {
@@ -266,7 +291,7 @@ func (c *Controller) processNextWorkItem() bool {
 			runtime.HandleError(fmt.Errorf("error syncing: %q: %s", key, err.Error()))
 			return false
 		} else {
-			c.workqueue.Forget(obj)
+			c.appWorkqueue.Forget(obj)
 			return true
 		}
 	}
@@ -279,35 +304,14 @@ func (c *Controller) syncOne(key string) error {
 		return nil
 	}
 
-	release, err := c.releasesLister.Releases(ns).Get(name)
+	app, err := c.applicationsLister.Applications(ns).Get(name)
 	if err != nil {
 		return err
 	}
 
-	app := c.getAssociatedApplication(release)
-	if app == nil {
-		return nil
-	}
-
-	incumbent, err := c.getIncumbentForApplication(app)
+	incumbent, contender, err := c.getWorkingReleasePair(app)
 	if err != nil {
 		return err
-	}
-
-	contender, err := c.getContenderForApplication(app)
-	if err != nil {
-		return err
-	}
-
-	if contender == nil {
-		return nil
-	}
-
-	releaseIsContender := contender.GetName() == release.GetName() &&
-		contender.GetNamespace() == release.GetNamespace()
-
-	if !releaseIsContender {
-		return nil
 	}
 
 	strategyExecutor, err := c.buildExecutor(incumbent, contender, c.recorder)
@@ -315,7 +319,7 @@ func (c *Controller) syncOne(key string) error {
 		return err
 	}
 
-	strategyExecutor.info("will start processing release")
+	strategyExecutor.info("will start processing application")
 
 	result, transitions, err := strategyExecutor.execute()
 	if err != nil {
@@ -454,7 +458,7 @@ func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 		return
 	}
 
-	c.workqueue.AddRateLimited(releaseKey)
+	c.releaseWorkqueue.AddRateLimited(releaseKey)
 }
 
 func (c *Controller) enqueueTrafficTarget(obj interface{}) {
@@ -470,7 +474,7 @@ func (c *Controller) enqueueTrafficTarget(obj interface{}) {
 		return
 	}
 
-	c.workqueue.AddRateLimited(releaseKey)
+	c.releaseWorkqueue.AddRateLimited(releaseKey)
 }
 
 func (c *Controller) enqueueCapacityTarget(obj interface{}) {
@@ -485,7 +489,7 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 		return
 	}
 
-	c.workqueue.AddRateLimited(releaseKey)
+	c.releaseWorkqueue.AddRateLimited(releaseKey)
 }
 
 func (c *Controller) enqueueRelease(obj interface{}) {
@@ -518,7 +522,7 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 	}
 
 	glog.V(5).Infof("enqueued item %q", key)
-	c.workqueue.AddRateLimited(key)
+	c.releaseWorkqueue.AddRateLimited(key)
 
 	glog.V(5).Infof("inspecting release %s", shippercontroller.MetaKey(rel))
 }
