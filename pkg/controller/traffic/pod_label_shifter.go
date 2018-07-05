@@ -13,10 +13,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	"github.com/bookingcom/shipper/pkg/label"
 )
 
 type podLabelShifter struct {
+	appName               string
 	namespace             string
 	selector              string
 	clusterReleaseWeights clusterReleaseWeights
@@ -25,8 +25,8 @@ type podLabelShifter struct {
 type clusterReleaseWeights map[string]map[string]uint32
 
 func newPodLabelShifter(
+	appName string,
 	namespace string,
-	ttLabels map[string]string,
 	trafficTargets []*shipperv1.TrafficTarget,
 ) (*podLabelShifter, error) {
 
@@ -35,10 +35,13 @@ func newPodLabelShifter(
 		return nil, err
 	}
 
-	selector := label.FilterRelease(ttLabels)
-	selector[shipperv1.LBLabel] = shipperv1.LBForProduction
+	selector := map[string]string{
+		shipperv1.AppLabel: appName,
+		shipperv1.LBLabel:  shipperv1.LBForProduction,
+	}
 
 	return &podLabelShifter{
+		appName:               appName,
 		namespace:             namespace,
 		selector:              labels.Set(selector).AsSelector().String(),
 		clusterReleaseWeights: weights,
@@ -85,8 +88,15 @@ func (p *podLabelShifter) SyncCluster(
 
 	nsPodLister := informer.Lister().Pods(p.namespace)
 
-	// NOTE(btyler) namespace == one app (because we're fetching all the pods in the ns)
-	pods, err := nsPodLister.List(labels.Everything())
+	appReq, err := labels.NewRequirement(
+		shipperv1.AppLabel, selection.Equals, []string{p.appName})
+	if err != nil {
+		// programmer error: this is a static label
+		panic(err)
+	}
+
+	appSelector := labels.NewSelector().Add(*appReq)
+	pods, err := nsPodLister.List(appSelector)
 	if err != nil {
 		return nil, nil,
 			NewTargetClusterPodListingError(cluster, p.namespace, err)

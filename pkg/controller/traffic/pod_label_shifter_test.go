@@ -169,6 +169,40 @@ func TestSyncCluster(t *testing.T) {
 	)
 }
 
+func TestWeightCalculatedForJustOneApplication(t *testing.T) {
+	var weight uint32 = 100
+	pods := 2
+	f := newFixture(t, "test unmanaged pods not in weight calculation")
+	f.addTrafficTarget("release-a", weight)
+	f.addPods("release-a", pods)
+
+	f.addTrafficTarget("release-b", weight)
+	f.addPods("release-b", pods)
+	f.addService()
+	expectedWeightsByName := map[string]uint32{
+		"release-a": weight,
+		"release-b": weight,
+	}
+
+	foreignAppLabels := map[string]string{
+		shipperv1.ReleaseLabel: "blorg",
+		shipperv1.AppLabel:     "someOtherApp",
+	}
+	// add a pod for an unrelated application
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "someOtherPod",
+			Namespace: shippertesting.TestNamespace,
+			Labels:    foreignAppLabels,
+		},
+	}
+
+	f.objects = append(f.objects, pod)
+	f.pods = append(f.pods, pod)
+
+	f.run(expectedWeightsByName)
+}
+
 func clusterSyncTestCase(
 	t *testing.T,
 	name string,
@@ -257,8 +291,11 @@ func (f *fixture) addPods(releaseName string, count int) {
 }
 
 func (f *fixture) addService() {
-	labels := appLabels()
-	labels[shipperv1.LBLabel] = shipperv1.LBForProduction
+	labels := map[string]string{
+		shipperv1.AppLabel: testApplicationName,
+		shipperv1.LBLabel:  shipperv1.LBForProduction,
+	}
+
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      testServiceName,
@@ -287,8 +324,8 @@ func (f *fixture) run(expectedWeights map[string]uint32) bool {
 	}
 
 	shifter, err := newPodLabelShifter(
+		testApplicationName,
 		shippertesting.TestNamespace,
-		releaseLabels(f.contenderRelease),
 		f.trafficTargets,
 	)
 
@@ -397,13 +434,9 @@ func newReleasePods(release string, count int) []*corev1.Pod {
 }
 
 func releaseLabels(releaseName string) map[string]string {
-	labels := appLabels()
-	labels[shipperv1.ReleaseLabel] = releaseName
-	return labels
-}
-
-func appLabels() map[string]string {
-	return map[string]string{
-		"coolapp": testApplicationName,
+	labels := map[string]string{
+		shipperv1.AppLabel:     testApplicationName,
+		shipperv1.ReleaseLabel: releaseName,
 	}
+	return labels
 }
