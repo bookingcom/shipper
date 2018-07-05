@@ -26,6 +26,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
@@ -229,10 +230,15 @@ func (c *Controller) syncHandler(key string) error {
 		return fmt.Errorf("TrafficTarget %q has no %q label", ttName, shipperv1.AppLabel)
 	}
 
-	// NOTE(btyler) - this will need fixing if we allow multiple applications
-	// per namespace. in that case we should get all the objects with the same
-	// 'app' label, or something similar. Maybe by chart name?
-	list, err := c.trafficTargetsLister.TrafficTargets(namespace).List(labels.Everything())
+	appReq, err := labels.NewRequirement(
+		shipperv1.AppLabel, selection.Equals, []string{appName})
+	if err != nil {
+		// programmer error: this is a static label
+		panic(err)
+	}
+
+	appSelector := labels.NewSelector().Add(*appReq)
+	list, err := c.trafficTargetsLister.TrafficTargets(namespace).List(appSelector)
 	if err != nil {
 		return err
 	}
