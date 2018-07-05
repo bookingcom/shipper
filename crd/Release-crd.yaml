@@ -22,6 +22,7 @@ spec:
     - rel
     categories:
     - all
+    - shipper
   validation:
     openAPIV3Schema:
       properties:
