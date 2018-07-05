@@ -224,15 +224,18 @@ func (c *Controller) syncHandler(key string) error {
 		return fmt.Errorf("TrafficTarget %q has no 'release' label", ttName)
 	}
 
-	// NOTE(btyler) - this will need fixing if we allow multiple applications
-	// per namespace. in that case we should get all the objects with the same
-	// 'app' label, or something similar. Maybe by chart name?
-	list, err := c.trafficTargetsLister.TrafficTargets(namespace).List(labels.Everything())
+	appName, ok := syncingTT.GetLabels()[shipperv1.AppLabel]
+	if !ok {
+		return fmt.Errorf("TrafficTarget %q has no %q label", ttName, shipperv1.AppLabel)
+	}
+
+	appSelector := labels.Set{shipperv1.AppLabel: appName}.AsSelector()
+	list, err := c.trafficTargetsLister.TrafficTargets(namespace).List(appSelector)
 	if err != nil {
 		return err
 	}
 
-	shifter, err := newPodLabelShifter(namespace, syncingTT.GetLabels(), list)
+	shifter, err := newPodLabelShifter(appName, namespace, list)
 	if err != nil {
 		return err
 	}

@@ -8,25 +8,24 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	corev1informer "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	"github.com/bookingcom/shipper/pkg/label"
 )
 
 type podLabelShifter struct {
+	appName               string
 	namespace             string
-	selector              string
+	serviceSelector       string
 	clusterReleaseWeights clusterReleaseWeights
 }
 
 type clusterReleaseWeights map[string]map[string]uint32
 
 func newPodLabelShifter(
+	appName string,
 	namespace string,
-	ttLabels map[string]string,
 	trafficTargets []*shipperv1.TrafficTarget,
 ) (*podLabelShifter, error) {
 
@@ -35,12 +34,15 @@ func newPodLabelShifter(
 		return nil, err
 	}
 
-	selector := label.FilterRelease(ttLabels)
-	selector[shipperv1.LBLabel] = shipperv1.LBForProduction
+	serviceSelector := map[string]string{
+		shipperv1.AppLabel: appName,
+		shipperv1.LBLabel:  shipperv1.LBForProduction,
+	}
 
 	return &podLabelShifter{
+		appName:               appName,
 		namespace:             namespace,
-		selector:              labels.Set(selector).AsSelector().String(),
+		serviceSelector:       labels.Set(serviceSelector).AsSelector().String(),
 		clusterReleaseWeights: weights,
 	}, nil
 }
@@ -68,12 +70,12 @@ func (p *podLabelShifter) SyncCluster(
 	podsClient := clientset.CoreV1().Pods(p.namespace)
 	servicesClient := clientset.CoreV1().Services(p.namespace)
 
-	svcList, err := servicesClient.List(metav1.ListOptions{LabelSelector: p.selector})
+	svcList, err := servicesClient.List(metav1.ListOptions{LabelSelector: p.serviceSelector})
 	if err != nil {
-		return nil, nil, NewTargetClusterFetchServiceFailedError(cluster, p.selector, p.namespace, err)
+		return nil, nil, NewTargetClusterFetchServiceFailedError(cluster, p.serviceSelector, p.namespace, err)
 	} else if n := len(svcList.Items); n != 1 {
 		return nil, nil,
-			NewTargetClusterWrongServiceCountError(cluster, p.selector, p.namespace, n)
+			NewTargetClusterWrongServiceCountError(cluster, p.serviceSelector, p.namespace, n)
 	}
 
 	prodSvc := svcList.Items[0]
@@ -85,8 +87,8 @@ func (p *podLabelShifter) SyncCluster(
 
 	nsPodLister := informer.Lister().Pods(p.namespace)
 
-	// NOTE(btyler) namespace == one app (because we're fetching all the pods in the ns)
-	pods, err := nsPodLister.List(labels.Everything())
+	appSelector := labels.Set{shipperv1.AppLabel: p.appName}.AsSelector()
+	pods, err := nsPodLister.List(appSelector)
 	if err != nil {
 		return nil, nil,
 			NewTargetClusterPodListingError(cluster, p.namespace, err)
@@ -101,14 +103,8 @@ func (p *podLabelShifter) SyncCluster(
 	achievedWeights := map[string]uint32{}
 	errors := []error{}
 	for release, weight := range releaseWeights {
-		releaseReq, err := labels.NewRequirement(
-			shipperv1.ReleaseLabel, selection.Equals, []string{release})
-		if err != nil {
-			// programmer error: this is a static label
-			panic(err)
-		}
 
-		releaseSelector := labels.NewSelector().Add(*releaseReq)
+		releaseSelector := labels.Set{shipperv1.ReleaseLabel: release}.AsSelector()
 		releasePods, err := nsPodLister.List(releaseSelector)
 		if err != nil {
 			return nil, nil,
