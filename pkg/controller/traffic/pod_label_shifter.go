@@ -8,7 +8,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	corev1informer "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 
@@ -88,14 +87,7 @@ func (p *podLabelShifter) SyncCluster(
 
 	nsPodLister := informer.Lister().Pods(p.namespace)
 
-	appReq, err := labels.NewRequirement(
-		shipperv1.AppLabel, selection.Equals, []string{p.appName})
-	if err != nil {
-		// programmer error: this is a static label
-		panic(err)
-	}
-
-	appSelector := labels.NewSelector().Add(*appReq)
+	appSelector := labels.Set{shipperv1.AppLabel: p.appName}.AsSelector()
 	pods, err := nsPodLister.List(appSelector)
 	if err != nil {
 		return nil, nil,
@@ -111,14 +103,8 @@ func (p *podLabelShifter) SyncCluster(
 	achievedWeights := map[string]uint32{}
 	errors := []error{}
 	for release, weight := range releaseWeights {
-		releaseReq, err := labels.NewRequirement(
-			shipperv1.ReleaseLabel, selection.Equals, []string{release})
-		if err != nil {
-			// programmer error: this is a static label
-			panic(err)
-		}
 
-		releaseSelector := labels.NewSelector().Add(*releaseReq)
+		releaseSelector := labels.Set{shipperv1.ReleaseLabel: release}.AsSelector()
 		releasePods, err := nsPodLister.List(releaseSelector)
 		if err != nil {
 			return nil, nil,

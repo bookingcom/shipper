@@ -26,7 +26,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
@@ -230,14 +229,7 @@ func (c *Controller) syncHandler(key string) error {
 		return fmt.Errorf("TrafficTarget %q has no %q label", ttName, shipperv1.AppLabel)
 	}
 
-	appReq, err := labels.NewRequirement(
-		shipperv1.AppLabel, selection.Equals, []string{appName})
-	if err != nil {
-		// programmer error: this is a static label
-		panic(err)
-	}
-
-	appSelector := labels.NewSelector().Add(*appReq)
+	appSelector := labels.Set{shipperv1.AppLabel: appName}.AsSelector()
 	list, err := c.trafficTargetsLister.TrafficTargets(namespace).List(appSelector)
 	if err != nil {
 		return err
