@@ -18,7 +18,7 @@ import (
 type podLabelShifter struct {
 	appName               string
 	namespace             string
-	selector              string
+	serviceSelector       string
 	clusterReleaseWeights clusterReleaseWeights
 }
 
@@ -35,7 +35,7 @@ func newPodLabelShifter(
 		return nil, err
 	}
 
-	selector := map[string]string{
+	serviceSelector := map[string]string{
 		shipperv1.AppLabel: appName,
 		shipperv1.LBLabel:  shipperv1.LBForProduction,
 	}
@@ -43,7 +43,7 @@ func newPodLabelShifter(
 	return &podLabelShifter{
 		appName:               appName,
 		namespace:             namespace,
-		selector:              labels.Set(selector).AsSelector().String(),
+		serviceSelector:       labels.Set(serviceSelector).AsSelector().String(),
 		clusterReleaseWeights: weights,
 	}, nil
 }
@@ -71,12 +71,12 @@ func (p *podLabelShifter) SyncCluster(
 	podsClient := clientset.CoreV1().Pods(p.namespace)
 	servicesClient := clientset.CoreV1().Services(p.namespace)
 
-	svcList, err := servicesClient.List(metav1.ListOptions{LabelSelector: p.selector})
+	svcList, err := servicesClient.List(metav1.ListOptions{LabelSelector: p.serviceSelector})
 	if err != nil {
-		return nil, nil, NewTargetClusterFetchServiceFailedError(cluster, p.selector, p.namespace, err)
+		return nil, nil, NewTargetClusterFetchServiceFailedError(cluster, p.serviceSelector, p.namespace, err)
 	} else if n := len(svcList.Items); n != 1 {
 		return nil, nil,
-			NewTargetClusterWrongServiceCountError(cluster, p.selector, p.namespace, n)
+			NewTargetClusterWrongServiceCountError(cluster, p.serviceSelector, p.namespace, n)
 	}
 
 	prodSvc := svcList.Items[0]
