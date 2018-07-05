@@ -20,6 +20,8 @@ spec:
     # shortNames allow shorter string to match your resource on the CLI
     shortNames:
     - rel
+    categories:
+    - all
   validation:
     openAPIV3Schema:
       properties:
