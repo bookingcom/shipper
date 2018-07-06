@@ -35,7 +35,7 @@ func GetClusterCapacityCondition(status *shipperV1.ClusterCapacityStatus, condTy
 
 func SetClusterCapacityCondition(status *shipperV1.ClusterCapacityStatus, condition shipperV1.ClusterCapacityCondition) {
 	currentCond := GetClusterCapacityCondition(status, condition.Type)
-	if currentCond != nil && currentCond.Type == condition.Type && currentCond.Reason == currentCond.Reason {
+	if currentCond != nil && currentCond.Type == condition.Type && currentCond.Reason == condition.Reason {
 		return
 	}
 	if currentCond != nil && currentCond.Type == condition.Type {

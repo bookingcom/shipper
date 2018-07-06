@@ -34,7 +34,7 @@ func GetClusterInstallationCondition(status *shipperV1.ClusterInstallationStatus
 
 func SetClusterInstallationCondition(status *shipperV1.ClusterInstallationStatus, condition shipperV1.ClusterInstallationCondition) {
 	currentCond := GetClusterInstallationCondition(status, condition.Type)
-	if currentCond != nil && currentCond.Type == condition.Type && currentCond.Reason == currentCond.Reason {
+	if currentCond != nil && currentCond.Type == condition.Type && currentCond.Reason == condition.Reason {
 		return
 	}
 	if currentCond != nil && currentCond.Type == condition.Type {

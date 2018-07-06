@@ -34,7 +34,7 @@ func GetClusterTrafficCondition(status *shipperV1.ClusterTrafficStatus, condType
 
 func SetClusterTrafficCondition(status *shipperV1.ClusterTrafficStatus, condition shipperV1.ClusterTrafficCondition) {
 	currentCond := GetClusterTrafficCondition(status, condition.Type)
-	if currentCond != nil && currentCond.Type == condition.Type && currentCond.Reason == currentCond.Reason {
+	if currentCond != nil && currentCond.Type == condition.Type && currentCond.Reason == condition.Reason {
 		return
 	}
 	if currentCond != nil && currentCond.Type == condition.Type {
