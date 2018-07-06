@@ -243,7 +243,6 @@ func (c *Controller) syncHandler(key string) error {
 
 	var statuses []*shipperv1.ClusterTrafficStatus
 	for _, cluster := range shifter.Clusters() {
-		var achievedReleaseWeight uint32
 		var achievedWeights map[string]uint32
 		var clientset kubernetes.Interface
 		var clusterConditions []shipperv1.ClusterTrafficCondition
@@ -263,33 +262,36 @@ func (c *Controller) syncHandler(key string) error {
 
 		statuses = append(statuses, clusterStatus)
 
+		operationalCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeOperational, corev1.ConditionTrue, "", "")
+
 		clientset, err = c.clusterClientStore.GetClient(cluster)
-		if err == nil {
-			operationalCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeOperational, corev1.ConditionTrue, "", "")
-			clusterutil.SetClusterTrafficCondition(clusterStatus, *operationalCond)
-		} else {
-			operationalCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeOperational, corev1.ConditionFalse, conditions.ServerError, err.Error())
-			clusterutil.SetClusterTrafficCondition(clusterStatus, *operationalCond)
+		if err != nil {
+			operationalCond.Reason = conditions.ServerError
+			operationalCond.Message = err.Error()
 			clusterStatus.Status = err.Error()
+			clusterutil.SetClusterTrafficCondition(clusterStatus, *operationalCond)
 			continue
 		}
 
 		informerFactory, err = c.clusterClientStore.GetInformerFactory(cluster)
-		if err == nil {
-			operationalCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeOperational, corev1.ConditionTrue, "", "")
-			clusterutil.SetClusterTrafficCondition(clusterStatus, *operationalCond)
-		} else {
-			operationalCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeOperational, corev1.ConditionFalse, conditions.ServerError, err.Error())
-			clusterutil.SetClusterTrafficCondition(clusterStatus, *operationalCond)
+		if err != nil {
+			operationalCond.Reason = conditions.ServerError
+			operationalCond.Message = err.Error()
 			clusterStatus.Status = err.Error()
+			clusterutil.SetClusterTrafficCondition(clusterStatus, *operationalCond)
 			continue
 		}
+
+		readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionTrue, "", "")
 
 		achievedWeights, errs, err =
 			shifter.SyncCluster(cluster, clientset, informerFactory.Core().V1().Pods())
 
 		if err != nil {
-			readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionFalse, conditions.UnknownError, err.Error())
+			readyCond.Status = corev1.ConditionFalse
+			readyCond.Reason = conditions.UnknownError
+			readyCond.Message = err.Error()
+
 			switch err.(type) {
 			case TargetClusterServiceError:
 				readyCond.Reason = conditions.MissingService
@@ -298,14 +300,10 @@ func (c *Controller) syncHandler(key string) error {
 			case TargetClusterMathError:
 				readyCond.Reason = conditions.InternalError
 			}
-			clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
 		} else {
-			readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionTrue, "", "")
-
 			// if the resulting map is missing the release we're working on,
 			// there's a significant bug in our code
-			achievedReleaseWeight = achievedWeights[syncingReleaseName]
-			clusterStatus.AchievedTraffic = achievedReleaseWeight
+			clusterStatus.AchievedTraffic = achievedWeights[syncingReleaseName]
 			clusterStatus.Status = "Synced"
 
 			if len(errs) > 0 {
@@ -315,10 +313,15 @@ func (c *Controller) syncHandler(key string) error {
 				}
 				sort.Strings(results)
 				clusterStatus.Status = strings.Join(results, ",")
-				readyCond = clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionFalse, conditions.PodsNotReady, clusterStatus.Status)
+
+				readyCond.Status = corev1.ConditionFalse
+				readyCond.Reason = conditions.PodsNotReady
+				readyCond.Message = clusterStatus.Status
 			}
-			clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
 		}
+
+		clusterutil.SetClusterTrafficCondition(clusterStatus, *operationalCond)
+		clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
 	}
 
 	// NEVER modify objects from the store. It's a read-only, local cache.
