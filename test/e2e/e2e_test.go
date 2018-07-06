@@ -150,8 +150,8 @@ func TestNewAppAllIn(t *testing.T) {
 	t.Logf("waiting for a new release for new application %q", appName)
 	rel := f.waitForRelease(appName, 0)
 	relName := rel.GetName()
-	t.Logf("waiting for release %q to reach phase 'installed'", relName)
-	f.waitForInstalled(rel.GetName())
+	t.Logf("waiting for release %q to complete", relName)
+	f.waitForComplete(rel.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
 	f.checkPods(relName, targetReplicas)
 	err = shipperClient.ShipperV1().Applications(ns.GetName()).Delete(newApp.GetName(), &metav1.DeleteOptions{})
@@ -192,8 +192,8 @@ func TestRolloutAllIn(t *testing.T) {
 	t.Logf("waiting for a new release for new application %q", appName)
 	rel := f.waitForRelease(appName, 0)
 	relName := rel.GetName()
-	t.Logf("waiting for release %q to reach phase 'installed'", relName)
-	f.waitForInstalled(rel.GetName())
+	t.Logf("waiting for release %q to complete", relName)
+	f.waitForComplete(rel.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
 	f.checkPods(relName, targetReplicas)
 
@@ -211,8 +211,8 @@ func TestRolloutAllIn(t *testing.T) {
 
 	t.Logf("waiting for contender release to appear after editing app %q", app.GetName())
 	contender := f.waitForRelease(appName, 1)
-	t.Logf("waiting for contender %q to be installed (strategy step 0)", contender.GetName())
-	f.waitForInstalled(contender.GetName())
+	t.Logf("waiting for contender %q to complete", contender.GetName())
+	f.waitForComplete(contender.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", contender.GetName(), targetReplicas)
 	f.checkPods(contender.GetName(), targetReplicas)
 }
@@ -255,8 +255,8 @@ func TestNewApplicationVanguard(t *testing.T) {
 		f.targetStep(i, relName)
 
 		if i == len(vanguard.Steps)-1 {
-			t.Logf("waiting for release %q to reach phase 'installed'", relName)
-			f.waitForInstalled(relName)
+			t.Logf("waiting for release %q to complete", relName)
+			f.waitForComplete(relName)
 		} else {
 			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
 			f.waitForCommand(relName)
@@ -300,7 +300,7 @@ func TestRolloutVanguard(t *testing.T) {
 
 	incumbent := f.waitForRelease(appName, 0)
 	incumbentName := incumbent.GetName()
-	f.waitForInstalled(incumbentName)
+	f.waitForComplete(incumbentName)
 	f.checkPods(incumbentName, targetReplicas)
 
 	// refetch so that the update has a fresh version to work with
@@ -325,8 +325,8 @@ func TestRolloutVanguard(t *testing.T) {
 		f.targetStep(i, contenderName)
 
 		if i == len(vanguard.Steps)-1 {
-			t.Logf("waiting for release %q to reach phase 'installed'", contenderName)
-			f.waitForInstalled(contenderName)
+			t.Logf("waiting for release %q to complete", contenderName)
+			f.waitForComplete(contenderName)
 		} else {
 			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
 			f.waitForCommand(contenderName)
@@ -462,7 +462,7 @@ func (f *fixture) waitForCommand(releaseName string) {
 	f.t.Logf("waiting for command took %s", time.Since(start))
 }
 
-func (f *fixture) waitForInstalled(releaseName string) {
+func (f *fixture) waitForComplete(releaseName string) {
 	start := time.Now()
 	err := poll(globalTimeout, func() (bool, error) {
 		rel, err := shipperClient.ShipperV1().Releases(f.namespace).Get(releaseName, metav1.GetOptions{})
@@ -478,9 +478,9 @@ func (f *fixture) waitForInstalled(releaseName string) {
 	})
 
 	if err != nil {
-		f.t.Fatalf("error waiting for release to be installed: %q", err)
+		f.t.Fatalf("error waiting for release to complete: %q", err)
 	}
-	f.t.Logf("waiting for installed took %s", time.Since(start))
+	f.t.Logf("waiting for completion took %s", time.Since(start))
 }
 
 func poll(timeout time.Duration, waitCondition func() (bool, error)) error {
