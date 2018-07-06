@@ -235,6 +235,12 @@ func buildIncumbent() *releaseInfo {
 		ObjectMeta: metaV1.ObjectMeta{
 			Name:      incumbentName,
 			Namespace: namespace,
+			OwnerReferences: []metaV1.OwnerReference{metaV1.OwnerReference{
+				APIVersion: "shipper.booking.com/v1",
+				Name:       rel.Name,
+				Kind:       "Release",
+				UID:        rel.UID,
+			}},
 		},
 		Status: v1.InstallationTargetStatus{
 			Clusters: []*v1.ClusterInstallationStatus{
@@ -257,6 +263,12 @@ func buildIncumbent() *releaseInfo {
 		ObjectMeta: metaV1.ObjectMeta{
 			Namespace: namespace,
 			Name:      incumbentName,
+			OwnerReferences: []metaV1.OwnerReference{metaV1.OwnerReference{
+				APIVersion: "shipper.booking.com/v1",
+				Name:       rel.Name,
+				Kind:       "Release",
+				UID:        rel.UID,
+			}},
 		},
 		Status: v1.CapacityTargetStatus{
 			Clusters: []v1.ClusterCapacityStatus{
@@ -284,6 +296,12 @@ func buildIncumbent() *releaseInfo {
 		ObjectMeta: metaV1.ObjectMeta{
 			Namespace: namespace,
 			Name:      incumbentName,
+			OwnerReferences: []metaV1.OwnerReference{metaV1.OwnerReference{
+				APIVersion: "shipper.booking.com/v1",
+				Name:       rel.Name,
+				Kind:       "Release",
+				UID:        rel.UID,
+			}},
 		},
 		Status: v1.TrafficTargetStatus{
 			Clusters: []*v1.ClusterTrafficStatus{
@@ -363,6 +381,12 @@ func buildContender() *releaseInfo {
 		ObjectMeta: metaV1.ObjectMeta{
 			Namespace: namespace,
 			Name:      contenderName,
+			OwnerReferences: []metaV1.OwnerReference{metaV1.OwnerReference{
+				APIVersion: "shipper.booking.com/v1",
+				Name:       rel.Name,
+				Kind:       "Release",
+				UID:        rel.UID,
+			}},
 		},
 		Status: v1.InstallationTargetStatus{
 			Clusters: []*v1.ClusterInstallationStatus{
@@ -385,6 +409,12 @@ func buildContender() *releaseInfo {
 		ObjectMeta: metaV1.ObjectMeta{
 			Namespace: namespace,
 			Name:      contenderName,
+			OwnerReferences: []metaV1.OwnerReference{metaV1.OwnerReference{
+				APIVersion: "shipper.booking.com/v1",
+				Name:       rel.Name,
+				Kind:       "Release",
+				UID:        rel.UID,
+			}},
 		},
 		Status: v1.CapacityTargetStatus{
 			Clusters: []v1.ClusterCapacityStatus{
@@ -412,6 +442,12 @@ func buildContender() *releaseInfo {
 		ObjectMeta: metaV1.ObjectMeta{
 			Namespace: namespace,
 			Name:      contenderName,
+			OwnerReferences: []metaV1.OwnerReference{metaV1.OwnerReference{
+				APIVersion: "shipper.booking.com/v1",
+				Name:       rel.Name,
+				Kind:       "Release",
+				UID:        rel.UID,
+			}},
 		},
 		Status: v1.TrafficTargetStatus{
 			Clusters: []*v1.ClusterTrafficStatus{

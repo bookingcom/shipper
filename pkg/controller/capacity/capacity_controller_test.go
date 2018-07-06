@@ -172,8 +172,8 @@ func (f *fixture) runInternal() *Controller {
 
 func (f *fixture) runCapacityTargetSyncHandler() {
 	controller := f.runInternal()
-	if err := controller.capacityTargetSyncHandler("reviewsapi/capacity-v0.0.1"); err != nil {
-		f.t.Error(err)
+	if controller.capacityTargetSyncHandler("reviewsapi/capacity-v0.0.1") {
+		f.t.Error("sync handler unexpectedly returned 'retry'")
 	}
 
 	targetClusterActual := shippertesting.FilterActions(f.targetClusterClientset.Actions())

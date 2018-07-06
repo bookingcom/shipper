@@ -223,15 +223,10 @@ func TestMissingRelease(t *testing.T) {
 	c := newController(
 		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
 
-	notFoundError := "error syncing \"reviews-api/0.0.1\": release.shipper.booking.com \"0.0.1\" not found"
 	handleErrors := 0
-	notFoundErrorFound := false
 	runtimeutil.ErrorHandlers = []func(error){
 		func(err error) {
-			handleErrors = handleErrors + 1
-			if !notFoundErrorFound && err.Error() == notFoundError {
-				notFoundErrorFound = true
-			}
+			handleErrors++
 		},
 	}
 
@@ -239,13 +234,9 @@ func TestMissingRelease(t *testing.T) {
 		t.Fatal("Could not process work item")
 	}
 
-	expectedHandleErrors := 1
+	const expectedHandleErrors = 1
 	if handleErrors != expectedHandleErrors {
 		t.Fatalf("expected %d handle errors, got %d instead", expectedHandleErrors, handleErrors)
-	}
-
-	if !notFoundErrorFound {
-		t.Fatalf("error handler message different than expected")
 	}
 }
 

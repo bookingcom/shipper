@@ -8,7 +8,7 @@ import (
 	"github.com/golang/glog"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -28,7 +28,15 @@ import (
 	shipperController "github.com/bookingcom/shipper/pkg/controller"
 )
 
-const AgentName = "installation-controller"
+const (
+	AgentName = "installation-controller"
+
+	// maxRetries is the number of times an InstallationTarget will be retried
+	// before we drop it out of the workqueue. The number is chosen with the
+	// default rate limiter in mind. This results in the following backoff times:
+	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s.
+	maxRetries = 11
+)
 
 // Controller is a Kubernetes controller that processes InstallationTarget
 // objects.
@@ -115,74 +123,89 @@ func (c *Controller) runWorker() {
 
 func (c *Controller) processNextWorkItem() bool {
 	obj, shutdown := c.workqueue.Get()
-
 	if shutdown {
 		return false
 	}
 
-	err := func(obj interface{}) error {
-		defer c.workqueue.Done(obj)
-		var (
-			key string
-			ok  bool
-		)
-		if key, ok = obj.(string); !ok {
-			// Do not attempt to process invalid objects again.
-			c.workqueue.Forget(obj)
-			runtime.HandleError(fmt.Errorf("invalid object key: %#v", obj))
-			return nil
-		}
-		if err := c.syncOne(key); err != nil {
-			return fmt.Errorf("error syncing %q: %s", key, err)
-		}
+	defer c.workqueue.Done(obj)
 
-		// Do not requeue this object because it's already processed.
+	var (
+		key string
+		ok  bool
+	)
+
+	if key, ok = obj.(string); !ok {
 		c.workqueue.Forget(obj)
-		glog.Infof("Successfully synced %q", key)
-		return nil
-	}(obj)
-
-	if err != nil {
-		runtime.HandleError(err)
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
 		return true
 	}
+
+	if shouldRetry := c.syncOne(key); shouldRetry {
+		if c.workqueue.NumRequeues(key) >= maxRetries {
+			// Drop the InstallationTarget's key out of the workqueue and thus reset its
+			// backoff. This limits the time a "broken" object can hog a worker.
+			glog.Warningf("CapacityTarget %q has been retried too many times, dropping from the queue", key)
+			c.workqueue.Forget(key)
+
+			return true
+		}
+
+		c.workqueue.AddRateLimited(key)
+
+		return true
+	}
+
+	c.workqueue.Forget(obj)
+	glog.V(4).Infof("Successfully synced InstallationTarget %q", key)
 
 	return true
 }
 
-func (c *Controller) syncOne(key string) error {
+func (c *Controller) syncOne(key string) bool {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
-		return nil
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %q", key))
+		return false
 	}
 
 	it, err := c.installationTargetsLister.InstallationTargets(namespace).Get(name)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			runtime.HandleError(fmt.Errorf("InstallationTarget %q has been deleted", key))
-			return nil
+		if kerrors.IsNotFound(err) {
+			glog.V(3).Infof("InstallationTarget %q has been deleted", key)
+			return false
 		}
-		return err
+
+		runtime.HandleError(fmt.Errorf("error syncing InstallationTarget %q (will retry): %s", key, err))
+		return true
 	}
 
-	return c.processInstallation(it.DeepCopy())
+	if err := c.processInstallation(it.DeepCopy()); err != nil {
+		if shipperController.IsMultipleOwnerReferencesError(err) || shipperController.IsWrongOwnerReferenceError(err) {
+			runtime.HandleError(fmt.Errorf("error syncing InstallationTarget %q (will not retry): %s", key, err))
+			return false
+		}
+
+		runtime.HandleError(fmt.Errorf("error syncing InstallationTarget %q (will retry): %s", key, err))
+		return true
+	}
+
+	return false
 }
 
 func (c *Controller) enqueueInstallationTarget(obj interface{}) {
-	var key string
-	var err error
-	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
+	key, err := cache.MetaNamespaceKeyFunc(obj)
+	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
-	c.workqueue.AddRateLimited(key)
+
+	c.workqueue.Add(key)
 }
 
 // processInstallation attempts to install the related release on all target clusters.
 func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error {
 	if n := len(it.OwnerReferences); n != 1 {
-		return fmt.Errorf("expected exactly one owner for InstallationTarget %q, got %d", it.GetName(), n)
+		return shipperController.NewMultipleOwnerReferencesError(it.Name, n)
 	}
 
 	owner := it.OwnerReferences[0]
@@ -190,13 +213,10 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	release, err := c.releaseLister.Releases(it.GetNamespace()).Get(owner.Name)
 	if err != nil {
 		return err
-	} else if release.GetUID() != owner.UID {
-		return fmt.Errorf(
-			"the owner Release for InstallationTarget %q is gone; expected UID %s but got %s",
-			shipperController.MetaKey(it),
-			owner.UID,
-			release.GetUID(),
-		)
+	}
+
+	if release.UID != owner.UID {
+		return shipperController.NewWrongOwnerReferenceError(it.Name, owner.UID, release.UID)
 	}
 
 	handler := NewInstaller(c.chartFetchFunc, release, it)

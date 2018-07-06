@@ -25,6 +25,7 @@ import (
 	"github.com/golang/glog"
 
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -45,11 +46,18 @@ import (
 const AgentName = "traffic-controller"
 
 const (
-	// SuccessSynced is used as part of the Event 'reason' when a TrafficTarget is synced
+	// SuccessSynced is used as part of the Event 'reason' when a TrafficTarget is
+	// synced.
 	SuccessSynced = "Synced"
-
-	// MessageResourceSynced is used as part of the 'Event' message when a TrafficTarget is synced
+	// MessageResourceSynced is used as part of the 'Event' message when a
+	// TrafficTarget is synced.
 	MessageResourceSynced = "TrafficTarget synced successfully"
+
+	// maxRetries is the number of times a TrafficTarget will be retried before we
+	// drop it out of the workqueue. The number is chosen with the default rate
+	// limiter in mind. This results in the following backoff times: 5ms, 10ms,
+	// 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s.
+	maxRetries = 11
 )
 
 // Controller is the controller implementation for TrafficTarget resources
@@ -153,51 +161,40 @@ func (c *Controller) runWorker() {
 // attempt to process it, by calling the syncHandler.
 func (c *Controller) processNextWorkItem() bool {
 	obj, shutdown := c.workqueue.Get()
-
 	if shutdown {
 		return false
 	}
 
-	// We wrap this block in a func so we can defer c.workqueue.Done.
-	err := func(obj interface{}) error {
-		// We call Done here so the workqueue knows we have finished
-		// processing this item. We also must remember to call Forget if we
-		// do not want this work item being re-queued. For example, we do
-		// not call Forget if a transient error occurs, instead the item is
-		// put back on the workqueue and attempted again after a back-off
-		// period.
-		defer c.workqueue.Done(obj)
-		var key string
-		var ok bool
-		// We expect strings to come off the workqueue. These are of the
-		// form namespace/name. We do this as the delayed nature of the
-		// workqueue means the items in the informer cache may actually be
-		// more up to date that when the item was initially put onto the
-		// workqueue.
-		if key, ok = obj.(string); !ok {
-			// As the item in the workqueue is actually invalid, we call
-			// Forget here else we'd go into a loop of attempting to
-			// process a work item that is invalid.
-			c.workqueue.Forget(obj)
-			runtime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
-			return nil
-		}
-		// Run the syncHandler, passing it the namespace/name string of the
-		// TrafficTarget resource to be synced.
-		if err := c.syncHandler(key); err != nil {
-			return fmt.Errorf("error syncing '%s': %s", key, err.Error())
-		}
-		// Finally, if no error occurs we Forget this item so it does not
-		// get queued again until another change happens.
-		c.workqueue.Forget(obj)
-		glog.Infof("Successfully synced '%s'", key)
-		return nil
-	}(obj)
+	defer c.workqueue.Done(obj)
 
-	if err != nil {
-		runtime.HandleError(err)
+	var (
+		key string
+		ok  bool
+	)
+
+	if key, ok = obj.(string); !ok {
+		c.workqueue.Forget(obj)
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
 		return true
 	}
+
+	if shouldRetry := c.syncHandler(key); shouldRetry {
+		if c.workqueue.NumRequeues(key) >= maxRetries {
+			// Drop the TrafficTarget's key out of the workqueue and thus reset its
+			// backoff. This limits the time a "broken" object can hog a worker.
+			glog.Warningf("TrafficTarget %q has been retried too many times, dropping from the queue", key)
+			c.workqueue.Forget(key)
+
+			return true
+		}
+
+		c.workqueue.AddRateLimited(key)
+
+		return true
+	}
+
+	c.workqueue.Forget(obj)
+	glog.V(4).Infof("Successfully synced TrafficTarget %q", key)
 
 	return true
 }
@@ -207,37 +204,56 @@ func (c *Controller) processNextWorkItem() bool {
 // - For each TT, get desired weight in target clusters.
 // - For each cluster, compute pod label %s according to TT weights by release.
 // - For each cluster, add/remove pod labels accordingly (if too many, remove until correct and visa versa)
-func (c *Controller) syncHandler(key string) error {
+func (c *Controller) syncHandler(key string) bool {
 	namespace, ttName, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
-		return nil
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", key))
+		return false
 	}
 
 	syncingTT, err := c.trafficTargetsLister.TrafficTargets(namespace).Get(ttName)
 	if err != nil {
-		return err
+		if kerrors.IsNotFound(err) {
+			glog.V(3).Infof("TrafficTarget %q has been deleted", key)
+			return false
+		}
+
+		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will retry): %s", key, err))
+		return true
 	}
 
-	syncingReleaseName, ok := syncingTT.GetLabels()[shipperv1.ReleaseLabel]
+	syncingReleaseName, ok := syncingTT.Labels[shipperv1.ReleaseLabel]
 	if !ok {
-		return fmt.Errorf("TrafficTarget %q has no 'release' label", ttName)
+		// This needs human intervention or a Shipper fix so not retrying here.
+		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will not retry): no %q label",
+			key, shipperv1.ReleaseLabel))
+		// TODO(asurikov): log an event.
+		return false
 	}
 
-	appName, ok := syncingTT.GetLabels()[shipperv1.AppLabel]
+	appName, ok := syncingTT.Labels[shipperv1.AppLabel]
 	if !ok {
-		return fmt.Errorf("TrafficTarget %q has no %q label", ttName, shipperv1.AppLabel)
+		// This needs human intervention or a Shipper fix so not retrying here.
+		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will not retry): no %q label",
+			key, shipperv1.AppLabel))
+		// TODO(asurikov): log an event.
+		return false
 	}
 
 	appSelector := labels.Set{shipperv1.AppLabel: appName}.AsSelector()
 	list, err := c.trafficTargetsLister.TrafficTargets(namespace).List(appSelector)
 	if err != nil {
-		return err
+		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will retry): %s", key, err))
+		return true
 	}
 
 	shifter, err := newPodLabelShifter(appName, namespace, list)
 	if err != nil {
-		return err
+		// This needs human intervention or a Shipper fix so not retrying here.
+		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will not retry): %s",
+			key, err))
+		// TODO(asurikov): log an event.
+		return false
 	}
 
 	var statuses []*shipperv1.ClusterTrafficStatus
@@ -378,22 +394,27 @@ func (c *Controller) syncHandler(key string) error {
 	// nothing other than resource status has been updated.
 	_, err = c.shipperclientset.ShipperV1().TrafficTargets(namespace).Update(ttCopy)
 	if err != nil {
-		return err
+		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will retry): %s", key, err))
+		return true
 	}
-	//TODO(btyler) don't record "success" if it wasn't a total success: this should include some information about how many clusters worked and how many did not
+
+	//TODO(btyler) don't record "success" if it wasn't a total success: this
+	//should include some information about how many clusters worked and how many
+	//did not.
 	c.recorder.Event(syncingTT, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
-	return nil
+
+	return false
 }
 
 // enqueueTrafficTarget takes a TrafficTarget resource and converts it into a namespace/name
 // string which is then put onto the work queue. This method should *not* be
 // passed resources of any type other than TrafficTarget.
 func (c *Controller) enqueueTrafficTarget(obj interface{}) {
-	var key string
-	var err error
-	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
+	key, err := cache.MetaNamespaceKeyFunc(obj)
+	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
-	c.workqueue.AddRateLimited(key)
+
+	c.workqueue.Add(key)
 }

@@ -26,7 +26,15 @@ import (
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
-const AgentName = "strategy-controller"
+const (
+	AgentName = "strategy-controller"
+
+	// maxRetries is the number of times an Application will be retried before we
+	// drop it out of the workqueue. The number is chosen with the default rate
+	// limiter in mind. This results in the following backoff times: 5ms, 10ms,
+	// 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s.
+	maxRetries = 11
+)
 
 type Controller struct {
 	clientset                 shipperclientset.Interface
@@ -77,17 +85,10 @@ func NewController(
 	}
 
 	releaseInformer.Informer().AddEventHandler(
-		cache.FilteringResourceEventHandler{
-			FilterFunc: func(obj interface{}) bool {
-				rel, ok := obj.(*v1.Release)
-				return ok && releaseutil.ReleaseScheduled(rel)
-			},
-			Handler: cache.ResourceEventHandlerFuncs{
-				AddFunc: controller.enqueueRelease,
-				UpdateFunc: func(oldObj, newObj interface{}) {
-					rel := newObj.(*v1.Release)
-					controller.enqueueRelease(rel)
-				},
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: controller.enqueueRelease,
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				controller.enqueueRelease(newObj)
 			},
 		},
 	)
@@ -148,12 +149,26 @@ func (c *Controller) getWorkingReleasePair(app *v1.Application) (*v1.Release, *v
 
 	if len(appReleases) == 0 {
 		return nil, nil, fmt.Errorf(
-			"zero release records in app %s/%s: will not execute strategy",
-			app.GetNamespace(), app.GetName(),
+			"zero release records in app %q: will not execute strategy",
+			shippercontroller.MetaKey(app),
 		)
 	}
 
-	contender := appReleases[len(appReleases)-1]
+	// Walk backwards until we find a scheduled release. There may be pending
+	// releases ahead of the actual contender, that's not we're looking for.
+	var contender *v1.Release
+	for i := len(appReleases) - 1; i >= 0; i-- {
+		if releaseutil.ReleaseScheduled(appReleases[i]) {
+			contender = appReleases[i]
+			break
+		}
+	}
+
+	if contender == nil {
+		return nil, nil, fmt.Errorf("couldn't find a contender for Application %q",
+			shippercontroller.MetaKey(app))
+	}
+
 	var incumbent *v1.Release
 	// walk backwards until we find an installed release that isn't the head of history
 	// (for releases A -> B -> C, if B was never finished this allows C to
@@ -169,14 +184,13 @@ func (c *Controller) getWorkingReleasePair(app *v1.Application) (*v1.Release, *v
 	return incumbent, contender, nil
 }
 
-func (c *Controller) getAssociatedApplicationKey(rel *v1.Release) string {
+func (c *Controller) getAssociatedApplicationKey(rel *v1.Release) (string, error) {
 	if n := len(rel.OwnerReferences); n != 1 {
-		glog.Warningf("expected exactly one OwnerReference for release '%s/%s', but got %d", rel.GetNamespace(), rel.GetName(), n)
-		return ""
+		return "", shippercontroller.NewMultipleOwnerReferencesError(shippercontroller.MetaKey(rel), n)
 	}
 
 	owningApp := rel.OwnerReferences[0]
-	return fmt.Sprintf("%s/%s", rel.Namespace, owningApp.Name)
+	return fmt.Sprintf("%s/%s", rel.Namespace, owningApp.Name), nil
 }
 
 func (c *Controller) getAssociatedReleaseKey(obj *metav1.ObjectMeta) (string, error) {
@@ -232,7 +246,6 @@ func (c *Controller) runReleaseWorker() {
 
 func (c *Controller) processNextReleaseWorkItem() bool {
 	obj, shutdown := c.releaseWorkqueue.Get()
-
 	if shutdown {
 		return false
 	}
@@ -246,80 +259,112 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 	)
 
 	if key, ok = obj.(string); !ok {
-		runtime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
 		return true
 	}
 
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %q", key))
 		return true
 	}
 
 	rel, err := c.releasesLister.Releases(ns).Get(name)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("failed to fetch release %s: %s", key, err))
+		runtime.HandleError(fmt.Errorf("error syncing Release %q (will not retry): %s", key, err))
 		return true
 	}
 
-	appKey := c.getAssociatedApplicationKey(rel)
-	if appKey != "" {
-		c.appWorkqueue.Add(appKey)
+	if !releaseutil.ReleaseScheduled(rel) {
+		glog.V(4).Infof("Release %q is not scheduled yet, skipping", key)
+		return false
 	}
+
+	appKey, err := c.getAssociatedApplicationKey(rel)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("error syncing Release %q (will not retry): %s", key, err))
+		return true
+	}
+
+	glog.V(4).Infof("Successfully synced Release %q", key)
+	c.appWorkqueue.Add(appKey)
+
 	return true
 }
 
 func (c *Controller) processNextAppWorkItem() bool {
 	obj, shutdown := c.appWorkqueue.Get()
-
 	if shutdown {
 		return false
 	}
 
 	defer c.appWorkqueue.Done(obj)
 
-	if key, ok := obj.(string); !ok {
+	var (
+		key string
+		ok  bool
+	)
+
+	if key, ok = obj.(string); !ok {
 		c.appWorkqueue.Forget(obj)
-		runtime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
-		return false
-	} else {
-		if err := c.syncOne(key); err != nil {
-			runtime.HandleError(fmt.Errorf("error syncing: %q: %s", key, err.Error()))
-			return false
-		} else {
-			c.appWorkqueue.Forget(obj)
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
+		return true
+	}
+
+	if shouldRetry := c.syncOne(key); shouldRetry {
+		if c.appWorkqueue.NumRequeues(key) >= maxRetries {
+			// Drop the Applications's key out of the workqueue and thus reset its
+			// backoff. This limits the time a "broken" object can hog a worker.
+			glog.Warningf("Application %q has been retried too many times, dropping from the queue", key)
+			c.appWorkqueue.Forget(key)
+
 			return true
 		}
+
+		c.appWorkqueue.AddRateLimited(key)
+
+		return true
 	}
+
+	glog.V(4).Infof("Successfully synced Application %q", key)
+	c.appWorkqueue.Forget(obj)
+
+	return true
 }
 
-func (c *Controller) syncOne(key string) error {
+func (c *Controller) syncOne(key string) bool {
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
-		return nil
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %q", key))
+		return false
 	}
 
 	app, err := c.applicationsLister.Applications(ns).Get(name)
 	if err != nil {
-		return err
+		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
+		return true
 	}
 
 	incumbent, contender, err := c.getWorkingReleasePair(app)
 	if err != nil {
-		return err
+		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
+		return true
 	}
 
 	strategyExecutor, err := c.buildExecutor(incumbent, contender, c.recorder)
 	if err != nil {
-		return err
+		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
+		return true
 	}
 
 	strategyExecutor.info("will start processing application")
 
 	result, transitions, err := strategyExecutor.execute()
 	if err != nil {
-		return err
+		// Currently the only error that can happen here is "invalid strategy step".
+		// Doesn't make sense to retry that.
+		runtime.HandleError(fmt.Errorf("error syncing Application %q (will not retry): %s", key, err))
+		return false
 	}
 
 	for _, t := range transitions {
@@ -335,21 +380,26 @@ func (c *Controller) syncOne(key string) error {
 
 	if len(result) == 0 {
 		strategyExecutor.info("strategy verified, nothing to patch")
-		return nil
+		return false
 	}
 
 	strategyExecutor.info("strategy executed, patches to apply")
 	for _, r := range result {
 		name, gvk, b := r.PatchSpec()
 
-		if client, err := c.clientForGroupVersionKind(gvk, ns); err != nil {
-			return err
-		} else if _, err = client.Patch(name, types.MergePatchType, b); err != nil {
-			return err
+		client, err := c.clientForGroupVersionKind(gvk, ns)
+		if err != nil {
+			runtime.HandleError(fmt.Errorf("error syncing Application %q (will not retry): %s", key, err))
+			return false
+		}
+
+		if _, err := client.Patch(name, types.MergePatchType, b); err != nil {
+			runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
+			return true
 		}
 	}
 
-	return nil
+	return false
 }
 
 func (c *Controller) clientForGroupVersionKind(
@@ -444,70 +494,55 @@ func (c *Controller) buildExecutor(incumbentRelease, contenderRelease *v1.Releas
 func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 	it, ok := obj.(*v1.InstallationTarget)
 	if !ok {
-		glog.Warningln(fmt.Errorf("object passed to enqueueInstallationTarget is _not_ a v1.InstallationTarget: %v", obj))
+		runtime.HandleError(fmt.Errorf("not a shipperv1.InstallationTarget: %#v", obj))
 		return
 	}
 
 	releaseKey, err := c.getAssociatedReleaseKey(&it.ObjectMeta)
 	if err != nil {
-		glog.Warningln(err)
+		runtime.HandleError(err)
 		return
 	}
 
-	c.releaseWorkqueue.AddRateLimited(releaseKey)
+	c.releaseWorkqueue.Add(releaseKey)
 }
 
 func (c *Controller) enqueueTrafficTarget(obj interface{}) {
 	tt, ok := obj.(*v1.TrafficTarget)
 	if !ok {
-		glog.Warningln(fmt.Errorf("object passed to enqueueTrafficTarget is _not_ a v1.TrafficTarget: %v", obj))
+		runtime.HandleError(fmt.Errorf("not a shipperv1.TrafficTarget: %#v", obj))
 		return
 	}
 
 	releaseKey, err := c.getAssociatedReleaseKey(&tt.ObjectMeta)
 	if err != nil {
-		glog.Warningln(err)
+		runtime.HandleError(err)
 		return
 	}
 
-	c.releaseWorkqueue.AddRateLimited(releaseKey)
+	c.releaseWorkqueue.Add(releaseKey)
 }
 
 func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 	ct, ok := obj.(*v1.CapacityTarget)
 	if !ok {
-		glog.Warningln(fmt.Errorf("object passed to enqueueCapacityTarget is _not_ a v1.CapacityTarget: %v", obj))
-		return
-	}
-	releaseKey, err := c.getAssociatedReleaseKey(&ct.ObjectMeta)
-	if err != nil {
-		glog.Warningln(err)
+		runtime.HandleError(fmt.Errorf("not a shipperv1.CapacityTarget: %#v", obj))
 		return
 	}
 
-	c.releaseWorkqueue.AddRateLimited(releaseKey)
+	releaseKey, err := c.getAssociatedReleaseKey(&ct.ObjectMeta)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	c.releaseWorkqueue.Add(releaseKey)
 }
 
 func (c *Controller) enqueueRelease(obj interface{}) {
-	var (
-		rel *v1.Release
-		ok  bool
-	)
-
-	if _, ok = obj.(metav1.Object); !ok {
-		_, ok = obj.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			runtime.HandleError(fmt.Errorf("neither a Meta object, nor a tombstone: %#v", obj))
-			return
-		}
-		// TODO(btyler) work out Release end-of-life #24
-		glog.V(5).Infof("trying to enqueue a deleted release. we don't know what to do with this yet: skipping. object: %#v", obj)
-		return
-	}
-
-	rel, ok = obj.(*v1.Release)
+	rel, ok := obj.(*v1.Release)
 	if !ok {
-		runtime.HandleError(fmt.Errorf("enqueued something that isn't a release with enqueueRelease. %#v", obj))
+		runtime.HandleError(fmt.Errorf("not a shipperv1.Release: %#v", obj))
 		return
 	}
 
@@ -517,8 +552,5 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 		return
 	}
 
-	glog.V(5).Infof("enqueued item %q", key)
-	c.releaseWorkqueue.AddRateLimited(key)
-
-	glog.V(5).Infof("inspecting release %s", shippercontroller.MetaKey(rel))
+	c.releaseWorkqueue.Add(key)
 }

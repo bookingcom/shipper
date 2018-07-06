@@ -27,7 +27,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -50,6 +50,12 @@ import (
 const (
 	AgentName   = "capacity-controller"
 	SadPodLimit = 5
+
+	// maxRetries is the number of times a CapacityTarget will be retried before we
+	// drop it out of the workqueue. The number is chosen with the default rate
+	// limiter in mind. This results in the following backoff times: 5ms, 10ms,
+	// 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s.
+	maxRetries = 11
 )
 
 // Controller is the controller implementation for CapacityTarget resources
@@ -161,87 +167,80 @@ func (c *Controller) runCapacityTargetWorker() {
 // attempt to process it, by calling the syncHandler.
 func (c *Controller) processNextCapacityTargetWorkItem() bool {
 	obj, shutdown := c.capacityTargetWorkqueue.Get()
-
 	if shutdown {
 		return false
 	}
 
-	// We wrap this block in a func so we can defer c.CapacityTargetWorkqueue.Done.
-	err := func(obj interface{}) error {
-		// We call Done here so the workqueue knows we have finished
-		// processing this item. We also must remember to call Forget if we
-		// do not want this work item being re-queued. For example, we do
-		// not call Forget if a transient error occurs, instead the item is
-		// put back on the workqueue and attempted again after a back-off
-		// period.
-		defer c.capacityTargetWorkqueue.Done(obj)
-		var key string
-		var ok bool
-		// We expect strings to come off the workqueue. These are of the
-		// form namespace/name. We do this as the delayed nature of the
-		// workqueue means the items in the informer cache may actually be
-		// more up to date that when the item was initially put onto the
-		// workqueue.
-		if key, ok = obj.(string); !ok {
-			// As the item in the workqueue is actually invalid, we call
-			// Forget here else we'd go into a loop of attempting to
-			// process a work item that is invalid.
-			c.capacityTargetWorkqueue.Forget(obj)
-			runtime.HandleError(fmt.Errorf("expected string in capacity target workqueue but got %#v", obj))
-			return nil
-		}
-		// Run the syncHandler, passing it the namespace/name string of the
-		// CapacityTarget resource to be synced.
-		if err := c.capacityTargetSyncHandler(key); err != nil {
-			return fmt.Errorf("error syncing %q: %s", key, err.Error())
-		}
-		// Finally, if no error occurs we Forget this item so it does not
-		// get queued again until another change happens.
-		c.capacityTargetWorkqueue.Forget(obj)
-		glog.Infof("Successfully synced '%s'", key)
-		return nil
-	}(obj)
+	defer c.capacityTargetWorkqueue.Done(obj)
 
-	if err != nil {
-		runtime.HandleError(err)
+	var (
+		key string
+		ok  bool
+	)
+
+	if key, ok = obj.(string); !ok {
+		c.capacityTargetWorkqueue.Forget(obj)
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
 		return true
 	}
+
+	if shouldRetry := c.capacityTargetSyncHandler(key); shouldRetry {
+		if c.capacityTargetWorkqueue.NumRequeues(key) >= maxRetries {
+			// Drop the CapacityTarget's key out of the workqueue and thus reset its
+			// backoff. This limits the time a "broken" object can hog a worker.
+			glog.Warningf("CapacityTarget %q has been retried too many times, dropping from the queue", key)
+			c.capacityTargetWorkqueue.Forget(key)
+
+			return true
+		}
+
+		c.capacityTargetWorkqueue.AddRateLimited(key)
+
+		return true
+	}
+
+	glog.V(4).Infof("Successfully synced CapacityTarget %q", key)
+	c.capacityTargetWorkqueue.Forget(obj)
 
 	return true
 }
 
 // capacityTargetSyncHandler compares the actual state with the desired, and attempts to
 // converge the two.
-func (c *Controller) capacityTargetSyncHandler(key string) error {
-	// Convert the namespace/name string into a distinct namespace and name
+func (c *Controller) capacityTargetSyncHandler(key string) bool {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
-		return nil
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %s", key))
+		return false
 	}
 
-	glog.Infof("Running syncHandler for %s:%s.", namespace, name)
 	ct, err := c.capacityTargetsLister.CapacityTargets(namespace).Get(name)
 	if err != nil {
-		// The CapacityTarget resource may no longer exist, in which case we stop
-		// processing.
-		if errors.IsNotFound(err) {
-			runtime.HandleError(fmt.Errorf("CapacityTarget %q in work queue no longer exists", key))
-			return nil
+		if kerrors.IsNotFound(err) {
+			glog.V(3).Infof("CapacityTarget %q has been deleted", key)
+			return false
 		}
 
-		return err
+		runtime.HandleError(fmt.Errorf("error syncing CapacityTarget %q (will retry): %s", key, err))
+		return true
 	}
 
 	ct = ct.DeepCopy()
 	release, err := c.getReleaseForCapacityTarget(ct)
 	if err != nil {
-		return err
+		if IsReleaseGone(err) {
+			runtime.HandleError(fmt.Errorf("error syncing CapacityTarget %q (will not retry): %s", key, err))
+			return false
+		}
+
+		runtime.HandleError(fmt.Errorf("error syncing CapacityTarget %q (will retry): %s", key, err))
+		return true
 	}
 
 	totalReplicaCount, err := strconv.Atoi(release.Annotations[shipperv1.ReleaseReplicasAnnotation])
 	if err != nil {
-		return fmt.Errorf("Could not parse replicas into an integer: %s", err)
+		runtime.HandleError(fmt.Errorf("error syncing CapacityTarget %q (will not retry): %s", key, err))
+		return false
 	}
 
 	targetNamespace := ct.Namespace
@@ -321,25 +320,14 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 			corev1.ConditionTrue,
 			"",
 			"")
-
-		c.recorder.Eventf(
-			ct,
-			corev1.EventTypeNormal,
-			"CapacityChanged",
-			"Scaled %q to %d replicas",
-			shippercontroller.MetaKey(targetDeployment),
-			replicaCount)
 	}
 
 	sort.Sort(byClusterName(ct.Status.Clusters))
-	_, err = c.shipperclientset.ShipperV1().CapacityTargets(ct.GetNamespace()).Update(ct)
+
+	_, err = c.shipperclientset.ShipperV1().CapacityTargets(namespace).Update(ct)
 	if err != nil {
-		c.recorder.Eventf(
-			ct,
-			corev1.EventTypeWarning,
-			"FailedCapacityTargetChange",
-			err.Error(),
-		)
+		runtime.HandleError(fmt.Errorf("error syncing CapacityTarget %q (will retry): %s", key, err))
+		return true
 	}
 
 	c.recorder.Eventf(
@@ -351,20 +339,20 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		ct.Status,
 	)
 
-	return nil
+	return false
 }
 
 // enqueueCapacityTarget takes a CapacityTarget resource and converts it into a namespace/name
 // string which is then put onto the work queue. This method should *not* be
 // passed resources of any type other than CapacityTarget.
 func (c *Controller) enqueueCapacityTarget(obj interface{}) {
-	var key string
-	var err error
-	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
+	key, err := cache.MetaNamespaceKeyFunc(obj)
+	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
-	c.capacityTargetWorkqueue.AddRateLimited(key)
+
+	c.capacityTargetWorkqueue.Add(key)
 }
 
 func (c Controller) getReleaseForCapacityTarget(capacityTarget *shipperv1.CapacityTarget) (*shipperv1.Release, error) {
