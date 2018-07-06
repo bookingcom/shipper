@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/golang/glog"
@@ -13,6 +14,7 @@ import (
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	"github.com/bookingcom/shipper/pkg/controller"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 type releaseInfo struct {
@@ -298,19 +300,10 @@ func (s *Executor) execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 	// Step wrap up
 	//
 	{
-		var contenderPhase string
-
-		if isLastStep {
-			contenderPhase = shipperv1.ReleasePhaseInstalled
-		} else {
-			contenderPhase = shipperv1.ReleasePhaseWaitingForCommand
-		}
-
 		var releasePatches []ExecutorResult
 		var releaseStrategyStateTransitions []ReleaseStrategyStateTransition
 
 		reportedStep := s.contender.release.Status.AchievedStep
-		reportedPhase := s.contender.release.Status.Phase
 
 		contenderStatus := s.contender.release.Status.DeepCopy()
 
@@ -324,6 +317,10 @@ func (s *Executor) execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 			oldReleaseStrategyState = contenderStatus.Strategy.State
 		}
 
+		sort.Slice(contenderStatus.Conditions, func(i, j int) bool {
+			return contenderStatus.Conditions[i].Type < contenderStatus.Conditions[j].Type
+		})
+
 		releaseStrategyStateTransitions =
 			getReleaseStrategyStateTransitions(
 				oldReleaseStrategyState,
@@ -335,33 +332,19 @@ func (s *Executor) execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 			State:      newReleaseStrategyState,
 		}
 
-		if targetStep != reportedStep || contenderPhase != reportedPhase {
+		if targetStep != reportedStep {
 			contenderStatus.AchievedStep = targetStep
-			contenderStatus.Phase = contenderPhase
+		}
+
+		if targetStep == lastStepIndex {
+			condition := releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", "")
+			releaseutil.SetReleaseCondition(contenderStatus, *condition)
 		}
 
 		releasePatches = append(releasePatches, &ReleaseUpdateResult{
 			NewStatus: contenderStatus,
 			Name:      s.contender.release.Name,
 		})
-
-		if s.incumbent != nil {
-			incumbentPhase := shipperv1.ReleasePhaseInstalled
-			if isLastStep {
-				incumbentPhase = shipperv1.ReleasePhaseSuperseded
-			}
-
-			if incumbentPhase != s.incumbent.release.Status.Phase {
-				incumbentStatus := &shipperv1.ReleaseStatus{
-					Phase:        incumbentPhase,
-					AchievedStep: s.incumbent.release.Status.AchievedStep,
-				}
-				releasePatches = append(releasePatches, &ReleaseUpdateResult{
-					NewStatus: incumbentStatus,
-					Name:      s.incumbent.release.Name,
-				})
-			}
-		}
 
 		s.event(s.contender.release, "step %d finished", targetStep)
 		return releasePatches, releaseStrategyStateTransitions, nil

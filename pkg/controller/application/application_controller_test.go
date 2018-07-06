@@ -83,7 +83,6 @@ func TestCreateFirstRelease(t *testing.T) {
 
 	expectedRelease := newRelease(expectedRelName, app)
 	expectedRelease.Environment.Chart.RepoURL = srv.URL()
-	expectedRelease.Status.Phase = shipperv1.ReleasePhaseWaitingForScheduling
 	expectedRelease.Labels[shipperv1.ReleaseEnvironmentHashLabel] = envHash
 	expectedRelease.Annotations[shipperv1.ReleaseTemplateIterationAnnotation] = "0"
 	expectedRelease.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
@@ -103,7 +102,10 @@ func TestStatusStableState(t *testing.T) {
 	releaseA.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
 	releaseA.Spec.TargetStep = 2
 	releaseA.Status.AchievedStep = 2
-	releaseA.Status.Phase = shipperv1.ReleasePhaseInstalled
+	releaseA.Status.Conditions = []shipperv1.ReleaseCondition{
+		{Type: shipperv1.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
+		{Type: shipperv1.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
+	}
 
 	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "1"
 	app.Spec.Template.Chart.RepoURL = "http://localhost"
@@ -113,7 +115,10 @@ func TestStatusStableState(t *testing.T) {
 	releaseB.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
 	releaseB.Spec.TargetStep = 2
 	releaseB.Status.AchievedStep = 2
-	releaseB.Status.Phase = shipperv1.ReleasePhaseInstalled
+	releaseB.Status.Conditions = []shipperv1.ReleaseCondition{
+		{Type: shipperv1.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
+		{Type: shipperv1.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
+	}
 
 	f.objects = append(f.objects, app, releaseA, releaseB)
 	expectedApp := app.DeepCopy()
@@ -237,7 +242,6 @@ func TestCreateSecondRelease(t *testing.T) {
 	newRelName := fmt.Sprintf("%s-%s-0", testAppName, newEnvHash)
 
 	expectedRelease := newRelease(newRelName, app)
-	expectedRelease.Status.Phase = shipperv1.ReleasePhaseWaitingForScheduling
 	expectedRelease.Labels[shipperv1.ReleaseEnvironmentHashLabel] = newEnvHash
 	expectedRelease.Annotations[shipperv1.ReleaseTemplateIterationAnnotation] = "0"
 	expectedRelease.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
@@ -370,14 +374,16 @@ func TestStateRollingOut(t *testing.T) {
 
 	incumbent := newRelease(incumbentName, app)
 	incumbent.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
-	incumbent.Status.Phase = shipperv1.ReleasePhaseInstalled
+	incumbent.Status.Conditions = []shipperv1.ReleaseCondition{
+		{Type: shipperv1.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
+		{Type: shipperv1.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
+	}
 	f.objects = append(f.objects, incumbent)
 
 	contender := newRelease(contenderName, app)
 	contender.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
 	contender.Spec.TargetStep = 1
 	contender.Status.AchievedStep = 0
-	contender.Status.Phase = shipperv1.ReleasePhaseWaitingForCommand
 	f.objects = append(f.objects, contender)
 
 	appRollingOut := app.DeepCopy()
@@ -421,7 +427,6 @@ func TestDeletingAbortedReleases(t *testing.T) {
 	releaseBar.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
 	releaseBar.Spec.TargetStep = 2
 	releaseBar.Status.AchievedStep = 2
-	releaseBar.Status.Phase = shipperv1.ReleasePhaseInstalled
 
 	f.objects = append(f.objects, releaseFoo, releaseBar)
 

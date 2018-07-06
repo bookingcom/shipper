@@ -5,10 +5,6 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -18,6 +14,11 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+
+	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 const AgentName = "schedule-controller"
@@ -56,21 +57,10 @@ func NewController(
 
 	glog.Info("Setting up event handlers")
 	releaseInformer.Informer().AddEventHandler(
-		cache.FilteringResourceEventHandler{
-			FilterFunc: func(obj interface{}) bool {
-				release, ok := obj.(*v1.Release)
-				if !ok {
-					return false
-				}
-
-				return release.Status.Phase == v1.ReleasePhaseWaitingForScheduling ||
-					(release.Status.Phase == v1.ReleasePhaseWaitingForStrategy && len(release.Status.Conditions) == 0)
-			},
-			Handler: cache.ResourceEventHandlerFuncs{
-				AddFunc: controller.enqueueRelease,
-				UpdateFunc: func(oldObj, newObj interface{}) {
-					controller.enqueueRelease(newObj)
-				},
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: controller.enqueueRelease,
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				controller.enqueueRelease(newObj)
 			},
 		})
 
@@ -153,6 +143,11 @@ func (c *Controller) syncOne(key string) error {
 		}
 
 		return err
+	}
+
+	if releaseutil.ReleaseScheduled(release) {
+		glog.V(4).Info("release %q has already been scheduled, ignoring", key)
+		return nil
 	}
 
 	scheduler := NewScheduler(

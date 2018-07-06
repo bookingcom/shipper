@@ -23,6 +23,7 @@ import (
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 const (
@@ -150,7 +151,7 @@ func TestNewApplicationVanguard(t *testing.T) {
 	t.Logf("checking that release %q has %d pods (strategy step 1)", relName, targetReplicas/2)
 	f.checkPods(relName, targetReplicas/2)
 
-	t.Logf("setting release %q targetStep to 1", relName)
+	t.Logf("setting release %q targetStep to 2", relName)
 	f.targetStep(2, rel.GetName())
 	t.Logf("waiting for release %q to reach phase 'installed'", relName)
 	f.waitForInstalled(rel.GetName())
@@ -354,7 +355,7 @@ func (f *fixture) waitForInstalled(releaseName string) {
 			f.t.Fatalf("failed to fetch release: %q", releaseName)
 		}
 
-		if rel.Status.Phase == shipperv1.ReleasePhaseInstalled {
+		if releaseutil.ReleaseComplete(rel) {
 			return true, nil
 		}
 

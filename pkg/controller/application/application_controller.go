@@ -39,6 +39,7 @@ import (
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	"github.com/bookingcom/shipper/pkg/controller"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 const (
@@ -472,7 +473,7 @@ func (c *Controller) cleanUpReleasesForApplication(app *shipperv1.Application) {
 	// the application
 	for i := 0; i < len(releases)-1; i++ {
 		rel := releases[i]
-		if conditions.IsReleaseInstalled(releases[i]) {
+		if releaseutil.ReleaseComplete(releases[i]) {
 			installedReleases = append(installedReleases, releases[i])
 			continue
 		}

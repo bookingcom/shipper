@@ -21,7 +21,13 @@ import (
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
+
+func init() {
+	releaseutil.ConditionsShouldDiscardTimestamps = true
+	conditions.StrategyConditionsShouldDiscardTimestamps = true
+}
 
 func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.T) {
 	f := newFixture(t)
@@ -35,7 +41,7 @@ func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.
 	f.addObjects(contender, incumbent)
 
 	rel := contender.release.DeepCopy()
-	f.expectReleasePhaseWaitingForCommand(rel, 0)
+	f.expectReleaseWaitingForCommand(rel, 0)
 	f.run()
 }
 
@@ -230,7 +236,7 @@ func TestContenderReleasePhaseIsWaitingForCommandForFinalStepState(t *testing.T)
 	f.addObjects(contender, incumbent)
 
 	rel := contender.release.DeepCopy()
-	f.expectReleasePhaseWaitingForCommand(rel, 1)
+	f.expectReleaseWaitingForCommand(rel, 1)
 	f.run()
 }
 
@@ -245,6 +251,8 @@ func TestContenderReleaseIsInstalled(t *testing.T) {
 	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 100
 	contender.trafficTarget.Spec.Clusters[0].Weight = 100
 	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 100
+	releaseutil.SetReleaseCondition(&contender.release.Status, shipperV1.ReleaseCondition{Type: shipperV1.ReleaseConditionTypeInstalled, Status: coreV1.ConditionTrue, Reason: "", Message: ""})
+
 	incumbent.trafficTarget.Spec.Clusters[0].Weight = 0
 	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 0
 	incumbent.capacityTarget.Spec.Clusters[0].Percent = 0
@@ -252,8 +260,7 @@ func TestContenderReleaseIsInstalled(t *testing.T) {
 
 	f.addObjects(contender, incumbent)
 
-	f.expectReleaseInstalled(contender.release.DeepCopy(), 2)
-	f.expectReleaseSuperseded(incumbent.release.DeepCopy())
+	f.expectReleaseReleased(contender.release.DeepCopy(), 2)
 
 	f.run()
 }
@@ -405,10 +412,10 @@ func newFixture(t *testing.T) *fixture {
 func (f *fixture) addObjects(releaseInfos ...*releaseInfo) {
 	for _, r := range releaseInfos {
 		f.objects = append(f.objects,
-			r.release,
-			r.capacityTarget,
-			r.installationTarget,
-			r.trafficTarget)
+			r.release.DeepCopy(),
+			r.capacityTarget.DeepCopy(),
+			r.installationTarget.DeepCopy(),
+			r.trafficTarget.DeepCopy())
 	}
 }
 
@@ -564,7 +571,6 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipperV1.CapacityTarget, r *shi
 	}
 
 	r.Status.AchievedStep = 0
-	r.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
 	r.Status.Strategy = &shipperV1.ReleaseStrategyStatus{
 		Conditions: strategyConditions.AsReleaseStrategyConditions(),
 		State:      strategyConditions.AsReleaseStrategyState(r.Spec.TargetStep, true, false),
@@ -648,7 +654,6 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipperV1.TrafficTarget, r *shipp
 	}
 
 	r.Status.AchievedStep = 0
-	r.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
 	r.Status.Strategy = &shipperV1.ReleaseStrategyStatus{
 		Conditions: strategyConditions.AsReleaseStrategyConditions(),
 		State:      strategyConditions.AsReleaseStrategyState(r.Spec.TargetStep, true, false),
@@ -667,28 +672,14 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipperV1.TrafficTarget, r *shipp
 	f.expectedOrderedEvents = []string{}
 }
 
-func (f *fixture) expectReleaseSuperseded(rel *shipperV1.Release) {
-	gvr := shipperV1.SchemeGroupVersion.WithResource("releases")
-	newStatus := map[string]interface{}{
-		"status": shipperV1.ReleaseStatus{
-			AchievedStep: rel.Status.AchievedStep,
-			Phase:        shipperV1.ReleasePhaseSuperseded,
-		},
-	}
-
-	patch, _ := json.Marshal(newStatus)
-	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), patch)
-
-	f.actions = append(f.actions, action)
-}
-
-func (f *fixture) expectReleaseInstalled(rel *shipperV1.Release, targetStep int32) {
+func (f *fixture) expectReleaseReleased(rel *shipperV1.Release, targetStep int32) {
 	gvr := shipperV1.SchemeGroupVersion.WithResource("releases")
 	newStatus := map[string]interface{}{
 		"status": shipperV1.ReleaseStatus{
 			AchievedStep: rel.Spec.TargetStep,
-			Phase:        shipperV1.ReleasePhaseInstalled,
 			Conditions: []shipperV1.ReleaseCondition{
+				{Type: shipperV1.ReleaseConditionTypeComplete, Status: coreV1.ConditionTrue},
+				{Type: shipperV1.ReleaseConditionTypeInstalled, Status: coreV1.ConditionTrue},
 				{Type: shipperV1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
 			},
 			Strategy: &shipperV1.ReleaseStrategyStatus{
@@ -744,12 +735,11 @@ func (f *fixture) expectReleaseInstalled(rel *shipperV1.Release, targetStep int3
 	}
 }
 
-func (f *fixture) expectReleasePhaseWaitingForCommand(rel *shipperV1.Release, step int32) {
+func (f *fixture) expectReleaseWaitingForCommand(rel *shipperV1.Release, step int32) {
 	gvr := shipperV1.SchemeGroupVersion.WithResource("releases")
 	newStatus := map[string]interface{}{
 		"status": shipperV1.ReleaseStatus{
 			AchievedStep: step,
-			Phase:        shipperV1.ReleasePhaseWaitingForCommand,
 			Conditions: []shipperV1.ReleaseCondition{
 				{Type: shipperV1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
 			},
@@ -809,7 +799,6 @@ func (f *fixture) expectInstallationNotReady(rel *shipperV1.Release, step int32,
 	newStatus := map[string]interface{}{
 		"status": shipperV1.ReleaseStatus{
 			AchievedStep: step,
-			Phase:        shipperV1.ReleasePhaseWaitingForStrategy,
 			Conditions: []shipperV1.ReleaseCondition{
 				{Type: shipperV1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
 			},
@@ -850,7 +839,6 @@ func (f *fixture) expectCapacityNotReady(rel *shipperV1.Release, targetStep, ach
 		newStatus = map[string]interface{}{
 			"status": shipperV1.ReleaseStatus{
 				AchievedStep: achievedStep,
-				Phase:        shipperV1.ReleasePhaseWaitingForStrategy,
 				Conditions: []shipperV1.ReleaseCondition{
 					{Type: shipperV1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
 				},
@@ -882,7 +870,6 @@ func (f *fixture) expectCapacityNotReady(rel *shipperV1.Release, targetStep, ach
 		newStatus = map[string]interface{}{
 			"status": shipperV1.ReleaseStatus{
 				AchievedStep: achievedStep,
-				Phase:        shipperV1.ReleasePhaseWaitingForStrategy,
 				Conditions: []shipperV1.ReleaseCondition{
 					{Type: shipperV1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
 				},
@@ -943,7 +930,6 @@ func (f *fixture) expectTrafficNotReady(rel *shipperV1.Release, targetStep, achi
 		newStatus = map[string]interface{}{
 			"status": shipperV1.ReleaseStatus{
 				AchievedStep: achievedStep,
-				Phase:        shipperV1.ReleasePhaseWaitingForStrategy,
 				Conditions: []shipperV1.ReleaseCondition{
 					{Type: shipperV1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
 				},
@@ -980,7 +966,6 @@ func (f *fixture) expectTrafficNotReady(rel *shipperV1.Release, targetStep, achi
 		newStatus = map[string]interface{}{
 			"status": shipperV1.ReleaseStatus{
 				AchievedStep: achievedStep,
-				Phase:        shipperV1.ReleasePhaseWaitingForStrategy,
 				Conditions: []shipperV1.ReleaseCondition{
 					{Type: shipperV1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
 				},
