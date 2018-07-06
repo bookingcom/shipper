@@ -300,25 +300,24 @@ func (c *Controller) syncHandler(key string) error {
 			}
 			clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
 		} else {
+			readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionTrue, "", "")
+
 			// if the resulting map is missing the release we're working on,
 			// there's a significant bug in our code
 			achievedReleaseWeight = achievedWeights[syncingReleaseName]
 			clusterStatus.AchievedTraffic = achievedReleaseWeight
-			if len(errs) == 0 {
-				readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionTrue, "", "")
-				clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
-				clusterStatus.Status = "Synced"
-			} else {
+			clusterStatus.Status = "Synced"
+
+			if len(errs) > 0 {
 				results := make([]string, 0, len(errs))
 				for _, err := range errs {
 					results = append(results, err.Error())
 				}
 				sort.Strings(results)
 				clusterStatus.Status = strings.Join(results, ",")
-
-				readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionFalse, conditions.PodsNotReady, clusterStatus.Status)
-				clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
+				readyCond = clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionFalse, conditions.PodsNotReady, clusterStatus.Status)
 			}
+			clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
 		}
 	}
 
