@@ -87,6 +87,10 @@ func TestInstallOneCluster(t *testing.T) {
 					Type:   shipperV1.ClusterConditionTypeOperational,
 					Status: corev1.ConditionTrue,
 				},
+				{
+					Type:   shipperV1.ClusterConditionTypeReady,
+					Status: corev1.ConditionTrue,
+				},
 			},
 		},
 	}
@@ -173,10 +177,16 @@ func TestInstallMultipleClusters(t *testing.T) {
 		{
 			Name:   "minikube-a",
 			Status: shipperV1.InstallationStatusInstalled,
-			Conditions: []shipperV1.ClusterInstallationCondition{{
-				Type:   shipperV1.ClusterConditionTypeOperational,
-				Status: corev1.ConditionTrue,
-			}},
+			Conditions: []shipperV1.ClusterInstallationCondition{
+				{
+					Type:   shipperV1.ClusterConditionTypeOperational,
+					Status: corev1.ConditionTrue,
+				},
+				{
+					Type:   shipperV1.ClusterConditionTypeReady,
+					Status: corev1.ConditionTrue,
+				},
+			},
 		},
 		{
 			Name:   "minikube-b",
@@ -184,6 +194,10 @@ func TestInstallMultipleClusters(t *testing.T) {
 			Conditions: []shipperV1.ClusterInstallationCondition{
 				{
 					Type:   shipperV1.ClusterConditionTypeOperational,
+					Status: corev1.ConditionTrue,
+				},
+				{
+					Type:   shipperV1.ClusterConditionTypeReady,
 					Status: corev1.ConditionTrue,
 				},
 			},
