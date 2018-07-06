@@ -382,7 +382,9 @@ func (f *fixture) checkPods(relName string, expectedCount int) {
 	readyCount := 0
 	for _, pod := range podList.Items {
 		for _, condition := range pod.Status.Conditions {
-			if condition.Type == "Ready" && condition.Status == "True" {
+			// this line imitates how ReplicaSets calculate 'ready replicas'; shipper uses 'availableReplicas' but the minReadySeconds in this test is 0
+			// there's no handy library for this because the functionality is split between k8s controller_util.go and api v1 podUtil.
+			if condition.Type == "Ready" && condition.Status == "True" && pod.DeletionTimestamp == nil {
 				readyCount++
 			}
 		}
