@@ -17,12 +17,12 @@ import (
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 func init() {
-	conditions.ReleaseConditionsShouldDiscardTimestamps = true
+	releaseutil.ConditionsShouldDiscardTimestamps = true
 }
 
 func loadObject(obj runtime.Object, path ...string) (runtime.Object, error) {
@@ -88,12 +88,9 @@ func TestComputeTargetClusters(t *testing.T) {
 	expected.Annotations[shipperV1.ReleaseClustersAnnotation] = clusterA.GetName() + "," + clusterB.GetName()
 
 	relWithConditions := expected.DeepCopy()
-	relWithConditions.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
-	relWithConditions.Status.Conditions = conditions.SetReleaseCondition(
-		relWithConditions.Status.Conditions,
-		shipperV1.ReleaseConditionTypeScheduled,
-		corev1.ConditionTrue,
-		"", "")
+
+	condition := releaseutil.NewReleaseCondition(shipperV1.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&relWithConditions.Status, *condition)
 
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
@@ -136,12 +133,9 @@ func TestComputeTargetClustersSkipUnscheduled(t *testing.T) {
 	expected.Annotations[shipperV1.ReleaseClustersAnnotation] = clusterA.GetName()
 
 	relWithConditions := expected.DeepCopy()
-	relWithConditions.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
-	relWithConditions.Status.Conditions = conditions.SetReleaseCondition(
-		relWithConditions.Status.Conditions,
-		shipperV1.ReleaseConditionTypeScheduled,
-		corev1.ConditionTrue,
-		"", "")
+
+	condition := releaseutil.NewReleaseCondition(shipperV1.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&relWithConditions.Status, *condition)
 
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
@@ -196,11 +190,10 @@ func TestCreateAssociatedObjects(t *testing.T) {
 
 	// Expected release and actions. The release should have, at the end of
 	// the business logic, a list of clusters containing the sole cluster
-	// we've added to the client, and also its .status.phase key set to
-	// "WaitingForStrategy". Expected actions contain the intent to create
-	// all the associated target objects.
+	// we've added to the client, and also a Scheduled condition with True
+	// status. Expected actions contain the intent to create all the
+	// associated target objects.
 	expected := release.DeepCopy()
-	expected.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
@@ -241,7 +234,6 @@ func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 	// Expected actions contain the intent to create all the associated target
 	// objects.
 	expected := release.DeepCopy()
-	expected.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
@@ -281,7 +273,6 @@ func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	// Expected actions contain the intent to create all the associated target
 	// objects.
 	expected := release.DeepCopy()
-	expected.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
@@ -321,7 +312,6 @@ func TestCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 	// Expected actions contain the intent to create all the associated target
 	// objects.
 	expected := release.DeepCopy()
-	expected.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}

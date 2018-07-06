@@ -25,7 +25,7 @@ var (
 	relsDesc = prometheus.NewDesc(
 		fqn("releases"),
 		"Number of Release objects",
-		[]string{"namespace", "shipper_app", "cluster", "phase"},
+		[]string{"namespace", "shipper_app", "cluster", "cond_type", "cond_status", "cond_reason"},
 		nil,
 	)
 
@@ -120,37 +120,10 @@ func (ssm ShipperStateMetrics) collectApplications(ch chan<- prometheus.Metric) 
 }
 
 func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
-	nss, err := getNamespaces(ssm.nssLister)
-	if err != nil {
-		glog.Warningf("collect Namespaces: %s", err)
-		return
-	}
-
-	apps, err := ssm.appsLister.List(everything)
-	if err != nil {
-		glog.Warningf("collect Applications: %s", err)
-		return
-	}
-
-	clusters, err := ssm.clustersLister.List(everything)
-	if err != nil {
-		glog.Warningf("collect Clusters: %s", err)
-		return
-	}
-
 	rels, err := ssm.relsLister.List(everything)
 	if err != nil {
 		glog.Warningf("collect Releases: %s", err)
 		return
-	}
-
-	phases := []string{
-		shipperv1.ReleasePhaseAborted,
-		shipperv1.ReleasePhaseInstalled,
-		shipperv1.ReleasePhaseSuperseded,
-		shipperv1.ReleasePhaseWaitingForCommand,
-		shipperv1.ReleasePhaseWaitingForScheduling,
-		shipperv1.ReleasePhaseWaitingForStrategy,
 	}
 
 	key := func(ss ...string) string { return strings.Join(ss, "^") }
@@ -171,41 +144,21 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 		}
 
 		for _, cluster := range clusters {
-			// it's either this or map[string]map[string]map[string]map[string]float64
-			breakdown[key(rel.Namespace, appName, cluster, rel.Status.Phase)]++
+			for _, cond := range rel.Status.Conditions {
+				reason := cond.Reason
+				if reason == "" {
+					reason = "NoReason"
+				}
+				// it's either this or map[string]map[string]map[string]map[string]float64
+				breakdown[key(rel.Namespace, appName, cluster, string(cond.Type), string(cond.Status), reason)]++
+			}
 		}
 	}
 
 	glog.V(4).Infof("releases: %v", breakdown)
 
-	for _, ns := range nss {
-		for _, app := range apps {
-			for _, cluster := range clusters {
-				for _, phase := range phases {
-					k := key(ns.Name, app.Name, cluster.Name, phase)
-
-					n, ok := breakdown[k]
-					if !ok {
-						n = 0
-					}
-
-					delete(breakdown, k)
-
-					ch <- prometheus.MustNewConstMetric(
-						relsDesc,
-						prometheus.GaugeValue,
-						n,
-						ns.Name, app.Name, cluster.Name, phase,
-					)
-				}
-			}
-		}
-	}
-
-	// send "unknown"-s
 	for k, v := range breakdown {
-		pieces := unkey(k)
-		ch <- prometheus.MustNewConstMetric(relsDesc, prometheus.GaugeValue, v, pieces...)
+		ch <- prometheus.MustNewConstMetric(relsDesc, prometheus.GaugeValue, v, unkey(k)...)
 	}
 }
 

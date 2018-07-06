@@ -15,8 +15,8 @@ import (
 	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
-	"github.com/bookingcom/shipper/pkg/conditions"
 	"github.com/bookingcom/shipper/pkg/controller"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 // Scheduler is an object that knows how to schedule releases.
@@ -86,13 +86,8 @@ func (c *Scheduler) scheduleRelease() error {
 	// If we get to this point, it means that the clusters have already been selected and persisted in the Release
 	// document, and all the associated Release documents have already been created, so the last operation remaining is
 	// updating the PhaseStatus to ReleasePhaseWaitingForStrategy
-	c.SetReleasePhase(v1.ReleasePhaseWaitingForStrategy)
-
-	c.Release.Status.Conditions = conditions.SetReleaseCondition(
-		c.Release.Status.Conditions,
-		v1.ReleaseConditionTypeScheduled,
-		corev1.ConditionTrue,
-		"", "")
+	condition := releaseutil.NewReleaseCondition(v1.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&c.Release.Status, *condition)
 
 	if len(c.Release.Status.Conditions) == 0 {
 		glog.Errorf(
@@ -120,10 +115,6 @@ func (c *Scheduler) Clusters() []string {
 func (c *Scheduler) SetClusters(clusters []string) {
 	sort.Strings(clusters)
 	c.Release.Annotations[v1.ReleaseClustersAnnotation] = strings.Join(clusters, ",")
-}
-
-func (c *Scheduler) SetReleasePhase(phase string) {
-	c.Release.Status.Phase = phase
 }
 
 func (c *Scheduler) UpdateRelease() (*v1.Release, error) {

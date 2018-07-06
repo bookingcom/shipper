@@ -193,7 +193,6 @@ type ReleaseSpec struct {
 
 // this will likely grow into a struct with interesting fields
 type ReleaseStatus struct {
-	Phase        string                 `json:"phase"`
 	AchievedStep int32                  `json:"achievedStep"`
 	Strategy     *ReleaseStrategyStatus `json:"strategy,omitempty"`
 	Conditions   []ReleaseCondition     `json:"conditions,omitempty"`
@@ -203,6 +202,8 @@ type ReleaseConditionType string
 
 const (
 	ReleaseConditionTypeScheduled ReleaseConditionType = "Scheduled"
+	ReleaseConditionTypeInstalled ReleaseConditionType = "Installed"
+	ReleaseConditionTypeComplete  ReleaseConditionType = "Complete"
 )
 
 type ReleaseCondition struct {

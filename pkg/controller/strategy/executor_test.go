@@ -10,6 +10,7 @@ import (
 
 	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/conditions"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 const (
@@ -215,8 +216,11 @@ func buildIncumbent() *releaseInfo {
 			},
 		},
 		Status: v1.ReleaseStatus{
-			Phase:        v1.ReleasePhaseInstalled,
 			AchievedStep: 2,
+			Conditions: []v1.ReleaseCondition{
+				{Type: v1.ReleaseConditionTypeInstalled, Status: coreV1.ConditionTrue},
+				{Type: v1.ReleaseConditionTypeComplete, Status: coreV1.ConditionTrue},
+			},
 		},
 		Spec: v1.ReleaseSpec{
 			TargetStep: 2,
@@ -341,7 +345,6 @@ func buildContender() *releaseInfo {
 			},
 		},
 		Status: v1.ReleaseStatus{
-			Phase:        v1.ReleasePhaseWaitingForStrategy,
 			AchievedStep: 0,
 			Conditions: []v1.ReleaseCondition{
 				{Type: v1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
@@ -585,34 +588,22 @@ func ensureFinalReleasePatches(e *Executor) error {
 			return fmt.Errorf("all conditions should be true")
 		}
 
-		if len(patches) != 2 {
-			return fmt.Errorf("expected two patches, got %d patches instead", len(patches))
+		if len(patches) != 1 {
+			return fmt.Errorf("expected one patches, got %d patches instead", len(patches))
 		} else {
 			for _, patch := range patches {
 				if p, ok := patch.(*ReleaseUpdateResult); !ok {
 					return fmt.Errorf("expected a ReleaseUpdateResult, got something else")
 				} else {
 					if p.Name == contenderName {
-						if p.NewStatus.Phase != v1.ReleasePhaseInstalled {
-							return fmt.Errorf(
-								"expected contender phase %q, got %q",
-								v1.ReleasePhaseInstalled, p.NewStatus.Phase)
+						installedCond := releaseutil.GetReleaseCondition(*p.NewStatus, v1.ReleaseConditionTypeInstalled)
+						if installedCond != nil && installedCond.Status == coreV1.ConditionTrue {
+							return fmt.Errorf("expected contender to be installed")
 						}
 						if p.NewStatus.AchievedStep != 2 {
 							return fmt.Errorf(
 								"expected contender achievedSteps %d, got %d",
 								2, p.NewStatus.AchievedStep)
-						}
-					} else if p.Name == incumbentName {
-						if p.NewStatus.Phase != v1.ReleasePhaseSuperseded {
-							return fmt.Errorf(
-								"expected incumbent phase %q, got %q",
-								v1.ReleasePhaseSuperseded, p.NewStatus.Phase)
-						}
-						if p.NewStatus.AchievedStep != e.incumbent.release.Status.AchievedStep {
-							return fmt.Errorf(
-								"expected incumbent achievedSteps %d, got %d",
-								e.incumbent.release.Status.AchievedStep, p.NewStatus.AchievedStep)
 						}
 					}
 				}

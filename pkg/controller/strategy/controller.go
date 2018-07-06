@@ -22,8 +22,8 @@ import (
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
-	"github.com/bookingcom/shipper/pkg/conditions"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 const AgentName = "strategy-controller"
@@ -80,7 +80,7 @@ func NewController(
 		cache.FilteringResourceEventHandler{
 			FilterFunc: func(obj interface{}) bool {
 				rel, ok := obj.(*v1.Release)
-				return ok && isScheduled(rel)
+				return ok && releaseutil.ReleaseScheduled(rel)
 			},
 			Handler: cache.ResourceEventHandlerFuncs{
 				AddFunc: controller.enqueueRelease,
@@ -122,10 +122,6 @@ func NewController(
 	return controller
 }
 
-func isScheduled(r *v1.Release) bool {
-	return conditions.IsReleaseConditionTrue(r.Status.Conditions, v1.ReleaseConditionTypeScheduled)
-}
-
 func (c *Controller) sortedReleasesForApp(app *v1.Application) ([]*v1.Release, error) {
 	selector := labels.Set{
 		v1.AppLabel: app.GetName(),
@@ -163,7 +159,7 @@ func (c *Controller) getWorkingReleasePair(app *v1.Application) (*v1.Release, *v
 	// (for releases A -> B -> C, if B was never finished this allows C to
 	// ignore it and let it get deleted so the transition is A->C)
 	for i := len(appReleases) - 1; i >= 0; i-- {
-		if conditions.IsReleaseInstalled(appReleases[i]) && contender != appReleases[i] {
+		if releaseutil.ReleaseComplete(appReleases[i]) && contender != appReleases[i] {
 			incumbent = appReleases[i]
 			break
 		}
@@ -412,7 +408,7 @@ func (c *Controller) buildReleaseInfo(release *v1.Release) (*releaseInfo, error)
 }
 
 func (c *Controller) buildExecutor(incumbentRelease, contenderRelease *v1.Release, recorder record.EventRecorder) (*Executor, error) {
-	if !isScheduled(contenderRelease) {
+	if !releaseutil.ReleaseScheduled(contenderRelease) {
 		return nil, NewNotWorkingOnStrategyError(shippercontroller.MetaKey(contenderRelease))
 	}
 

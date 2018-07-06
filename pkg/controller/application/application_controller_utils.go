@@ -71,10 +71,8 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application, gen
 			},
 			Environment: *(app.Spec.Template.DeepCopy()),
 		},
-		Spec: shipperv1.ReleaseSpec{},
-		Status: shipperv1.ReleaseStatus{
-			Phase: shipperv1.ReleasePhaseWaitingForScheduling,
-		},
+		Spec:   shipperv1.ReleaseSpec{},
+		Status: shipperv1.ReleaseStatus{},
 	}
 
 	_, err = c.shipperClientset.ShipperV1().Releases(releaseNs).Create(new)

@@ -47,6 +47,8 @@ func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
 		return
 	}
 
+	// Don't compare labels and annotations through reflect.DeepEqual
+
 	switch a := actual.(type) {
 
 	case kubetesting.CreateAction:
@@ -56,7 +58,7 @@ func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
 
 		if expObject != nil && !reflect.DeepEqual(expObject, object) {
 			t.Errorf("Action %s %s has wrong object\nDiff:\n %s",
-				a.GetResource().Resource, a.GetVerb(), diff.ObjectGoPrintDiff(expObject, object))
+				a.GetVerb(), a.GetResource().Resource, diff.ObjectGoPrintDiff(expObject, object))
 		}
 
 	case kubetesting.UpdateAction:

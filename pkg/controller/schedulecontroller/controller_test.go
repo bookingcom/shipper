@@ -4,19 +4,23 @@ import (
 	"testing"
 	"time"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
-	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	"github.com/bookingcom/shipper/pkg/conditions"
-	shippertesting "github.com/bookingcom/shipper/pkg/testing"
-
 	corev1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
+
+	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
+	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
+
+func init() {
+	releaseutil.ConditionsShouldDiscardTimestamps = true
+}
 
 func newController(fixtures ...runtime.Object) (*Controller, *shipperfake.Clientset) {
 	shipperclient := shipperfake.NewSimpleClientset(fixtures...)
@@ -52,12 +56,8 @@ func TestControllerComputeTargetClusters(t *testing.T) {
 	expected.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 
 	relWithConditions := expected.DeepCopy()
-	relWithConditions.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
-	relWithConditions.Status.Conditions = conditions.SetReleaseCondition(
-		relWithConditions.Status.Conditions,
-		shipperV1.ReleaseConditionTypeScheduled,
-		corev1.ConditionTrue,
-		"", "")
+	condition := releaseutil.NewReleaseCondition(shipperV1.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&relWithConditions.Status, *condition)
 
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
@@ -88,11 +88,10 @@ func TestControllerCreateAssociatedObjects(t *testing.T) {
 
 	// Expected release and actions. The release should have, at the end of
 	// the business logic, a list of clusters containing the sole cluster
-	// we've added to the client, and also its .status.phase key set to
-	// "WaitingForStrategy". Expected actions contain the intent to create
-	// all the associated target objects.
+	// we've added to the client, and also a Scheduled condition with True
+	// status. Expected actions contain the intent to create all the
+	// associated target objects.
 	expected := release.DeepCopy()
-	expected.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
@@ -130,7 +129,6 @@ func TestControllerCreateAssociatedObjectsDuplicateInstallationTarget(t *testing
 	// Expected actions contain the intent to create all the associated target
 	// objects.
 	expected := release.DeepCopy()
-	expected.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
@@ -168,7 +166,6 @@ func TestControllerCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	// Expected actions contain the intent to create all the associated target
 	// objects.
 	expected := release.DeepCopy()
-	expected.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
@@ -206,7 +203,6 @@ func TestControllerCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) 
 	// Expected actions contain the intent to create all the associated target
 	// objects.
 	expected := release.DeepCopy()
-	expected.Status.Phase = shipperV1.ReleasePhaseWaitingForStrategy
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
