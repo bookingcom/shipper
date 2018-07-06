@@ -40,6 +40,7 @@ import (
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/conditions"
+	clusterutil "github.com/bookingcom/shipper/pkg/util/cluster"
 )
 
 const AgentName = "traffic-controller"
@@ -264,38 +265,22 @@ func (c *Controller) syncHandler(key string) error {
 
 		clientset, err = c.clusterClientStore.GetClient(cluster)
 		if err == nil {
-			clusterStatus.Conditions = conditions.SetTrafficCondition(
-				clusterStatus.Conditions,
-				shipperv1.ClusterConditionTypeOperational,
-				corev1.ConditionTrue,
-				"", "")
+			operationalCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeOperational, corev1.ConditionTrue, "", "")
+			clusterutil.SetClusterTrafficCondition(clusterStatus, *operationalCond)
 		} else {
-			clusterStatus.Conditions = conditions.SetTrafficCondition(
-				clusterStatus.Conditions,
-				shipperv1.ClusterConditionTypeOperational,
-				corev1.ConditionFalse,
-				conditions.ServerError,
-				err.Error())
-
+			operationalCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeOperational, corev1.ConditionFalse, conditions.ServerError, err.Error())
+			clusterutil.SetClusterTrafficCondition(clusterStatus, *operationalCond)
 			clusterStatus.Status = err.Error()
 			continue
 		}
+
 		informerFactory, err = c.clusterClientStore.GetInformerFactory(cluster)
 		if err == nil {
-			clusterStatus.Conditions = conditions.SetTrafficCondition(
-				clusterStatus.Conditions,
-				shipperv1.ClusterConditionTypeOperational,
-				corev1.ConditionTrue,
-				"", "")
-
+			operationalCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeOperational, corev1.ConditionTrue, "", "")
+			clusterutil.SetClusterTrafficCondition(clusterStatus, *operationalCond)
 		} else {
-			clusterStatus.Conditions = conditions.SetTrafficCondition(
-				clusterStatus.Conditions,
-				shipperv1.ClusterConditionTypeOperational,
-				corev1.ConditionFalse,
-				conditions.ServerError,
-				err.Error())
-
+			operationalCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeOperational, corev1.ConditionFalse, conditions.ServerError, err.Error())
+			clusterutil.SetClusterTrafficCondition(clusterStatus, *operationalCond)
 			clusterStatus.Status = err.Error()
 			continue
 		}
@@ -306,33 +291,17 @@ func (c *Controller) syncHandler(key string) error {
 		if err != nil {
 			switch err.(type) {
 			case TargetClusterServiceError:
-				clusterStatus.Conditions = conditions.SetTrafficCondition(
-					clusterStatus.Conditions,
-					shipperv1.ClusterConditionTypeReady,
-					corev1.ConditionFalse,
-					conditions.MissingService,
-					err.Error())
+				readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionFalse, conditions.MissingService, err.Error())
+				clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
 			case TargetClusterPodListingError, TargetClusterTrafficError:
-				clusterStatus.Conditions = conditions.SetTrafficCondition(
-					clusterStatus.Conditions,
-					shipperv1.ClusterConditionTypeReady,
-					corev1.ConditionFalse,
-					conditions.ServerError,
-					err.Error())
+				readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionFalse, conditions.ServerError, err.Error())
+				clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
 			case TargetClusterMathError:
-				clusterStatus.Conditions = conditions.SetTrafficCondition(
-					clusterStatus.Conditions,
-					shipperv1.ClusterConditionTypeReady,
-					corev1.ConditionFalse,
-					conditions.InternalError,
-					err.Error())
+				readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionFalse, conditions.InternalError, err.Error())
+				clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
 			default:
-				clusterStatus.Conditions = conditions.SetTrafficCondition(
-					clusterStatus.Conditions,
-					shipperv1.ClusterConditionTypeReady,
-					corev1.ConditionFalse,
-					conditions.UnknownError,
-					err.Error())
+				readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionFalse, conditions.UnknownError, err.Error())
+				clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
 			}
 		} else {
 			// if the resulting map is missing the release we're working on,
@@ -340,12 +309,8 @@ func (c *Controller) syncHandler(key string) error {
 			achievedReleaseWeight = achievedWeights[syncingReleaseName]
 			clusterStatus.AchievedTraffic = achievedReleaseWeight
 			if len(errs) == 0 {
-				clusterStatus.Conditions = conditions.SetTrafficCondition(
-					clusterStatus.Conditions,
-					shipperv1.ClusterConditionTypeReady,
-					corev1.ConditionTrue,
-					"", "")
-
+				readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionTrue, "", "")
+				clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
 				clusterStatus.Status = "Synced"
 			} else {
 				results := make([]string, 0, len(errs))
@@ -355,12 +320,8 @@ func (c *Controller) syncHandler(key string) error {
 				sort.Strings(results)
 				clusterStatus.Status = strings.Join(results, ",")
 
-				clusterStatus.Conditions = conditions.SetTrafficCondition(
-					clusterStatus.Conditions,
-					shipperv1.ClusterConditionTypeReady,
-					corev1.ConditionFalse,
-					conditions.PodsNotReady,
-					clusterStatus.Status)
+				readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionFalse, conditions.PodsNotReady, clusterStatus.Status)
+				clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
 			}
 		}
 	}
