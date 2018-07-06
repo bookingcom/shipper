@@ -26,6 +26,7 @@ import (
 	clientcache "github.com/bookingcom/shipper/pkg/clusterclientstore/cache"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shipperController "github.com/bookingcom/shipper/pkg/controller"
+	clusterutil "github.com/bookingcom/shipper/pkg/util/cluster"
 )
 
 const AgentName = "installation-controller"
@@ -223,13 +224,8 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 
 		var cluster *shipperV1.Cluster
 		if cluster, err = c.clusterLister.Get(clusterName); err != nil {
-			status.Conditions = conditions.SetInstallationCondition(
-				status.Conditions,
-				shipperV1.ClusterConditionTypeOperational,
-				corev1.ConditionFalse,
-				conditions.ServerError,
-				err.Error())
-
+			operationalCond := clusterutil.NewClusterInstallationCondition(shipperV1.ClusterConditionTypeOperational, corev1.ConditionFalse, conditions.ServerError, err.Error())
+			clusterutil.SetClusterInstallationCondition(status, *operationalCond)
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
 			glog.Warningf("Get Cluster %q for InstallationTarget %q: %s", clusterName, shipperController.MetaKey(it), err)
@@ -240,17 +236,11 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 		var restConfig *rest.Config
 		client, restConfig, err = c.GetClusterAndConfig(clusterName)
 		if err != nil {
-			reason := conditions.ServerError
+			operationalCond := clusterutil.NewClusterInstallationCondition(shipperV1.ClusterConditionTypeOperational, corev1.ConditionFalse, conditions.ServerError, err.Error())
 			if err == clientcache.ErrClusterNotInStore || err == clientcache.ErrClusterNotReady {
-				reason = conditions.TargetClusterClientError
+				operationalCond.Reason = conditions.TargetClusterClientError
 			}
-			status.Conditions = conditions.SetInstallationCondition(
-				status.Conditions,
-				shipperV1.ClusterConditionTypeOperational,
-				corev1.ConditionFalse,
-				reason,
-				err.Error())
-
+			clusterutil.SetClusterInstallationCondition(status, *operationalCond)
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
 			glog.Warningf("Get config for Cluster %q for InstallationTarget %q: %s", clusterName, shipperController.MetaKey(it), err)
@@ -260,31 +250,17 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 		// At this point, we got a hold in a connection to the target cluster,
 		// so we assume it's operational until some other signal saying
 		// otherwise arrives.
-		status.Conditions = conditions.SetInstallationCondition(
-			status.Conditions,
-			shipperV1.ClusterConditionTypeOperational,
-			corev1.ConditionTrue,
-			"", "")
+		operationalCond := clusterutil.NewClusterInstallationCondition(shipperV1.ClusterConditionTypeOperational, corev1.ConditionTrue, "", "")
+		clusterutil.SetClusterInstallationCondition(status, *operationalCond)
 
 		if err = handler.installRelease(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
-			status.Conditions = conditions.SetInstallationCondition(
-				status.Conditions,
-				shipperV1.ClusterConditionTypeReady,
-				corev1.ConditionFalse,
-				conditions.ServerError,
-				err.Error())
-
+			readyCond := clusterutil.NewClusterInstallationCondition(shipperV1.ClusterConditionTypeReady, corev1.ConditionFalse, conditions.ServerError, err.Error())
+			clusterutil.SetClusterInstallationCondition(status, *readyCond)
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
 			glog.Warningf("Install InstallationTarget %q for Cluster %q: %s", shipperController.MetaKey(it), clusterName, err)
 			continue
 		}
-
-		status.Conditions = conditions.SetInstallationCondition(
-			status.Conditions,
-			shipperV1.ClusterConditionTypeOperational,
-			corev1.ConditionTrue,
-			"", "")
 
 		status.Status = shipperV1.InstallationStatusInstalled
 	}

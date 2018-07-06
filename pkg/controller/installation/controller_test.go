@@ -15,10 +15,11 @@ import (
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	clusterutil "github.com/bookingcom/shipper/pkg/util/cluster"
 )
 
 func init() {
-	conditions.InstallationConditionsShouldDiscardTimestamps = true
+	clusterutil.ConditionsShouldDiscardTimestamps = true
 }
 
 // TestInstallOneCluster tests the installation process using the installation.Controller.
