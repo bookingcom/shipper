@@ -21,10 +21,11 @@ import (
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	clusterutil "github.com/bookingcom/shipper/pkg/util/cluster"
 )
 
 func init() {
-	conditions.CapacityConditionsShouldDiscardTimestamps = true
+	clusterutil.ConditionsShouldDiscardTimestamps = true
 }
 
 func TestUpdatingCapacityTargetUpdatesDeployment(t *testing.T) {
