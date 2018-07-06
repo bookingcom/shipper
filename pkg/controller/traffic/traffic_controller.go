@@ -289,20 +289,16 @@ func (c *Controller) syncHandler(key string) error {
 			shifter.SyncCluster(cluster, clientset, informerFactory.Core().V1().Pods())
 
 		if err != nil {
+			readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionFalse, conditions.UnknownError, err.Error())
 			switch err.(type) {
 			case TargetClusterServiceError:
-				readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionFalse, conditions.MissingService, err.Error())
-				clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
+				readyCond.Reason = conditions.MissingService
 			case TargetClusterPodListingError, TargetClusterTrafficError:
-				readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionFalse, conditions.ServerError, err.Error())
-				clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
+				readyCond.Reason = conditions.ServerError
 			case TargetClusterMathError:
-				readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionFalse, conditions.InternalError, err.Error())
-				clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
-			default:
-				readyCond := clusterutil.NewClusterTrafficCondition(shipperv1.ClusterConditionTypeReady, corev1.ConditionFalse, conditions.UnknownError, err.Error())
-				clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
+				readyCond.Reason = conditions.InternalError
 			}
+			clusterutil.SetClusterTrafficCondition(clusterStatus, *readyCond)
 		} else {
 			// if the resulting map is missing the release we're working on,
 			// there's a significant bug in our code
