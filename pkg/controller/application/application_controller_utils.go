@@ -55,8 +55,8 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application, gen
 		shipperv1.ReleaseGenerationAnnotation:        strconv.Itoa(generation),
 	}
 
-	glog.V(4).Infof("Release %q labels: %v", labels)
-	glog.V(4).Infof("Release %q annotations: %v", annotations)
+	glog.V(4).Infof("Release %q labels: %v", controller.MetaKey(app), labels)
+	glog.V(4).Infof("Release %q annotations: %v", controller.MetaKey(app), annotations)
 
 	new := &shipperv1.Release{
 		ReleaseMeta: shipperv1.ReleaseMeta{
@@ -236,9 +236,9 @@ func identicalEnvironments(envs ...shipperv1.ReleaseEnvironment) bool {
 	}
 
 	referenceHash := hashReleaseEnvironment(envs[0])
-	for _, env := range envs {
+	for _, env := range envs[1:] {
 		currentHash := hashReleaseEnvironment(env)
-		glog.V(4).Infof("Comparing ReleaseEnvironments: %s vs %s", referenceHash, currentHash)
+		glog.V(4).Infof("Comparing ReleaseEnvironments: %q vs %q", referenceHash, currentHash)
 
 		if referenceHash != currentHash {
 			return false

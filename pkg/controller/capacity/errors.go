@@ -8,6 +8,11 @@ import (
 
 type ReleaseIsGoneError error
 
+func IsReleaseGone(err error) bool {
+	_, ok := err.(ReleaseIsGoneError)
+	return ok
+}
+
 func NewReleaseIsGoneError(name string, expectedUID types.UID, gotUID types.UID) ReleaseIsGoneError {
 	return ReleaseIsGoneError(fmt.Errorf(
 		"the owner Release for CapacityTarget %q is gone; expected UID %s but got %s",

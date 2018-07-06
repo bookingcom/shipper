@@ -21,7 +21,15 @@ import (
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
-const AgentName = "schedule-controller"
+const (
+	AgentName = "schedule-controller"
+
+	// maxRetries is the number of times a Release will be retried
+	// before we drop it out of the workqueue. The number is chosen with the
+	// default rate limiter in mind. This results in the following backoff times:
+	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s.
+	maxRetries = 11
+)
 
 // Controller is a Kubernetes controller that knows how to schedule Releases.
 type Controller struct {
@@ -95,59 +103,65 @@ func (c *Controller) runWorker() {
 
 func (c *Controller) processNextWorkItem() bool {
 	obj, shutdown := c.workqueue.Get()
-
 	if shutdown {
 		return false
 	}
 
-	err := func(obj interface{}) error {
-		defer c.workqueue.Done(obj)
-		var key string
-		var ok bool
+	defer c.workqueue.Done(obj)
 
-		if key, ok = obj.(string); !ok {
-			c.workqueue.Forget(obj)
-			runtime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
-			return nil
-		}
+	var (
+		key string
+		ok  bool
+	)
 
-		if err := c.syncOne(key); err != nil {
-			return fmt.Errorf("error syncing: %q: %s", key, err.Error())
-		}
-
+	if key, ok = obj.(string); !ok {
 		c.workqueue.Forget(obj)
-		glog.Infof("Successfully synced %q", key)
-		return nil
-	}(obj)
-
-	if err != nil {
-		runtime.HandleError(err)
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
 		return true
 	}
+
+	if shouldRetry := c.syncOne(key); shouldRetry {
+		if c.workqueue.NumRequeues(key) >= maxRetries {
+			// Drop the Release's key out of the workqueue and thus reset its backoff.
+			// This limits the time a "broken" object can hog a worker.
+			glog.Warningf("Release %q has been retried too many times, dropping from the queue", key)
+			c.workqueue.Forget(key)
+
+			return true
+		}
+
+		c.workqueue.AddRateLimited(key)
+
+		return true
+	}
+
+	c.workqueue.Forget(obj)
+	glog.V(4).Infof("Successfully synced Release %q", key)
 
 	return true
 }
 
-func (c *Controller) syncOne(key string) error {
+func (c *Controller) syncOne(key string) bool {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("invalid resource key: %q", key))
-		return nil
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", key))
+		return false
 	}
 
 	release, err := c.releasesLister.Releases(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			runtime.HandleError(fmt.Errorf("release %q in work queue no longer exists", key))
-			return nil
+			glog.V(3).Infof("Release %q has been deleted", key)
+			return false
 		}
 
-		return err
+		runtime.HandleError(fmt.Errorf("error syncing Release %q (will retry): %s", key, err))
+		return true
 	}
 
 	if releaseutil.ReleaseScheduled(release) {
-		glog.V(4).Info("release %q has already been scheduled, ignoring", key)
-		return nil
+		glog.V(4).Info("Release %q has already been scheduled, ignoring", key)
+		return false
 	}
 
 	scheduler := NewScheduler(
@@ -164,18 +178,20 @@ func (c *Controller) syncOne(key string) error {
 			"FailedReleaseScheduling",
 			err.Error(),
 		)
-		return err
+
+		runtime.HandleError(fmt.Errorf("error syncing Release %q (will retry): %s", key, err))
+		return true
 	}
 
-	return nil
+	return false
 }
 
 func (c *Controller) enqueueRelease(obj interface{}) {
-	var key string
-	var err error
-	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
+	key, err := cache.MetaNamespaceKeyFunc(obj)
+	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
-	c.workqueue.AddRateLimited(key)
+
+	c.workqueue.Add(key)
 }

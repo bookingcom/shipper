@@ -6,6 +6,11 @@ import (
 
 type NotWorkingOnStrategyError error
 
+func IsNotWorkingOnStrategy(err error) bool {
+	_, ok := err.(NotWorkingOnStrategyError)
+	return ok
+}
+
 func NewNotWorkingOnStrategyError(contenderReleaseKey string) error {
 	return NotWorkingOnStrategyError(fmt.Errorf(
 		"Found %s as a contender, but it is not currently working on any strategy", contenderReleaseKey))

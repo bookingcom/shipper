@@ -47,6 +47,12 @@ const (
 	DefaultRevisionHistoryLimit = 20
 	MinRevisionHistoryLimit     = 1
 	MaxRevisionHistoryLimit     = 1000
+
+	// maxRetries is the number of times an Application will be retried before we
+	// drop it out of the app workqueue. The number is chosen with the default rate
+	// limiter in mind. This results in the following backoff times: 5ms, 10ms,
+	// 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s.
+	maxRetries = 11
 )
 
 // Controller is a Kubernetes controller that creates Releases from
@@ -158,21 +164,28 @@ func (c *Controller) processNextWorkItem() bool {
 	)
 
 	if key, ok = obj.(string); !ok {
-		// Do not attempt to process invalid objects again.
 		c.appWorkqueue.Forget(obj)
-		runtime.HandleError(fmt.Errorf("invalid object key: %#v", obj))
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
 		return true
 	}
 
 	if shouldRetry := c.syncApplication(key); shouldRetry {
+		if c.appWorkqueue.NumRequeues(key) >= maxRetries {
+			// Drop the Application's key out of the workqueue and thus reset its
+			// backoff. This limits the time a "broken" object can hog a worker.
+			glog.Warningf("Application %q has been retried too many times, dropping from the queue", key)
+			c.appWorkqueue.Forget(key)
+
+			return true
+		}
+
 		c.appWorkqueue.AddRateLimited(key)
+
 		return true
 	}
 
-	// Do not requeue this object because it's already processed.
+	glog.V(4).Infof("Successfully synced Application %q", key)
 	c.appWorkqueue.Forget(obj)
-
-	glog.V(4).Infof("Successfully synced %q", key)
 
 	return true
 }
@@ -187,7 +200,7 @@ func (c *Controller) enqueueRel(obj interface{}) {
 
 	rel, ok := obj.(*shipperv1.Release)
 	if !ok {
-		runtime.HandleError(fmt.Errorf("%s is not a shipperv1.Release", key))
+		runtime.HandleError(fmt.Errorf("not a shipperv1.Release: %#v", obj))
 		return
 	}
 
@@ -198,7 +211,7 @@ func (c *Controller) enqueueRel(obj interface{}) {
 
 	owner := rel.OwnerReferences[0]
 
-	c.appWorkqueue.AddRateLimited(fmt.Sprintf("%s/%s", rel.GetNamespace(), owner.Name))
+	c.appWorkqueue.Add(fmt.Sprintf("%s/%s", rel.Namespace, owner.Name))
 }
 
 func (c *Controller) enqueueApp(obj interface{}) {
@@ -208,13 +221,13 @@ func (c *Controller) enqueueApp(obj interface{}) {
 		return
 	}
 
-	c.appWorkqueue.AddRateLimited(key)
+	c.appWorkqueue.Add(key)
 }
 
 func (c *Controller) syncApplication(key string) bool {
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("invalid resource key: %q", key))
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %q", key))
 		return false
 	}
 
@@ -225,48 +238,38 @@ func (c *Controller) syncApplication(key string) bool {
 			return false
 		}
 
-		runtime.HandleError(fmt.Errorf("error fetching %q from lister (will retry): %s", key, err))
+		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
 		return true
 	}
 
-	// NEVER modify objects from the store. It's a read-only, local cache.
-	// do process application
-	// transform any error it has into a condition for status
-	// get the update history list
-	// apply it to the status
-	// update status
 	app = app.DeepCopy()
-	// processApplication will mutate the app struct for status condition updates and annotation changes
-	// an err may be returned to signal a retry, but it will also be expressed as a condition
-	err = c.processApplication(app)
-	shouldRetry := false
-	if err != nil {
+
+	var shouldRetry bool
+	if err := c.processApplication(app); err != nil {
 		shouldRetry = true
-		runtime.HandleError(fmt.Errorf("error syncing %q (will retry): %s", key, err))
+		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
 		c.recorder.Event(app, corev1.EventTypeWarning, "FailedApplication", err.Error())
 	}
 
-	newHistory, err := c.getAppHistory(app)
-	if err == nil {
+	if newHistory, err := c.getAppHistory(app); err == nil {
 		app.Status.History = newHistory
 	} else {
 		shouldRetry = true
-		runtime.HandleError(fmt.Errorf("error fetching history for app %q (will retry): %s", key, err))
+		runtime.HandleError(fmt.Errorf("error fetching history for Application %q (will retry): %s", key, err))
 	}
 
-	newState, err := c.computeState(app)
-	if err == nil {
+	if newState, err := c.computeState(app); err == nil {
 		app.Status.State = newState
 	} else {
 		shouldRetry = true
-		runtime.HandleError(fmt.Errorf("error computing state for app %q (will retry): %s", key, err))
+		runtime.HandleError(fmt.Errorf("error computing state for Application %q (will retry): %s", key, err))
 	}
 
 	// TODO(asurikov): change to UpdateStatus when it's available.
 	_, err = c.shipperClientset.ShipperV1().Applications(app.Namespace).Update(app)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("error updating %q (will retry): %s", key, err))
 		shouldRetry = true
+		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
 	}
 
 	return shouldRetry

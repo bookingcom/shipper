@@ -33,46 +33,40 @@ func (c *Controller) runDeploymentWorker() {
 // attempt to process it, by calling the syncHandler.
 func (c *Controller) processNextDeploymentWorkItem() bool {
 	obj, shutdown := c.deploymentWorkqueue.Get()
-
 	if shutdown {
 		return false
 	}
 
-	// We wrap this block in a func so we can defer c.deploymentWorkqueue.Done.
-	err := func(obj interface{}) error {
-		// We call Done here so the workqueue knows we have finished
-		// processing this item. We also must remember to call Forget if we
-		// do not want this work item being re-queued. For example, we do
-		// not call Forget if a transient error occurs, instead the item is
-		// put back on the workqueue and attempted again after a back-off
-		// period.
-		defer c.deploymentWorkqueue.Done(obj)
+	defer c.deploymentWorkqueue.Done(obj)
 
-		var item deploymentWorkqueueItem
-		var ok bool
-		if item, ok = obj.(deploymentWorkqueueItem); !ok {
-			// As the item in the workqueue is actually invalid, we call
-			// Forget here else we'd go into a loop of attempting to
-			// process a work item that is invalid.
-			c.deploymentWorkqueue.Forget(obj)
-			runtime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
-			return nil
-		}
-		// Run the deploymentSyncHandler, passing it the deploymentWorkQueueItem.
-		if err := c.deploymentSyncHandler(item); err != nil {
-			return fmt.Errorf("error syncing '%s': %s", item.Key, err.Error())
-		}
-		// Finally, if no error occurs we Forget this item so it does not
-		// get queued again until another change happens.
+	var (
+		item deploymentWorkqueueItem
+		ok   bool
+	)
+
+	if item, ok = obj.(deploymentWorkqueueItem); !ok {
 		c.deploymentWorkqueue.Forget(obj)
-		glog.Infof("Successfully synced '%s'", item.Key)
-		return nil
-	}(obj)
-
-	if err != nil {
-		runtime.HandleError(err)
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
 		return true
 	}
+
+	if err := c.deploymentSyncHandler(item); err != nil {
+		if c.deploymentWorkqueue.NumRequeues(item) >= maxRetries {
+			// Drop the Deployment's key out of the workqueue and thus reset its
+			// backoff. This limits the time a "broken" object can hog a worker.
+			glog.Warningf("Deployment %q has been retried too many times, dropping from the queue", item.Key)
+			c.deploymentWorkqueue.Forget(item)
+
+			return true
+		}
+
+		c.deploymentWorkqueue.AddRateLimited(item)
+
+		return true
+	}
+
+	glog.V(4).Infof("Successfully synced Deployment %q", item.Key)
+	c.deploymentWorkqueue.Forget(item)
 
 	return true
 }
@@ -81,9 +75,8 @@ func (c *Controller) processNextDeploymentWorkItem() bool {
 // struct which is then put onto the work queue. This method should *not* be
 // passed resources of any type other than Deployment.
 func (c *Controller) enqueueDeployment(obj interface{}, clusterName string) {
-	var key string
-	var err error
-	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
+	key, err := cache.MetaNamespaceKeyFunc(obj)
+	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
@@ -92,7 +85,8 @@ func (c *Controller) enqueueDeployment(obj interface{}, clusterName string) {
 		Key:         key,
 		ClusterName: clusterName,
 	}
-	c.deploymentWorkqueue.AddRateLimited(item)
+
+	c.deploymentWorkqueue.Add(item)
 }
 
 func (c Controller) NewDeploymentResourceEventHandler(clusterName string) cache.ResourceEventHandler {

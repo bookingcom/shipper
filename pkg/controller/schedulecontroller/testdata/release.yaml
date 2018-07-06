@@ -1,7 +1,9 @@
 apiVersion: shipper.booking.com/v1
 kind: Release
 status:
-  phase: WaitingForScheduling
+  conditions:
+  - type: Scheduled
+    status: "False"
   achievedStep: 0
 metadata:
   name: 0.0.1
