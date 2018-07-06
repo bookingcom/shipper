@@ -259,7 +259,7 @@ func TestNewApplicationVanguard(t *testing.T) {
 			f.waitForComplete(relName)
 		} else {
 			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
-			f.waitForCommand(relName)
+			f.waitForCommand(relName, i)
 		}
 
 		expectedCapacity := capacityInPods(step.Capacity.Contender, targetReplicas)
@@ -329,7 +329,7 @@ func TestRolloutVanguard(t *testing.T) {
 			f.waitForComplete(contenderName)
 		} else {
 			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
-			f.waitForCommand(contenderName)
+			f.waitForCommand(contenderName, i)
 		}
 
 		expectedContenderCapacity := capacityInPods(step.Capacity.Contender, targetReplicas)
@@ -430,7 +430,7 @@ func (f *fixture) waitForRelease(appName string, historyIndex int) *shipperv1.Re
 	return newRelease
 }
 
-func (f *fixture) waitForCommand(releaseName string) {
+func (f *fixture) waitForCommand(releaseName string, step int) {
 	var state string
 	start := time.Now()
 	err := poll(globalTimeout, func() (bool, error) {
@@ -444,7 +444,8 @@ func (f *fixture) waitForCommand(releaseName string) {
 			return false, nil
 		}
 
-		if rel.Status.Strategy.State.WaitingForCommand == shipperv1.StrategyStateTrue {
+		if rel.Status.Strategy.State.WaitingForCommand == shipperv1.StrategyStateTrue &&
+			rel.Status.AchievedStep == int32(step) {
 			return true, nil
 		}
 
