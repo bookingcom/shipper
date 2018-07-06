@@ -15,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -364,14 +365,10 @@ func newFixture(ns string, t *testing.T) *fixture {
 }
 
 func (f *fixture) targetStep(step int, relName string) {
-	rel, err := shipperClient.ShipperV1().Releases(f.namespace).Get(relName, metav1.GetOptions{})
+	patch := fmt.Sprintf(`{"spec": {"targetStep": %d}}`, step)
+	_, err := shipperClient.ShipperV1().Releases(f.namespace).Patch(relName, types.MergePatchType, []byte(patch))
 	if err != nil {
-		f.t.Fatalf("release for targetStep could not be fetched: %q: %q", relName, err)
-	}
-	rel.Spec.TargetStep = int32(step)
-	_, err = shipperClient.ShipperV1().Releases(f.namespace).Update(rel)
-	if err != nil {
-		f.t.Fatalf("could not update release with targetStep %v: %q", step, err)
+		f.t.Fatalf("could not patch release with targetStep %v: %q", step, err)
 	}
 }
 
