@@ -231,8 +231,12 @@ type Sidecar struct {
 }
 
 type ClusterRequirements struct {
-	Regions      []string `json:"regions"`
-	Capabilities []string `json:"capabilities,omitempty"`
+	Regions      []RegionRequirement `json:"regions"`
+	Capabilities []string            `json:"capabilities,omitempty"`
+}
+
+type RegionRequirement struct {
+	Name string
 }
 
 type RolloutStrategy struct {

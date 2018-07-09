@@ -58,8 +58,14 @@ func (c *Scheduler) scheduleRelease() error {
 	// Compute target clusters, and update the release if it
 	// doesn't have any
 	if !c.HasClusters() {
-		clusters, err := c.ComputeTargetClusters()
+		clusterList, err := c.clustersLister.List(labels.Everything())
+		if err != nil {
+			return err
+		}
+
+		clusters, err := computeTargetClusters(c.Release, clusterList)
 		if err == nil {
+			c.SetClusters(clusters)
 			newRelease, updateErr := c.UpdateRelease()
 			if updateErr != nil {
 				return updateErr
@@ -302,26 +308,60 @@ func (c *Scheduler) CreateTrafficTarget() error {
 	return nil
 }
 
-// ComputeTargetClusters updates the Release Environment.Clusters property
-// based on its ClusterRequirements.
-func (c *Scheduler) ComputeTargetClusters() ([]string, error) {
-	// TODO selectors should be calculated from
-	// c.Release.Environment.ClusterRequirements
-	selectors := labels.NewSelector()
+// computeTargetClusters picks out the clusters from the given list which match
+// the release's clusterRequirements
+func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]string, error) {
+	requiredRegions := release.Environment.ClusterRequirements.Regions
+	requiredCapabilities := release.Environment.ClusterRequirements.Capabilities
+	capableClustersByRegion := map[string][]*v1.Cluster{}
+	// this algo could probably build up hashes instead of doing linear
+	// searches, but these data sets are so tiny (1-20 items) that it'd only be
+	// useful for readability
+	for _, region := range requiredRegions {
+		capableClustersByRegion[region.Name] = []*v1.Cluster{}
 
-	clusters, err := c.clustersLister.List(selectors)
-	if err != nil {
-		return nil, err
-	}
+		regionMatch := false
+		for _, cluster := range clusterList {
+			if cluster.Spec.Unschedulable {
+				continue
+			}
 
-	var clusterNames []string
-	for _, v := range clusters {
-		if !v.Spec.Unschedulable {
-			clusterNames = append(clusterNames, v.Name)
+			if cluster.Spec.Region == region.Name {
+				regionMatch = true
+				capabilityMatch := 0
+				for _, requiredCapability := range requiredCapabilities {
+					for _, providedCapability := range cluster.Spec.Capabilities {
+						if requiredCapability == providedCapability {
+							capabilityMatch++
+							break
+						}
+					}
+				}
+
+				if capabilityMatch == len(requiredCapabilities) {
+					capableClustersByRegion[region.Name] = append(capableClustersByRegion[region.Name], cluster)
+				}
+			}
+		}
+		if !regionMatch {
+			return nil, fmt.Errorf("no clusters match required region %q", region.Name)
 		}
 	}
-	c.SetClusters(clusterNames)
 
+	clusterNames := []string{}
+	for region, clusters := range capableClustersByRegion {
+		if len(clusters) == 0 {
+			return nil, fmt.Errorf("no clusters in region %q have required capabilities %q", region, strings.Join(requiredCapabilities, ","))
+		}
+		// I think we can be sure that we won't have any duplicate clusters:
+		// each cluster has a unique name (cluster scoped object in K8s) and each
+		// one has exactly one value for 'region'.
+		for _, cluster := range clusters {
+			clusterNames = append(clusterNames, cluster.Name)
+		}
+	}
+
+	sort.Strings(clusterNames)
 	return clusterNames, nil
 }
 

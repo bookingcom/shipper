@@ -81,7 +81,7 @@ func buildApplication(appName, ns string) *shipperV1.Application {
 		Spec: shipperV1.ApplicationSpec{
 			Template: shipperV1.ReleaseEnvironment{
 				ClusterRequirements: shipperV1.ClusterRequirements{
-					Regions: []string{"local"},
+					Regions: []shipperV1.RegionRequirement{{Name: "local"}},
 				},
 				Chart: shipperV1.Chart{
 					Name:    "nginx",

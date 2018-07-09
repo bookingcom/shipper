@@ -643,7 +643,7 @@ func newApplication(namespace, name string, strategy *shipperv1.RolloutStrategy)
 				Strategy: strategy,
 				// TODO(btyler) implement enough cluster selector stuff to only pick the target cluster we care about
 				// (or just panic if that cluster isn't listed)
-				ClusterRequirements: shipperv1.ClusterRequirements{Regions: []string{"local"}},
+				ClusterRequirements: shipperv1.ClusterRequirements{Regions: []shipperv1.RegionRequirement{{Name: "local"}}},
 				Values:              &shipperv1.ChartValues{},
 			},
 		},

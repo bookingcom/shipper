@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,10 +77,10 @@ func newScheduler(
 	return c, clientset
 }
 
-// TestComputeTargetClusters tests the first part of the cluster scheduling,
+// TestSchedule tests the first part of the cluster scheduling,
 // which is find out which clusters the release must be installed, and
 // persisting it under .status.environment.clusters.
-func TestComputeTargetClusters(t *testing.T) {
+func TestSchedule(t *testing.T) {
 	// Fixtures
 	clusterA := loadCluster("minikube-a")
 	clusterB := loadCluster("minikube-b")
@@ -119,11 +120,11 @@ func TestComputeTargetClusters(t *testing.T) {
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
-// TestComputeTargetClustersSkipUnscheduled tests the first part of the cluster scheduling,
+// TestScheduleSkipsUnschedulable tests the first part of the cluster scheduling,
 // which is find out which clusters the release must be installed, and
 // persisting it under .status.environment.clusters but skipping unschedulable
 // clusters this time.
-func TestComputeTargetClustersSkipUnscheduled(t *testing.T) {
+func TestScheduleSkipsUnschedulable(t *testing.T) {
 	// Fixtures
 	clusterA := loadCluster("minikube-a")
 	clusterB := loadCluster("minikube-b")
@@ -391,4 +392,160 @@ func filterActions(
 	}
 
 	return ret
+}
+
+type requirements shipperV1.ClusterRequirements
+type clusters []shipperV1.ClusterSpec
+type expected []string
+
+const (
+	passingCase = false
+	errorCase   = true
+)
+
+// TestComputeTargetClusters works the core of the scheduler logic: matching regions and capabilities between releases and clusters
+func TestComputeTargetClusters(t *testing.T) {
+	computeClusterTestCase(t, "basic region match",
+		requirements{
+			Regions: []shipperV1.RegionRequirement{{Name: "matches"}},
+		},
+		clusters{
+			{Region: "matches", Capabilities: []string{}},
+		},
+		expected{"cluster-0"},
+		passingCase,
+	)
+
+	computeClusterTestCase(t, "one region match one no match",
+		requirements{
+			Regions: []shipperV1.RegionRequirement{{Name: "matches"}},
+		},
+		clusters{
+			{Region: "matches", Capabilities: []string{}},
+			{Region: "does not match", Capabilities: []string{}},
+		},
+		expected{"cluster-0"},
+		passingCase,
+	)
+
+	computeClusterTestCase(t, "both match",
+		requirements{
+			Regions: []shipperV1.RegionRequirement{{Name: "matches"}},
+		},
+		clusters{
+			{Region: "matches", Capabilities: []string{}},
+			{Region: "matches", Capabilities: []string{}},
+		},
+		expected{"cluster-0", "cluster-1"},
+		passingCase,
+	)
+
+	computeClusterTestCase(t, "two region matches, one capability match",
+		requirements{
+			Regions:      []shipperV1.RegionRequirement{{Name: "matches"}},
+			Capabilities: []string{"a", "b"},
+		},
+		clusters{
+			{Region: "matches", Capabilities: []string{"a"}},
+			{Region: "matches", Capabilities: []string{"a", "b"}},
+		},
+		expected{"cluster-1"},
+		passingCase,
+	)
+
+	computeClusterTestCase(t, "two region matches, two capability matches",
+		requirements{
+			Regions:      []shipperV1.RegionRequirement{{Name: "matches"}},
+			Capabilities: []string{"a"},
+		},
+		clusters{
+			{Region: "matches", Capabilities: []string{"a"}},
+			{Region: "matches", Capabilities: []string{"a", "b"}},
+		},
+		expected{"cluster-0", "cluster-1"},
+		passingCase,
+	)
+
+	computeClusterTestCase(t, "no region match",
+		requirements{
+			Regions:      []shipperV1.RegionRequirement{{Name: "foo"}},
+			Capabilities: []string{},
+		},
+		clusters{
+			{Region: "bar", Capabilities: []string{}},
+			{Region: "baz", Capabilities: []string{}},
+		},
+		expected{},
+		errorCase,
+	)
+
+	computeClusterTestCase(t, "region match, no capability match",
+		requirements{
+			Regions:      []shipperV1.RegionRequirement{{Name: "foo"}},
+			Capabilities: []string{"a"},
+		},
+		clusters{
+			{Region: "foo", Capabilities: []string{"b"}},
+			{Region: "foo", Capabilities: []string{"b"}},
+		},
+		expected{},
+		errorCase,
+	)
+}
+
+func computeClusterTestCase(
+	t *testing.T,
+	name string,
+	reqs requirements,
+	clusterSpecs clusters,
+	expectedClusters expected,
+	expectError bool,
+) {
+
+	release := generateRelease(shipperV1.ClusterRequirements(reqs))
+	clusters := make([]*shipperV1.Cluster, 0, len(clusterSpecs))
+	for i, spec := range clusterSpecs {
+		clusters = append(clusters, generateCluster(i, spec))
+	}
+
+	actualClusters, err := computeTargetClusters(release, clusters)
+	if expectError {
+		if err == nil {
+			t.Errorf("test %q expected an error but didn't get one!", name)
+		}
+	} else {
+		if err != nil {
+			t.Errorf("error %q: %q", name, err)
+			return
+		}
+	}
+
+	if strings.Join(expectedClusters, ",") != strings.Join(actualClusters, ",") {
+		t.Errorf("%q expected clusters %q, but got %q", name, strings.Join(expectedClusters, ","), strings.Join(actualClusters, ","))
+		return
+	}
+}
+
+func generateCluster(name int, spec shipperV1.ClusterSpec) *shipperV1.Cluster {
+	return &shipperV1.Cluster{
+		ObjectMeta: metaV1.ObjectMeta{
+			Name:      fmt.Sprintf("cluster-%d", name),
+			Namespace: shippertesting.TestNamespace,
+		},
+		Spec: spec,
+	}
+}
+
+func generateRelease(reqs shipperV1.ClusterRequirements) *shipperV1.Release {
+	return &shipperV1.Release{
+		ReleaseMeta: shipperV1.ReleaseMeta{
+			ObjectMeta: metaV1.ObjectMeta{
+				Name:      "test-release",
+				Namespace: shippertesting.TestNamespace,
+			},
+			Environment: shipperV1.ReleaseEnvironment{
+				ClusterRequirements: reqs,
+			},
+		},
+	}
 }

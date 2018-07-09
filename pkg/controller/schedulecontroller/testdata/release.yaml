@@ -15,14 +15,10 @@ metadata:
       name: simple
       version: 0.0.1
       repoUrl: localhost
-    shipmentOrder:
-      clusterRequirements:
-        regions:
-        - foo
-        - bar
-        capabilities:
-        - gpu
-        - pci
+    clusterRequirements:
+      regions:
+      - name: local
+      capabilities: []
     strategy:
       steps:
       - name: staging

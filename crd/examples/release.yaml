@@ -15,8 +15,8 @@ metadata:
       repoUrl: localhost
     clusterRequirements:
       regions:
-      - foo
-      - bar
+      - name: foo
+      - name: bar
       capabilities:
       - gpu
       - pci
