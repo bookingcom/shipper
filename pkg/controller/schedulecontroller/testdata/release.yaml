@@ -16,8 +16,8 @@ metadata:
       version: 0.0.1
       repoUrl: localhost
     shipmentOrder:
-      clusterSelectors:
-      - regions:
+      clusterRequirements:
+        regions:
         - foo
         - bar
         capabilities:

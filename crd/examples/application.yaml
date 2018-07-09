@@ -6,8 +6,8 @@ metadata:
 spec:
   revisionHistoryLimit: 10
   template:
-    clusterSelectors:
-    - regions:
+    clusterRequirements:
+      regions:
       - local
       capabilities: []
     chart:

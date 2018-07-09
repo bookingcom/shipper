@@ -303,10 +303,10 @@ func (c *Scheduler) CreateTrafficTarget() error {
 }
 
 // ComputeTargetClusters updates the Release Environment.Clusters property
-// based on its ClusterSelectors.
+// based on its ClusterRequirements.
 func (c *Scheduler) ComputeTargetClusters() ([]string, error) {
 	// TODO selectors should be calculated from
-	// c.Release.Environment.ClusterSelectors
+	// c.Release.Environment.ClusterRequirements
 	selectors := labels.NewSelector()
 
 	clusters, err := c.clustersLister.List(selectors)

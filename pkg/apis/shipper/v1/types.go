@@ -98,11 +98,6 @@ type ApplicationCondition struct {
 	Message            string                   `json:"message,omitempty"`
 }
 
-type ClusterSelector struct {
-	Regions      []string `json:"regions"`
-	Capabilities []string `json:"capabilities"`
-}
-
 type Chart struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
@@ -225,7 +220,7 @@ type ReleaseEnvironment struct {
 
 	// selectors for target clusters for the deployment
 	// XXX what are the semantics when the field is empty/omitted?
-	ClusterSelectors []ClusterSelector `json:"clusterSelectors"`
+	ClusterRequirements ClusterRequirements `json:"clusterRequirements"`
 
 	Strategy *RolloutStrategy `json:"strategy,omitempty"`
 }
@@ -233,6 +228,11 @@ type ReleaseEnvironment struct {
 type Sidecar struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
+}
+
+type ClusterRequirements struct {
+	Regions      []string `json:"regions"`
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 type RolloutStrategy struct {

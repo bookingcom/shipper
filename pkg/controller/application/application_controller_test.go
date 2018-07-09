@@ -224,9 +224,7 @@ func TestCreateSecondRelease(t *testing.T) {
 
 	app.Status.History = []string{oldRelName}
 
-	app.Spec.Template.ClusterSelectors = append(app.Spec.Template.ClusterSelectors,
-		shipperv1.ClusterSelector{Regions: []string{"foo"}},
-	)
+	app.Spec.Template.ClusterRequirements = shipperv1.ClusterRequirements{Regions: []string{"foo"}}
 
 	newEnvHash := hashReleaseEnvironment(app.Spec.Template)
 	newRelName := fmt.Sprintf("%s-%s-0", testAppName, newEnvHash)
@@ -288,9 +286,7 @@ func TestAbort(t *testing.T) {
 	// release (gen 0) with a different cluster selector. we expect app template
 	// to be reverted
 	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "1"
-	app.Spec.Template.ClusterSelectors = []shipperv1.ClusterSelector{
-		shipperv1.ClusterSelector{Regions: []string{"foo"}},
-	}
+	app.Spec.Template.ClusterRequirements = shipperv1.ClusterRequirements{Regions: []string{"foo"}}
 
 	f.objects = append(f.objects, app)
 
@@ -302,9 +298,7 @@ func TestAbort(t *testing.T) {
 	release.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
 	release.Spec.TargetStep = 2
 	release.Status.AchievedStep = 2
-	release.Environment.ClusterSelectors = []shipperv1.ClusterSelector{
-		shipperv1.ClusterSelector{Regions: []string{"bar"}},
-	}
+	release.Environment.ClusterRequirements = shipperv1.ClusterRequirements{Regions: []string{"bar"}}
 
 	f.objects = append(f.objects, release)
 
@@ -511,9 +505,9 @@ func newApplication(name string) *shipperv1.Application {
 					Version: "0.0.1",
 					RepoURL: "http://127.0.0.1:8879/charts",
 				},
-				ClusterSelectors: []shipperv1.ClusterSelector{},
-				Values:           &shipperv1.ChartValues{},
-				Strategy:         &vanguard,
+				ClusterRequirements: shipperv1.ClusterRequirements{},
+				Values:              &shipperv1.ChartValues{},
+				Strategy:            &vanguard,
 			},
 		},
 	}
