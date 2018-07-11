@@ -46,14 +46,6 @@ type InstallationTargetListerExpansion interface{}
 // InstallationTargetNamespaceLister.
 type InstallationTargetNamespaceListerExpansion interface{}
 
-// ReleaseListerExpansion allows custom methods to be added to
-// ReleaseLister.
-type ReleaseListerExpansion interface{}
-
-// ReleaseNamespaceListerExpansion allows custom methods to be added to
-// ReleaseNamespaceLister.
-type ReleaseNamespaceListerExpansion interface{}
-
 // TrafficTargetListerExpansion allows custom methods to be added to
 // TrafficTargetLister.
 type TrafficTargetListerExpansion interface{}

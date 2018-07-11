@@ -8,6 +8,7 @@ metadata:
   name: 0.0.1
   namespace: reviews-api
   labels:
+    shipper-app: reviews-api
     shipper-release: 0.0.1
   environment:
     clusters:

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	coreV1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -52,6 +53,32 @@ func (f *FakeClientProvider) GetConfig(clusterName string) (*rest.Config, error)
 	} else {
 		return f.restConfig, nil
 	}
+}
+
+func loadService(variant string) *coreV1.Service {
+	service := &coreV1.Service{}
+	serviceYamlPath := filepath.Join("testdata", fmt.Sprintf("service-%s.yaml", variant))
+
+	if serviceRaw, err := ioutil.ReadFile(serviceYamlPath); err != nil {
+		panic(err)
+	} else if _, _, err = scheme.Codecs.UniversalDeserializer().Decode(serviceRaw, nil, service); err != nil {
+		panic(err)
+	}
+
+	return service
+}
+
+func loadApplication() *shipperV1.Application {
+	app := &shipperV1.Application{}
+	appYamlPath := filepath.Join("testdata", "application.yaml")
+
+	if appRaw, err := ioutil.ReadFile(appYamlPath); err != nil {
+		panic(err)
+	} else if _, _, err = scheme.Codecs.UniversalDeserializer().Decode(appRaw, nil, app); err != nil {
+		panic(err)
+	}
+
+	return app
 }
 
 // loadRelease loads a release from test data.
@@ -104,14 +131,14 @@ func populateFakeDiscovery(discovery discovery.DiscoveryInterface, apiResourceLi
 
 // initializeClients returns some objects that are used in several
 // tests, basically to reduce boilerplate.
-func initializeClients(apiResourceList []*v1.APIResourceList, objects ...runtime.Object) (
+func initializeClients(apiResourceList []*v1.APIResourceList, shipperObjects []runtime.Object, kubeObjects []runtime.Object) (
 	kubernetes.Interface,
 	*shipperfake.Clientset,
 	*dynamicfake.FakeClient,
 	DynamicClientBuilderFunc,
 	shipperinformers.SharedInformerFactory,
 ) {
-	fakeClient := kubefake.NewSimpleClientset()
+	fakeClient := kubefake.NewSimpleClientset(kubeObjects...)
 	populateFakeDiscovery(fakeClient.Discovery(), apiResourceList)
 	fakeDynamicClient := &dynamicfake.FakeClient{
 		Fake: &kubetesting.Fake{},
@@ -121,7 +148,7 @@ func initializeClients(apiResourceList []*v1.APIResourceList, objects ...runtime
 		return fakeDynamicClient
 	}
 
-	shipperclientset := shipperfake.NewSimpleClientset(objects...)
+	shipperclientset := shipperfake.NewSimpleClientset(shipperObjects...)
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(shipperclientset, time.Second*0)
 
 	return fakeClient, shipperclientset, fakeDynamicClient, fakeDynamicClientBuilder, shipperInformerFactory

@@ -45,7 +45,9 @@ type Controller struct {
 	// the Kube clients for each of the target clusters
 	clusterClientStore clusterclientstore.ClientProvider
 
-	workqueue                 workqueue.RateLimitingInterface
+	workqueue workqueue.RateLimitingInterface
+
+	appLister                 shipperListers.ApplicationLister
 	installationTargetsSynced cache.InformerSynced
 	installationTargetsLister shipperListers.InstallationTargetLister
 	clusterLister             shipperListers.ClusterLister
@@ -69,8 +71,10 @@ func NewController(
 	installationTargetInformer := shipperInformerFactory.Shipper().V1().InstallationTargets()
 	clusterInformer := shipperInformerFactory.Shipper().V1().Clusters()
 	releaseInformer := shipperInformerFactory.Shipper().V1().Releases()
+	applicationInformer := shipperInformerFactory.Shipper().V1().Applications()
 
 	controller := &Controller{
+		appLister:                 applicationInformer.Lister(),
 		shipperclientset:          shipperclientset,
 		clusterClientStore:        store,
 		clusterLister:             clusterInformer.Lister(),
@@ -180,7 +184,9 @@ func (c *Controller) syncOne(key string) bool {
 	}
 
 	if err := c.processInstallation(it.DeepCopy()); err != nil {
-		if shipperController.IsMultipleOwnerReferencesError(err) || shipperController.IsWrongOwnerReferenceError(err) {
+		shouldNotRetry := shipperController.IsMultipleOwnerReferencesError(err) || shipperController.IsWrongOwnerReferenceError(err) || IsIncompleteReleaseError(err)
+
+		if shouldNotRetry {
 			runtime.HandleError(fmt.Errorf("error syncing InstallationTarget %q (will not retry): %s", key, err))
 			return false
 		}
@@ -204,113 +210,94 @@ func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 
 // processInstallation attempts to install the related release on all target clusters.
 func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error {
-	if n := len(it.OwnerReferences); n != 1 {
-		return shipperController.NewMultipleOwnerReferencesError(it.Name, n)
-	}
+	relNamespaceLister := c.releaseLister.Releases(it.Namespace)
 
-	owner := it.OwnerReferences[0]
-
-	release, err := c.releaseLister.Releases(it.GetNamespace()).Get(owner.Name)
+	release, err := relNamespaceLister.ReleaseForInstallationTarget(it)
 	if err != nil {
 		return err
 	}
 
-	if release.UID != owner.UID {
-		return shipperController.NewWrongOwnerReferenceError(it.Name, owner.UID, release.UID)
+	appName, ok := release.GetLabels()[shipperV1.AppLabel]
+	if !ok {
+		return NewIncompleteReleaseError(`couldn't find label %q in release %q`, shipperV1.AppLabel, release.Name)
+	}
+
+	contenderRel, err := relNamespaceLister.ContenderForApplication(appName)
+	if err != nil {
+		return err
+	}
+
+	if contenderRel.Name != release.Name {
+		return NewNotContenderError(`release %q is not the contender %q`, release.Name, contenderRel.Name)
 	}
 
 	handler := NewInstaller(c.chartFetchFunc, release, it)
 
+	// Build .status over based on the current .spec.clusters.
+	newClusterStatuses := make([]*shipperV1.ClusterInstallationStatus, 0, len(it.Spec.Clusters))
+
+	// Collect the existing conditions for clusters present in .spec.clusters in a map
+	existingConditionsPerCluster := extractExistingConditionsPerCluster(it)
+
 	// The strategy here is try our best to install as many objects as possible
 	// in all target clusters. It is not the Installation Controller job to
-	// reason about a target cluster status.
-	clusterStatuses := make([]*shipperV1.ClusterInstallationStatus, 0, len(it.Spec.Clusters))
-	for _, clusterName := range it.Spec.Clusters {
-		var clusterConditions []shipperV1.ClusterInstallationCondition
+	// reason about an application cluster status, so it just report that a
+	// cluster might not be operational if operations on the application
+	// cluster fail for any reason.
+	for _, name := range it.Spec.Clusters {
 
-		for _, x := range it.Status.Clusters {
-			if x.Name == clusterName {
-				clusterConditions = x.Conditions
-			}
-		}
-
+		// IMPORTANT: Since we keep existing conditions from previous syncing
+		// points (as in existingConditionsPerCluster[name]), one needs to
+		// adjust all the dependent conditions. For example, whenever we
+		// transition "Operational" to "False", "Ready" *MUST* be transitioned
+		// to "Unknown" since we can't verify if it is actually "Ready".
 		status := &shipperV1.ClusterInstallationStatus{
-			Name:       clusterName,
-			Conditions: clusterConditions,
+			Name:       name,
+			Conditions: existingConditionsPerCluster[name],
 		}
-
-		clusterStatuses = append(clusterStatuses, status)
+		newClusterStatuses = append(newClusterStatuses, status)
 
 		var cluster *shipperV1.Cluster
-		if cluster, err = c.clusterLister.Get(clusterName); err != nil {
-			status.Conditions = conditions.SetInstallationCondition(
-				status.Conditions,
-				shipperV1.ClusterConditionTypeOperational,
-				corev1.ConditionFalse,
-				conditions.ServerError,
-				err.Error())
-
+		if cluster, err = c.clusterLister.Get(name); err != nil {
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
-			glog.Warningf("Get Cluster %q for InstallationTarget %q: %s", clusterName, shipperController.MetaKey(it), err)
+			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperV1.ClusterConditionTypeOperational, corev1.ConditionFalse, reasonForOperationalCondition(err), err.Error())
+			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperV1.ClusterConditionTypeReady, corev1.ConditionUnknown, reasonForReadyCondition(err), err.Error())
+			glog.Warningf("Get Cluster %q for InstallationTarget %q: %s", name, shipperController.MetaKey(it), err)
 			continue
 		}
 
 		var client kubernetes.Interface
 		var restConfig *rest.Config
-		client, restConfig, err = c.GetClusterAndConfig(clusterName)
+		client, restConfig, err = c.GetClusterAndConfig(name)
 		if err != nil {
-			reason := conditions.ServerError
-			if err == clientcache.ErrClusterNotInStore || err == clientcache.ErrClusterNotReady {
-				reason = conditions.TargetClusterClientError
-			}
-			status.Conditions = conditions.SetInstallationCondition(
-				status.Conditions,
-				shipperV1.ClusterConditionTypeOperational,
-				corev1.ConditionFalse,
-				reason,
-				err.Error())
-
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
-			glog.Warningf("Get config for Cluster %q for InstallationTarget %q: %s", clusterName, shipperController.MetaKey(it), err)
+			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperV1.ClusterConditionTypeOperational, corev1.ConditionFalse, reasonForOperationalCondition(err), err.Error())
+			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperV1.ClusterConditionTypeReady, corev1.ConditionUnknown, reasonForReadyCondition(err), err.Error())
+			glog.Warningf("Get config for Cluster %q for InstallationTarget %q: %s", name, shipperController.MetaKey(it), err)
 			continue
 		}
 
 		// At this point, we got a hold in a connection to the target cluster,
 		// so we assume it's operational until some other signal saying
 		// otherwise arrives.
-		status.Conditions = conditions.SetInstallationCondition(
-			status.Conditions,
-			shipperV1.ClusterConditionTypeOperational,
-			corev1.ConditionTrue,
-			"", "")
+		status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperV1.ClusterConditionTypeOperational, corev1.ConditionTrue, "", "")
 
 		if err = handler.installRelease(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
-			status.Conditions = conditions.SetInstallationCondition(
-				status.Conditions,
-				shipperV1.ClusterConditionTypeReady,
-				corev1.ConditionFalse,
-				conditions.ServerError,
-				err.Error())
-
 			status.Status = shipperV1.InstallationStatusFailed
 			status.Message = err.Error()
-			glog.Warningf("Install InstallationTarget %q for Cluster %q: %s", shipperController.MetaKey(it), clusterName, err)
+			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperV1.ClusterConditionTypeReady, corev1.ConditionFalse, reasonForReadyCondition(err), err.Error())
+			glog.Warningf("Install InstallationTarget %q for Cluster %q: %s", shipperController.MetaKey(it), name, err)
 			continue
 		}
 
-		status.Conditions = conditions.SetInstallationCondition(
-			status.Conditions,
-			shipperV1.ClusterConditionTypeOperational,
-			corev1.ConditionTrue,
-			"", "")
-
+		status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperV1.ClusterConditionTypeReady, corev1.ConditionTrue, "", "")
 		status.Status = shipperV1.InstallationStatusInstalled
 	}
 
-	sort.Sort(byClusterName(clusterStatuses))
-	it.Status.Clusters = clusterStatuses
+	sort.Sort(byClusterName(newClusterStatuses))
+	it.Status.Clusters = newClusterStatuses
 
 	_, err = c.shipperclientset.ShipperV1().InstallationTargets(it.Namespace).Update(it)
 	if err == nil {
@@ -320,7 +307,7 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 			"InstallationStatusChanged",
 			"Set %q status to %v",
 			shipperController.MetaKey(it),
-			clusterStatuses,
+			newClusterStatuses,
 		)
 	} else {
 		c.recorder.Event(
@@ -332,6 +319,19 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	}
 
 	return err
+}
+
+// extractExistingConditionsPerCluster builds a map with values being a list of conditions.
+func extractExistingConditionsPerCluster(it *shipperV1.InstallationTarget) map[string][]shipperV1.ClusterInstallationCondition {
+	existingConditionsPerCluster := map[string][]shipperV1.ClusterInstallationCondition{}
+	for _, name := range it.Spec.Clusters {
+		for _, s := range it.Status.Clusters {
+			if s.Name == name {
+				existingConditionsPerCluster[name] = s.Conditions
+			}
+		}
+	}
+	return existingConditionsPerCluster
 }
 
 func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interface, *rest.Config, error) {
@@ -352,4 +352,27 @@ func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interfa
 	referenceCopy := rest.CopyConfig(referenceConfig)
 
 	return client, referenceCopy, nil
+}
+
+func reasonForOperationalCondition(err error) string {
+	if err == clientcache.ErrClusterNotInStore || err == clientcache.ErrClusterNotReady {
+		return conditions.TargetClusterClientError
+	}
+	return conditions.ServerError
+}
+
+func reasonForReadyCondition(err error) string {
+	if IsCreateResourceError(err) || IsGetResourceError(err) {
+		return conditions.ServerError
+	}
+
+	if IsDecodeManifestError(err) || IsConvertUnstructuredError(err) {
+		return conditions.ChartError
+	}
+
+	if IsResourceClientError(err) {
+		return conditions.ClientError
+	}
+
+	return conditions.UnknownError
 }

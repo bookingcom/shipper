@@ -12,6 +12,18 @@ import (
 
 var InstallationConditionsShouldDiscardTimestamps = false
 
+func IsInstallationConditionTrue(
+	conditions []shipperV1.ClusterInstallationCondition,
+	typ shipperV1.ClusterConditionType,
+) bool {
+	for _, e := range conditions {
+		if e.Type == typ {
+			return e.Status == coreV1.ConditionTrue
+		}
+	}
+	return false
+}
+
 func SetInstallationCondition(
 	conditions []shipperV1.ClusterInstallationCondition,
 	typ shipperV1.ClusterConditionType,
