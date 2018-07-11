@@ -34,7 +34,6 @@ const (
 	ReleaseGenerationAnnotation        = "shipper.booking.com/release.generation"
 	ReleaseTemplateIterationAnnotation = "shipper.booking.com/release.template.iteration"
 	ReleaseClustersAnnotation          = "shipper.booking.com/release.clusters"
-	ReleaseReplicasAnnotation          = "shipper.booking.com/release.replicas"
 
 	SecretChecksumAnnotation    = "shipper.booking.com/cluster-secret.checksum"
 	SecretClusterNameAnnotation = "shipper.booking.com/cluster-secret.clusterName"
@@ -173,8 +172,8 @@ type Release struct {
 }
 
 type ReleaseMeta struct {
-	metav1.ObjectMeta              `json:",inline"`
-	Environment ReleaseEnvironment `json:"environment"`
+	metav1.ObjectMeta `json:",inline"`
+	Environment       ReleaseEnvironment `json:"environment"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -364,8 +363,9 @@ type CapacityTargetSpec struct {
 }
 
 type ClusterCapacityTarget struct {
-	Name    string `json:"name"`
-	Percent int32  `json:"percent"`
+	Name              string `json:"name"`
+	Percent           int32  `json:"percent"`
+	TotalReplicaCount int32  `json:"totalReplicaCount"`
 }
 
 // +genclient

@@ -357,7 +357,6 @@ func startApplicationController(cfg *cfg) (bool, error) {
 		cfg.shipperClient,
 		cfg.shipperInformerFactory,
 		cfg.recorder(application.AgentName),
-		cfg.chartFetchFunc,
 	)
 
 	cfg.wg.Add(1)
@@ -404,6 +403,7 @@ func startScheduleController(cfg *cfg) (bool, error) {
 		cfg.kubeClient,
 		cfg.shipperClient,
 		cfg.shipperInformerFactory,
+		cfg.chartFetchFunc,
 		cfg.recorder(schedulecontroller.AgentName),
 	)
 

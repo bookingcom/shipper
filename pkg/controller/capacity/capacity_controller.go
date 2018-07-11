@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/golang/glog"
@@ -226,22 +225,6 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 	}
 
 	ct = ct.DeepCopy()
-	release, err := c.getReleaseForCapacityTarget(ct)
-	if err != nil {
-		if IsReleaseGone(err) {
-			runtime.HandleError(fmt.Errorf("error syncing CapacityTarget %q (will not retry): %s", key, err))
-			return false
-		}
-
-		runtime.HandleError(fmt.Errorf("error syncing CapacityTarget %q (will retry): %s", key, err))
-		return true
-	}
-
-	totalReplicaCount, err := strconv.Atoi(release.Annotations[shipperv1.ReleaseReplicasAnnotation])
-	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing CapacityTarget %q (will not retry): %s", key, err))
-		return false
-	}
 
 	targetNamespace := ct.Namespace
 	selector := labels.Set(ct.Labels).AsSelector()
@@ -278,9 +261,8 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 		}
 
 		// Get the requested percentage of replicas from the capacity object
-		// This is only set by the strategy controller
-		percentage := clusterSpec.Percent
-		replicaCount := c.calculateReplicaCountFromPercentage(int32(totalReplicaCount), percentage)
+		// This is only set by the scheduler
+		replicaCount := c.calculateReplicaCountFromPercentage(clusterSpec.TotalReplicaCount, clusterSpec.Percent)
 
 		// Patch the deployment if it doesn't match the cluster spec
 		if targetDeployment.Spec.Replicas == nil || replicaCount != *targetDeployment.Spec.Replicas {
@@ -289,20 +271,20 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 				c.recordErrorEvent(ct, err)
 				continue
 			}
-
 		}
 
 		// Finished applying patches, now update the status
 		clusterStatus.AvailableReplicas = targetDeployment.Status.AvailableReplicas
-		clusterStatus.AchievedPercent = c.calculatePercentageFromAmount(int32(totalReplicaCount), clusterStatus.AvailableReplicas)
+		clusterStatus.AchievedPercent = c.calculatePercentageFromAmount(clusterSpec.TotalReplicaCount, clusterStatus.AvailableReplicas)
 		sadPods, err := c.getSadPods(targetDeployment, clusterStatus)
 		if err != nil {
 			continue
 		}
 
+		clusterStatus.SadPods = sadPods
+
 		// If we have sad pods, don't go further
 		if len(sadPods) > 0 {
-			clusterStatus.SadPods = sadPods
 			continue
 		}
 
@@ -353,23 +335,6 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 	}
 
 	c.capacityTargetWorkqueue.Add(key)
-}
-
-func (c Controller) getReleaseForCapacityTarget(capacityTarget *shipperv1.CapacityTarget) (*shipperv1.Release, error) {
-	if n := len(capacityTarget.OwnerReferences); n != 1 {
-		return nil, shippercontroller.NewMultipleOwnerReferencesError(capacityTarget.GetName(), n)
-	}
-
-	owner := capacityTarget.OwnerReferences[0]
-
-	release, err := c.releasesLister.Releases(capacityTarget.GetNamespace()).Get(owner.Name)
-	if err != nil {
-		return nil, err
-	} else if release.GetUID() != owner.UID {
-		return nil, NewReleaseIsGoneError(shippercontroller.MetaKey(capacityTarget), owner.UID, release.GetUID())
-	}
-
-	return release, nil
 }
 
 func (c Controller) calculateReplicaCountFromPercentage(total, percentage int32) int32 {

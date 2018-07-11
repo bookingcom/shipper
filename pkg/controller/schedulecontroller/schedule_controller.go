@@ -5,6 +5,10 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/bookingcom/shipper/pkg/chart"
+	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -15,9 +19,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
@@ -35,11 +36,16 @@ const (
 type Controller struct {
 	kubeclientset    kubernetes.Interface
 	shipperclientset clientset.Interface
-	releasesLister   listers.ReleaseLister
-	clustersLister   listers.ClusterLister
-	releasesSynced   cache.InformerSynced
-	workqueue        workqueue.RateLimitingInterface
-	recorder         record.EventRecorder
+
+	releasesLister listers.ReleaseLister
+	releasesSynced cache.InformerSynced
+
+	clustersLister listers.ClusterLister
+	clustersSynced cache.InformerSynced
+
+	workqueue      workqueue.RateLimitingInterface
+	chartFetchFunc chart.FetchFunc
+	recorder       record.EventRecorder
 }
 
 // NewController returns a new Schedule controller.
@@ -47,6 +53,7 @@ func NewController(
 	kubeclientset kubernetes.Interface,
 	shipperclientset clientset.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
+	chartFetchFunc chart.FetchFunc,
 	recorder record.EventRecorder,
 ) *Controller {
 
@@ -56,11 +63,15 @@ func NewController(
 	controller := &Controller{
 		kubeclientset:    kubeclientset,
 		shipperclientset: shipperclientset,
-		releasesLister:   releaseInformer.Lister(),
-		clustersLister:   clusterInformer.Lister(),
-		releasesSynced:   releaseInformer.Informer().HasSynced,
-		workqueue:        workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "schedule_controller_releases"),
-		recorder:         recorder,
+
+		releasesLister: releaseInformer.Lister(),
+		releasesSynced: releaseInformer.Informer().HasSynced,
+
+		clustersLister: clusterInformer.Lister(),
+		clustersSynced: clusterInformer.Informer().HasSynced,
+		workqueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "schedule_controller_releases"),
+		chartFetchFunc: chartFetchFunc,
+		recorder:       recorder,
 	}
 
 	glog.Info("Setting up event handlers")
@@ -82,7 +93,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	glog.V(2).Info("Starting Schedule controller")
 	defer glog.V(2).Info("Shutting down Schedule controller")
 
-	if ok := cache.WaitForCacheSync(stopCh, c.releasesSynced); !ok {
+	if ok := cache.WaitForCacheSync(stopCh, c.releasesSynced, c.clustersSynced); !ok {
 		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
 		return
 	}
@@ -168,6 +179,7 @@ func (c *Controller) syncOne(key string) bool {
 		release,
 		c.shipperclientset,
 		c.clustersLister,
+		c.chartFetchFunc,
 		c.recorder,
 	)
 
