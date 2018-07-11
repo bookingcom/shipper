@@ -40,7 +40,6 @@ spec:
           - chart
           - strategy
           - values
-          - clusterSelectors
           properties:
             chart:
               type: object
@@ -64,19 +63,6 @@ spec:
                     type: string
                   version:
                     type: string
-            clusterSelectors:
-              type: array
-              items:
-                type: object
-                properties:
-                  regions:
-                    type: array
-                    items:
-                      type: string
-                  capabilities:
-                    type: array
-                    items:
-                      type: string
             strategy:
               type: object
               required:
