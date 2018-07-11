@@ -5,6 +5,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	runtimeutil "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/rest"
@@ -21,14 +22,44 @@ func init() {
 	conditions.InstallationConditionsShouldDiscardTimestamps = true
 }
 
+func TestInstallIncumbent(t *testing.T) {
+	app := loadApplication()
+	cluster := loadCluster("minikube-a")
+	releaseA := loadRelease()
+	releaseB := loadRelease()
+	releaseB.Name = "0.0.2"
+	installationTarget := loadInstallationTarget()
+	app.Status.History = []string{"0.0.1", "0.0.2"}
+
+	fakeClient, shipperclientset, fakeDynamicClient, fakeDynamicClientBuilder, shipperInformerFactory :=
+		initializeClients(apiResourceList, []runtime.Object{app, cluster, installationTarget, releaseA, releaseB}, nil)
+
+	fakeClientProvider := &FakeClientProvider{
+		fakeClient: fakeClient,
+		restConfig: &rest.Config{},
+	}
+	fakeRecorder := record.NewFakeRecorder(42)
+
+	c := newController(
+		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
+
+	if !c.processNextWorkItem() {
+		t.Fatal("Could not process work item")
+	}
+
+	expectedActions := []kubetesting.Action{}
+	shippertesting.CheckActions(expectedActions, fakeDynamicClient.Actions(), t)
+}
+
 // TestInstallOneCluster tests the installation process using the installation.Controller.
 func TestInstallOneCluster(t *testing.T) {
+	app := loadApplication()
 	cluster := loadCluster("minikube-a")
 	release := loadRelease()
 	installationTarget := loadInstallationTarget()
 
 	fakeClient, shipperclientset, fakeDynamicClient, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, cluster, release, installationTarget)
+		initializeClients(apiResourceList, []runtime.Object{app, cluster, release, installationTarget}, nil)
 
 	fakeClientProvider := &FakeClientProvider{
 		fakeClient: fakeClient,
@@ -86,6 +117,10 @@ func TestInstallOneCluster(t *testing.T) {
 					Type:   shipperV1.ClusterConditionTypeOperational,
 					Status: corev1.ConditionTrue,
 				},
+				{
+					Type:   shipperV1.ClusterConditionTypeReady,
+					Status: corev1.ConditionTrue,
+				},
 			},
 		},
 	}
@@ -99,6 +134,7 @@ func TestInstallOneCluster(t *testing.T) {
 }
 
 func TestInstallMultipleClusters(t *testing.T) {
+	app := loadApplication()
 	clusterA := loadCluster("minikube-a")
 	clusterB := loadCluster("minikube-b")
 	release := loadRelease()
@@ -106,7 +142,7 @@ func TestInstallMultipleClusters(t *testing.T) {
 	installationTarget.Spec.Clusters = []string{"minikube-a", "minikube-b"}
 
 	fakeClient, shipperclientset, fakeDynamicClient, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, clusterA, clusterB, release, installationTarget)
+		initializeClients(apiResourceList, []runtime.Object{app, clusterA, clusterB, release, installationTarget}, nil)
 
 	fakeClientProvider := &FakeClientProvider{
 		fakeClient: fakeClient,
@@ -172,10 +208,16 @@ func TestInstallMultipleClusters(t *testing.T) {
 		{
 			Name:   "minikube-a",
 			Status: shipperV1.InstallationStatusInstalled,
-			Conditions: []shipperV1.ClusterInstallationCondition{{
-				Type:   shipperV1.ClusterConditionTypeOperational,
-				Status: corev1.ConditionTrue,
-			}},
+			Conditions: []shipperV1.ClusterInstallationCondition{
+				{
+					Type:   shipperV1.ClusterConditionTypeOperational,
+					Status: corev1.ConditionTrue,
+				},
+				{
+					Type:   shipperV1.ClusterConditionTypeReady,
+					Status: corev1.ConditionTrue,
+				},
+			},
 		},
 		{
 			Name:   "minikube-b",
@@ -183,6 +225,10 @@ func TestInstallMultipleClusters(t *testing.T) {
 			Conditions: []shipperV1.ClusterInstallationCondition{
 				{
 					Type:   shipperV1.ClusterConditionTypeOperational,
+					Status: corev1.ConditionTrue,
+				},
+				{
+					Type:   shipperV1.ClusterConditionTypeReady,
 					Status: corev1.ConditionTrue,
 				},
 			},
@@ -212,7 +258,7 @@ func TestMissingRelease(t *testing.T) {
 	installationTarget := loadInstallationTarget()
 
 	fakeClient, shipperclientset, _, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, cluster, installationTarget)
+		initializeClients(apiResourceList, []runtime.Object{cluster, installationTarget}, nil)
 
 	fakeClientProvider := &FakeClientProvider{
 		fakeClient: fakeClient,
@@ -249,12 +295,13 @@ func TestMissingRelease(t *testing.T) {
 func TestClientError(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
 
+	app := loadApplication()
 	cluster := loadCluster("minikube-a")
 	installationTarget := loadInstallationTarget()
 	release := loadRelease()
 
 	fakeClient, shipperclientset, _, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, release, cluster, installationTarget)
+		initializeClients(apiResourceList, []runtime.Object{app, release, cluster, installationTarget}, nil)
 
 	fakeClientProvider := &FakeClientProvider{
 		fakeClient:          fakeClient,
@@ -295,6 +342,12 @@ func TestClientError(t *testing.T) {
 					Reason:  conditions.ServerError,
 					Message: "client error",
 				},
+				{
+					Type:    shipperV1.ClusterConditionTypeReady,
+					Status:  corev1.ConditionUnknown,
+					Reason:  conditions.ServerError,
+					Message: "client error",
+				},
 			},
 		},
 	}
@@ -323,12 +376,13 @@ func TestClientError(t *testing.T) {
 func TestTargetClusterMissesGVK(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
 
+	app := loadApplication()
 	cluster := loadCluster("minikube-a")
 	installationTarget := loadInstallationTarget()
 	release := loadRelease()
 
 	fakeClient, shipperclientset, _, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients([]*v1.APIResourceList{}, release, cluster, installationTarget)
+		initializeClients([]*v1.APIResourceList{}, []runtime.Object{app, release, cluster, installationTarget}, nil)
 
 	fakeClientProvider := &FakeClientProvider{
 		fakeClient: fakeClient,
@@ -400,11 +454,12 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 func TestManagementServerMissesCluster(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
 
+	app := loadApplication()
 	installationTarget := loadInstallationTarget()
 	release := loadRelease()
 
 	fakeClient, shipperclientset, _, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, release, installationTarget)
+		initializeClients(apiResourceList, []runtime.Object{app, release, installationTarget}, nil)
 
 	fakeClientProvider := &FakeClientProvider{
 		fakeClient: fakeClient,
@@ -441,6 +496,12 @@ func TestManagementServerMissesCluster(t *testing.T) {
 				{
 					Type:    shipperV1.ClusterConditionTypeOperational,
 					Status:  corev1.ConditionFalse,
+					Reason:  conditions.ServerError,
+					Message: `cluster.shipper.booking.com "minikube-a" not found`,
+				},
+				{
+					Type:    shipperV1.ClusterConditionTypeReady,
+					Status:  corev1.ConditionUnknown,
 					Reason:  conditions.ServerError,
 					Message: `cluster.shipper.booking.com "minikube-a" not found`,
 				},

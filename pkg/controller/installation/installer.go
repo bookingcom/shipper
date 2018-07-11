@@ -2,6 +2,8 @@ package installation
 
 import (
 	"fmt"
+	"reflect"
+	"sort"
 
 	"github.com/golang/glog"
 	"github.com/bookingcom/shipper/pkg/controller/janitor"
@@ -20,7 +22,6 @@ import (
 
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperChart "github.com/bookingcom/shipper/pkg/chart"
-	"github.com/bookingcom/shipper/pkg/label"
 )
 
 type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *rest.Config) dynamic.Interface
@@ -164,32 +165,8 @@ func (i *Installer) patchService(
 	labelsToInject map[string]string,
 	ownerReference *metaV1.OwnerReference,
 ) runtime.Object {
-
-	// Add the reference to the anchor object
-	s.OwnerReferences = []metaV1.OwnerReference{*ownerReference}
-
-	// We have a contract with the chart that they create one stably-named
-	// (that is, the name should remain the same from release to release)
-	// Service per application with a special label: 'shipper-lb: production'.
-	// We don't want to add the 'release' label to this service because the
-	// lifetime spans releases: this is an application-scoped object, not
-	// a release-scoped object. Other services are not part of this
-	// contract; user charts can do whatever they want.
-	lbType, ok := s.GetLabels()[shipperV1.LBLabel]
-	if ok && lbType == shipperV1.LBForProduction {
-		labelsToInject = label.FilterRelease(labelsToInject)
-	}
-
-	labels := s.GetLabels()
-	if labels == nil {
-		labels = make(map[string]string)
-	}
-
-	for k, v := range labelsToInject {
-		labels[k] = v
-	}
-
-	s.SetLabels(labels)
+	s.SetOwnerReferences([]metaV1.OwnerReference{*ownerReference})
+	s.SetLabels(mergeLabels(s.GetLabels(), labelsToInject))
 	return s
 }
 
@@ -264,12 +241,7 @@ func (i *Installer) installManifests(
 	}
 
 	// Create the OwnerReference for the manifest objects
-	ownerReference := metaV1.OwnerReference{
-		UID:        createdConfigMap.UID,
-		Name:       createdConfigMap.Name,
-		Kind:       "ConfigMap",
-		APIVersion: "v1",
-	}
+	ownerReference := janitor.ConfigMapAnchorToOwnerReference(createdConfigMap)
 
 	// Try to install all the rendered objects in the target cluster. We should
 	// fail in the first error to report that this cluster has an issue. Since
@@ -324,12 +296,117 @@ func (i *Installer) installManifests(
 		_, err = resourceClient.Create(obj)
 		if err != nil {
 
-			// What sort of heuristics should we use to assume that an object
-			// has already been created *and* it is the right object? If the right
-			// object is already created, then we should continue. For now we will
-			// naively assume that if a file with the expected name exists, it was
-			// created by us.
+			// In the case an object with the same name and gvk already exists
+			// in the server, we then explicitly overwrite the object's
+			// .metadata and .spec fields and update the faulty object.
 			if errors.IsAlreadyExists(err) {
+
+				// We must first retrieve the object from the faulty cluster.
+				// It returns to the caller here with the error since there's
+				// nothing we can do to recover.
+				existingObj, clientErr := resourceClient.Get(obj.GetName(), metaV1.GetOptions{ResourceVersion: obj.GetResourceVersion()})
+				if clientErr != nil {
+					return NewGetResourceError(`error retrieving resource %s "%s/%s": %s`,
+						obj.GetKind(), obj.GetNamespace(), obj.GetName(), clientErr)
+				}
+
+				if gvk := existingObj.GroupVersionKind(); gvk.Kind == "Namespace" {
+					// Shipper tries to add the application's Namespace if
+					// missing, so it doesn't have the ReleaseLabel and the
+					// next check will fail anyways.
+					continue
+				}
+
+				if releaseLabelValue, ok := existingObj.GetLabels()[shipperV1.ReleaseLabel]; !ok {
+					// TODO(isutton): Do we want to fix this situation or bail out?
+					return fmt.Errorf("Object misses release label")
+				} else if releaseLabelValue == i.Release.GetName() {
+					// This Release was the last one to either touch or
+					// create this object; nothing to do for the current
+					// manifest.
+					continue
+				}
+
+				// Now we start with the bad: we want to overwrite the existing
+				// object with the contents of the rendered manifest. To do so,
+				// we need to preserve TypeMeta and ObjectMeta almost entirely,
+				// with exception of (at the time of this writing) annotations
+				// and labels, since the other fields can't be changed. Probably
+				// we'll be able to remove this once the server side equivalent
+				// of 'kubectl apply' gets implemented in Kubernetes.
+
+				ownerReferenceFound := false
+				for _, o := range existingObj.GetOwnerReferences() {
+					if reflect.DeepEqual(o, ownerReference) {
+						// Proceed to the next manifest if this release's anchor
+						// is already present in the list of owner references --
+						// meaning the faulty object has already been touched.
+						ownerReferenceFound = true
+					}
+				}
+
+				// Add a new owner reference to the existing object's owner
+				// references, since we need to keep the existing ones. An
+				// object can be owned by several release anchor objects; those
+				// objects will be removed from the cluster once all the anchors
+				// have been removed.
+				if !ownerReferenceFound {
+					ownerReferences := append(existingObj.GetOwnerReferences(), ownerReference)
+					sort.Slice(ownerReferences, func(i, j int) bool {
+						return ownerReferences[i].Name < ownerReferences[j].Name
+					})
+					existingObj.SetOwnerReferences(ownerReferences)
+				}
+
+				// Override labels and annotations in the existing object using
+				// the values extracted from the rendered manifests. We started
+				// with the idea of overriding `.metadata` but the rendered
+				// manifest's isn't rich enough for an update, since it lacks all
+				// the read-only fields from ObjectMeta and TypeMeta.
+				existingObj.SetLabels(obj.GetLabels())
+				existingObj.SetAnnotations(obj.GetAnnotations())
+
+				// Now we start poking into the unstructured content of the
+				// existing object, trying to overwrite the existing data as
+				// much as possible.
+				existingUnstructuredObj := existingObj.UnstructuredContent()
+				newUnstructuredObj := obj.UnstructuredContent()
+
+				// Not, this is the ugly: before we put our fingers on its guts,
+				// we need to gather some data that we know will generate an
+				// error when "applying" the changes on some objects, for example
+				// Service: if the .spec.clusterIP field is rendered empty, the
+				// API server will return an error in eventual "upserts". This is
+				// the reason that we have this type switch below.
+				switch decodedObj.(type) {
+				case *coreV1.Service:
+					// Copy over clusterIP from existing object's .spec to the
+					// rendered one.
+					if clusterIP, ok := unstructured.NestedString(existingUnstructuredObj, "spec", "clusterIP"); ok {
+						unstructured.SetNestedField(newUnstructuredObj, clusterIP, "spec", "clusterIP")
+					}
+				}
+
+				// Now we need to go down to the unstructured content and copy
+				// the rendered object's .spec to the existing object's.
+				unstructured.SetNestedField(existingUnstructuredObj, newUnstructuredObj["spec"], "spec")
+
+				// I believe this is not required, since UnstructuredContent()
+				// method returns a map but I'm being overcautious since it could
+				// instead return a copy at some point in the future and
+				// we wouldn't notice until we place a breakpoint in here.
+				existingObj.SetUnstructuredContent(existingUnstructuredObj)
+
+				// And finally we try to update the faulty object with the
+				// overwritten fields. If an error happens here, return an error
+				// since there's nothing we can do about anymore.
+				if _, clientErr = resourceClient.Update(existingObj); clientErr != nil {
+					return NewUpdateResourceError(`error updating resource %s "%s/%s": %s`,
+						existingObj.GetKind(), obj.GetNamespace(), obj.GetName(), clientErr)
+				}
+
+				// Continue processing the next rendered manifest if everything
+				// worked so far.
 				continue
 			}
 
@@ -364,6 +441,24 @@ func (i *Installer) installRelease(
 	renderedManifests = injectNamespace(i.Release.Namespace, renderedManifests)
 
 	return i.installManifests(cluster, client, restConfig, dynamicClientBuilder, renderedManifests)
+}
+
+// mergeLabels takes to sets of labels and merge them into another set.
+//
+// Values of the second set overwrite values from the first one.
+func mergeLabels(a map[string]string, b map[string]string) map[string]string {
+
+	labels := make(map[string]string)
+
+	for k, v := range a {
+		labels[k] = v
+	}
+
+	for k, v := range b {
+		labels[k] = v
+	}
+
+	return labels
 }
 
 // injectNamespace prepends a rendered v1/Namespace called name to manifests and

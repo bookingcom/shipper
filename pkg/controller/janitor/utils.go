@@ -9,6 +9,16 @@ import (
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
 
+func ConfigMapAnchorToOwnerReference(configMap *coreV1.ConfigMap) metaV1.OwnerReference {
+	ownerReference := metaV1.OwnerReference{
+		UID:        configMap.UID,
+		Name:       configMap.Name,
+		Kind:       "ConfigMap",
+		APIVersion: "v1",
+	}
+	return ownerReference
+}
+
 func CreateConfigMapAnchor(it *shipperV1.InstallationTarget) (*coreV1.ConfigMap, error) {
 	anchorName, err := CreateAnchorName(it)
 	if err != nil {
