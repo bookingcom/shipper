@@ -7,12 +7,12 @@ status:
   achievedStep: 0
 metadata:
   name: 0.0.1
-  namespace: reviews-api
+  namespace: test-namespace
   annotations:
     shipper.booking.com/release.replicas: "10"
   environment:
     chart:
-      name: reviews-api
+      name: simple
       version: 0.0.1
       repoUrl: localhost
     shipmentOrder:
@@ -56,5 +56,9 @@ metadata:
       version: "2.1"
     - name: telegraf
       version: "0.99"
+  ownerReferences:
+  - apiVersion: shipper.booking.com/v1
+    kind: Application
+    name: reviewsapi
 spec:
   targetStep: 0

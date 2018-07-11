@@ -2,7 +2,6 @@ package capacity
 
 import (
 	"fmt"
-	"strconv"
 	"testing"
 	"time"
 
@@ -30,11 +29,10 @@ func init() {
 func TestUpdatingCapacityTargetUpdatesDeployment(t *testing.T) {
 	f := NewFixture(t)
 
-	release := newRelease("0.0.1", "reviewsapi", 10)
-	capacityTarget := newCapacityTargetForRelease(release, "capacity-v0.0.1", "reviewsapi", 50)
-	f.managementObjects = append(f.managementObjects, release, capacityTarget)
+	capacityTarget := newCapacityTarget(10, 50)
+	f.managementObjects = append(f.managementObjects, capacityTarget)
 
-	deployment := newDeploymentForRelease(release, "nginx", "reviewsapi", 0, 0)
+	deployment := newDeployment(0, 0)
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment)
 
 	f.ExpectDeploymentPatchWithReplicas(deployment, 5)
@@ -58,11 +56,10 @@ func TestUpdatingCapacityTargetUpdatesDeployment(t *testing.T) {
 func TestUpdatingDeploymentsUpdatesTheCapacityTargetStatus(t *testing.T) {
 	f := NewFixture(t)
 
-	release := newRelease("0.0.1", "reviewsapi", 10)
-	capacityTarget := newCapacityTargetForRelease(release, "capacity-v0.0.1", "reviewsapi", 50)
-	f.managementObjects = append(f.managementObjects, release, capacityTarget)
+	capacityTarget := newCapacityTarget(10, 50)
+	f.managementObjects = append(f.managementObjects, capacityTarget)
 
-	deployment := newDeploymentForRelease(release, "nginx", "reviewsapi", 5, 5)
+	deployment := newDeployment(5, 5)
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment)
 
 	clusterConditions := []shipperv1.ClusterCapacityCondition{
@@ -84,11 +81,10 @@ func TestUpdatingDeploymentsUpdatesTheCapacityTargetStatus(t *testing.T) {
 func TestSadPodsAreReflectedInCapacityTargetStatus(t *testing.T) {
 	f := NewFixture(t)
 
-	release := newRelease("0.0.1", "reviewsapi", 2)
-	capacityTarget := newCapacityTargetForRelease(release, "capacity-v0.0.1", "reviewsapi", 100)
-	f.managementObjects = append(f.managementObjects, release, capacityTarget)
+	capacityTarget := newCapacityTarget(2, 100)
+	f.managementObjects = append(f.managementObjects, capacityTarget)
 
-	deployment := newDeploymentForRelease(release, "nginx", "reviewsapi", 2, 1)
+	deployment := newDeployment(2, 1)
 	happyPod := createHappyPodForDeployment(deployment)
 	sadPod := createSadPodForDeployment(deployment)
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment, happyPod, sadPod)
@@ -213,16 +209,19 @@ func (f *fixture) expectCapacityTargetStatusUpdate(capacityTarget *shipperv1.Cap
 	f.managementClusterActions = append(f.managementClusterActions, updateAction)
 }
 
-func newCapacityTargetForRelease(release *shipperv1.Release, name, namespace string, percent int32) *shipperv1.CapacityTarget {
+func newCapacityTarget(totalReplicaCount, percent int32) *shipperv1.CapacityTarget {
+	name := "capacity-v0.0.1"
+	namespace := "reviewsapi"
 	minikube := shipperv1.ClusterCapacityTarget{
-		Name:    "minikube",
-		Percent: percent,
+		Name:              "minikube",
+		Percent:           percent,
+		TotalReplicaCount: totalReplicaCount,
 	}
 
 	clusters := []shipperv1.ClusterCapacityTarget{minikube}
 
 	metaLabels := map[string]string{
-		shipperv1.ReleaseLabel: release.Name,
+		shipperv1.ReleaseLabel: "0.0.1",
 	}
 
 	return &shipperv1.CapacityTarget{
@@ -234,8 +233,7 @@ func newCapacityTargetForRelease(release *shipperv1.Release, name, namespace str
 				metav1.OwnerReference{
 					APIVersion: "shipper.booking.com/v1",
 					Kind:       "Release",
-					Name:       release.GetName(),
-					UID:        release.GetUID(),
+					Name:       "0.0.1",
 				},
 			},
 		},
@@ -245,35 +243,20 @@ func newCapacityTargetForRelease(release *shipperv1.Release, name, namespace str
 	}
 }
 
-func newRelease(name, namespace string, replicas int32) *shipperv1.Release {
-	releaseMeta := shipperv1.ReleaseMeta{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			Annotations: map[string]string{
-				shipperv1.ReleaseReplicasAnnotation: strconv.Itoa(int(replicas)),
-			},
-		},
-		Environment: shipperv1.ReleaseEnvironment{},
-	}
-
-	return &shipperv1.Release{
-		ReleaseMeta: releaseMeta,
-	}
-}
-
-func newDeploymentForRelease(release *shipperv1.Release, name, namespace string, replicas int32, availableReplicas int32) *appsv1.Deployment {
+func newDeployment(replicas int32, availableReplicas int32) *appsv1.Deployment {
+	name := "nginx"
+	namespace := "reviewsapi"
 	status := appsv1.DeploymentStatus{
 		AvailableReplicas: availableReplicas,
 	}
 
 	metaLabels := map[string]string{
-		shipperv1.ReleaseLabel: release.Name,
+		shipperv1.ReleaseLabel: "0.0.1",
 	}
 
 	specSelector := &metav1.LabelSelector{
 		MatchLabels: map[string]string{
-			shipperv1.ReleaseLabel: release.Name,
+			shipperv1.ReleaseLabel: "0.0.1",
 		},
 	}
 

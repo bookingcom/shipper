@@ -1,8 +1,11 @@
 package schedulecontroller
 
 import (
+	"fmt"
 	"sort"
 	"strings"
+
+	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 
 	"github.com/golang/glog"
 
@@ -13,6 +16,7 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperchart "github.com/bookingcom/shipper/pkg/chart"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/controller"
@@ -24,7 +28,9 @@ type Scheduler struct {
 	Release          *v1.Release
 	shipperclientset clientset.Interface
 	clustersLister   listers.ClusterLister
-	recorder         record.EventRecorder
+	fetchChart       shipperchart.FetchFunc
+
+	recorder record.EventRecorder
 }
 
 // NewScheduler returns a new Scheduler instance that knows how to
@@ -33,12 +39,14 @@ func NewScheduler(
 	release *v1.Release,
 	shipperclientset clientset.Interface,
 	clusterLister listers.ClusterLister,
+	chartFetchFunc shipperchart.FetchFunc,
 	recorder record.EventRecorder,
 ) *Scheduler {
 	return &Scheduler{
 		Release:          release.DeepCopy(),
 		shipperclientset: shipperclientset,
 		clustersLister:   clusterLister,
+		fetchChart:       chartFetchFunc,
 		recorder:         recorder,
 	}
 }
@@ -47,8 +55,8 @@ func (c *Scheduler) scheduleRelease() error {
 	glog.Infof("Processing release %q", controller.MetaKey(c.Release))
 	defer glog.Infof("Finished processing %q", controller.MetaKey(c.Release))
 
-	// Compute target clusters, update the release if it doesn't have any, and bail-out. Since we haven't updated
-	// .Status.Phase yet, this update will trigger a new item on the work queue.
+	// Compute target clusters, and update the release if it
+	// doesn't have any
 	if !c.HasClusters() {
 		clusters, err := c.ComputeTargetClusters()
 		if err == nil {
@@ -71,6 +79,11 @@ func (c *Scheduler) scheduleRelease() error {
 		}
 	}
 
+	replicaCount, err := c.fetchChartAndExtractReplicaCount()
+	if err != nil {
+		return err
+	}
+
 	if err := c.CreateInstallationTarget(); err != nil {
 		return err
 	}
@@ -79,7 +92,7 @@ func (c *Scheduler) scheduleRelease() error {
 		return err
 	}
 
-	if err := c.CreateCapacityTarget(); err != nil {
+	if err := c.CreateCapacityTarget(replicaCount); err != nil {
 		return err
 	}
 
@@ -95,7 +108,7 @@ func (c *Scheduler) scheduleRelease() error {
 			controller.MetaKey(c.Release))
 	}
 
-	_, err := c.UpdateRelease()
+	_, err = c.UpdateRelease()
 	return err
 }
 
@@ -119,6 +132,53 @@ func (c *Scheduler) SetClusters(clusters []string) {
 
 func (c *Scheduler) UpdateRelease() (*v1.Release, error) {
 	return c.shipperclientset.ShipperV1().Releases(c.Release.Namespace).Update(c.Release)
+}
+
+func (c *Scheduler) fetchChartAndExtractReplicaCount() (int32, error) {
+	chart, err := c.fetchChart(c.Release.Environment.Chart)
+	if err != nil {
+		return 0, fmt.Errorf("fetch chart %v for release %q: %s",
+			c.Release.Environment.Chart, controller.MetaKey(c.Release), err)
+	}
+
+	replicas, err := c.extractReplicasFromChart(chart)
+	if err != nil {
+		return 0, err
+	}
+
+	glog.V(4).Infof("Extracted %v replicas from release %q", replicas,
+		controller.MetaKey(c.Release))
+
+	return int32(replicas), nil
+}
+
+func (c *Scheduler) extractReplicasFromChart(chart *helmchart.Chart) (int32, error) {
+	owners := c.Release.OwnerReferences
+	if l := len(owners); l != 1 {
+		return 0, fmt.Errorf("Error when rendering the chart: expected exactly 1 owner for release %s, but got %d", controller.MetaKey(c.Release), l)
+	}
+
+	applicationName := owners[0].Name
+	rendered, err := shipperchart.Render(chart, applicationName, c.Release.Namespace, c.Release.Environment.Values)
+	if err != nil {
+		return 0, fmt.Errorf("Error while extracting replicas for release %q: %s",
+			controller.MetaKey(c.Release), err)
+	}
+
+	deployments := shipperchart.GetDeployments(rendered)
+	if n := len(deployments); n != 1 {
+		return 0, fmt.Errorf("Error while extracting replicas for release %q: expected exactly one Deployment in the chart but got %d",
+			controller.MetaKey(c.Release), n)
+	}
+
+	replicas := deployments[0].Spec.Replicas
+	// deployments default to 1 replica when replicas is nil or unspecified
+	// see k8s.io/api/apps/v1/types.go DeploymentSpec
+	if replicas == nil {
+		return 1, nil
+	}
+
+	return int32(*replicas), nil
 }
 
 // CreateInstallationTarget creates a new InstallationTarget object for
@@ -160,11 +220,11 @@ func (c *Scheduler) CreateInstallationTarget() error {
 // CreateCapacityTarget creates a new CapacityTarget object for
 // Scheduler's Release property. Returns an error if the object couldn't
 // be created, except in cases where the object already exists.
-func (c *Scheduler) CreateCapacityTarget() error {
+func (c *Scheduler) CreateCapacityTarget(totalReplicaCount int32) error {
 	count := len(c.Clusters())
 	targets := make([]v1.ClusterCapacityTarget, count)
 	for i, v := range c.Clusters() {
-		targets[i] = v1.ClusterCapacityTarget{Name: v, Percent: 0}
+		targets[i] = v1.ClusterCapacityTarget{Name: v, Percent: 0, TotalReplicaCount: totalReplicaCount}
 	}
 	capacityTarget := &v1.CapacityTarget{
 		ObjectMeta: metav1.ObjectMeta{
@@ -175,7 +235,9 @@ func (c *Scheduler) CreateCapacityTarget() error {
 				createOwnerRefFromRelease(c.Release),
 			},
 		},
-		Spec: v1.CapacityTargetSpec{Clusters: targets},
+		Spec: v1.CapacityTargetSpec{
+			Clusters: targets,
+		},
 	}
 
 	_, err := c.shipperclientset.ShipperV1().CapacityTargets(c.Release.Namespace).Create(capacityTarget)

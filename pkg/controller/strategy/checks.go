@@ -45,9 +45,10 @@ func checkInstallation(contenderRelease *releaseInfo) (bool, []string) {
 }
 
 type capacityState struct {
-	achievedCapacity uint
-	desiredCapacity  uint
-	stepCapacity     uint
+	achievedCapacity  uint
+	desiredCapacity   uint
+	stepCapacity      uint
+	totalReplicaCount int32
 }
 
 // outdated     -> false, newSpec, nil
@@ -71,8 +72,9 @@ func checkCapacity(
 	specs := capacityTarget.Spec.Clusters
 	for _, spec := range specs {
 		clusterCapacityData[spec.Name] = capacityState{
-			stepCapacity:    stepCapacity,
-			desiredCapacity: uint(spec.Percent),
+			stepCapacity:      stepCapacity,
+			desiredCapacity:   uint(spec.Percent),
+			totalReplicaCount: spec.TotalReplicaCount,
 		}
 	}
 
@@ -103,7 +105,7 @@ func checkCapacity(
 		// this cluster's desired capacity.
 		if v.desiredCapacity != v.stepCapacity {
 			// Patch capacityTarget .spec to attempt to achieve the desired state.
-			r := v1.ClusterCapacityTarget{Name: clusterName, Percent: int32(v.stepCapacity)}
+			r := v1.ClusterCapacityTarget{Name: clusterName, Percent: int32(v.stepCapacity), TotalReplicaCount: v.totalReplicaCount}
 			newSpec.Clusters = append(newSpec.Clusters, r)
 			canProceed = false
 			clustersNotReady = append(clustersNotReady, clusterName)

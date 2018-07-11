@@ -15,7 +15,6 @@ import (
 	"k8s.io/helm/pkg/repo/repotest"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	"github.com/bookingcom/shipper/pkg/chart"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/conditions"
@@ -51,18 +50,9 @@ func TestHashReleaseEnv(t *testing.T) {
 
 // an app with no history should create a release
 func TestCreateFirstRelease(t *testing.T) {
-	srv, hh, err := repotest.NewTempServer("testdata/*.tgz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		os.RemoveAll(hh.String())
-		srv.Stop()
-	}()
-
 	f := newFixture(t)
 	app := newApplication(testAppName)
-	app.Spec.Template.Chart.RepoURL = srv.URL()
+	app.Spec.Template.Chart.RepoURL = "127.0.0.1"
 
 	envHash := hashReleaseEnvironment(app.Spec.Template)
 	expectedRelName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
@@ -82,7 +72,7 @@ func TestCreateFirstRelease(t *testing.T) {
 	// the testing client does not update listers after Create actions.
 
 	expectedRelease := newRelease(expectedRelName, app)
-	expectedRelease.Environment.Chart.RepoURL = srv.URL()
+	expectedRelease.Environment.Chart.RepoURL = "127.0.0.1"
 	expectedRelease.Labels[shipperv1.ReleaseEnvironmentHashLabel] = envHash
 	expectedRelease.Annotations[shipperv1.ReleaseTemplateIterationAnnotation] = "0"
 	expectedRelease.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
@@ -465,11 +455,9 @@ func newRelease(releaseName string, app *shipperv1.Application) *shipperv1.Relea
 	return &shipperv1.Release{
 		ReleaseMeta: shipperv1.ReleaseMeta{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      releaseName,
-				Namespace: app.GetNamespace(),
-				Annotations: map[string]string{
-					shipperv1.ReleaseReplicasAnnotation: "12", // value from the test chart
-				},
+				Name:        releaseName,
+				Namespace:   app.GetNamespace(),
+				Annotations: map[string]string{},
 				Labels: map[string]string{
 					shipperv1.ReleaseLabel: releaseName,
 					shipperv1.AppLabel:     app.GetName(),
@@ -548,7 +536,7 @@ func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerF
 	const noResyncPeriod time.Duration = 0
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(f.client, noResyncPeriod)
 
-	c := NewController(f.client, shipperInformerFactory, record.NewFakeRecorder(42), chart.FetchRemote())
+	c := NewController(f.client, shipperInformerFactory, record.NewFakeRecorder(42))
 
 	return c, shipperInformerFactory
 }

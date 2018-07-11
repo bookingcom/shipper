@@ -10,27 +10,12 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipperchart "github.com/bookingcom/shipper/pkg/chart"
 	"github.com/bookingcom/shipper/pkg/controller"
 )
 
 func (c *Controller) createReleaseForApplication(app *shipperv1.Application, generation int) error {
-	chart, err := c.fetchChart(app.Spec.Template.Chart)
-	if err != nil {
-		return fmt.Errorf("fetch chart %v for Application %q: %s",
-			app.Spec.Template.Chart, controller.MetaKey(app), err)
-	}
-
-	replicas, err := extractReplicasFromChart(chart, app)
-	if err != nil {
-		return err
-	}
-	glog.V(4).Infof("Extracted %v replicas from Application %q", replicas,
-		controller.MetaKey(app))
-
 	// label releases with their hash; select by that label and increment if needed
 	// appname-hash-of-template-iteration
 	releaseName, iteration, err := c.releaseNameForApplication(app)
@@ -50,7 +35,6 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application, gen
 	labels[shipperv1.ReleaseEnvironmentHashLabel] = hashReleaseEnvironment(app.Spec.Template)
 
 	annotations := map[string]string{
-		shipperv1.ReleaseReplicasAnnotation:          strconv.Itoa(replicas),
 		shipperv1.ReleaseTemplateIterationAnnotation: strconv.Itoa(iteration),
 		shipperv1.ReleaseGenerationAnnotation:        strconv.Itoa(generation),
 	}
@@ -191,29 +175,6 @@ func isRollingOut(rel *shipperv1.Release) (*int32, bool) {
 
 	return &achievedStep, achievedStep != targetStep ||
 		achievedStep != lastStep
-}
-
-func extractReplicasFromChart(chart *helmchart.Chart, app *shipperv1.Application) (int, error) {
-	rendered, err := shipperchart.Render(chart, app.ObjectMeta.Name, app.ObjectMeta.Namespace, app.Spec.Template.Values)
-	if err != nil {
-		return 0, fmt.Errorf("extract replicas for Application %q: %s",
-			controller.MetaKey(app), err)
-	}
-
-	deployments := shipperchart.GetDeployments(rendered)
-	if n := len(deployments); n != 1 {
-		return 0, fmt.Errorf("extract replicas for Application %q: expected exactly one Deployment but got %d",
-			controller.MetaKey(app), n)
-	}
-
-	replicas := deployments[0].Spec.Replicas
-	// deployments default to 1 replica when replicas is nil or unspecified
-	// see k8s.io/api/apps/v1/types.go DeploymentSpec
-	if replicas == nil {
-		return 1, nil
-	}
-
-	return int(*replicas), nil
 }
 
 func getAppHighestObservedGeneration(app *shipperv1.Application) (int, error) {

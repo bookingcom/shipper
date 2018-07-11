@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/chart"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
@@ -36,11 +37,15 @@ func loadObject(obj runtime.Object, path ...string) (runtime.Object, error) {
 }
 
 func loadRelease() *shipperV1.Release {
-	if obj, err := loadObject(&shipperV1.Release{}, "testdata", "release.yaml"); err != nil {
+	obj, err := loadObject(&shipperV1.Release{}, "testdata", "release.yaml")
+	if err != nil {
 		panic(err)
-	} else {
-		return obj.(*shipperV1.Release)
 	}
+
+	release := obj.(*shipperV1.Release)
+	release.Environment.Chart.RepoURL = chartRepoURL
+
+	return release
 }
 
 func loadCluster(name string) *shipperV1.Cluster {
@@ -60,7 +65,7 @@ func newScheduler(
 	informerFactory := shipperinformers.NewSharedInformerFactory(clientset, time.Millisecond*0)
 	clustersLister := informerFactory.Shipper().V1().Clusters().Lister()
 
-	c := NewScheduler(release, clientset, clustersLister, record.NewFakeRecorder(42))
+	c := NewScheduler(release, clientset, clustersLister, chart.FetchRemote(), record.NewFakeRecorder(42))
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
@@ -160,6 +165,30 @@ func TestComputeTargetClustersSkipUnscheduled(t *testing.T) {
 }
 
 func expectedActions(ns string, release *shipperV1.Release) []kubetesting.Action {
+	capacityTarget := &shipperV1.CapacityTarget{
+		ObjectMeta: metaV1.ObjectMeta{
+			Name:      release.Name,
+			Namespace: ns,
+			OwnerReferences: []metaV1.OwnerReference{
+				{
+					APIVersion: release.APIVersion,
+					Kind:       release.Kind,
+					Name:       release.Name,
+					UID:        release.UID,
+				},
+			},
+		},
+		Spec: shipperV1.CapacityTargetSpec{
+			Clusters: []shipperV1.ClusterCapacityTarget{
+				{
+					Name:              "minikube-a",
+					Percent:           0,
+					TotalReplicaCount: 12,
+				},
+			},
+		},
+	}
+
 	actions := []kubetesting.Action{
 		kubetesting.NewCreateAction(
 			shipperV1.SchemeGroupVersion.WithResource("installationtargets"),
@@ -172,7 +201,8 @@ func expectedActions(ns string, release *shipperV1.Release) []kubetesting.Action
 		kubetesting.NewCreateAction(
 			shipperV1.SchemeGroupVersion.WithResource("capacitytargets"),
 			ns,
-			nil),
+			capacityTarget,
+		),
 		kubetesting.NewUpdateAction(
 			shipperV1.SchemeGroupVersion.WithResource("releases"),
 			ns,
@@ -259,6 +289,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	cluster := loadCluster("minikube-a")
 	release := loadRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
+
 	traffictarget := &shipperV1.TrafficTarget{
 		ObjectMeta: metaV1.ObjectMeta{
 			Name:      release.GetName(),
@@ -298,6 +329,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 	cluster := loadCluster("minikube-a")
 	release := loadRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
+
 	capacitytarget := &shipperV1.CapacityTarget{
 		ObjectMeta: metaV1.ObjectMeta{
 			Name:      release.GetName(),
