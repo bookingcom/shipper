@@ -11,7 +11,6 @@ import (
 	"k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
-
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	"github.com/bookingcom/shipper/pkg/conditions"
@@ -22,17 +21,19 @@ func init() {
 	conditions.InstallationConditionsShouldDiscardTimestamps = true
 }
 
+// TestInstallIncumbent proves that given two Releases for an application, A and
+// B, and B being the contender, no actions should be performed on behalf of A
+// during a resync.
 func TestInstallIncumbent(t *testing.T) {
-	app := loadApplication()
-	cluster := loadCluster("minikube-a")
-	releaseA := loadRelease()
-	releaseB := loadRelease()
-	releaseB.Name = "0.0.2"
-	installationTarget := loadInstallationTarget()
-	app.Status.History = []string{"0.0.1", "0.0.2"}
+	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "reviews-api"
+	incumbentRel := buildRelease("0.0.1", testNs, "0", "deadbeef", appName)
+	contenderRel := buildRelease("0.0.2", testNs, "1", "beefdead", appName)
+	incumbentIt := buildInstallationTarget(incumbentRel, testNs, appName, []string{cluster.Name})
 
 	fakeClient, shipperclientset, fakeDynamicClient, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, []runtime.Object{app, cluster, installationTarget, releaseA, releaseB}, nil)
+		initializeClients(apiResourceList, []runtime.Object{cluster, incumbentRel, contenderRel, incumbentIt}, nil)
 
 	fakeClientProvider := &FakeClientProvider{
 		fakeClient: fakeClient,
@@ -53,10 +54,12 @@ func TestInstallIncumbent(t *testing.T) {
 
 // TestInstallOneCluster tests the installation process using the installation.Controller.
 func TestInstallOneCluster(t *testing.T) {
-	app := loadApplication()
-	cluster := loadCluster("minikube-a")
-	release := loadRelease()
-	installationTarget := loadInstallationTarget()
+	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "reviews-api"
+	app := buildApplication(appName, appName)
+	release := buildRelease("0.0.1", testNs, "0", "deadbeef", app.Name)
+	installationTarget := buildInstallationTarget(release, testNs, appName, []string{cluster.Name})
 
 	fakeClient, shipperclientset, fakeDynamicClient, fakeDynamicClientBuilder, shipperInformerFactory :=
 		initializeClients(apiResourceList, []runtime.Object{app, cluster, release, installationTarget}, nil)
@@ -134,12 +137,13 @@ func TestInstallOneCluster(t *testing.T) {
 }
 
 func TestInstallMultipleClusters(t *testing.T) {
-	app := loadApplication()
-	clusterA := loadCluster("minikube-a")
-	clusterB := loadCluster("minikube-b")
-	release := loadRelease()
-	installationTarget := loadInstallationTarget()
-	installationTarget.Spec.Clusters = []string{"minikube-a", "minikube-b"}
+	clusterA := buildCluster("minikube-a")
+	clusterB := buildCluster("minikube-b")
+	appName := "reviews-api"
+	testNs := "reviews-api"
+	app := buildApplication(appName, testNs)
+	release := buildRelease("0.0.1", testNs, "0", "deadbeef", appName)
+	installationTarget := buildInstallationTarget(release, testNs, appName, []string{clusterA.Name, clusterB.Name})
 
 	fakeClient, shipperclientset, fakeDynamicClient, fakeDynamicClientBuilder, shipperInformerFactory :=
 		initializeClients(apiResourceList, []runtime.Object{app, clusterA, clusterB, release, installationTarget}, nil)
@@ -254,8 +258,10 @@ func TestInstallMultipleClusters(t *testing.T) {
 func TestMissingRelease(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
 
-	cluster := loadCluster("minikube-a")
-	installationTarget := loadInstallationTarget()
+	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "reviews-api"
+	installationTarget := buildInstallationTargetWithOwner("0.0.1", "deadbeef", testNs, appName, []string{cluster.Name})
 
 	fakeClient, shipperclientset, _, fakeDynamicClientBuilder, shipperInformerFactory :=
 		initializeClients(apiResourceList, []runtime.Object{cluster, installationTarget}, nil)
@@ -295,10 +301,12 @@ func TestMissingRelease(t *testing.T) {
 func TestClientError(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
 
-	app := loadApplication()
-	cluster := loadCluster("minikube-a")
-	installationTarget := loadInstallationTarget()
-	release := loadRelease()
+	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "reviews-api"
+	app := buildApplication(appName, testNs)
+	release := buildRelease("0.0.1", testNs, "0", "deadbeef", appName)
+	installationTarget := buildInstallationTarget(release, testNs, appName, []string{cluster.Name})
 
 	fakeClient, shipperclientset, _, fakeDynamicClientBuilder, shipperInformerFactory :=
 		initializeClients(apiResourceList, []runtime.Object{app, release, cluster, installationTarget}, nil)
@@ -376,10 +384,12 @@ func TestClientError(t *testing.T) {
 func TestTargetClusterMissesGVK(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
 
-	app := loadApplication()
-	cluster := loadCluster("minikube-a")
-	installationTarget := loadInstallationTarget()
-	release := loadRelease()
+	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "reviews-api"
+	app := buildApplication(appName, testNs)
+	release := buildRelease("0.0.1", testNs, "0", "deadbeef", appName)
+	installationTarget := buildInstallationTarget(release, testNs, appName, []string{cluster.Name})
 
 	fakeClient, shipperclientset, _, fakeDynamicClientBuilder, shipperInformerFactory :=
 		initializeClients([]*v1.APIResourceList{}, []runtime.Object{app, release, cluster, installationTarget}, nil)
@@ -454,9 +464,11 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 func TestManagementServerMissesCluster(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
 
-	app := loadApplication()
-	installationTarget := loadInstallationTarget()
-	release := loadRelease()
+	appName := "reviews-api"
+	testNs := "reviews-api"
+	app := buildApplication(appName, testNs)
+	release := buildRelease("0.0.1", testNs, "0", "deadbeef", appName)
+	installationTarget := buildInstallationTarget(release, testNs, appName, []string{"minikube-a"})
 
 	fakeClient, shipperclientset, _, fakeDynamicClientBuilder, shipperInformerFactory :=
 		initializeClients(apiResourceList, []runtime.Object{app, release, installationTarget}, nil)

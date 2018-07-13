@@ -32,19 +32,33 @@ func (s releaseNamespaceLister) ReleasesForApplication(appName string) ([]*shipp
 		return nil, err
 	}
 
-	filteredRels := make([]*shipperV1.Release, 0, len(selectedRels))
+	type releaseAndGeneration struct {
+		release    *shipperV1.Release
+		generation int
+	}
+
+	filteredRels := make([]releaseAndGeneration, 0, len(selectedRels))
 	for _, rel := range selectedRels {
 		if rel.DeletionTimestamp != nil {
 			continue
 		}
-		filteredRels = append(filteredRels, rel)
+		g, err := shipperController.GetReleaseGeneration(rel)
+		if err != nil {
+			return nil, fmt.Errorf(`incomplete Release "%s/%s": %s`, rel.Namespace, rel.Name, err)
+		}
+		filteredRels = append(filteredRels, releaseAndGeneration{rel, g})
 	}
 
-	sort.Slice(selectedRels, func(i, j int) bool {
-		return selectedRels[i].Generation < selectedRels[j].Generation
+	sort.Slice(filteredRels, func(i, j int) bool {
+		return filteredRels[i].generation < filteredRels[j].generation
 	})
 
-	return selectedRels, nil
+	relsToReturn := make([]*shipperV1.Release, 0, len(filteredRels))
+	for _, e := range filteredRels {
+		relsToReturn = append(relsToReturn, e.release)
+	}
+
+	return relsToReturn, nil
 }
 
 // ContenderForApplication returns the contender Release for the given application name.
