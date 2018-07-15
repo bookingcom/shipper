@@ -1,7 +1,6 @@
 package schedulecontroller
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 
@@ -60,29 +59,29 @@ func (c *Scheduler) scheduleRelease() error {
 	if !c.HasClusters() {
 		clusterList, err := c.clustersLister.List(labels.Everything())
 		if err != nil {
-			return err
+			return NewFailedAPICallError("ListClusters", err)
 		}
 
 		clusters, err := computeTargetClusters(c.Release, clusterList)
-		if err == nil {
-			c.SetClusters(clusters)
-			newRelease, updateErr := c.UpdateRelease()
-			if updateErr != nil {
-				return updateErr
-			}
-			c.Release = newRelease
+		if err != nil {
+			return err
 		}
 
-		if err == nil {
-			c.recorder.Eventf(
-				c.Release,
-				corev1.EventTypeNormal,
-				"ClustersSelected",
-				"Set clusters for %q to %v",
-				controller.MetaKey(c.Release),
-				clusters,
-			)
+		c.SetClusters(clusters)
+		newRelease, err := c.UpdateRelease()
+		if err != nil {
+			return NewFailedAPICallError("UpdateRelease", err)
 		}
+		c.Release = newRelease
+
+		c.recorder.Eventf(
+			c.Release,
+			corev1.EventTypeNormal,
+			"ClustersSelected",
+			"Set clusters for %q to %v",
+			controller.MetaKey(c.Release),
+			clusters,
+		)
 	}
 
 	replicaCount, err := c.fetchChartAndExtractReplicaCount()
@@ -143,8 +142,12 @@ func (c *Scheduler) UpdateRelease() (*v1.Release, error) {
 func (c *Scheduler) fetchChartAndExtractReplicaCount() (int32, error) {
 	chart, err := c.fetchChart(c.Release.Environment.Chart)
 	if err != nil {
-		return 0, fmt.Errorf("fetch chart %v for release %q: %s",
-			c.Release.Environment.Chart, controller.MetaKey(c.Release), err)
+		return 0, NewChartFetchFailureError(
+			c.Release.Environment.Chart.Name,
+			c.Release.Environment.Chart.Version,
+			c.Release.Environment.Chart.RepoURL,
+			err,
+		)
 	}
 
 	replicas, err := c.extractReplicasFromChart(chart)
@@ -161,20 +164,28 @@ func (c *Scheduler) fetchChartAndExtractReplicaCount() (int32, error) {
 func (c *Scheduler) extractReplicasFromChart(chart *helmchart.Chart) (int32, error) {
 	owners := c.Release.OwnerReferences
 	if l := len(owners); l != 1 {
-		return 0, fmt.Errorf("Error when rendering the chart: expected exactly 1 owner for release %s, but got %d", controller.MetaKey(c.Release), l)
+		return 0, NewInvalidReleaseOwnerRefsError(len(owners))
 	}
 
 	applicationName := owners[0].Name
 	rendered, err := shipperchart.Render(chart, applicationName, c.Release.Namespace, c.Release.Environment.Values)
 	if err != nil {
-		return 0, fmt.Errorf("Error while extracting replicas for release %q: %s",
-			controller.MetaKey(c.Release), err)
+		return 0, NewBrokenChartError(
+			c.Release.Environment.Chart.Name,
+			c.Release.Environment.Chart.Version,
+			c.Release.Environment.Chart.RepoURL,
+			err,
+		)
 	}
 
 	deployments := shipperchart.GetDeployments(rendered)
-	if n := len(deployments); n != 1 {
-		return 0, fmt.Errorf("Error while extracting replicas for release %q: expected exactly one Deployment in the chart but got %d",
-			controller.MetaKey(c.Release), n)
+	if len(deployments) != 1 {
+		return 0, NewWrongChartDeploymentsError(
+			c.Release.Environment.Chart.Name,
+			c.Release.Environment.Chart.Version,
+			c.Release.Environment.Chart.RepoURL,
+			len(deployments),
+		)
 	}
 
 	replicas := deployments[0].Spec.Replicas
@@ -209,7 +220,7 @@ func (c *Scheduler) CreateInstallationTarget() error {
 			glog.Infof("InstallationTarget %q already exists, moving on", controller.MetaKey(c.Release))
 			return nil
 		}
-		return err
+		return NewFailedAPICallError("CreateInstallationTarget", err)
 	}
 
 	c.recorder.Eventf(
@@ -252,7 +263,7 @@ func (c *Scheduler) CreateCapacityTarget(totalReplicaCount int32) error {
 			glog.Infof("CapacityTarget %q already exists, moving on", controller.MetaKey(capacityTarget))
 			return nil
 		}
-		return err
+		return NewFailedAPICallError("CreateCapacityTarget", err)
 	}
 
 	c.recorder.Eventf(
@@ -294,7 +305,7 @@ func (c *Scheduler) CreateTrafficTarget() error {
 			glog.V(4).Infof("TrafficTarget %q already exists, moving on", controller.MetaKey(trafficTarget))
 			return nil
 		}
-		return err
+		return NewFailedAPICallError("CreateTrafficTarget", err)
 	}
 
 	c.recorder.Eventf(
@@ -320,14 +331,12 @@ func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]st
 	for _, region := range requiredRegions {
 		capableClustersByRegion[region.Name] = []*v1.Cluster{}
 
-		regionMatch := false
 		for _, cluster := range clusterList {
 			if cluster.Spec.Unschedulable {
 				continue
 			}
 
 			if cluster.Spec.Region == region.Name {
-				regionMatch = true
 				capabilityMatch := 0
 				for _, requiredCapability := range requiredCapabilities {
 					for _, providedCapability := range cluster.Spec.Capabilities {
@@ -343,15 +352,17 @@ func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]st
 				}
 			}
 		}
-		if !regionMatch {
-			return nil, fmt.Errorf("no clusters match required region %q", region.Name)
-		}
 	}
 
 	clusterNames := []string{}
 	for region, clusters := range capableClustersByRegion {
 		if len(clusters) == 0 {
-			return nil, fmt.Errorf("no clusters in region %q have required capabilities %q", region, strings.Join(requiredCapabilities, ","))
+			return nil, NewNotEnoughCapableClustersInRegionError(
+				region,
+				requiredCapabilities,
+				1,
+				len(clusters),
+			)
 		}
 		// I think we can be sure that we won't have any duplicate clusters:
 		// each cluster has a unique name (cluster scoped object in K8s) and each

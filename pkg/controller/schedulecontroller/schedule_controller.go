@@ -5,10 +5,6 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/bookingcom/shipper/pkg/chart"
-	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -19,6 +15,11 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
+	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/chart"
+	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
@@ -191,8 +192,29 @@ func (c *Controller) syncOne(key string) bool {
 			err.Error(),
 		)
 
-		runtime.HandleError(fmt.Errorf("error syncing Release %q (will retry): %s", key, err))
-		return true
+		reason, shouldRetry := classifyError(err)
+		condition := releaseutil.NewReleaseCondition(
+			shipperV1.ReleaseConditionTypeScheduled,
+			corev1.ConditionFalse,
+			reason,
+			err.Error(),
+		)
+
+		releaseutil.SetReleaseCondition(&release.Status, *condition)
+		_, err = c.shipperclientset.ShipperV1().Releases(namespace).Update(release)
+		if err != nil {
+			runtime.HandleError(fmt.Errorf("error updating Release %q with condition (will retry): %s", key, err))
+			// always retry failing to write the error out to the Release: we need to communicate this to the user
+			return true
+		}
+
+		if shouldRetry {
+			runtime.HandleError(fmt.Errorf("error syncing Release %q (will retry): %s", key, err))
+			return true
+		}
+
+		runtime.HandleError(fmt.Errorf("error syncing Release %q (will NOT retry): %s", key, err))
+		return false
 	}
 
 	return false
