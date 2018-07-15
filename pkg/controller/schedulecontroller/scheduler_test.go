@@ -2,8 +2,6 @@ package schedulecontroller
 
 import (
 	"fmt"
-	"io/ioutil"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -11,7 +9,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes/scheme"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 
@@ -27,34 +24,49 @@ func init() {
 	releaseutil.ConditionsShouldDiscardTimestamps = true
 }
 
-func loadObject(obj runtime.Object, path ...string) (runtime.Object, error) {
-	yamlPath := filepath.Join(path...)
-	if releaseRaw, err := ioutil.ReadFile(yamlPath); err != nil {
-		return nil, err
-	} else if _, _, err = scheme.Codecs.UniversalDeserializer().Decode(releaseRaw, nil, obj); err != nil {
-		return nil, err
+func createRelease() *shipperV1.Release {
+	return &shipperV1.Release{
+		TypeMeta: metaV1.TypeMeta{
+			APIVersion: "shipper.booking.com/v1",
+			Kind:       "Release",
+		},
+		ReleaseMeta: shipperV1.ReleaseMeta{
+			ObjectMeta: metaV1.ObjectMeta{
+				Name:        "test-release",
+				Namespace:   shippertesting.TestNamespace,
+				Annotations: map[string]string{},
+				OwnerReferences: []metaV1.OwnerReference{
+					{
+						APIVersion: "shipper.booking.com/v1",
+						Kind:       "Application",
+						Name:       "test-application",
+					},
+				},
+			},
+			Environment: shipperV1.ReleaseEnvironment{
+				Chart: shipperV1.Chart{
+					Name:    "simple",
+					Version: "0.0.1",
+					RepoURL: chartRepoURL,
+				},
+				ClusterRequirements: shipperV1.ClusterRequirements{
+					Regions: []shipperV1.RegionRequirement{{Name: "local"}},
+				},
+			},
+		},
 	}
-	return obj, nil
 }
 
-func loadRelease() *shipperV1.Release {
-	obj, err := loadObject(&shipperV1.Release{}, "testdata", "release.yaml")
-	if err != nil {
-		panic(err)
-	}
-
-	release := obj.(*shipperV1.Release)
-	release.Environment.Chart.RepoURL = chartRepoURL
-
-	return release
-}
-
-func loadCluster(name string) *shipperV1.Cluster {
-	fileName := fmt.Sprintf("cluster-%s.yaml", name)
-	if obj, err := loadObject(&shipperV1.Cluster{}, "testdata", fileName); err != nil {
-		panic(err)
-	} else {
-		return obj.(*shipperV1.Cluster)
+func createCluster(name string) *shipperV1.Cluster {
+	return &shipperV1.Cluster{
+		ObjectMeta: metaV1.ObjectMeta{
+			Name: name,
+		},
+		Spec: shipperV1.ClusterSpec{
+			APIMaster:    "https://127.0.0.1",
+			Capabilities: []string{},
+			Region:       "local",
+		},
 	}
 }
 
@@ -82,9 +94,9 @@ func newScheduler(
 // persisting it under .status.environment.clusters.
 func TestSchedule(t *testing.T) {
 	// Fixtures
-	clusterA := loadCluster("minikube-a")
-	clusterB := loadCluster("minikube-b")
-	release := loadRelease()
+	clusterA := createCluster("minikube-a")
+	clusterB := createCluster("minikube-b")
+	release := createRelease()
 	fixtures := []runtime.Object{clusterA, clusterB, release}
 
 	// Expected values. The release should have, at the end of the business
@@ -126,10 +138,10 @@ func TestSchedule(t *testing.T) {
 // clusters this time.
 func TestScheduleSkipsUnschedulable(t *testing.T) {
 	// Fixtures
-	clusterA := loadCluster("minikube-a")
-	clusterB := loadCluster("minikube-b")
+	clusterA := createCluster("minikube-a")
+	clusterB := createCluster("minikube-b")
 	clusterB.Spec.Unschedulable = true
-	release := loadRelease()
+	release := createRelease()
 	fixtures := []runtime.Object{clusterA, clusterB, release}
 
 	// Expected values. The release should have, at the end of the business
@@ -214,8 +226,8 @@ func expectedActions(ns string, release *shipperV1.Release) []kubetesting.Action
 
 func TestCreateAssociatedObjects(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster("minikube-a")
-	release := loadRelease()
+	cluster := createCluster("minikube-a")
+	release := createRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 	fixtures := []runtime.Object{release, cluster}
 
@@ -247,8 +259,8 @@ func TestCreateAssociatedObjects(t *testing.T) {
 
 func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster("minikube-a")
-	release := loadRelease()
+	cluster := createCluster("minikube-a")
+	release := createRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 
 	installationtarget := &shipperV1.InstallationTarget{
@@ -287,8 +299,8 @@ func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 
 func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster("minikube-a")
-	release := loadRelease()
+	cluster := createCluster("minikube-a")
+	release := createRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 
 	traffictarget := &shipperV1.TrafficTarget{
@@ -327,8 +339,8 @@ func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 
 func TestCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster("minikube-a")
-	release := loadRelease()
+	cluster := createCluster("minikube-a")
+	release := createRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 
 	capacitytarget := &shipperV1.CapacityTarget{
@@ -502,10 +514,10 @@ func computeClusterTestCase(
 	expectError bool,
 ) {
 
-	release := generateRelease(shipperV1.ClusterRequirements(reqs))
+	release := generateReleaseForTestCase(shipperV1.ClusterRequirements(reqs))
 	clusters := make([]*shipperV1.Cluster, 0, len(clusterSpecs))
 	for i, spec := range clusterSpecs {
-		clusters = append(clusters, generateCluster(i, spec))
+		clusters = append(clusters, generateClusterForTestCase(i, spec))
 	}
 
 	actualClusters, err := computeTargetClusters(release, clusters)
@@ -526,7 +538,7 @@ func computeClusterTestCase(
 	}
 }
 
-func generateCluster(name int, spec shipperV1.ClusterSpec) *shipperV1.Cluster {
+func generateClusterForTestCase(name int, spec shipperV1.ClusterSpec) *shipperV1.Cluster {
 	return &shipperV1.Cluster{
 		ObjectMeta: metaV1.ObjectMeta{
 			Name:      fmt.Sprintf("cluster-%d", name),
@@ -536,7 +548,7 @@ func generateCluster(name int, spec shipperV1.ClusterSpec) *shipperV1.Cluster {
 	}
 }
 
-func generateRelease(reqs shipperV1.ClusterRequirements) *shipperV1.Release {
+func generateReleaseForTestCase(reqs shipperV1.ClusterRequirements) *shipperV1.Release {
 	return &shipperV1.Release{
 		ReleaseMeta: shipperV1.ReleaseMeta{
 			ObjectMeta: metaV1.ObjectMeta{

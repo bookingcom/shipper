@@ -1,9 +1,0 @@
-apiVersion: shipper.booking.com/v1
-kind: Cluster
-metadata:
-  name: minikube-a
-spec:
-  apiMaster: https://127.0.0.1
-  capabilities: []
-  region: local
-#  unschedulable: true

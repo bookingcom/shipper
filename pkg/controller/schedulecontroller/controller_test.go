@@ -47,8 +47,8 @@ func newController(fixtures ...runtime.Object) (*Controller, *shipperfake.Client
 
 func TestControllerComputeTargetClusters(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster("minikube-a")
-	release := loadRelease()
+	cluster := createCluster("minikube-a")
+	release := createRelease()
 	fixtures := []runtime.Object{cluster, release}
 
 	// Expected values. The release should have, at the end of the business
@@ -83,8 +83,8 @@ func TestControllerComputeTargetClusters(t *testing.T) {
 
 func TestControllerCreateAssociatedObjects(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster("minikube-a")
-	release := loadRelease()
+	cluster := createCluster("minikube-a")
+	release := createRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 	fixtures := []runtime.Object{release, cluster}
 
@@ -114,8 +114,8 @@ func TestControllerCreateAssociatedObjects(t *testing.T) {
 
 func TestControllerCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster("minikube-a")
-	release := loadRelease()
+	cluster := createCluster("minikube-a")
+	release := createRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 	installationtarget := &shipperV1.InstallationTarget{
 		ObjectMeta: metaV1.ObjectMeta{
@@ -151,8 +151,8 @@ func TestControllerCreateAssociatedObjectsDuplicateInstallationTarget(t *testing
 
 func TestControllerCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster("minikube-a")
-	release := loadRelease()
+	cluster := createCluster("minikube-a")
+	release := createRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 	traffictarget := &shipperV1.TrafficTarget{
 		ObjectMeta: metaV1.ObjectMeta{
@@ -188,8 +188,8 @@ func TestControllerCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 
 func TestControllerCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster("minikube-a")
-	release := loadRelease()
+	cluster := createCluster("minikube-a")
+	release := createRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 	capacitytarget := &shipperV1.CapacityTarget{
 		ObjectMeta: metaV1.ObjectMeta{
