@@ -12,8 +12,8 @@ const (
 
 func classifyError(err error) (string, bool) {
 	switch err.(type) {
-	case NoClustersInRegionError:
-		return "NoClustersInRegion", noRetry
+	case NotEnoughClustersInRegionError:
+		return "NotEnoughClustersInRegion", noRetry
 	case NotEnoughCapableClustersInRegionError:
 		return "NotEnoughCapableClustersInRegion", noRetry
 
@@ -52,17 +52,21 @@ func NewFailedAPICallError(call string, err error) FailedAPICallError {
 	}
 }
 
-type NoClustersInRegionError struct {
-	region string
+type NotEnoughClustersInRegionError struct {
+	region    string
+	required  int
+	available int
 }
 
-func (e NoClustersInRegionError) Error() string {
-	return fmt.Sprintf("No schedulable clusters in region %q", e.region)
+func (e NotEnoughClustersInRegionError) Error() string {
+	return fmt.Sprintf("Not enough clusters in region %q. Required: %d / Available: %d", e.region, e.required, e.available)
 }
 
-func NewNoClustersInRegionError(region string) NoClustersInRegionError {
-	return NoClustersInRegionError{
-		region: region,
+func NewNotEnoughClustersInRegionError(region string, required, available int) NotEnoughClustersInRegionError {
+	return NotEnoughClustersInRegionError{
+		region:    region,
+		required:  required,
+		available: available,
 	}
 }
 

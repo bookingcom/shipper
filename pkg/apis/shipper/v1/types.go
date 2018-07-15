@@ -145,6 +145,9 @@ type ClusterSpec struct {
 	APIMaster     string   `json:"apiMaster"`
 	Unschedulable bool     `json:"unschedulable"`
 
+	Weight *int32  `json:"weight"`
+	Seed   *string `json:"seed"`
+
 	//Capacity ClusterCapacity
 }
 
@@ -236,7 +239,8 @@ type ClusterRequirements struct {
 }
 
 type RegionRequirement struct {
-	Name string
+	Name     string
+	Replicas *int32
 }
 
 type RolloutStrategy struct {

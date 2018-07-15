@@ -46,7 +46,7 @@ spec:
                     regions:
                       type: array
                       items:
-                        type: string
+                        type: object
                     capabilities:
                       type: array
                       items:

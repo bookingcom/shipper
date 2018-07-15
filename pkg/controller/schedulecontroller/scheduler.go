@@ -322,21 +322,36 @@ func (c *Scheduler) CreateTrafficTarget() error {
 // computeTargetClusters picks out the clusters from the given list which match
 // the release's clusterRequirements
 func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]string, error) {
-	requiredRegions := release.Environment.ClusterRequirements.Regions
+	regionSpecs := release.Environment.ClusterRequirements.Regions
 	requiredCapabilities := release.Environment.ClusterRequirements.Capabilities
 	capableClustersByRegion := map[string][]*v1.Cluster{}
+	regionReplicas := map[string]int{}
+
+	app, err := releaseutil.ApplicationNameForRelease(release)
+	if err != nil {
+		return nil, err
+	}
+
+	prefList := buildPrefList(app, clusterList)
 	// this algo could probably build up hashes instead of doing linear
 	// searches, but these data sets are so tiny (1-20 items) that it'd only be
 	// useful for readability
-	for _, region := range requiredRegions {
+	for _, region := range regionSpecs {
 		capableClustersByRegion[region.Name] = []*v1.Cluster{}
+		if region.Replicas == nil {
+			regionReplicas[region.Name] = 1
+		} else {
+			regionReplicas[region.Name] = int(*region.Replicas)
+		}
 
-		for _, cluster := range clusterList {
+		matchedRegion := 0
+		for _, cluster := range prefList {
 			if cluster.Spec.Unschedulable {
 				continue
 			}
 
 			if cluster.Spec.Region == region.Name {
+				matchedRegion++
 				capabilityMatch := 0
 				for _, requiredCapability := range requiredCapabilities {
 					for _, providedCapability := range cluster.Spec.Capabilities {
@@ -352,23 +367,31 @@ func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]st
 				}
 			}
 		}
+		if regionReplicas[region.Name] > matchedRegion {
+			return nil, NewNotEnoughClustersInRegionError(region.Name, regionReplicas[region.Name], matchedRegion)
+		}
 	}
 
 	clusterNames := []string{}
 	for region, clusters := range capableClustersByRegion {
-		if len(clusters) == 0 {
+		if regionReplicas[region] > len(clusters) {
 			return nil, NewNotEnoughCapableClustersInRegionError(
 				region,
 				requiredCapabilities,
-				1,
+				regionReplicas[region],
 				len(clusters),
 			)
 		}
-		// I think we can be sure that we won't have any duplicate clusters:
-		// each cluster has a unique name (cluster scoped object in K8s) and each
-		// one has exactly one value for 'region'.
+
+		//NOTE(btyler) this assumes we do not have duplicate cluster names. For
+		// the moment cluster objects are cluster scoped; if they become
+		// namespace scoped and releases can somehow be scheduled to clusters
+		// from multiple namespaces, this assumption will be wrong.
 		for _, cluster := range clusters {
-			clusterNames = append(clusterNames, cluster.Name)
+			if regionReplicas[region] > 0 {
+				regionReplicas[region]--
+				clusterNames = append(clusterNames, cluster.Name)
+			}
 		}
 	}
 
