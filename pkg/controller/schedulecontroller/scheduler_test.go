@@ -134,15 +134,15 @@ func TestSchedule(t *testing.T) {
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
-// TestScheduleSkipsUnschedulable tests the first part of the cluster scheduling,
+// TestScheduleSkipsDisabled tests the first part of the cluster scheduling,
 // which is find out which clusters the release must be installed, and
-// persisting it under .status.environment.clusters but skipping unschedulable
+// persisting it under .status.environment.clusters but skipping disabled
 // clusters this time.
-func TestScheduleSkipsUnschedulable(t *testing.T) {
+func TestScheduleSkipsDisabled(t *testing.T) {
 	// Fixtures
 	clusterA := buildCluster("minikube-a")
 	clusterB := buildCluster("minikube-b")
-	clusterB.Spec.Unschedulable = true
+	clusterB.Spec.Scheduler.Disabled = true
 	release := buildRelease()
 	fixtures := []runtime.Object{clusterA, clusterB, release}
 
@@ -565,15 +565,21 @@ func TestComputeTargetClusters(t *testing.T) {
 		passingCase,
 	)
 
-	computeClusterTestCase(t, "skip unschedulable clusters",
+	computeClusterTestCase(t, "skip disabled clusters",
 		requirements{
 			Regions: []shipperV1.RegionRequirement{
 				{Name: "us-east", Replicas: pint32(2)},
 			},
 		},
 		clusters{
-			{Region: "us-east", Unschedulable: true},
-			{Region: "us-east", Unschedulable: true},
+			{
+				Region:    "us-east",
+				Scheduler: shipperV1.ClusterSchedulerSettings{Disabled: true},
+			},
+			{
+				Region:    "us-east",
+				Scheduler: shipperV1.ClusterSchedulerSettings{Disabled: true},
+			},
 			{Region: "us-east"},
 		},
 		expected{},
@@ -589,10 +595,18 @@ func TestComputeTargetClusters(t *testing.T) {
 			Capabilities: []string{"a"},
 		},
 		clusters{
-			{Region: "us-east", Capabilities: []string{"a"}, Weight: pint32(900)},
+			{
+				Region:       "us-east",
+				Capabilities: []string{"a"},
+				Scheduler:    shipperV1.ClusterSchedulerSettings{Weight: pint32(900)},
+			},
 			{Region: "us-east", Capabilities: []string{"a"}},
 			{Region: "eu-west", Capabilities: []string{"a"}},
-			{Region: "eu-west", Capabilities: []string{"a"}, Weight: pint32(900)},
+			{
+				Region:       "eu-west",
+				Capabilities: []string{"a"},
+				Scheduler:    shipperV1.ClusterSchedulerSettings{Weight: pint32(900)},
+			},
 		},
 		// this test is identical to "more clusters than needed", and without weight would yield the same result (cluster-1, cluster-2)
 		expected{"cluster-0", "cluster-3"},
@@ -608,10 +622,14 @@ func TestComputeTargetClusters(t *testing.T) {
 			Capabilities: []string{"a"},
 		},
 		clusters{
-			{Region: "us-east", Capabilities: []string{"a"}, Weight: pint32(101)},
+			{
+				Region:       "us-east",
+				Capabilities: []string{"a"},
+				Scheduler:    shipperV1.ClusterSchedulerSettings{Weight: pint32(101)},
+			},
 			{Region: "us-east", Capabilities: []string{"a"}},
 			{Region: "eu-west", Capabilities: []string{"a"}},
-			{Region: "eu-west", Capabilities: []string{"a"}, Weight: pint32(101)},
+			{Region: "eu-west", Capabilities: []string{"a"}},
 		},
 		// weight doesn't change things unless it is "heavy" enough: it needs
 		// to overcome the natural distribution of hash values. This test is
@@ -621,7 +639,7 @@ func TestComputeTargetClusters(t *testing.T) {
 		passingCase,
 	)
 
-	computeClusterTestCase(t, "seed plus a little weight does change things",
+	computeClusterTestCase(t, "colliding identity plus a little weight does change things",
 		requirements{
 			Regions: []shipperV1.RegionRequirement{
 				{Name: "us-east", Replicas: pint32(1)},
@@ -630,12 +648,19 @@ func TestComputeTargetClusters(t *testing.T) {
 			Capabilities: []string{"a"},
 		},
 		clusters{
-			// the "seed" means that cluster-0 computes the hash exactly like
+			// the "identity" means that cluster-0 computes the hash exactly like
 			// cluster-1, so a minimal bump in weight puts it in front
-			{Region: "us-east", Capabilities: []string{"a"}, Seed: pstr("cluster-1"), Weight: pint32(101)},
+			{
+				Region:       "us-east",
+				Capabilities: []string{"a"},
+				Scheduler: shipperV1.ClusterSchedulerSettings{
+					Identity: pstr("cluster-1"),
+					Weight:   pint32(101),
+				},
+			},
 			{Region: "us-east", Capabilities: []string{"a"}},
 			{Region: "eu-west", Capabilities: []string{"a"}},
-			{Region: "eu-west", Capabilities: []string{"a"}, Weight: pint32(105)},
+			{Region: "eu-west", Capabilities: []string{"a"}},
 		},
 		expected{"cluster-0", "cluster-2"},
 		passingCase,

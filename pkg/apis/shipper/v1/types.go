@@ -140,17 +140,20 @@ type ClusterList struct {
 }
 
 type ClusterSpec struct {
-	Capabilities  []string `json:"capabilities"`
-	Region        string   `json:"region"`
-	APIMaster     string   `json:"apiMaster"`
-	Unschedulable bool     `json:"unschedulable"`
-
-	Weight *int32  `json:"weight"`
-	Seed   *string `json:"seed"`
-
-	//Capacity ClusterCapacity
+	Capabilities []string                 `json:"capabilities"`
+	Region       string                   `json:"region"`
+	APIMaster    string                   `json:"apiMaster"`
+	Scheduler    ClusterSchedulerSettings `json:"scheduler"`
 }
 
+type ClusterSchedulerSettings struct {
+	Disabled bool    `json:"disabled"`
+	Weight   *int32  `json:"weight"`
+	Identity *string `json:"identity"`
+}
+
+// NOTE(btyler) when we introduce capacity based scheduling, the capacity can
+// be collected by a cluster controller and stored in cluster.status
 type ClusterStatus struct {
 	InService bool `json:"inService"`
 }

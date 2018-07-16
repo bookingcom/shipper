@@ -6,4 +6,5 @@ spec:
   apiMaster: https://127.0.0
   capabilities: []
   region: local
-#  unschedulable: true
+  scheduler:
+    disabled: false # double negative to take advantage of Go zero values

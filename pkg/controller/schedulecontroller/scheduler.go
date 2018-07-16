@@ -351,7 +351,7 @@ func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]st
 
 		matchedRegion := 0
 		for _, cluster := range prefList {
-			if cluster.Spec.Unschedulable {
+			if cluster.Spec.Scheduler.Disabled {
 				continue
 			}
 

@@ -18,7 +18,7 @@ type scoredCluster struct {
 	score   float64
 }
 
-func buildPrefList(app string, clusterList []*v1.Cluster) []*v1.Cluster {
+func buildPrefList(appIdentity string, clusterList []*v1.Cluster) []*v1.Cluster {
 	/*
 		This part is a bit subtle: we're creating a preference list of clusters
 		by creating a sorting key composed of a hash of the Application name
@@ -26,7 +26,7 @@ func buildPrefList(app string, clusterList []*v1.Cluster) []*v1.Cluster {
 		by that key, and the resulting order is the "preference list" for this
 		Application when it is choosing clusters. This is called the preference
 		list because it is the order in which clusters will be selected for
-		this Application. All other scheduling concerns (unschedulable,
+		this Application. All other scheduling concerns (disabled,
 		capability, capacity) just _mask_ this initial list by skipping over
 		entries when requirements are not met.
 
@@ -57,23 +57,24 @@ func buildPrefList(app string, clusterList []*v1.Cluster) []*v1.Cluster {
 	*/
 	scoredClusters := make([]scoredCluster, 0, len(clusterList))
 	for _, cluster := range clusterList {
-		var seed string
-		if cluster.Spec.Seed == nil {
-			seed = cluster.Name
+		var clusterIdentity string
+
+		if cluster.Spec.Scheduler.Identity == nil {
+			clusterIdentity = cluster.Name
 		} else {
-			seed = *cluster.Spec.Seed
+			clusterIdentity = *cluster.Spec.Scheduler.Identity
 		}
 
 		var weight int32
-		if cluster.Spec.Weight == nil {
+		if cluster.Spec.Scheduler.Weight == nil {
 			weight = defaultClusterWeight
 		} else {
-			weight = *cluster.Spec.Weight
+			weight = *cluster.Spec.Scheduler.Weight
 		}
 
 		hash := xxhash.New()
-		hash.Write([]byte(app))
-		hash.Write([]byte(seed))
+		hash.Write([]byte(appIdentity))
+		hash.Write([]byte(clusterIdentity))
 		sum := hash.Sum64()
 
 		score := float64(-weight) * math.Log(float64(sum)/float64(math.MaxUint64))
