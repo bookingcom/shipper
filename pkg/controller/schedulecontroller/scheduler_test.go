@@ -24,7 +24,7 @@ func init() {
 	releaseutil.ConditionsShouldDiscardTimestamps = true
 }
 
-func createRelease() *shipperV1.Release {
+func buildRelease() *shipperV1.Release {
 	return &shipperV1.Release{
 		TypeMeta: metaV1.TypeMeta{
 			APIVersion: "shipper.booking.com/v1",
@@ -57,7 +57,7 @@ func createRelease() *shipperV1.Release {
 	}
 }
 
-func createCluster(name string) *shipperV1.Cluster {
+func buildCluster(name string) *shipperV1.Cluster {
 	return &shipperV1.Cluster{
 		ObjectMeta: metaV1.ObjectMeta{
 			Name: name,
@@ -94,9 +94,9 @@ func newScheduler(
 // persisting it under .status.environment.clusters.
 func TestSchedule(t *testing.T) {
 	// Fixtures
-	clusterA := createCluster("minikube-a")
-	clusterB := createCluster("minikube-b")
-	release := createRelease()
+	clusterA := buildCluster("minikube-a")
+	clusterB := buildCluster("minikube-b")
+	release := buildRelease()
 	fixtures := []runtime.Object{clusterA, clusterB, release}
 	// demand two clusters
 	release.Environment.ClusterRequirements.Regions[0].Replicas = pint32(2)
@@ -140,10 +140,10 @@ func TestSchedule(t *testing.T) {
 // clusters this time.
 func TestScheduleSkipsUnschedulable(t *testing.T) {
 	// Fixtures
-	clusterA := createCluster("minikube-a")
-	clusterB := createCluster("minikube-b")
+	clusterA := buildCluster("minikube-a")
+	clusterB := buildCluster("minikube-b")
 	clusterB.Spec.Unschedulable = true
-	release := createRelease()
+	release := buildRelease()
 	fixtures := []runtime.Object{clusterA, clusterB, release}
 
 	// Expected values. The release should have, at the end of the business
@@ -228,8 +228,8 @@ func expectedActions(ns string, release *shipperV1.Release) []kubetesting.Action
 
 func TestCreateAssociatedObjects(t *testing.T) {
 	// Fixtures
-	cluster := createCluster("minikube-a")
-	release := createRelease()
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 	fixtures := []runtime.Object{release, cluster}
 
@@ -261,8 +261,8 @@ func TestCreateAssociatedObjects(t *testing.T) {
 
 func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 	// Fixtures
-	cluster := createCluster("minikube-a")
-	release := createRelease()
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 
 	installationtarget := &shipperV1.InstallationTarget{
@@ -301,8 +301,8 @@ func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 
 func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	// Fixtures
-	cluster := createCluster("minikube-a")
-	release := createRelease()
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 
 	traffictarget := &shipperV1.TrafficTarget{
@@ -341,8 +341,8 @@ func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 
 func TestCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 	// Fixtures
-	cluster := createCluster("minikube-a")
-	release := createRelease()
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 
 	capacitytarget := &shipperV1.CapacityTarget{
