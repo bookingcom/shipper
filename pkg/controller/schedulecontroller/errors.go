@@ -17,6 +17,9 @@ func classifyError(err error) (string, bool) {
 	case NotEnoughCapableClustersInRegionError:
 		return "NotEnoughCapableClustersInRegion", noRetry
 
+	case DuplicateCapabilityRequirementError:
+		return "DuplicateCapabilityRequirement", noRetry
+
 	case ChartFetchFailureError:
 		return "ChartFetchFailure", retry
 	case BrokenChartError:
@@ -186,5 +189,22 @@ func NewWrongChartDeploymentsError(chartName, chartVersion, chartRepo string, de
 			chartRepo:    chartRepo,
 		},
 		deploymentCount: deploymentCount,
+	}
+}
+
+type DuplicateCapabilityRequirementError struct {
+	capability string
+}
+
+func (e DuplicateCapabilityRequirementError) Error() string {
+	return fmt.Sprintf(
+		"Capability %q listed more than once in clusterRequirements",
+		e.capability,
+	)
+}
+
+func NewDuplicateCapabilityRequirementError(capability string) DuplicateCapabilityRequirementError {
+	return DuplicateCapabilityRequirementError{
+		capability: capability,
 	}
 }

@@ -332,6 +332,11 @@ func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]st
 		return nil, err
 	}
 
+	err = validateClusterRequirements(release.Environment.ClusterRequirements)
+	if err != nil {
+		return nil, err
+	}
+
 	prefList := buildPrefList(app, clusterList)
 	// this algo could probably build up hashes instead of doing linear
 	// searches, but these data sets are so tiny (1-20 items) that it'd only be
@@ -397,6 +402,22 @@ func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]st
 
 	sort.Strings(clusterNames)
 	return clusterNames, nil
+}
+
+func validateClusterRequirements(requirements v1.ClusterRequirements) error {
+	// ensure capability uniqueness. erroring instead of de-duping in order to
+	// avoid second-guessing by operators about how shipper might treat
+	// repeated listings of the same capability
+	seenCapabilities := map[string]struct{}{}
+	for _, capability := range requirements.Capabilities {
+		_, ok := seenCapabilities[capability]
+		if ok {
+			return NewDuplicateCapabilityRequirementError(capability)
+		}
+		seenCapabilities[capability] = struct{}{}
+	}
+
+	return nil
 }
 
 // the strings here are insane, but if you create a fresh release object for

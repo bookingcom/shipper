@@ -517,6 +517,18 @@ func TestComputeTargetClusters(t *testing.T) {
 		errorCase,
 	)
 
+	computeClusterTestCase(t, "reject duplicate capabilities in requirements",
+		requirements{
+			Regions:      []shipperV1.RegionRequirement{{Name: "foo"}},
+			Capabilities: []string{"a", "a"},
+		},
+		clusters{
+			{Region: "foo", Capabilities: []string{"a"}},
+		},
+		expected{},
+		errorCase,
+	)
+
 	computeClusterTestCase(t, "more clusters than needed, pick only one from each region",
 		requirements{
 			Regions: []shipperV1.RegionRequirement{
