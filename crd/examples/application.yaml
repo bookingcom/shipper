@@ -8,7 +8,7 @@ spec:
   template:
     clusterRequirements:
       regions:
-      - name: local
+      - name: eu-west
       capabilities: []
     chart:
       name: nginx

@@ -50,7 +50,7 @@ func buildRelease() *shipperV1.Release {
 					RepoURL: chartRepoURL,
 				},
 				ClusterRequirements: shipperV1.ClusterRequirements{
-					Regions: []shipperV1.RegionRequirement{{Name: "local"}},
+					Regions: []shipperV1.RegionRequirement{{Name: shippertesting.TestRegion}},
 				},
 			},
 		},
@@ -65,7 +65,7 @@ func buildCluster(name string) *shipperV1.Cluster {
 		Spec: shipperV1.ClusterSpec{
 			APIMaster:    "https://127.0.0.1",
 			Capabilities: []string{},
-			Region:       "local",
+			Region:       shippertesting.TestRegion,
 		},
 	}
 }

@@ -103,4 +103,4 @@ metadata:
 spec:
   apiMaster: https://%s:8443
   capabilities: []
-  region: local
+  region: eu-west

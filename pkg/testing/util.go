@@ -11,6 +11,8 @@ import (
 const (
 	TestNamespace = "test-namespace"
 	TestLabel     = "shipper-e2e-test"
+
+	TestRegion = "eu-west"
 )
 
 // CheckActions takes a slice of expected actions and a slice of observed

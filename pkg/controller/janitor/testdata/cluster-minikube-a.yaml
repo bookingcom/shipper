@@ -5,4 +5,4 @@ metadata:
 spec:
   apiMaster: https://127.0.0.1
   capabilities: []
-  region: local
+  region: eu-west
