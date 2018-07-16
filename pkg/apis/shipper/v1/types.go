@@ -147,9 +147,9 @@ type ClusterSpec struct {
 }
 
 type ClusterSchedulerSettings struct {
-	Disabled bool    `json:"disabled"`
-	Weight   *int32  `json:"weight"`
-	Identity *string `json:"identity"`
+	Unschedulable bool    `json:"unschedulable"`
+	Weight        *int32  `json:"weight"`
+	Identity      *string `json:"identity"`
 }
 
 // NOTE(btyler) when we introduce capacity based scheduling, the capacity can

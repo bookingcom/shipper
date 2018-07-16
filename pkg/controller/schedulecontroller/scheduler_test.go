@@ -134,15 +134,15 @@ func TestSchedule(t *testing.T) {
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
-// TestScheduleSkipsDisabled tests the first part of the cluster scheduling,
+// TestScheduleSkipsUnschedulable tests the first part of the cluster scheduling,
 // which is find out which clusters the release must be installed, and
-// persisting it under .status.environment.clusters but skipping disabled
+// persisting it under .status.environment.clusters but skipping unschedulable
 // clusters this time.
-func TestScheduleSkipsDisabled(t *testing.T) {
+func TestScheduleSkipsUnschedulable(t *testing.T) {
 	// Fixtures
 	clusterA := buildCluster("minikube-a")
 	clusterB := buildCluster("minikube-b")
-	clusterB.Spec.Scheduler.Disabled = true
+	clusterB.Spec.Scheduler.Unschedulable = true
 	release := buildRelease()
 	fixtures := []runtime.Object{clusterA, clusterB, release}
 
@@ -565,7 +565,7 @@ func TestComputeTargetClusters(t *testing.T) {
 		passingCase,
 	)
 
-	computeClusterTestCase(t, "skip disabled clusters",
+	computeClusterTestCase(t, "skip unschedulable clusters",
 		requirements{
 			Regions: []shipperV1.RegionRequirement{
 				{Name: "us-east", Replicas: pint32(2)},
@@ -574,11 +574,11 @@ func TestComputeTargetClusters(t *testing.T) {
 		clusters{
 			{
 				Region:    "us-east",
-				Scheduler: shipperV1.ClusterSchedulerSettings{Disabled: true},
+				Scheduler: shipperV1.ClusterSchedulerSettings{Unschedulable: true},
 			},
 			{
 				Region:    "us-east",
-				Scheduler: shipperV1.ClusterSchedulerSettings{Disabled: true},
+				Scheduler: shipperV1.ClusterSchedulerSettings{Unschedulable: true},
 			},
 			{Region: "us-east"},
 		},

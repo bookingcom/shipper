@@ -26,7 +26,7 @@ func buildPrefList(appIdentity string, clusterList []*v1.Cluster) []*v1.Cluster 
 		by that key, and the resulting order is the "preference list" for this
 		Application when it is choosing clusters. This is called the preference
 		list because it is the order in which clusters will be selected for
-		this Application. All other scheduling concerns (disabled,
+		this Application. All other scheduling concerns (unschedulable,
 		capability, capacity) just _mask_ this initial list by skipping over
 		entries when requirements are not met.
 

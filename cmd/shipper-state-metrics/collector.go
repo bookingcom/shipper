@@ -264,7 +264,7 @@ func (ssm ShipperStateMetrics) collectClusters(ch chan<- prometheus.Metric) {
 		no  float64
 	)
 	for _, cluster := range clusters {
-		if cluster.Spec.Scheduler.Disabled {
+		if cluster.Spec.Scheduler.Unschedulable {
 			no++
 		} else {
 			yes++
