@@ -43,6 +43,7 @@ import (
 	kuberestmetrics "k8s.io/client-go/tools/metrics"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
 
 var controllers = []string{
@@ -439,7 +440,7 @@ func startStrategyController(cfg *cfg) (bool, error) {
 }
 
 func startInstallationController(cfg *cfg) (bool, error) {
-	dynamicClientBuilderFunc := func(gvk *schema.GroupVersionKind, config *rest.Config) dynamic.Interface {
+	dynamicClientBuilderFunc := func(gvk *schema.GroupVersionKind, config *rest.Config, cluster *v1.Cluster) dynamic.Interface {
 		// Probably this needs to be fixed, according to @asurikov's latest findings.
 		config.APIPath = dynamic.LegacyAPIPathResolverFunc(*gvk)
 		config.GroupVersion = &schema.GroupVersion{Group: gvk.Group, Version: gvk.Version}

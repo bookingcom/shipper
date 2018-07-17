@@ -17,6 +17,7 @@ import (
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
+	coreV1 "k8s.io/api/core/v1"
 )
 
 // apiResourceList contains a list of APIResources containing some of v1 and
@@ -89,133 +90,42 @@ func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObject
 	cluster := buildCluster("minikube-a")
 	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
 	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
-	installer := newInstaller(release, it)
-	existingService := loadService("baseline")
 	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
 	if err != nil {
 		panic(err)
 	}
-	anchorOwnerReference := janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)
+	installer := newInstaller(release, it)
+	svc := loadService("baseline")
+	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
-	fakeClient, _, fakeDynamicClient, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, shipperObjects, kubeObjects)
+	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, shipperObjects, objectsPerClusterMap{cluster.Name: kubeObjects})
+
+	fakePair := clientsPerCluster[cluster.Name]
 
 	restConfig := &rest.Config{}
-	if err := installer.installRelease(cluster, fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "namespaces", Version: "v1"}, release.GetNamespace(), "reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "namespaces", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
+	}
+
+	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	// The chart contained in the test release produces a service and a
-	// deployment manifest. The events order should be always the same,
-	// since we changed the renderer behavior to always return a
-	// consistently ordered list of manifests, according to Kind and
-	// Name.
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewCreateAction(
-			schema.GroupVersionResource{Resource: "namespaces", Version: "v1"},
-			release.GetNamespace(),
-			nil),
-		kubetesting.NewCreateAction(
-			schema.GroupVersionResource{Resource: "services", Version: "v1"},
-			release.GetNamespace(),
-			nil),
-		kubetesting.NewCreateAction( // TODO: Feed deployment object for comparison
-			schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"},
-			release.GetNamespace(),
-			nil),
-	}
-	shippertesting.CheckActions(expectedActions, fakeDynamicClient.Actions(), t)
+	shippertesting.CheckActions(expectedActions, fakePair.fakeDynamicClient.Actions(), t)
 
-	// The following tests are currently disabled. It seems the cast to
-	// appsv1.Deployment doesn't work because the runtime.Object stored
-	// in the action isn't the object itself, but a serializable
-	// representation of it.
-	scheme := kubescheme.Scheme
-
-	createServiceAction := fakeDynamicClient.Actions()[1].(kubetesting.CreateAction)
-	createdServiceObj := createServiceAction.GetObject()
-	if createdServiceObj.GetObjectKind().GroupVersionKind().Kind != "Service" {
-		t.Logf("%+v", createdServiceObj)
-		t.Fatal("object is not a corev1.Service")
-	} else {
-		createdUnstructuredService, createdUnstructuredServiceContent := extractUnstructuredContent(scheme, createdServiceObj)
-
-		// First we test the data that is expected to be in the created service
-		// object, since we delete keys on the underlying unstructured object
-		// later on, when comparing spec and metadata.
-		if _, ok := createdUnstructuredService.GetLabels()[shipperV1.ReleaseLabel]; !ok {
-			t.Fatalf("could not find %q in Deployment .metadata.labels", shipperV1.ReleaseLabel)
-		}
-
-		// Add the expected ownerReference directly in the expected service metadata
-		existingService.SetOwnerReferences(append(existingService.GetOwnerReferences(), anchorOwnerReference))
-
-		_, expectedUnstructuredServiceContent := extractUnstructuredContent(scheme, existingService)
-
-		uMetadata := createdUnstructuredServiceContent["metadata"].(map[string]interface{})
-		sMetadata := expectedUnstructuredServiceContent["metadata"].(map[string]interface{})
-
-		delete(uMetadata, "labels")
-		delete(sMetadata, "labels")
-		if !reflect.DeepEqual(uMetadata, sMetadata) {
-			t.Fatalf("%s",
-				diff.ObjectGoPrintDiff(uMetadata, sMetadata),
-			)
-		}
-
-		uSpec := createdUnstructuredServiceContent["spec"].(map[string]interface{})
-		sSpec := expectedUnstructuredServiceContent["spec"].(map[string]interface{})
-		if !reflect.DeepEqual(uSpec, sSpec) {
-			t.Fatalf("%s",
-				diff.ObjectGoPrintDiff(uSpec, sSpec),
-			)
-		}
-	}
-
-	createDeploymentAction := fakeDynamicClient.Actions()[2].(kubetesting.CreateAction)
-	createdServiceObj = createDeploymentAction.GetObject()
-	if createdServiceObj.GetObjectKind().GroupVersionKind().Kind != "Deployment" {
-		t.Logf("%+v", createdServiceObj)
-		t.Fatal("object is not an appsv1.Deployment")
-	} else {
-		u := &unstructured.Unstructured{}
-		err := scheme.Convert(createdServiceObj, u, nil)
-		if err != nil {
-			panic(err)
-		}
-		if _, ok := u.GetLabels()[shipperV1.ReleaseLabel]; !ok {
-			t.Fatalf("could not find %q in Deployment .metadata.labels", shipperV1.ReleaseLabel)
-		}
-
-		deployment := &appsV1.Deployment{}
-		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, deployment); err != nil {
-			t.Fatalf("could not decode deployment from unstructured: %s", err)
-		}
-
-		if _, ok := deployment.Spec.Selector.MatchLabels[shipperV1.ReleaseLabel]; !ok {
-			t.Fatal("deployment .spec.selector.matchLabels doesn't contain shipperV1.ReleaseLabel")
-		}
-
-		if _, ok := deployment.Spec.Template.Labels[shipperV1.ReleaseLabel]; !ok {
-			t.Fatal("deployment .spec.template.labels doesn't contain shipperV1.ReleaseLabel")
-		}
-
-		const (
-			existingChartLabel      = "app"
-			existingChartLabelValue = "reviews-api"
-		)
-
-		actualChartLabelValue, ok := deployment.Spec.Template.Labels[existingChartLabel]
-		if !ok {
-			t.Fatalf("deployment .spec.template.labels doesn't contain a label (%q) which was present in the chart", existingChartLabel)
-		}
-
-		if actualChartLabelValue != existingChartLabelValue {
-			t.Fatalf(
-				"deployment .spec.template.labels has the right previously-existing label (%q) but wrong value. Expected %q but got %q",
-				existingChartLabel, existingChartLabelValue, actualChartLabelValue,
-			)
-		}
-	}
+	filteredActions := filterActions(fakePair.fakeDynamicClient.Actions(), "create")
+	validateAction(t, filteredActions[0], "ConfigMap")
+	validateAction(t, filteredActions[1], "Namespace")
+	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[2], "Service"))
+	validateDeploymentCreateAction(t, validateAction(t, filteredActions[3], "Deployment"))
 }
 
 func extractUnstructuredContent(scheme *runtime.Scheme, obj runtime.Object) (*unstructured.Unstructured, map[string]interface{}) {
@@ -232,6 +142,104 @@ func extractUnstructuredContent(scheme *runtime.Scheme, obj runtime.Object) (*un
 	return u, contentCopy
 }
 
+func validateAction(t *testing.T, a kubetesting.Action, k string) runtime.Object {
+	ca := a.(kubetesting.CreateAction)
+	caObj := ca.GetObject()
+	if caObj.GetObjectKind().GroupVersionKind().Kind == k {
+		return caObj
+	}
+	t.Logf("%+v", caObj)
+	t.Fatalf("object is not a %q", k)
+	return nil
+}
+
+func validateServiceCreateAction(t *testing.T, existingService *coreV1.Service, obj runtime.Object) {
+	scheme := kubescheme.Scheme
+
+	unstructuredObj, unstructuredContent := extractUnstructuredContent(scheme, obj)
+
+	// First we test the data that is expected to be in the created service
+	// object, since we delete keys on the underlying unstructured object
+	// later on, when comparing spec and metadata.
+	if _, ok := unstructuredObj.GetLabels()[shipperV1.ReleaseLabel]; !ok {
+		t.Fatalf("could not find %q in Deployment .metadata.labels", shipperV1.ReleaseLabel)
+	}
+
+	_, expectedUnstructuredServiceContent := extractUnstructuredContent(scheme, existingService)
+
+	uMetadata := unstructuredContent["metadata"].(map[string]interface{})
+	sMetadata := expectedUnstructuredServiceContent["metadata"].(map[string]interface{})
+
+	delete(uMetadata, "labels")
+	delete(sMetadata, "labels")
+	if !reflect.DeepEqual(uMetadata, sMetadata) {
+		t.Fatalf("%s",
+			diff.ObjectGoPrintDiff(uMetadata, sMetadata),
+		)
+	}
+
+	uSpec := unstructuredContent["spec"].(map[string]interface{})
+	sSpec := expectedUnstructuredServiceContent["spec"].(map[string]interface{})
+	if !reflect.DeepEqual(uSpec, sSpec) {
+		t.Fatalf("%s",
+			diff.ObjectGoPrintDiff(uSpec, sSpec),
+		)
+	}
+}
+
+func validateDeploymentCreateAction(t *testing.T, obj runtime.Object) {
+	scheme := kubescheme.Scheme
+
+	u := &unstructured.Unstructured{}
+	err := scheme.Convert(obj, u, nil)
+	if err != nil {
+		panic(err)
+	}
+	if _, ok := u.GetLabels()[shipperV1.ReleaseLabel]; !ok {
+		t.Fatalf("could not find %q in Deployment .metadata.labels", shipperV1.ReleaseLabel)
+	}
+
+	deployment := &appsV1.Deployment{}
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, deployment); err != nil {
+		t.Fatalf("could not decode deployment from unstructured: %s", err)
+	}
+
+	if _, ok := deployment.Spec.Selector.MatchLabels[shipperV1.ReleaseLabel]; !ok {
+		t.Fatal("deployment .spec.selector.matchLabels doesn't contain shipperV1.ReleaseLabel")
+	}
+
+	if _, ok := deployment.Spec.Template.Labels[shipperV1.ReleaseLabel]; !ok {
+		t.Fatal("deployment .spec.template.labels doesn't contain shipperV1.ReleaseLabel")
+	}
+
+	const (
+		existingChartLabel      = "app"
+		existingChartLabelValue = "reviews-api"
+	)
+
+	actualChartLabelValue, ok := deployment.Spec.Template.Labels[existingChartLabel]
+	if !ok {
+		t.Fatalf("deployment .spec.template.labels doesn't contain a label (%q) which was present in the chart", existingChartLabel)
+	}
+
+	if actualChartLabelValue != existingChartLabelValue {
+		t.Fatalf(
+			"deployment .spec.template.labels has the right previously-existing label (%q) but wrong value. Expected %q but got %q",
+			existingChartLabel, existingChartLabelValue, actualChartLabelValue,
+		)
+	}
+}
+
+func filterActions(actions []kubetesting.Action, verb string) []kubetesting.Action {
+	var filteredActions []kubetesting.Action
+	for _, a := range actions {
+		if a.GetVerb() == verb {
+			filteredActions = append(filteredActions, a)
+		}
+	}
+	return filteredActions
+}
+
 // TestInstallerBrokenChartTarball tests if the installation process fails when the
 // release contains an invalid serialized chart.
 func TestInstallerBrokenChartTarball(t *testing.T) {
@@ -242,13 +250,14 @@ func TestInstallerBrokenChartTarball(t *testing.T) {
 	release.Environment.Chart.Version = "invalid-tarball"
 
 	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
-
 	installer := newInstaller(release, it)
 
-	fakeClient, _, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, nil)
+	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: []runtime.Object{}})
+
+	fakePair := clientsPerCluster[cluster.Name]
 
 	restConfig := &rest.Config{}
-	if err := installer.installRelease(cluster, fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
+	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
 		t.Fatal("installRelease should fail, invalid tarball")
 	}
 }
@@ -263,13 +272,14 @@ func TestInstallerBrokenChartContents(t *testing.T) {
 	release.Environment.Chart.Version = "invalid-k8s-objects"
 
 	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
-
 	installer := newInstaller(release, it)
 
-	fakeClient, _, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, nil)
+	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
+
+	fakePair := clientsPerCluster[cluster.Name]
 
 	restConfig := &rest.Config{}
-	if err := installer.installRelease(cluster, fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
+	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
 		t.Fatal("installRelease should fail, invalid k8s objects")
 	}
 }

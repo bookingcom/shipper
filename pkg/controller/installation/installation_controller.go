@@ -48,10 +48,13 @@ type Controller struct {
 	workqueue workqueue.RateLimitingInterface
 
 	appLister                 shipperListers.ApplicationLister
-	installationTargetsSynced cache.InformerSynced
+	appSynced                 cache.InformerSynced
 	installationTargetsLister shipperListers.InstallationTargetLister
+	installationTargetsSynced cache.InformerSynced
 	clusterLister             shipperListers.ClusterLister
+	clusterSynced             cache.InformerSynced
 	releaseLister             shipperListers.ReleaseLister
+	releaseSynced             cache.InformerSynced
 	dynamicClientBuilderFunc  DynamicClientBuilderFunc
 	chartFetchFunc            shipperChart.FetchFunc
 	recorder                  record.EventRecorder
@@ -75,10 +78,13 @@ func NewController(
 
 	controller := &Controller{
 		appLister:                 applicationInformer.Lister(),
+		appSynced:                 applicationInformer.Informer().HasSynced,
 		shipperclientset:          shipperclientset,
 		clusterClientStore:        store,
 		clusterLister:             clusterInformer.Lister(),
+		clusterSynced:             clusterInformer.Informer().HasSynced,
 		releaseLister:             releaseInformer.Lister(),
+		releaseSynced:             releaseInformer.Informer().HasSynced,
 		installationTargetsLister: installationTargetInformer.Lister(),
 		installationTargetsSynced: installationTargetInformer.Informer().HasSynced,
 		dynamicClientBuilderFunc:  dynamicClientBuilderFunc,
@@ -106,7 +112,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	glog.V(2).Info("Starting Installation controller")
 	defer glog.V(2).Info("Shutting down Installation controller")
 
-	if !cache.WaitForCacheSync(stopCh, c.installationTargetsSynced) {
+	if !cache.WaitForCacheSync(stopCh, c.installationTargetsSynced, c.releaseSynced, c.appSynced, c.clusterSynced) {
 		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
 		return
 	}
@@ -229,6 +235,18 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 
 	if contenderRel.Name != release.Name {
 		return NewNotContenderError(`release %q is not the contender %q`, release.Name, contenderRel.Name)
+	}
+
+	if appLabelValue, ok := release.GetLabels()[shipperV1.AppLabel]; !ok {
+		// TODO(isutton): Transform this into a real error
+		return fmt.Errorf("couldn't find label %q in release %q", shipperV1.AppLabel, release.GetName())
+	} else if app, appListerErr := c.appLister.Applications(release.GetNamespace()).Get(appLabelValue); appListerErr != nil {
+		// TODO(isutton): Wrap this error
+		return appListerErr
+	} else if len(app.Status.History) > 0 && app.Status.History[len(app.Status.History)-1] != release.GetName() {
+		// Current release isn't the contender, so we do not attempt to
+		// create or modify objects at all.
+		return nil
 	}
 
 	handler := NewInstaller(c.chartFetchFunc, release, it)
