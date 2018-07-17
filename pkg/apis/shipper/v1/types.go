@@ -98,11 +98,6 @@ type ApplicationCondition struct {
 	Message            string                   `json:"message,omitempty"`
 }
 
-type ClusterSelector struct {
-	Regions      []string `json:"regions"`
-	Capabilities []string `json:"capabilities"`
-}
-
 type Chart struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
@@ -145,14 +140,20 @@ type ClusterList struct {
 }
 
 type ClusterSpec struct {
-	Capabilities  []string `json:"capabilities"`
-	Region        string   `json:"region"`
-	APIMaster     string   `json:"apiMaster"`
-	Unschedulable bool     `json:"unschedulable"`
-
-	//Capacity ClusterCapacity
+	Capabilities []string                 `json:"capabilities"`
+	Region       string                   `json:"region"`
+	APIMaster    string                   `json:"apiMaster"`
+	Scheduler    ClusterSchedulerSettings `json:"scheduler"`
 }
 
+type ClusterSchedulerSettings struct {
+	Unschedulable bool    `json:"unschedulable"`
+	Weight        *int32  `json:"weight"`
+	Identity      *string `json:"identity"`
+}
+
+// NOTE(btyler) when we introduce capacity based scheduling, the capacity can
+// be collected by a cluster controller and stored in cluster.status
 type ClusterStatus struct {
 	InService bool `json:"inService"`
 }
@@ -223,9 +224,8 @@ type ReleaseEnvironment struct {
 	// set of sidecars to inject into the chart on rendering
 	Sidecars []Sidecar `json:"sidecars"`
 
-	// selectors for target clusters for the deployment
-	// XXX what are the semantics when the field is empty/omitted?
-	ClusterSelectors []ClusterSelector `json:"clusterSelectors"`
+	// requirements for target clusters for the deployment
+	ClusterRequirements ClusterRequirements `json:"clusterRequirements"`
 
 	Strategy *RolloutStrategy `json:"strategy,omitempty"`
 }
@@ -233,6 +233,17 @@ type ReleaseEnvironment struct {
 type Sidecar struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
+}
+
+type ClusterRequirements struct {
+	// it is an error to not specify any regions
+	Regions      []RegionRequirement `json:"regions"`
+	Capabilities []string            `json:"capabilities,omitempty"`
+}
+
+type RegionRequirement struct {
+	Name     string `json:"name"`
+	Replicas *int32 `json:"replicas,omitempty"`
 }
 
 type RolloutStrategy struct {
@@ -412,7 +423,7 @@ type ClusterTrafficCondition struct {
 }
 
 type TrafficTargetSpec struct {
-	Clusters []ClusterTrafficTarget `json:"clusters,omitempty"`
+	Clusters []ClusterTrafficTarget `json:"clusters"`
 }
 
 type ClusterTrafficTarget struct {

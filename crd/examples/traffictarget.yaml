@@ -6,5 +6,5 @@ metadata:
     release: reviewsapi-4
 spec:
   clusters:
-  - name: local
+  - name: eu-west-cluster-a
     targetTraffic: 0

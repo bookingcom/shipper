@@ -13,10 +13,10 @@ metadata:
       name: reviews-api
       version: 0.0.1
       repoUrl: localhost
-    clusterSelectors:
-    - regions:
-      - foo
-      - bar
+    clusterRequirements:
+      regions:
+      - name: foo
+      - name: bar
       capabilities:
       - gpu
       - pci

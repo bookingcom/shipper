@@ -1,7 +1,6 @@
 package schedulecontroller
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 
@@ -58,25 +57,31 @@ func (c *Scheduler) scheduleRelease() error {
 	// Compute target clusters, and update the release if it
 	// doesn't have any
 	if !c.HasClusters() {
-		clusters, err := c.ComputeTargetClusters()
-		if err == nil {
-			newRelease, updateErr := c.UpdateRelease()
-			if updateErr != nil {
-				return updateErr
-			}
-			c.Release = newRelease
+		clusterList, err := c.clustersLister.List(labels.Everything())
+		if err != nil {
+			return NewFailedAPICallError("ListClusters", err)
 		}
 
-		if err == nil {
-			c.recorder.Eventf(
-				c.Release,
-				corev1.EventTypeNormal,
-				"ClustersSelected",
-				"Set clusters for %q to %v",
-				controller.MetaKey(c.Release),
-				clusters,
-			)
+		clusters, err := computeTargetClusters(c.Release, clusterList)
+		if err != nil {
+			return err
 		}
+
+		c.SetClusters(clusters)
+		newRelease, err := c.UpdateRelease()
+		if err != nil {
+			return NewFailedAPICallError("UpdateRelease", err)
+		}
+		c.Release = newRelease
+
+		c.recorder.Eventf(
+			c.Release,
+			corev1.EventTypeNormal,
+			"ClustersSelected",
+			"Set clusters for %q to %v",
+			controller.MetaKey(c.Release),
+			clusters,
+		)
 	}
 
 	replicaCount, err := c.fetchChartAndExtractReplicaCount()
@@ -137,8 +142,12 @@ func (c *Scheduler) UpdateRelease() (*v1.Release, error) {
 func (c *Scheduler) fetchChartAndExtractReplicaCount() (int32, error) {
 	chart, err := c.fetchChart(c.Release.Environment.Chart)
 	if err != nil {
-		return 0, fmt.Errorf("fetch chart %v for release %q: %s",
-			c.Release.Environment.Chart, controller.MetaKey(c.Release), err)
+		return 0, NewChartFetchFailureError(
+			c.Release.Environment.Chart.Name,
+			c.Release.Environment.Chart.Version,
+			c.Release.Environment.Chart.RepoURL,
+			err,
+		)
 	}
 
 	replicas, err := c.extractReplicasFromChart(chart)
@@ -155,20 +164,28 @@ func (c *Scheduler) fetchChartAndExtractReplicaCount() (int32, error) {
 func (c *Scheduler) extractReplicasFromChart(chart *helmchart.Chart) (int32, error) {
 	owners := c.Release.OwnerReferences
 	if l := len(owners); l != 1 {
-		return 0, fmt.Errorf("Error when rendering the chart: expected exactly 1 owner for release %s, but got %d", controller.MetaKey(c.Release), l)
+		return 0, NewInvalidReleaseOwnerRefsError(len(owners))
 	}
 
 	applicationName := owners[0].Name
 	rendered, err := shipperchart.Render(chart, applicationName, c.Release.Namespace, c.Release.Environment.Values)
 	if err != nil {
-		return 0, fmt.Errorf("Error while extracting replicas for release %q: %s",
-			controller.MetaKey(c.Release), err)
+		return 0, NewBrokenChartError(
+			c.Release.Environment.Chart.Name,
+			c.Release.Environment.Chart.Version,
+			c.Release.Environment.Chart.RepoURL,
+			err,
+		)
 	}
 
 	deployments := shipperchart.GetDeployments(rendered)
-	if n := len(deployments); n != 1 {
-		return 0, fmt.Errorf("Error while extracting replicas for release %q: expected exactly one Deployment in the chart but got %d",
-			controller.MetaKey(c.Release), n)
+	if len(deployments) != 1 {
+		return 0, NewWrongChartDeploymentsError(
+			c.Release.Environment.Chart.Name,
+			c.Release.Environment.Chart.Version,
+			c.Release.Environment.Chart.RepoURL,
+			len(deployments),
+		)
 	}
 
 	replicas := deployments[0].Spec.Replicas
@@ -203,7 +220,7 @@ func (c *Scheduler) CreateInstallationTarget() error {
 			glog.Infof("InstallationTarget %q already exists, moving on", controller.MetaKey(c.Release))
 			return nil
 		}
-		return err
+		return NewFailedAPICallError("CreateInstallationTarget", err)
 	}
 
 	c.recorder.Eventf(
@@ -246,7 +263,7 @@ func (c *Scheduler) CreateCapacityTarget(totalReplicaCount int32) error {
 			glog.Infof("CapacityTarget %q already exists, moving on", controller.MetaKey(capacityTarget))
 			return nil
 		}
-		return err
+		return NewFailedAPICallError("CreateCapacityTarget", err)
 	}
 
 	c.recorder.Eventf(
@@ -288,7 +305,7 @@ func (c *Scheduler) CreateTrafficTarget() error {
 			glog.V(4).Infof("TrafficTarget %q already exists, moving on", controller.MetaKey(trafficTarget))
 			return nil
 		}
-		return err
+		return NewFailedAPICallError("CreateTrafficTarget", err)
 	}
 
 	c.recorder.Eventf(
@@ -302,27 +319,109 @@ func (c *Scheduler) CreateTrafficTarget() error {
 	return nil
 }
 
-// ComputeTargetClusters updates the Release Environment.Clusters property
-// based on its ClusterSelectors.
-func (c *Scheduler) ComputeTargetClusters() ([]string, error) {
-	// TODO selectors should be calculated from
-	// c.Release.Environment.ClusterSelectors
-	selectors := labels.NewSelector()
+// computeTargetClusters picks out the clusters from the given list which match
+// the release's clusterRequirements
+func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]string, error) {
+	regionSpecs := release.Environment.ClusterRequirements.Regions
+	requiredCapabilities := release.Environment.ClusterRequirements.Capabilities
+	capableClustersByRegion := map[string][]*v1.Cluster{}
+	regionReplicas := map[string]int{}
 
-	clusters, err := c.clustersLister.List(selectors)
+	if len(regionSpecs) == 0 {
+		return nil, NewNoRegionsSpecifiedError()
+	}
+
+	app, err := releaseutil.ApplicationNameForRelease(release)
 	if err != nil {
 		return nil, err
 	}
 
-	var clusterNames []string
-	for _, v := range clusters {
-		if !v.Spec.Unschedulable {
-			clusterNames = append(clusterNames, v.Name)
+	err = validateClusterRequirements(release.Environment.ClusterRequirements)
+	if err != nil {
+		return nil, err
+	}
+
+	prefList := buildPrefList(app, clusterList)
+	// this algo could probably build up hashes instead of doing linear
+	// searches, but these data sets are so tiny (1-20 items) that it'd only be
+	// useful for readability
+	for _, region := range regionSpecs {
+		capableClustersByRegion[region.Name] = []*v1.Cluster{}
+		if region.Replicas == nil {
+			regionReplicas[region.Name] = 1
+		} else {
+			regionReplicas[region.Name] = int(*region.Replicas)
+		}
+
+		matchedRegion := 0
+		for _, cluster := range prefList {
+			if cluster.Spec.Scheduler.Unschedulable {
+				continue
+			}
+
+			if cluster.Spec.Region == region.Name {
+				matchedRegion++
+				capabilityMatch := 0
+				for _, requiredCapability := range requiredCapabilities {
+					for _, providedCapability := range cluster.Spec.Capabilities {
+						if requiredCapability == providedCapability {
+							capabilityMatch++
+							break
+						}
+					}
+				}
+
+				if capabilityMatch == len(requiredCapabilities) {
+					capableClustersByRegion[region.Name] = append(capableClustersByRegion[region.Name], cluster)
+				}
+			}
+		}
+		if regionReplicas[region.Name] > matchedRegion {
+			return nil, NewNotEnoughClustersInRegionError(region.Name, regionReplicas[region.Name], matchedRegion)
 		}
 	}
-	c.SetClusters(clusterNames)
 
+	clusterNames := []string{}
+	for region, clusters := range capableClustersByRegion {
+		if regionReplicas[region] > len(clusters) {
+			return nil, NewNotEnoughCapableClustersInRegionError(
+				region,
+				requiredCapabilities,
+				regionReplicas[region],
+				len(clusters),
+			)
+		}
+
+		//NOTE(btyler) this assumes we do not have duplicate cluster names. For
+		// the moment cluster objects are cluster scoped; if they become
+		// namespace scoped and releases can somehow be scheduled to clusters
+		// from multiple namespaces, this assumption will be wrong.
+		for _, cluster := range clusters {
+			if regionReplicas[region] > 0 {
+				regionReplicas[region]--
+				clusterNames = append(clusterNames, cluster.Name)
+			}
+		}
+	}
+
+	sort.Strings(clusterNames)
 	return clusterNames, nil
+}
+
+func validateClusterRequirements(requirements v1.ClusterRequirements) error {
+	// ensure capability uniqueness. erroring instead of de-duping in order to
+	// avoid second-guessing by operators about how shipper might treat
+	// repeated listings of the same capability
+	seenCapabilities := map[string]struct{}{}
+	for _, capability := range requirements.Capabilities {
+		_, ok := seenCapabilities[capability]
+		if ok {
+			return NewDuplicateCapabilityRequirementError(capability)
+		}
+		seenCapabilities[capability] = struct{}{}
+	}
+
+	return nil
 }
 
 // the strings here are insane, but if you create a fresh release object for

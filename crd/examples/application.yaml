@@ -6,9 +6,9 @@ metadata:
 spec:
   revisionHistoryLimit: 10
   template:
-    clusterSelectors:
-    - regions:
-      - local
+    clusterRequirements:
+      regions:
+      - name: eu-west
       capabilities: []
     chart:
       name: nginx

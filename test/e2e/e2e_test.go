@@ -29,7 +29,8 @@ import (
 )
 
 const (
-	appName = "my-test-app"
+	appName                      = "my-test-app"
+	regionFromMinikubePerlScript = "eu-west"
 )
 
 var (
@@ -643,8 +644,8 @@ func newApplication(namespace, name string, strategy *shipperv1.RolloutStrategy)
 				Strategy: strategy,
 				// TODO(btyler) implement enough cluster selector stuff to only pick the target cluster we care about
 				// (or just panic if that cluster isn't listed)
-				ClusterSelectors: []shipperv1.ClusterSelector{},
-				Values:           &shipperv1.ChartValues{},
+				ClusterRequirements: shipperv1.ClusterRequirements{Regions: []shipperv1.RegionRequirement{{Name: regionFromMinikubePerlScript}}},
+				Values:              &shipperv1.ChartValues{},
 			},
 		},
 	}

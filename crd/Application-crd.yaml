@@ -34,9 +34,23 @@ spec:
             template:
               type: object
               required:
+              - clusterRequirements
               - strategy
               - values
               properties:
+                clusterRequirements:
+                  type: object
+                  required:
+                  - regions
+                  properties:
+                    regions:
+                      type: array
+                      items:
+                        type: object
+                    capabilities:
+                      type: array
+                      items:
+                        type: string
                 strategy:
                   type: object
                   required:

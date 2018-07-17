@@ -2,15 +2,13 @@ package schedulecontroller
 
 import (
 	"fmt"
-	"io/ioutil"
-	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes/scheme"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 
@@ -26,34 +24,49 @@ func init() {
 	releaseutil.ConditionsShouldDiscardTimestamps = true
 }
 
-func loadObject(obj runtime.Object, path ...string) (runtime.Object, error) {
-	yamlPath := filepath.Join(path...)
-	if releaseRaw, err := ioutil.ReadFile(yamlPath); err != nil {
-		return nil, err
-	} else if _, _, err = scheme.Codecs.UniversalDeserializer().Decode(releaseRaw, nil, obj); err != nil {
-		return nil, err
+func buildRelease() *shipperV1.Release {
+	return &shipperV1.Release{
+		TypeMeta: metaV1.TypeMeta{
+			APIVersion: "shipper.booking.com/v1",
+			Kind:       "Release",
+		},
+		ReleaseMeta: shipperV1.ReleaseMeta{
+			ObjectMeta: metaV1.ObjectMeta{
+				Name:        "test-release",
+				Namespace:   shippertesting.TestNamespace,
+				Annotations: map[string]string{},
+				OwnerReferences: []metaV1.OwnerReference{
+					{
+						APIVersion: "shipper.booking.com/v1",
+						Kind:       "Application",
+						Name:       "test-application",
+					},
+				},
+			},
+			Environment: shipperV1.ReleaseEnvironment{
+				Chart: shipperV1.Chart{
+					Name:    "simple",
+					Version: "0.0.1",
+					RepoURL: chartRepoURL,
+				},
+				ClusterRequirements: shipperV1.ClusterRequirements{
+					Regions: []shipperV1.RegionRequirement{{Name: shippertesting.TestRegion}},
+				},
+			},
+		},
 	}
-	return obj, nil
 }
 
-func loadRelease() *shipperV1.Release {
-	obj, err := loadObject(&shipperV1.Release{}, "testdata", "release.yaml")
-	if err != nil {
-		panic(err)
-	}
-
-	release := obj.(*shipperV1.Release)
-	release.Environment.Chart.RepoURL = chartRepoURL
-
-	return release
-}
-
-func loadCluster(name string) *shipperV1.Cluster {
-	fileName := fmt.Sprintf("cluster-%s.yaml", name)
-	if obj, err := loadObject(&shipperV1.Cluster{}, "testdata", fileName); err != nil {
-		panic(err)
-	} else {
-		return obj.(*shipperV1.Cluster)
+func buildCluster(name string) *shipperV1.Cluster {
+	return &shipperV1.Cluster{
+		ObjectMeta: metaV1.ObjectMeta{
+			Name: name,
+		},
+		Spec: shipperV1.ClusterSpec{
+			APIMaster:    "https://127.0.0.1",
+			Capabilities: []string{},
+			Region:       shippertesting.TestRegion,
+		},
 	}
 }
 
@@ -76,15 +89,17 @@ func newScheduler(
 	return c, clientset
 }
 
-// TestComputeTargetClusters tests the first part of the cluster scheduling,
+// TestSchedule tests the first part of the cluster scheduling,
 // which is find out which clusters the release must be installed, and
 // persisting it under .status.environment.clusters.
-func TestComputeTargetClusters(t *testing.T) {
+func TestSchedule(t *testing.T) {
 	// Fixtures
-	clusterA := loadCluster("minikube-a")
-	clusterB := loadCluster("minikube-b")
-	release := loadRelease()
+	clusterA := buildCluster("minikube-a")
+	clusterB := buildCluster("minikube-b")
+	release := buildRelease()
 	fixtures := []runtime.Object{clusterA, clusterB, release}
+	// demand two clusters
+	release.Environment.ClusterRequirements.Regions[0].Replicas = pint32(2)
 
 	// Expected values. The release should have, at the end of the business
 	// logic, a list of clusters containing all clusters we've added to
@@ -119,16 +134,16 @@ func TestComputeTargetClusters(t *testing.T) {
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
-// TestComputeTargetClustersSkipUnscheduled tests the first part of the cluster scheduling,
+// TestScheduleSkipsUnschedulable tests the first part of the cluster scheduling,
 // which is find out which clusters the release must be installed, and
 // persisting it under .status.environment.clusters but skipping unschedulable
 // clusters this time.
-func TestComputeTargetClustersSkipUnscheduled(t *testing.T) {
+func TestScheduleSkipsUnschedulable(t *testing.T) {
 	// Fixtures
-	clusterA := loadCluster("minikube-a")
-	clusterB := loadCluster("minikube-b")
-	clusterB.Spec.Unschedulable = true
-	release := loadRelease()
+	clusterA := buildCluster("minikube-a")
+	clusterB := buildCluster("minikube-b")
+	clusterB.Spec.Scheduler.Unschedulable = true
+	release := buildRelease()
 	fixtures := []runtime.Object{clusterA, clusterB, release}
 
 	// Expected values. The release should have, at the end of the business
@@ -213,8 +228,8 @@ func expectedActions(ns string, release *shipperV1.Release) []kubetesting.Action
 
 func TestCreateAssociatedObjects(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster("minikube-a")
-	release := loadRelease()
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 	fixtures := []runtime.Object{release, cluster}
 
@@ -246,8 +261,8 @@ func TestCreateAssociatedObjects(t *testing.T) {
 
 func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster("minikube-a")
-	release := loadRelease()
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 
 	installationtarget := &shipperV1.InstallationTarget{
@@ -286,8 +301,8 @@ func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 
 func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster("minikube-a")
-	release := loadRelease()
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 
 	traffictarget := &shipperV1.TrafficTarget{
@@ -326,8 +341,8 @@ func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 
 func TestCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 	// Fixtures
-	cluster := loadCluster("minikube-a")
-	release := loadRelease()
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 
 	capacitytarget := &shipperV1.CapacityTarget{
@@ -391,4 +406,338 @@ func filterActions(
 	}
 
 	return ret
+}
+
+type requirements shipperV1.ClusterRequirements
+type clusters []shipperV1.ClusterSpec
+type expected []string
+
+const (
+	passingCase = false
+	errorCase   = true
+)
+
+func pint32(i int32) *int32 {
+	return &i
+}
+
+func pstr(s string) *string {
+	return &s
+}
+
+// TestComputeTargetClusters works the core of the scheduler logic: matching regions and capabilities between releases and clusters
+// NOTE: the "expected" clusters are due to the particular prefList outcomes,
+// and as such should be expected to break if we change the hash function for the
+// preflist.
+func TestComputeTargetClusters(t *testing.T) {
+	computeClusterTestCase(t, "error when no regions specified",
+		requirements{
+			Regions: []shipperV1.RegionRequirement{},
+		},
+		clusters{
+			{Region: shippertesting.TestRegion, Capabilities: []string{}},
+		},
+		expected{},
+		errorCase,
+	)
+
+	computeClusterTestCase(t, "basic region match",
+		requirements{
+			Regions: []shipperV1.RegionRequirement{{Name: "matches"}},
+		},
+		clusters{
+			{Region: "matches", Capabilities: []string{}},
+		},
+		expected{"cluster-0"},
+		passingCase,
+	)
+
+	computeClusterTestCase(t, "one region match one no match",
+		requirements{
+			Regions: []shipperV1.RegionRequirement{{Name: "matches"}},
+		},
+		clusters{
+			{Region: "matches", Capabilities: []string{}},
+			{Region: "does not match", Capabilities: []string{}},
+		},
+		expected{"cluster-0"},
+		passingCase,
+	)
+
+	computeClusterTestCase(t, "both match",
+		requirements{
+			Regions: []shipperV1.RegionRequirement{{Name: "matches", Replicas: pint32(2)}},
+		},
+		clusters{
+			{Region: "matches", Capabilities: []string{}},
+			{Region: "matches", Capabilities: []string{}},
+		},
+		expected{"cluster-0", "cluster-1"},
+		passingCase,
+	)
+
+	computeClusterTestCase(t, "two region matches, one capability match",
+		requirements{
+			Regions:      []shipperV1.RegionRequirement{{Name: "matches"}},
+			Capabilities: []string{"a", "b"},
+		},
+		clusters{
+			{Region: "matches", Capabilities: []string{"a"}},
+			{Region: "matches", Capabilities: []string{"a", "b"}},
+		},
+		expected{"cluster-1"},
+		passingCase,
+	)
+
+	computeClusterTestCase(t, "two region matches, two capability matches",
+		requirements{
+			Regions:      []shipperV1.RegionRequirement{{Name: "matches", Replicas: pint32(2)}},
+			Capabilities: []string{"a"},
+		},
+		clusters{
+			{Region: "matches", Capabilities: []string{"a"}},
+			{Region: "matches", Capabilities: []string{"a", "b"}},
+		},
+		expected{"cluster-0", "cluster-1"},
+		passingCase,
+	)
+
+	computeClusterTestCase(t, "no region match",
+		requirements{
+			Regions:      []shipperV1.RegionRequirement{{Name: "foo"}},
+			Capabilities: []string{},
+		},
+		clusters{
+			{Region: "bar", Capabilities: []string{}},
+			{Region: "baz", Capabilities: []string{}},
+		},
+		expected{},
+		errorCase,
+	)
+
+	computeClusterTestCase(t, "region match, no capability match",
+		requirements{
+			Regions:      []shipperV1.RegionRequirement{{Name: "foo"}},
+			Capabilities: []string{"a"},
+		},
+		clusters{
+			{Region: "foo", Capabilities: []string{"b"}},
+			{Region: "foo", Capabilities: []string{"b"}},
+		},
+		expected{},
+		errorCase,
+	)
+
+	computeClusterTestCase(t, "reject duplicate capabilities in requirements",
+		requirements{
+			Regions:      []shipperV1.RegionRequirement{{Name: "foo"}},
+			Capabilities: []string{"a", "a"},
+		},
+		clusters{
+			{Region: "foo", Capabilities: []string{"a"}},
+		},
+		expected{},
+		errorCase,
+	)
+
+	computeClusterTestCase(t, "more clusters than needed, pick only one from each region",
+		requirements{
+			Regions: []shipperV1.RegionRequirement{
+				{Name: "us-east", Replicas: pint32(1)},
+				{Name: "eu-west", Replicas: pint32(1)},
+			},
+			Capabilities: []string{"a"},
+		},
+		clusters{
+			{Region: "us-east", Capabilities: []string{"a"}},
+			{Region: "us-east", Capabilities: []string{"a"}},
+			{Region: "eu-west", Capabilities: []string{"a"}},
+			{Region: "eu-west", Capabilities: []string{"a"}},
+		},
+		expected{"cluster-1", "cluster-2"},
+		passingCase,
+	)
+
+	computeClusterTestCase(t, "different replica counts by region",
+		requirements{
+			Regions: []shipperV1.RegionRequirement{
+				{Name: "us-east", Replicas: pint32(2)},
+				{Name: "eu-west", Replicas: pint32(1)},
+			},
+			Capabilities: []string{"a"},
+		},
+		clusters{
+			{Region: "us-east", Capabilities: []string{"a"}},
+			{Region: "us-east", Capabilities: []string{"a"}},
+			{Region: "eu-west", Capabilities: []string{"a"}},
+			{Region: "eu-west", Capabilities: []string{"a"}},
+		},
+		expected{"cluster-0", "cluster-1", "cluster-2"},
+		passingCase,
+	)
+
+	computeClusterTestCase(t, "skip unschedulable clusters",
+		requirements{
+			Regions: []shipperV1.RegionRequirement{
+				{Name: "us-east", Replicas: pint32(2)},
+			},
+		},
+		clusters{
+			{
+				Region:    "us-east",
+				Scheduler: shipperV1.ClusterSchedulerSettings{Unschedulable: true},
+			},
+			{
+				Region:    "us-east",
+				Scheduler: shipperV1.ClusterSchedulerSettings{Unschedulable: true},
+			},
+			{Region: "us-east"},
+		},
+		expected{},
+		errorCase,
+	)
+
+	computeClusterTestCase(t, "heavy weight changes normal priority",
+		requirements{
+			Regions: []shipperV1.RegionRequirement{
+				{Name: "us-east", Replicas: pint32(1)},
+				{Name: "eu-west", Replicas: pint32(1)},
+			},
+			Capabilities: []string{"a"},
+		},
+		clusters{
+			{
+				Region:       "us-east",
+				Capabilities: []string{"a"},
+				Scheduler:    shipperV1.ClusterSchedulerSettings{Weight: pint32(900)},
+			},
+			{Region: "us-east", Capabilities: []string{"a"}},
+			{Region: "eu-west", Capabilities: []string{"a"}},
+			{
+				Region:       "eu-west",
+				Capabilities: []string{"a"},
+				Scheduler:    shipperV1.ClusterSchedulerSettings{Weight: pint32(900)},
+			},
+		},
+		// this test is identical to "more clusters than needed", and without weight would yield the same result (cluster-1, cluster-2)
+		expected{"cluster-0", "cluster-3"},
+		passingCase,
+	)
+
+	computeClusterTestCase(t, "a little weight doesn't change things",
+		requirements{
+			Regions: []shipperV1.RegionRequirement{
+				{Name: "us-east", Replicas: pint32(1)},
+				{Name: "eu-west", Replicas: pint32(1)},
+			},
+			Capabilities: []string{"a"},
+		},
+		clusters{
+			{
+				Region:       "us-east",
+				Capabilities: []string{"a"},
+				Scheduler:    shipperV1.ClusterSchedulerSettings{Weight: pint32(101)},
+			},
+			{Region: "us-east", Capabilities: []string{"a"}},
+			{Region: "eu-west", Capabilities: []string{"a"}},
+			{Region: "eu-west", Capabilities: []string{"a"}},
+		},
+		// weight doesn't change things unless it is "heavy" enough: it needs
+		// to overcome the natural distribution of hash values. This test is
+		// identical to "more clusters than needed", and has a minimal
+		// (ineffectual) weight applied, so it gives the same result as that test.
+		expected{"cluster-1", "cluster-2"},
+		passingCase,
+	)
+
+	computeClusterTestCase(t, "colliding identity plus a little weight does change things",
+		requirements{
+			Regions: []shipperV1.RegionRequirement{
+				{Name: "us-east", Replicas: pint32(1)},
+				{Name: "eu-west", Replicas: pint32(1)},
+			},
+			Capabilities: []string{"a"},
+		},
+		clusters{
+			// the "identity" means that cluster-0 computes the hash exactly like
+			// cluster-1, so a minimal bump in weight puts it in front
+			{
+				Region:       "us-east",
+				Capabilities: []string{"a"},
+				Scheduler: shipperV1.ClusterSchedulerSettings{
+					Identity: pstr("cluster-1"),
+					Weight:   pint32(101),
+				},
+			},
+			{Region: "us-east", Capabilities: []string{"a"}},
+			{Region: "eu-west", Capabilities: []string{"a"}},
+			{Region: "eu-west", Capabilities: []string{"a"}},
+		},
+		expected{"cluster-0", "cluster-2"},
+		passingCase,
+	)
+}
+
+func computeClusterTestCase(
+	t *testing.T,
+	name string,
+	reqs requirements,
+	clusterSpecs clusters,
+	expectedClusters expected,
+	expectError bool,
+) {
+
+	release := generateReleaseForTestCase(shipperV1.ClusterRequirements(reqs))
+	clusters := make([]*shipperV1.Cluster, 0, len(clusterSpecs))
+	for i, spec := range clusterSpecs {
+		clusters = append(clusters, generateClusterForTestCase(i, spec))
+	}
+
+	actualClusters, err := computeTargetClusters(release, clusters)
+	if expectError {
+		if err == nil {
+			t.Errorf("test %q expected an error but didn't get one!", name)
+		}
+	} else {
+		if err != nil {
+			t.Errorf("error %q: %q", name, err)
+			return
+		}
+	}
+
+	if strings.Join(expectedClusters, ",") != strings.Join(actualClusters, ",") {
+		t.Errorf("%q expected clusters %q, but got %q", name, strings.Join(expectedClusters, ","), strings.Join(actualClusters, ","))
+		return
+	}
+}
+
+func generateClusterForTestCase(name int, spec shipperV1.ClusterSpec) *shipperV1.Cluster {
+	return &shipperV1.Cluster{
+		ObjectMeta: metaV1.ObjectMeta{
+			Name:      fmt.Sprintf("cluster-%d", name),
+			Namespace: shippertesting.TestNamespace,
+		},
+		Spec: spec,
+	}
+}
+
+func generateReleaseForTestCase(reqs shipperV1.ClusterRequirements) *shipperV1.Release {
+	return &shipperV1.Release{
+		ReleaseMeta: shipperV1.ReleaseMeta{
+			ObjectMeta: metaV1.ObjectMeta{
+				Name:      "test-release",
+				Namespace: shippertesting.TestNamespace,
+				OwnerReferences: []metaV1.OwnerReference{
+					{
+						APIVersion: "shipper.booking.com/v1",
+						Kind:       "Application",
+						Name:       "test-application",
+					},
+				},
+			},
+			Environment: shipperV1.ReleaseEnvironment{
+				ClusterRequirements: reqs,
+			},
+		},
+	}
 }

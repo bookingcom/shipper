@@ -27,6 +27,7 @@ import (
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
+	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -80,10 +81,8 @@ func buildApplication(appName, ns string) *shipperV1.Application {
 		},
 		Spec: shipperV1.ApplicationSpec{
 			Template: shipperV1.ReleaseEnvironment{
-				ClusterSelectors: []shipperV1.ClusterSelector{
-					{
-						Regions: []string{"local"},
-					},
+				ClusterRequirements: shipperV1.ClusterRequirements{
+					Regions: []shipperV1.RegionRequirement{{Name: shippertesting.TestRegion}},
 				},
 				Chart: shipperV1.Chart{
 					Name:    "nginx",
