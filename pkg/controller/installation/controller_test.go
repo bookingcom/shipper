@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
+
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	"github.com/bookingcom/shipper/pkg/conditions"
@@ -21,9 +22,6 @@ func init() {
 	conditions.InstallationConditionsShouldDiscardTimestamps = true
 }
 
-// TestInstallIncumbent proves that given two Releases for an application, A and
-// B, and B being the contender, no actions should be performed on behalf of A
-// during a resync.
 func TestInstallIncumbent(t *testing.T) {
 	cluster := buildCluster("minikube-a")
 	appName := "reviews-api"
@@ -32,12 +30,13 @@ func TestInstallIncumbent(t *testing.T) {
 	contenderRel := buildRelease("0.0.2", testNs, "1", "beefdead", appName)
 	incumbentIt := buildInstallationTarget(incumbentRel, testNs, appName, []string{cluster.Name})
 
-	fakeClient, shipperclientset, fakeDynamicClient, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, []runtime.Object{cluster, incumbentRel, contenderRel, incumbentIt}, nil)
+	shipperObjects := []runtime.Object{cluster, contenderRel, incumbentRel, incumbentIt}
+	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory := initializeClients(apiResourceList, shipperObjects, objectsPerClusterMap{cluster.Name: nil})
+	clusterPair := clientsPerCluster[cluster.Name]
 
 	fakeClientProvider := &FakeClientProvider{
-		fakeClient: fakeClient,
-		restConfig: &rest.Config{},
+		clientsPerCluster: clientsPerCluster,
+		restConfig:        &rest.Config{},
 	}
 	fakeRecorder := record.NewFakeRecorder(42)
 
@@ -49,7 +48,7 @@ func TestInstallIncumbent(t *testing.T) {
 	}
 
 	expectedActions := []kubetesting.Action{}
-	shippertesting.CheckActions(expectedActions, fakeDynamicClient.Actions(), t)
+	shippertesting.CheckActions(expectedActions, clusterPair.fakeDynamicClient.Actions(), t)
 }
 
 // TestInstallOneCluster tests the installation process using the installation.Controller.
@@ -60,14 +59,17 @@ func TestInstallOneCluster(t *testing.T) {
 	app := buildApplication(appName, appName)
 	release := buildRelease("0.0.1", testNs, "0", "deadbeef", app.Name)
 	installationTarget := buildInstallationTarget(release, testNs, appName, []string{cluster.Name})
+	namespace := &corev1.Namespace{ObjectMeta: v1.ObjectMeta{Name: release.Namespace}}
 
-	fakeClient, shipperclientset, fakeDynamicClient, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, []runtime.Object{app, cluster, release, installationTarget}, nil)
+	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
+		initializeClients(apiResourceList, []runtime.Object{app, cluster, release, installationTarget}, objectsPerClusterMap{cluster.Name: []runtime.Object{namespace}})
 
+	clusterPair := clientsPerCluster[cluster.Name]
 	fakeClientProvider := &FakeClientProvider{
-		fakeClient: fakeClient,
-		restConfig: &rest.Config{},
+		clientsPerCluster: clientsPerCluster,
+		restConfig:        &rest.Config{},
 	}
+
 	fakeRecorder := record.NewFakeRecorder(42)
 
 	c := newController(
@@ -86,20 +88,16 @@ func TestInstallOneCluster(t *testing.T) {
 	// fakeDynamicClientBuilder function passed to the controller, which
 	// mimics a connection to a Target Cluster.
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewCreateAction(
-			schema.GroupVersionResource{Resource: "namespaces", Version: "v1"},
-			release.GetNamespace(),
-			nil),
-		kubetesting.NewCreateAction(
-			schema.GroupVersionResource{Resource: "services", Version: "v1"},
-			release.GetNamespace(),
-			nil),
-		kubetesting.NewCreateAction(
-			schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"},
-			release.GetNamespace(),
-			nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "namespaces", Version: "v1"}, release.GetNamespace(), release.Namespace),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "namespaces", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
 	}
-	shippertesting.CheckActions(expectedActions, fakeDynamicClient.Actions(), t)
+	shippertesting.CheckActions(expectedActions, clusterPair.fakeDynamicClient.Actions(), t)
 
 	// We are interested only in "update" actions here.
 	var filteredActions []kubetesting.Action
@@ -128,10 +126,7 @@ func TestInstallOneCluster(t *testing.T) {
 		},
 	}
 	expectedActions = []kubetesting.Action{
-		kubetesting.NewUpdateAction(
-			schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"},
-			release.GetNamespace(),
-			it),
+		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
 	}
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
@@ -144,15 +139,20 @@ func TestInstallMultipleClusters(t *testing.T) {
 	app := buildApplication(appName, testNs)
 	release := buildRelease("0.0.1", testNs, "0", "deadbeef", appName)
 	installationTarget := buildInstallationTarget(release, testNs, appName, []string{clusterA.Name, clusterB.Name})
+	namespace := &corev1.Namespace{ObjectMeta: v1.ObjectMeta{Name: release.Namespace}}
 
-	fakeClient, shipperclientset, fakeDynamicClient, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, []runtime.Object{app, clusterA, clusterB, release, installationTarget}, nil)
+	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
+		initializeClients(apiResourceList, []runtime.Object{app, clusterA, clusterB, release, installationTarget}, objectsPerClusterMap{
+			clusterA.Name: []runtime.Object{namespace},
+			clusterB.Name: []runtime.Object{namespace},
+		})
+
+	fakeRecorder := record.NewFakeRecorder(42)
 
 	fakeClientProvider := &FakeClientProvider{
-		fakeClient: fakeClient,
-		restConfig: &rest.Config{},
+		clientsPerCluster: clientsPerCluster,
+		restConfig:        &rest.Config{},
 	}
-	fakeRecorder := record.NewFakeRecorder(42)
 
 	c := newController(
 		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
@@ -170,32 +170,19 @@ func TestInstallMultipleClusters(t *testing.T) {
 	// fakeDynamicClientBuilder function passed to the controller, which
 	// mimics a connection to a Target Cluster.
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewCreateAction(
-			schema.GroupVersionResource{Resource: "namespaces", Version: "v1"},
-			release.GetNamespace(),
-			nil),
-		kubetesting.NewCreateAction(
-			schema.GroupVersionResource{Resource: "services", Version: "v1"},
-			release.GetNamespace(),
-			nil),
-		kubetesting.NewCreateAction(
-			schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"},
-			release.GetNamespace(),
-			nil),
-		kubetesting.NewCreateAction(
-			schema.GroupVersionResource{Resource: "namespaces", Version: "v1"},
-			release.GetNamespace(),
-			nil),
-		kubetesting.NewCreateAction(
-			schema.GroupVersionResource{Resource: "services", Version: "v1"},
-			release.GetNamespace(),
-			nil),
-		kubetesting.NewCreateAction(
-			schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"},
-			release.GetNamespace(),
-			nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "namespaces", Version: "v1"}, release.GetNamespace(), "reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "namespaces", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
 	}
-	shippertesting.CheckActions(expectedActions, fakeDynamicClient.Actions(), t)
+
+	for _, fakePair := range clientsPerCluster {
+		shippertesting.CheckActions(expectedActions, fakePair.fakeDynamicClient.Actions(), t)
+	}
 
 	// We are interested only in "update" actions here.
 	var filteredActions []kubetesting.Action
@@ -239,10 +226,7 @@ func TestInstallMultipleClusters(t *testing.T) {
 		},
 	}
 	expectedActions = []kubetesting.Action{
-		kubetesting.NewUpdateAction(
-			schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"},
-			release.GetNamespace(),
-			it),
+		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
 	}
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
@@ -263,12 +247,12 @@ func TestMissingRelease(t *testing.T) {
 	testNs := "reviews-api"
 	installationTarget := buildInstallationTargetWithOwner("0.0.1", "deadbeef", testNs, appName, []string{cluster.Name})
 
-	fakeClient, shipperclientset, _, fakeDynamicClientBuilder, shipperInformerFactory :=
+	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
 		initializeClients(apiResourceList, []runtime.Object{cluster, installationTarget}, nil)
 
 	fakeClientProvider := &FakeClientProvider{
-		fakeClient: fakeClient,
-		restConfig: &rest.Config{},
+		clientsPerCluster: clientsPerCluster,
+		restConfig:        &rest.Config{},
 	}
 	fakeRecorder := record.NewFakeRecorder(42)
 
@@ -308,11 +292,11 @@ func TestClientError(t *testing.T) {
 	release := buildRelease("0.0.1", testNs, "0", "deadbeef", appName)
 	installationTarget := buildInstallationTarget(release, testNs, appName, []string{cluster.Name})
 
-	fakeClient, shipperclientset, _, fakeDynamicClientBuilder, shipperInformerFactory :=
+	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
 		initializeClients(apiResourceList, []runtime.Object{app, release, cluster, installationTarget}, nil)
 
 	fakeClientProvider := &FakeClientProvider{
-		fakeClient:          fakeClient,
+		clientsPerCluster:   clientsPerCluster,
 		restConfig:          &rest.Config{},
 		getClientShouldFail: true,
 	}
@@ -360,10 +344,7 @@ func TestClientError(t *testing.T) {
 		},
 	}
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(
-			schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"},
-			release.GetNamespace(),
-			it),
+		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
 	}
 	var filteredActions []kubetesting.Action
 	for _, a := range shipperclientset.Actions() {
@@ -391,12 +372,12 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 	release := buildRelease("0.0.1", testNs, "0", "deadbeef", appName)
 	installationTarget := buildInstallationTarget(release, testNs, appName, []string{cluster.Name})
 
-	fakeClient, shipperclientset, _, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients([]*v1.APIResourceList{}, []runtime.Object{app, release, cluster, installationTarget}, nil)
+	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
+		initializeClients([]*v1.APIResourceList{}, []runtime.Object{app, release, cluster, installationTarget}, objectsPerClusterMap{cluster.Name: nil})
 
 	fakeClientProvider := &FakeClientProvider{
-		fakeClient: fakeClient,
-		restConfig: &rest.Config{},
+		clientsPerCluster: clientsPerCluster,
+		restConfig:        &rest.Config{},
 	}
 	fakeRecorder := record.NewFakeRecorder(42)
 
@@ -440,10 +421,7 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 		},
 	}
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(
-			schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"},
-			release.GetNamespace(),
-			it),
+		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
 	}
 	var filteredActions []kubetesting.Action
 	for _, a := range shipperclientset.Actions() {
@@ -470,12 +448,12 @@ func TestManagementServerMissesCluster(t *testing.T) {
 	release := buildRelease("0.0.1", testNs, "0", "deadbeef", appName)
 	installationTarget := buildInstallationTarget(release, testNs, appName, []string{"minikube-a"})
 
-	fakeClient, shipperclientset, _, fakeDynamicClientBuilder, shipperInformerFactory :=
+	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
 		initializeClients(apiResourceList, []runtime.Object{app, release, installationTarget}, nil)
 
 	fakeClientProvider := &FakeClientProvider{
-		fakeClient: fakeClient,
-		restConfig: &rest.Config{},
+		clientsPerCluster: clientsPerCluster,
+		restConfig:        &rest.Config{},
 	}
 	fakeRecorder := record.NewFakeRecorder(42)
 
@@ -521,10 +499,7 @@ func TestManagementServerMissesCluster(t *testing.T) {
 		},
 	}
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(
-			schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"},
-			release.GetNamespace(),
-			it),
+		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
 	}
 	var filteredActions []kubetesting.Action
 	for _, a := range shipperclientset.Actions() {

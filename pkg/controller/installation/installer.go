@@ -24,7 +24,7 @@ import (
 	shipperChart "github.com/bookingcom/shipper/pkg/chart"
 )
 
-type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *rest.Config) dynamic.Interface
+type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipperV1.Cluster) dynamic.Interface
 
 // Installer is an object that knows how to install Helm charts directly
 // into Kubernetes clusters.
@@ -85,7 +85,7 @@ func (i *Installer) buildResourceClient(
 	dynamicClientBuilder DynamicClientBuilderFunc,
 	gvk *schema.GroupVersionKind,
 ) (dynamic.ResourceInterface, error) {
-	dynamicClient := dynamicClientBuilder(gvk, restConfig)
+	dynamicClient := dynamicClientBuilder(gvk, restConfig, cluster)
 
 	// From the list of resources the target cluster knows about, find the resource for the
 	// kind of object we have at hand.
@@ -218,26 +218,23 @@ func (i *Installer) installManifests(
 	manifests []string,
 ) error {
 
+	var configMap *coreV1.ConfigMap
 	var createdConfigMap *coreV1.ConfigMap
+	var existingConfigMap *coreV1.ConfigMap
+	var err error
 
-	// Create a ConfigMap to act as the Deployment owner.
-	if configMap, err := janitor.CreateConfigMapAnchor(i.InstallationTarget); err != nil {
+	if configMap, err = janitor.CreateConfigMapAnchor(i.InstallationTarget); err != nil {
 		return NewCreateResourceError("error creating anchor config map: %s ", err)
-	} else if createdConfigMap, err = client.CoreV1().ConfigMaps(configMap.Namespace).Create(configMap); err != nil {
-		// If the anchor exists in the cluster, then it is likely that a failure
-		// after its creation has happened. We should not exit just yet.
-		if errors.IsAlreadyExists(err) {
-			createdConfigMap, err = client.CoreV1().ConfigMaps(i.Release.Namespace).Get(configMap.Name, metaV1.GetOptions{})
-			if err != nil {
-				return NewCreateResourceError(
-					`error getting anchor %q: %s`,
-					configMap.Name, err)
-			}
-		} else {
+	} else if existingConfigMap, err = client.CoreV1().ConfigMaps(i.Release.Namespace).Get(configMap.Name, metaV1.GetOptions{}); err != nil && !errors.IsNotFound(err) {
+		return NewGetResourceError(`error getting anchor %q: %s`, configMap.Name, err)
+	} else if err != nil { // errors.IsNotFound(err) == true
+		if createdConfigMap, err = client.CoreV1().ConfigMaps(configMap.Namespace).Create(configMap); err != nil {
 			return NewCreateResourceError(
-				`error creating resource %s "%s/%s": %s`,
+				`error creating anchor resource %s "%s/%s": %s`,
 				configMap.Kind, configMap.Namespace, configMap.Name, err)
 		}
+	} else {
+		createdConfigMap = existingConfigMap
 	}
 
 	// Create the OwnerReference for the manifest objects
@@ -290,135 +287,75 @@ func (i *Installer) installManifests(
 			return NewResourceClientError("error building resource client: %s", err)
 		}
 
-		// Now we can create the object using the resource client. Probably all of
-		// the business logic from decodeManifest() until resourceClient.create() could
-		// be abstracted into a method.
-		_, err = resourceClient.Create(obj)
+		// "fetch-and-create-or-update" strategy in here; this is required to
+		// overcome an issue in Kubernetes where a "create-or-update" strategy
+		// leads to exceeding quotas when those are enabled very quickly,
+		// since Kubernetes machinery first increase quota usage and then
+		// attempts to create the resource, taking some time to re-sync
+		// the quota information when objects can't be created since they
+		// already exist.
+		existingObj, err := resourceClient.Get(obj.GetName(), metaV1.GetOptions{})
+
+		// Any error other than NotFound is not recoverable from this point on.
+		if err != nil && !errors.IsNotFound(err) {
+			return NewGetResourceError(`error getting resource %s '%s/%s': %s`, obj.GetKind(), obj.GetNamespace(), obj.GetName(), err)
+		}
+
+		// If have an error here, it means it is NotFound, so proceed to
+		// create the object on the application cluster
 		if err != nil {
-
-			// In the case an object with the same name and gvk already exists
-			// in the server, we then explicitly overwrite the object's
-			// .metadata and .spec fields and update the faulty object.
-			if errors.IsAlreadyExists(err) {
-
-				// We must first retrieve the object from the faulty cluster.
-				// It returns to the caller here with the error since there's
-				// nothing we can do to recover.
-				existingObj, clientErr := resourceClient.Get(obj.GetName(), metaV1.GetOptions{ResourceVersion: obj.GetResourceVersion()})
-				if clientErr != nil {
-					return NewGetResourceError(`error retrieving resource %s "%s/%s": %s`,
-						obj.GetKind(), obj.GetNamespace(), obj.GetName(), clientErr)
-				}
-
-				if gvk := existingObj.GroupVersionKind(); gvk.Kind == "Namespace" {
-					// Shipper tries to add the application's Namespace if
-					// missing, so it doesn't have the ReleaseLabel and the
-					// next check will fail anyways.
-					continue
-				}
-
-				if releaseLabelValue, ok := existingObj.GetLabels()[shipperV1.ReleaseLabel]; !ok {
-					// TODO(isutton): Do we want to fix this situation or bail out?
-					return fmt.Errorf("Object misses release label")
-				} else if releaseLabelValue == i.Release.GetName() {
-					// This Release was the last one to either touch or
-					// create this object; nothing to do for the current
-					// manifest.
-					continue
-				}
-
-				// Now we start with the bad: we want to overwrite the existing
-				// object with the contents of the rendered manifest. To do so,
-				// we need to preserve TypeMeta and ObjectMeta almost entirely,
-				// with exception of (at the time of this writing) annotations
-				// and labels, since the other fields can't be changed. Probably
-				// we'll be able to remove this once the server side equivalent
-				// of 'kubectl apply' gets implemented in Kubernetes.
-
-				ownerReferenceFound := false
-				for _, o := range existingObj.GetOwnerReferences() {
-					if reflect.DeepEqual(o, ownerReference) {
-						// Proceed to the next manifest if this release's anchor
-						// is already present in the list of owner references --
-						// meaning the faulty object has already been touched.
-						ownerReferenceFound = true
-					}
-				}
-
-				// Add a new owner reference to the existing object's owner
-				// references, since we need to keep the existing ones. An
-				// object can be owned by several release anchor objects; those
-				// objects will be removed from the cluster once all the anchors
-				// have been removed.
-				if !ownerReferenceFound {
-					ownerReferences := append(existingObj.GetOwnerReferences(), ownerReference)
-					sort.Slice(ownerReferences, func(i, j int) bool {
-						return ownerReferences[i].Name < ownerReferences[j].Name
-					})
-					existingObj.SetOwnerReferences(ownerReferences)
-				}
-
-				// Override labels and annotations in the existing object using
-				// the values extracted from the rendered manifests. We started
-				// with the idea of overriding `.metadata` but the rendered
-				// manifest's isn't rich enough for an update, since it lacks all
-				// the read-only fields from ObjectMeta and TypeMeta.
-				existingObj.SetLabels(obj.GetLabels())
-				existingObj.SetAnnotations(obj.GetAnnotations())
-
-				// Now we start poking into the unstructured content of the
-				// existing object, trying to overwrite the existing data as
-				// much as possible.
-				existingUnstructuredObj := existingObj.UnstructuredContent()
-				newUnstructuredObj := obj.UnstructuredContent()
-
-				// Not, this is the ugly: before we put our fingers on its guts,
-				// we need to gather some data that we know will generate an
-				// error when "applying" the changes on some objects, for example
-				// Service: if the .spec.clusterIP field is rendered empty, the
-				// API server will return an error in eventual "upserts". This is
-				// the reason that we have this type switch below.
-				switch decodedObj.(type) {
-				case *coreV1.Service:
-					// Copy over clusterIP from existing object's .spec to the
-					// rendered one.
-					if clusterIP, ok := unstructured.NestedString(existingUnstructuredObj, "spec", "clusterIP"); ok {
-						unstructured.SetNestedField(newUnstructuredObj, clusterIP, "spec", "clusterIP")
-					}
-				}
-
-				// Now we need to go down to the unstructured content and copy
-				// the rendered object's .spec to the existing object's.
-				unstructured.SetNestedField(existingUnstructuredObj, newUnstructuredObj["spec"], "spec")
-
-				// I believe this is not required, since UnstructuredContent()
-				// method returns a map but I'm being overcautious since it could
-				// instead return a copy at some point in the future and
-				// we wouldn't notice until we place a breakpoint in here.
-				existingObj.SetUnstructuredContent(existingUnstructuredObj)
-
-				// And finally we try to update the faulty object with the
-				// overwritten fields. If an error happens here, return an error
-				// since there's nothing we can do about anymore.
-				if _, clientErr = resourceClient.Update(existingObj); clientErr != nil {
-					return NewUpdateResourceError(`error updating resource %s "%s/%s": %s`,
-						existingObj.GetKind(), obj.GetNamespace(), obj.GetName(), clientErr)
-				}
-
-				// Continue processing the next rendered manifest if everything
-				// worked so far.
-				continue
+			_, err = resourceClient.Create(obj)
+			if err != nil {
+				return NewCreateResourceError(`error creating resource %s "%s/%s": %s`, obj.GetKind(), obj.GetNamespace(), obj.GetName(), err)
 			}
+			continue
+		}
 
-			// Perhaps we want to annotate differently the error when the request
-			// couldn't be constructed? Can be removed later on if not proven useful.
-			if rce, ok := err.(*rest.RequestConstructionError); ok {
-				return fmt.Errorf("error constructing request: %s", rce)
+		// We inject a Namespace object in the objects to be installed for a
+		// particular Release; we don't want to continue if the Namespace
+		// already exists.
+		if gvk := existingObj.GroupVersionKind(); gvk.Kind == "Namespace" {
+			continue
+		}
+
+		// If the existing object was stamped with the driving release,
+		// continue to the next manifest.
+		if releaseLabelValue, ok := existingObj.GetLabels()[shipperV1.ReleaseLabel]; ok && releaseLabelValue == i.Release.Name {
+			continue
+		} else if !ok {
+			return NewIncompleteReleaseError(`Release "%s/%s" misses the required label %q`, existingObj.GetNamespace(), existingObj.GetName(), shipperV1.ReleaseLabel)
+		}
+
+		ownerReferenceFound := false
+		for _, o := range existingObj.GetOwnerReferences() {
+			if reflect.DeepEqual(o, ownerReference) {
+				ownerReferenceFound = true
 			}
-
-			return NewCreateResourceError(
-				`error creating resource %s "%s/%s": %s`,
-				obj.GetKind(), obj.GetNamespace(), obj.GetName(), err)
+		}
+		if !ownerReferenceFound {
+			ownerReferences := append(existingObj.GetOwnerReferences(), ownerReference)
+			sort.Slice(ownerReferences, func(i, j int) bool {
+				return ownerReferences[i].Name < ownerReferences[j].Name
+			})
+			existingObj.SetOwnerReferences(ownerReferences)
+		}
+		existingObj.SetLabels(obj.GetLabels())
+		existingObj.SetAnnotations(obj.GetAnnotations())
+		existingUnstructuredObj := existingObj.UnstructuredContent()
+		newUnstructuredObj := obj.UnstructuredContent()
+		switch decodedObj.(type) {
+		case *coreV1.Service:
+			// Copy over clusterIP from existing object's .spec to the
+			// rendered one.
+			if clusterIP, ok := unstructured.NestedString(existingUnstructuredObj, "spec", "clusterIP"); ok {
+				unstructured.SetNestedField(newUnstructuredObj, clusterIP, "spec", "clusterIP")
+			}
+		}
+		unstructured.SetNestedField(existingUnstructuredObj, newUnstructuredObj["spec"], "spec")
+		existingObj.SetUnstructuredContent(existingUnstructuredObj)
+		if _, clientErr := resourceClient.Update(existingObj); clientErr != nil {
+			return NewUpdateResourceError(`error updating resource %s "%s/%s": %s`,
+				existingObj.GetKind(), obj.GetNamespace(), obj.GetName(), clientErr)
 		}
 	}
 
