@@ -327,6 +327,10 @@ func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]st
 	capableClustersByRegion := map[string][]*v1.Cluster{}
 	regionReplicas := map[string]int{}
 
+	if len(regionSpecs) == 0 {
+		return nil, NewNoRegionsSpecifiedError()
+	}
+
 	app, err := releaseutil.ApplicationNameForRelease(release)
 	if err != nil {
 		return nil, err

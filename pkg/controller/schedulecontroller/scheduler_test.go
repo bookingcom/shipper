@@ -430,6 +430,17 @@ func pstr(s string) *string {
 // and as such should be expected to break if we change the hash function for the
 // preflist.
 func TestComputeTargetClusters(t *testing.T) {
+	computeClusterTestCase(t, "error when no regions specified",
+		requirements{
+			Regions: []shipperV1.RegionRequirement{},
+		},
+		clusters{
+			{Region: shippertesting.TestRegion, Capabilities: []string{}},
+		},
+		expected{},
+		errorCase,
+	)
+
 	computeClusterTestCase(t, "basic region match",
 		requirements{
 			Regions: []shipperV1.RegionRequirement{{Name: "matches"}},

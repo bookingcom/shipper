@@ -12,6 +12,8 @@ const (
 
 func classifyError(err error) (string, bool) {
 	switch err.(type) {
+	case NoRegionsSpecifiedError:
+		return "NoRegionsSpecified", noRetry
 	case NotEnoughClustersInRegionError:
 		return "NotEnoughClustersInRegion", noRetry
 	case NotEnoughCapableClustersInRegionError:
@@ -53,6 +55,16 @@ func NewFailedAPICallError(call string, err error) FailedAPICallError {
 		call: call,
 		err:  err,
 	}
+}
+
+type NoRegionsSpecifiedError struct{}
+
+func (e NoRegionsSpecifiedError) Error() string {
+	return "No regions specified in clusterRequirements. Must list at least one region"
+}
+
+func NewNoRegionsSpecifiedError() NoRegionsSpecifiedError {
+	return NoRegionsSpecifiedError{}
 }
 
 type NotEnoughClustersInRegionError struct {

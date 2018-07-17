@@ -224,8 +224,7 @@ type ReleaseEnvironment struct {
 	// set of sidecars to inject into the chart on rendering
 	Sidecars []Sidecar `json:"sidecars"`
 
-	// selectors for target clusters for the deployment
-	// XXX what are the semantics when the field is empty/omitted?
+	// requirements for target clusters for the deployment
 	ClusterRequirements ClusterRequirements `json:"clusterRequirements"`
 
 	Strategy *RolloutStrategy `json:"strategy,omitempty"`
@@ -237,13 +236,14 @@ type Sidecar struct {
 }
 
 type ClusterRequirements struct {
+	// it is an error to not specify any regions
 	Regions      []RegionRequirement `json:"regions"`
 	Capabilities []string            `json:"capabilities,omitempty"`
 }
 
 type RegionRequirement struct {
-	Name     string
-	Replicas *int32
+	Name     string `json:"name"`
+	Replicas *int32 `json:"replicas,omitempty"`
 }
 
 type RolloutStrategy struct {
