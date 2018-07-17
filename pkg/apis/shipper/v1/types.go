@@ -423,7 +423,7 @@ type ClusterTrafficCondition struct {
 }
 
 type TrafficTargetSpec struct {
-	Clusters []ClusterTrafficTarget `json:"clusters,omitempty"`
+	Clusters []ClusterTrafficTarget `json:"clusters"`
 }
 
 type ClusterTrafficTarget struct {
