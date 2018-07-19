@@ -201,8 +201,8 @@ func (c *Controller) syncOne(key string) bool {
 		)
 
 		releaseutil.SetReleaseCondition(&release.Status, *condition)
-		_, err = c.shipperclientset.ShipperV1().Releases(namespace).Update(release)
-		if err != nil {
+
+		if _, err := c.shipperclientset.ShipperV1().Releases(namespace).Update(release); err != nil {
 			runtime.HandleError(fmt.Errorf("error updating Release %q with condition (will retry): %s", key, err))
 			// always retry failing to write the error out to the Release: we need to communicate this to the user
 			return true
