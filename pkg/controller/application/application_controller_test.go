@@ -91,7 +91,11 @@ func TestStatusStableState(t *testing.T) {
 	releaseA := newRelease(expectedRelNameA, app)
 	releaseA.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
 	releaseA.Spec.TargetStep = 2
-	releaseA.Status.AchievedStep = 2
+	releaseA.Status.AchievedStep = &shipperv1.AchievedStep{
+		Step: 2,
+		Name: releaseA.Environment.Strategy.Steps[2].Name,
+	}
+
 	releaseA.Status.Conditions = []shipperv1.ReleaseCondition{
 		{Type: shipperv1.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
 		{Type: shipperv1.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
@@ -104,7 +108,11 @@ func TestStatusStableState(t *testing.T) {
 	releaseB := newRelease(expectedRelNameB, app)
 	releaseB.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
 	releaseB.Spec.TargetStep = 2
-	releaseB.Status.AchievedStep = 2
+	releaseB.Status.AchievedStep = &shipperv1.AchievedStep{
+		Step: 2,
+		Name: releaseB.Environment.Strategy.Steps[2].Name,
+	}
+
 	releaseB.Status.Conditions = []shipperv1.ReleaseCondition{
 		{Type: shipperv1.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
 		{Type: shipperv1.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
@@ -157,7 +165,10 @@ func TestRevisionHistoryLimit(t *testing.T) {
 	releaseBaz := newRelease("baz", app)
 	releaseBaz.Annotations[shipperv1.ReleaseGenerationAnnotation] = "2"
 	releaseBaz.Spec.TargetStep = 2
-	releaseBaz.Status.AchievedStep = 2
+	releaseBaz.Status.AchievedStep = &shipperv1.AchievedStep{
+		Step: 2,
+		Name: releaseBaz.Environment.Strategy.Steps[2].Name,
+	}
 
 	f.objects = append(f.objects, releaseFoo, releaseBar, releaseBaz)
 
@@ -219,7 +230,11 @@ func TestCreateSecondRelease(t *testing.T) {
 	release.Environment.Chart.RepoURL = srv.URL()
 	release.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
 	release.Spec.TargetStep = 2
-	release.Status.AchievedStep = 2
+	release.Status.AchievedStep = &shipperv1.AchievedStep{
+		Step: 2,
+		Name: release.Environment.Strategy.Steps[2].Name,
+	}
+
 	f.objects = append(f.objects, release)
 
 	app.Status.History = []string{oldRelName}
@@ -301,7 +316,11 @@ func TestAbort(t *testing.T) {
 	release.Environment.Chart.RepoURL = srv.URL()
 	release.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
 	release.Spec.TargetStep = 2
-	release.Status.AchievedStep = 2
+	release.Status.AchievedStep = &shipperv1.AchievedStep{
+		Step: 2,
+		Name: release.Environment.Strategy.Steps[2].Name,
+	}
+
 	release.Environment.ClusterRequirements = shipperv1.ClusterRequirements{
 		Regions: []shipperv1.RegionRequirement{{Name: "bar"}},
 	}
@@ -373,7 +392,11 @@ func TestStateRollingOut(t *testing.T) {
 	contender := newRelease(contenderName, app)
 	contender.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
 	contender.Spec.TargetStep = 1
-	contender.Status.AchievedStep = 0
+	contender.Status.AchievedStep = &shipperv1.AchievedStep{
+		Step: 0,
+		Name: contender.Environment.Strategy.Steps[0].Name,
+	}
+
 	f.objects = append(f.objects, contender)
 
 	appRollingOut := app.DeepCopy()
@@ -416,7 +439,10 @@ func TestDeletingAbortedReleases(t *testing.T) {
 	releaseBar := newRelease("bar", app)
 	releaseBar.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
 	releaseBar.Spec.TargetStep = 2
-	releaseBar.Status.AchievedStep = 2
+	releaseBar.Status.AchievedStep = &shipperv1.AchievedStep{
+		Step: 2,
+		Name: releaseBar.Environment.Strategy.Steps[2].Name,
+	}
 
 	f.objects = append(f.objects, releaseFoo, releaseBar)
 

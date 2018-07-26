@@ -303,8 +303,6 @@ func (s *Executor) execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 		var releasePatches []ExecutorResult
 		var releaseStrategyStateTransitions []ReleaseStrategyStateTransition
 
-		reportedStep := s.contender.release.Status.AchievedStep
-
 		contenderStatus := s.contender.release.Status.DeepCopy()
 
 		newReleaseStrategyState := strategyConditions.AsReleaseStrategyState(
@@ -332,8 +330,14 @@ func (s *Executor) execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 			State:      newReleaseStrategyState,
 		}
 
-		if targetStep != reportedStep {
-			contenderStatus.AchievedStep = targetStep
+		previouslyAchievedStep := s.contender.release.Status.AchievedStep
+		if previouslyAchievedStep == nil || targetStep != previouslyAchievedStep.Step {
+			// we validate that it fits in the len() of Strategy.Steps early in the process
+			targetStepName := s.contender.release.Environment.Strategy.Steps[targetStep].Name
+			contenderStatus.AchievedStep = &shipperv1.AchievedStep{
+				Step: targetStep,
+				Name: targetStepName,
+			}
 		}
 
 		if targetStep == lastStepIndex {
@@ -384,7 +388,6 @@ func (s *Executor) buildContenderStrategyConditionsPatch(
 	isLastStep bool,
 ) *ReleaseUpdateResult {
 	newStatus := s.contender.release.Status.DeepCopy()
-	//newStatus.AchievedStep = uint(step)
 	newStatus.Strategy = &shipperv1.ReleaseStrategyStatus{
 		Conditions: c.AsReleaseStrategyConditions(),
 		State:      c.AsReleaseStrategyState(step, s.incumbent != nil, isLastStep),

@@ -216,7 +216,10 @@ func buildIncumbent() *releaseInfo {
 			},
 		},
 		Status: v1.ReleaseStatus{
-			AchievedStep: 2,
+			AchievedStep: &v1.AchievedStep{
+				Step: 2,
+				Name: "full on",
+			},
 			Conditions: []v1.ReleaseCondition{
 				{Type: v1.ReleaseConditionTypeInstalled, Status: coreV1.ConditionTrue},
 				{Type: v1.ReleaseConditionTypeComplete, Status: coreV1.ConditionTrue},
@@ -363,7 +366,6 @@ func buildContender() *releaseInfo {
 			},
 		},
 		Status: v1.ReleaseStatus{
-			AchievedStep: 0,
 			Conditions: []v1.ReleaseCondition{
 				{Type: v1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
 			},
@@ -636,9 +638,9 @@ func ensureFinalReleasePatches(e *Executor) error {
 						if installedCond != nil && installedCond.Status == coreV1.ConditionTrue {
 							return fmt.Errorf("expected contender to be installed")
 						}
-						if p.NewStatus.AchievedStep != 2 {
+						if p.NewStatus.AchievedStep == nil || p.NewStatus.AchievedStep.Step != 2 {
 							return fmt.Errorf(
-								"expected contender achievedSteps %d, got %d",
+								"expected contender achievedSteps %d, got %v",
 								2, p.NewStatus.AchievedStep)
 						}
 					}

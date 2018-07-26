@@ -447,8 +447,13 @@ func (f *fixture) waitForCommand(releaseName string, step int) {
 			return false, nil
 		}
 
+		if rel.Status.AchievedStep == nil {
+			state = fmt.Sprintf("release %q has no achievedStep reported yet", releaseName)
+			return false, nil
+		}
+
 		if rel.Status.Strategy.State.WaitingForCommand == shipperv1.StrategyStateTrue &&
-			rel.Status.AchievedStep == int32(step) {
+			rel.Status.AchievedStep.Step == int32(step) {
 			return true, nil
 		}
 
