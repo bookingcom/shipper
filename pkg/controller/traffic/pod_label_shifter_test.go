@@ -5,12 +5,15 @@ import (
 	"testing"
 	"time"
 
+	"encoding/json"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/informers"
+	kubeinformers "k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	kubetesting "k8s.io/client-go/testing"
+	clienttesting "k8s.io/client-go/testing"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
@@ -222,7 +225,7 @@ func clusterSyncTestCase(
 	}
 
 	releaseNames := make([]string, 0, len(weights))
-	for i, _ := range weights {
+	for i := range weights {
 		releaseNames = append(releaseNames, fmt.Sprintf("release-%d", i))
 	}
 
@@ -261,6 +264,7 @@ type fixture struct {
 	objects          []runtime.Object
 	pods             []*corev1.Pod
 	trafficTargets   []*shipperv1.TrafficTarget
+	informers        kubeinformers.SharedInformerFactory
 }
 
 func newFixture(t *testing.T, name string) *fixture {
@@ -304,7 +308,8 @@ func (f *fixture) addService() {
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
-				"test-traffic": "fake",
+				shipperv1.AppLabel:              testApplicationName,
+				shipperv1.PodTrafficStatusLabel: shipperv1.Enabled,
 			},
 		},
 	}
@@ -313,12 +318,64 @@ func (f *fixture) addService() {
 	f.objects = append(f.objects, svc)
 }
 
+// buildPodPatchReactionFunc returns a ReactionFunc specialized in poorly patch
+// Pods for the scope of the pod label shifter tests.
+//
+// This function is odd but is required since the default object tracker used by
+// Kubernetes fake.Clientset doesn't support Patch actions (see
+// vendor/k8s.io/client-go/testing/fixture.go:67)
+func buildPodPatchReactionFunc(informers kubeinformers.SharedInformerFactory) clienttesting.ReactionFunc {
+	return func(action clienttesting.Action) (handled bool, ret runtime.Object, err error) {
+		ns := action.GetNamespace()
+
+		switch action := action.(type) {
+		case clienttesting.PatchActionImpl:
+			pod, err := informers.Core().V1().Pods().Lister().Pods(ns).Get(action.GetName())
+			if err != nil {
+				return false, nil, err
+			}
+
+			var patchList []PatchOperation
+			err = json.Unmarshal(action.GetPatch(), &patchList)
+			if err != nil {
+				return false, nil, err
+			}
+
+			for _, p := range patchList {
+				// For this particular situation, we don't care whether it is an
+				// add or replace op, although JSON Patch *requires* the key to
+				// exist in order to issue a replace; that's the reason that
+				// patchPodTrafficStatusLabel determines the operation based on
+				// the presence of the PodTrafficStatusLabel.
+				if p.Path == fmt.Sprintf("/metadata/labels/%s", shipperv1.PodTrafficStatusLabel) {
+					pod.Labels[shipperv1.PodTrafficStatusLabel] = p.Value
+				}
+			}
+
+			// Inform the reaction chain the action has been handled, together
+			// with the patched Pod object.
+			return true, pod, nil
+
+		default:
+			return false, nil, nil
+		}
+	}
+
+}
+
 func (f *fixture) run(expectedWeights map[string]uint32) bool {
 	clientset := kubefake.NewSimpleClientset(f.objects...)
 	f.client = clientset
 
 	const noResyncPeriod time.Duration = 0
-	informers := informers.NewSharedInformerFactory(f.client, noResyncPeriod)
+	informers := kubeinformers.NewSharedInformerFactory(f.client, noResyncPeriod)
+	f.informers = informers
+
+	// fake.Clientset default object tracker's Reactor doesn't support "patch"
+	// verbs, thus we provide a reactor that attemps to handle it in a very
+	// specific and somehow naive way.
+	clientset.Fake.PrependReactor("patch", "pods", buildPodPatchReactionFunc(informers))
+
 	for _, pod := range f.pods {
 		informers.Core().V1().Pods().Informer().GetIndexer().Add(pod)
 	}
@@ -374,21 +431,22 @@ func (f *fixture) checkReleasePodsWithTraffic(release string, expectedCount int)
 	trafficCount := 0
 	for _, action := range f.client.Actions() {
 		switch a := action.(type) {
-		case kubetesting.UpdateAction:
-			update, _ := a.(kubetesting.UpdateAction)
-			obj := update.GetObject()
+		case kubetesting.PatchAction:
+			name := a.GetName()
+			ns := a.GetNamespace()
 
-			//NOTE(btyler) I feel like there must be a better way to take
-			// a runtime.Object and decide whether it is a pod
-			switch p := obj.(type) {
-			case *corev1.Pod:
-				podRelease, ok := p.GetLabels()[shipperv1.ReleaseLabel]
-				if !ok || podRelease != release {
-					break
-				}
-				if getsTraffic(p, trafficSelector) {
-					trafficCount++
-				}
+			p, err := f.informers.Core().V1().Pods().Lister().Pods(ns).Get(name)
+			if err != nil {
+				panic(fmt.Sprintf(`Couldn't find Pod in informer: %s`, name))
+			}
+
+			podRelease, ok := p.Labels[shipperv1.ReleaseLabel]
+			if !ok || podRelease != release {
+				break
+			}
+
+			if getsTraffic(p, trafficSelector) {
+				trafficCount++
 			}
 		}
 	}
