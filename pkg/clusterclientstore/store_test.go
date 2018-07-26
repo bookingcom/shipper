@@ -234,6 +234,7 @@ func (f *fixture) newStore() (*Store, kubeinformers.SharedInformerFactory, shipp
 	store := NewStore(
 		kubeInformerFactory.Core().V1().Secrets(),
 		shipperInformerFactory.Shipper().V1().Clusters(),
+		shipperv1.ShipperNamespace,
 	)
 
 	return store, kubeInformerFactory, shipperInformerFactory

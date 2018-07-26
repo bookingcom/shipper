@@ -31,6 +31,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/metrics/instrumentedclient"
 	shippermetrics "github.com/bookingcom/shipper/pkg/metrics/prometheus"
 
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -43,7 +44,6 @@ import (
 	kuberestmetrics "k8s.io/client-go/tools/metrics"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
-	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
 
 var controllers = []string{
@@ -62,7 +62,7 @@ var (
 	kubeconfig          = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
 	certPath            = flag.String("cert", "", "Path to the TLS certificate for target clusters.")
 	keyPath             = flag.String("key", "", "Path to the TLS private key for target clusters.")
-	ns                  = flag.String("namespace", "shipper-system", "Namespace for Shipper resources.")
+	ns                  = flag.String("namespace", shipperv1.ShipperNamespace, "Namespace for Shipper resources.")
 	resyncPeriod        = flag.String("resync", "30s", "Informer's cache re-sync in Go's duration format.")
 	enabledControllers  = flag.String("enable", strings.Join(controllers, ","), "comma-seperated list of controllers to run (if not all)")
 	disabledControllers = flag.String("disable", "", "comma-seperated list of controllers to disable")
@@ -145,6 +145,7 @@ func main() {
 	store := clusterclientstore.NewStore(
 		kubeInformerFactory.Core().V1().Secrets(),
 		shipperInformerFactory.Shipper().V1().Clusters(),
+		*ns,
 	)
 
 	wg.Add(1)
@@ -440,7 +441,7 @@ func startStrategyController(cfg *cfg) (bool, error) {
 }
 
 func startInstallationController(cfg *cfg) (bool, error) {
-	dynamicClientBuilderFunc := func(gvk *schema.GroupVersionKind, config *rest.Config, cluster *v1.Cluster) dynamic.Interface {
+	dynamicClientBuilderFunc := func(gvk *schema.GroupVersionKind, config *rest.Config, cluster *shipperv1.Cluster) dynamic.Interface {
 		// Probably this needs to be fixed, according to @asurikov's latest findings.
 		config.APIPath = dynamic.LegacyAPIPathResolverFunc(*gvk)
 		config.GroupVersion = &schema.GroupVersion{Group: gvk.Group, Version: gvk.Version}

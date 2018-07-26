@@ -23,6 +23,7 @@ import (
 )
 
 type Store struct {
+	ns    string
 	cache cache.CacheServer
 
 	secretInformer  corev1informer.SecretInformer
@@ -43,8 +44,10 @@ type Store struct {
 func NewStore(
 	secretInformer corev1informer.SecretInformer,
 	clusterInformer shipperv1informer.ClusterInformer,
+	ns string,
 ) *Store {
 	s := &Store{
+		ns:    ns,
 		cache: cache.NewServer(),
 
 		secretInformer:  secretInformer,
@@ -160,7 +163,7 @@ func (s *Store) syncCluster(name string) error {
 		}
 	}
 
-	secret, err := s.secretInformer.Lister().Secrets(shipperv1.ShipperNamespace).Get(name)
+	secret, err := s.secretInformer.Lister().Secrets(s.ns).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			glog.Infof("Cluster %q has no corresponding secret", name)
@@ -180,11 +183,11 @@ func (s *Store) syncSecret(key string) error {
 	}
 
 	// programmer error: there's a filter func on the callbacks before things get enqueued
-	if ns != shipperv1.ShipperNamespace {
+	if ns != s.ns {
 		panic("client store secret workqueue should only contain secrets from the shipper namespace")
 	}
 
-	secret, err := s.secretInformer.Lister().Secrets(shipperv1.ShipperNamespace).Get(name)
+	secret, err := s.secretInformer.Lister().Secrets(s.ns).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			glog.Infof("Secret %q has been deleted; purging any associated client from client store", key)
