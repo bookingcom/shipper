@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/diff"
 
 	appsV1 "k8s.io/api/apps/v1"
+	coreV1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -17,7 +18,6 @@ import (
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
-	coreV1 "k8s.io/api/core/v1"
 )
 
 // apiResourceList contains a list of APIResources containing some of v1 and
@@ -107,8 +107,6 @@ func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObject
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "namespaces", Version: "v1"}, release.GetNamespace(), "reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "namespaces", Version: "v1"}, release.GetNamespace(), nil),
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
@@ -123,9 +121,8 @@ func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObject
 
 	filteredActions := filterActions(fakePair.fakeDynamicClient.Actions(), "create")
 	validateAction(t, filteredActions[0], "ConfigMap")
-	validateAction(t, filteredActions[1], "Namespace")
-	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[2], "Service"))
-	validateDeploymentCreateAction(t, validateAction(t, filteredActions[3], "Deployment"))
+	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
+	validateDeploymentCreateAction(t, validateAction(t, filteredActions[2], "Deployment"))
 }
 
 func extractUnstructuredContent(scheme *runtime.Scheme, obj runtime.Object) (*unstructured.Unstructured, map[string]interface{}) {

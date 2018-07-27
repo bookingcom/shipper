@@ -384,8 +384,6 @@ func (i *Installer) installRelease(
 		return err
 	}
 
-	renderedManifests = injectNamespace(i.Release.Namespace, renderedManifests)
-
 	return i.installManifests(cluster, client, restConfig, dynamicClientBuilder, renderedManifests)
 }
 
@@ -405,21 +403,4 @@ func mergeLabels(a map[string]string, b map[string]string) map[string]string {
 	}
 
 	return labels
-}
-
-// injectNamespace prepends a rendered v1/Namespace called name to manifests and
-// returns the resulting slice. Should be called before manifests are installed.
-func injectNamespace(name string, manifests []string) []string {
-	const ns = `
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: %q
-`
-
-	withNs := make([]string, len(manifests)+1)
-	withNs[0] = fmt.Sprintf(ns, name)
-	copy(withNs[1:], manifests)
-
-	return withNs
 }

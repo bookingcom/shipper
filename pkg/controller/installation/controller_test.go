@@ -59,10 +59,9 @@ func TestInstallOneCluster(t *testing.T) {
 	app := buildApplication(appName, appName)
 	release := buildRelease("0.0.1", testNs, "0", "deadbeef", app.Name)
 	installationTarget := buildInstallationTarget(release, testNs, appName, []string{cluster.Name})
-	namespace := &corev1.Namespace{ObjectMeta: v1.ObjectMeta{Name: release.Namespace}}
 
 	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, []runtime.Object{app, cluster, release, installationTarget}, objectsPerClusterMap{cluster.Name: []runtime.Object{namespace}})
+		initializeClients(apiResourceList, []runtime.Object{app, cluster, release, installationTarget}, objectsPerClusterMap{cluster.Name: []runtime.Object{}})
 
 	clusterPair := clientsPerCluster[cluster.Name]
 	fakeClientProvider := &FakeClientProvider{
@@ -90,8 +89,6 @@ func TestInstallOneCluster(t *testing.T) {
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "namespaces", Version: "v1"}, release.GetNamespace(), release.Namespace),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "namespaces", Version: "v1"}, release.GetNamespace(), nil),
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
@@ -139,12 +136,11 @@ func TestInstallMultipleClusters(t *testing.T) {
 	app := buildApplication(appName, testNs)
 	release := buildRelease("0.0.1", testNs, "0", "deadbeef", appName)
 	installationTarget := buildInstallationTarget(release, testNs, appName, []string{clusterA.Name, clusterB.Name})
-	namespace := &corev1.Namespace{ObjectMeta: v1.ObjectMeta{Name: release.Namespace}}
 
 	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
 		initializeClients(apiResourceList, []runtime.Object{app, clusterA, clusterB, release, installationTarget}, objectsPerClusterMap{
-			clusterA.Name: []runtime.Object{namespace},
-			clusterB.Name: []runtime.Object{namespace},
+			clusterA.Name: []runtime.Object{},
+			clusterB.Name: []runtime.Object{},
 		})
 
 	fakeRecorder := record.NewFakeRecorder(42)
@@ -172,8 +168,6 @@ func TestInstallMultipleClusters(t *testing.T) {
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "namespaces", Version: "v1"}, release.GetNamespace(), "reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "namespaces", Version: "v1"}, release.GetNamespace(), nil),
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
