@@ -161,8 +161,16 @@ func (i *Installer) patchService(
 	labelsToInject map[string]string,
 	ownerReference *metav1.OwnerReference,
 ) runtime.Object {
-	s.SetOwnerReferences([]metav1.OwnerReference{*ownerReference})
-	s.SetLabels(mergeLabels(s.GetLabels(), labelsToInject))
+	appName, ok := labelsToInject[shipperv1.AppLabel]
+	if !ok {
+		// If we reach this point, it is fine to panic() since there's nothing
+		// much to do if we don't have the application label.
+		panic(fmt.Sprintf("Programmer error, label %q should always be present", shipperv1.AppLabel))
+	}
+	s.OwnerReferences = []metav1.OwnerReference{*ownerReference}
+	s.Labels = mergeLabels(s.Labels, labelsToInject)
+	s.Spec.Selector[shipperv1.AppLabel] = appName
+	s.Spec.Selector[shipperv1.PodTrafficStatusLabel] = shipperv1.Enabled
 	return s
 }
 
