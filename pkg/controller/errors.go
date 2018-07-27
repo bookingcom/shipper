@@ -34,3 +34,15 @@ func NewWrongOwnerReferenceError(name string, expectedUID, gotUID types.UID) Wro
 		gotUID,
 	))
 }
+
+type InvalidChartError struct {
+	message string
+}
+
+func NewInvalidChartError(m string) InvalidChartError {
+	return InvalidChartError{message: m}
+}
+
+func (e InvalidChartError) Error() string {
+	return e.message
+}
