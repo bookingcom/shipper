@@ -15,7 +15,6 @@ const (
 	ReleaseLabel                = "shipper-release"
 	AppLabel                    = "shipper-app"
 	ReleaseEnvironmentHashLabel = "shipper-release-hash"
-	PodTrafficStatusLabel       = "shipper-traffic-status"
 
 	ReleaseRecordWaitingForObject = "WaitingForObject"
 	ReleaseRecordObjectCreated    = "ReleaseCreated"
@@ -41,9 +40,6 @@ const (
 
 	LBLabel         = "shipper-lb"
 	LBForProduction = "production"
-
-	Enabled  = "enabled"
-	Disabled = "disabled"
 )
 
 // +genclient
@@ -177,8 +173,8 @@ type Release struct {
 }
 
 type ReleaseMeta struct {
-	metav1.ObjectMeta              `json:",inline"`
-	Environment ReleaseEnvironment `json:"environment"`
+	metav1.ObjectMeta `json:",inline"`
+	Environment       ReleaseEnvironment `json:"environment"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
