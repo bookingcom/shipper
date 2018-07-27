@@ -57,6 +57,15 @@ var controllers = []string{
 	"janitor",
 }
 
+const (
+	// Number of controllers we run in-process plus some extra.
+	rateLimitScaleFactor = 10
+
+	// Default rate limiting scaled for the number of controllers we run in-process.
+	defaultQPS   = rest.DefaultQPS * rateLimitScaleFactor
+	defaultBurst = rest.DefaultBurst * rateLimitScaleFactor
+)
+
 var (
 	masterURL           = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
 	kubeconfig          = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
@@ -69,6 +78,8 @@ var (
 	workers             = flag.Int("workers", 2, "Number of workers to start for each controller.")
 	metricsAddr         = flag.String("metrics-addr", ":8889", "Addr to expose /metrics on.")
 	chartCacheDir       = flag.String("cachedir", filepath.Join(os.TempDir(), "chart-cache"), "location for the local cache of downloaded charts")
+	rateLimitQPS        = flag.Float64("ratelimit-qps", float64(defaultQPS), "QPS value for the REST client's rate-limiter.")
+	rateLimitBurst      = flag.Int("ratelimit-burst", defaultBurst, "Burst value for the REST client's rate-limiter.")
 )
 
 type metricsCfg struct {
@@ -230,6 +241,10 @@ func buildClients(masterURL, kubeconfig string) (kubernetes.Interface, shippercl
 	if err != nil {
 		return nil, nil, nil, err
 	}
+
+	restCfg.QPS = float32(*rateLimitQPS)
+	restCfg.Burst = *rateLimitBurst
+	glog.V(3).Infof("Setting REST client rate limiter to %v QPS (burst %d)", *rateLimitQPS, *rateLimitBurst)
 
 	kubeClient, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
