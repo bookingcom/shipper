@@ -61,7 +61,7 @@ func TestContenderDoNothingClusterInstallationNotReady(t *testing.T) {
 	f.addObjects(contender, incumbent)
 
 	r := contender.release.DeepCopy()
-	f.expectInstallationNotReady(r, 0, Contender)
+	f.expectInstallationNotReady(r, nil, 0, Contender)
 	f.run()
 }
 
@@ -798,13 +798,16 @@ func (f *fixture) expectReleaseWaitingForCommand(rel *shipperV1.Release, step in
 	}
 }
 
-func (f *fixture) expectInstallationNotReady(rel *shipperV1.Release, step int32, role role) {
+// NOTE(btyler): when we add tests to use this function with a wider set of use
+// cases, we'll need a "pint32(int32) *int32" func to let us take pointers to literals
+func (f *fixture) expectInstallationNotReady(rel *shipperV1.Release, achievedStepIndex *int32, targetStepIndex int32, role role) {
 	gvr := shipperV1.SchemeGroupVersion.WithResource("releases")
+
 	var achievedStep *shipperV1.AchievedStep
-	if step != 0 {
+	if achievedStepIndex != nil {
 		achievedStep = &shipperV1.AchievedStep{
-			Step: step,
-			Name: rel.Environment.Strategy.Steps[step].Name,
+			Step: *achievedStepIndex,
+			Name: rel.Environment.Strategy.Steps[*achievedStepIndex].Name,
 		}
 	}
 
@@ -826,7 +829,7 @@ func (f *fixture) expectInstallationNotReady(rel *shipperV1.Release, step int32,
 						Type:    shipperV1.StrategyConditionContenderAchievedInstallation,
 						Status:  coreV1.ConditionFalse,
 						Reason:  conditions.ClustersNotReady,
-						Step:    step,
+						Step:    targetStepIndex,
 						Message: "clusters pending installation: [broken-installation-cluster]",
 					},
 				},
