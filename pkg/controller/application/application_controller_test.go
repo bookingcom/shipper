@@ -17,8 +17,9 @@ import (
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	"github.com/bookingcom/shipper/pkg/util/application"
+	"github.com/bookingcom/shipper/pkg/conditions"
 )
 
 const (
@@ -26,7 +27,7 @@ const (
 )
 
 func init() {
-	conditions.ApplicationConditionsShouldDiscardTimestamps = true
+	application.ConditionsShouldDiscardTimestamps = true
 }
 
 // Private method, but other tests make use of it.
@@ -66,6 +67,10 @@ func TestCreateFirstRelease(t *testing.T) {
 	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
 		shipperv1.ApplicationCondition{
 			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
+			Status: corev1.ConditionTrue,
+		},
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeRollingOut,
 			Status: corev1.ConditionTrue,
 		},
 	}
@@ -137,6 +142,10 @@ func TestStatusStableState(t *testing.T) {
 			Status: corev1.ConditionTrue,
 		},
 		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeRollingOut,
+			Status: corev1.ConditionFalse,
+		},
+		shipperv1.ApplicationCondition{
 			Type:   shipperv1.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
@@ -194,8 +203,14 @@ func TestRevisionHistoryLimit(t *testing.T) {
 			Status: corev1.ConditionTrue,
 		},
 		shipperv1.ApplicationCondition{
-			Type:   shipperv1.ApplicationConditionTypeValidHistory,
-			Status: corev1.ConditionTrue,
+			Type:   shipperv1.ApplicationConditionTypeRollingOut,
+			Status: corev1.ConditionFalse,
+		},
+		shipperv1.ApplicationCondition{
+			Type:    shipperv1.ApplicationConditionTypeValidHistory,
+			Status:  corev1.ConditionFalse,
+			Reason:  conditions.BrokenReleaseGeneration,
+			Message: `the generation on release "baz" (2) is higher than the highest observed by this application (0). syncing application's highest observed generation to match. this should self-heal.`,
 		},
 	}
 
@@ -274,6 +289,11 @@ func TestCreateSecondRelease(t *testing.T) {
 			Status: corev1.ConditionTrue,
 		},
 		shipperv1.ApplicationCondition{
+			Type:    shipperv1.ApplicationConditionTypeRollingOut,
+			Status:  corev1.ConditionTrue,
+			Message: fmt.Sprintf(`Rolling out initial release %q`, oldRelName),
+		},
+		shipperv1.ApplicationCondition{
 			Type:   shipperv1.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
@@ -350,6 +370,10 @@ func TestAbort(t *testing.T) {
 			Reason:  "",
 			Message: fmt.Sprintf("abort in progress, returning state to release %q", relName),
 		},
+		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeRollingOut,
+			Status: corev1.ConditionTrue,
+		},
 	}
 
 	// This still refers to the incumbent's state on this first update.
@@ -425,6 +449,10 @@ func TestStateRollingOut(t *testing.T) {
 			Status: corev1.ConditionTrue,
 		},
 		shipperv1.ApplicationCondition{
+			Type:   shipperv1.ApplicationConditionTypeRollingOut,
+			Status: corev1.ConditionTrue,
+		},
+		shipperv1.ApplicationCondition{
 			Type:   shipperv1.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
@@ -469,8 +497,14 @@ func TestDeletingAbortedReleases(t *testing.T) {
 			Status: corev1.ConditionTrue,
 		},
 		shipperv1.ApplicationCondition{
-			Type:   shipperv1.ApplicationConditionTypeValidHistory,
-			Status: corev1.ConditionTrue,
+			Type:   shipperv1.ApplicationConditionTypeRollingOut,
+			Status: corev1.ConditionFalse,
+		},
+		shipperv1.ApplicationCondition{
+			Type:    shipperv1.ApplicationConditionTypeValidHistory,
+			Status:  corev1.ConditionFalse,
+			Reason:  conditions.BrokenReleaseGeneration,
+			Message: `the generation on release "bar" (1) is higher than the highest observed by this application (0). syncing application's highest observed generation to match. this should self-heal.`,
 		},
 	}
 

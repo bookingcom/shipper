@@ -22,6 +22,8 @@ import (
 	"github.com/bookingcom/shipper/pkg/conditions"
 	"github.com/bookingcom/shipper/pkg/controller"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
+	apputil "github.com/bookingcom/shipper/pkg/util/application"
+	"github.com/bookingcom/shipper/pkg/errors"
 )
 
 const (
@@ -285,62 +287,60 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 
 	latestRelease, err := c.getLatestReleaseForApp(app)
 	if err != nil {
-		app.Status.Conditions = conditions.SetApplicationCondition(
-			app.Status.Conditions,
-			shipperv1.ApplicationConditionTypeValidHistory,
-			corev1.ConditionFalse,
+		validHistoryCond := apputil.NewApplicationCondition(
+			shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse,
 			conditions.FetchReleaseFailed,
 			fmt.Sprintf("could not fetch the latest release: %q", err),
 		)
+		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
 		return err
 	}
 
 	if latestRelease == nil {
 		err = c.createReleaseForApplication(app, 0)
 		if err != nil {
-			app.Status.Conditions = conditions.SetApplicationCondition(
-				app.Status.Conditions,
-				shipperv1.ApplicationConditionTypeReleaseSynced,
-				corev1.ConditionFalse,
+			releaseSyncedCond := apputil.NewApplicationCondition(
+				shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionFalse,
 				conditions.CreateReleaseFailed,
 				fmt.Sprintf("could not create a new release: %q", err),
 			)
-
+			apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
 			return err
 		}
 		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
-		app.Status.Conditions = conditions.SetApplicationCondition(
-			app.Status.Conditions,
-			shipperv1.ApplicationConditionTypeReleaseSynced,
-			corev1.ConditionTrue,
-			"", "",
-		)
+		releaseSyncedCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionTrue, "", "")
+		apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
+		rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
+		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
+
 		return nil
+	} else {
+		rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionFalse, "", "")
+		if _, ok := isRollingOut(latestRelease); ok {
+			rollingOutCond.Status = corev1.ConditionTrue
+		}
+		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
 	}
 
 	generation, err := controller.GetReleaseGeneration(latestRelease)
 	if err != nil {
-		app.Status.Conditions = conditions.SetApplicationCondition(
-			app.Status.Conditions,
-			shipperv1.ApplicationConditionTypeValidHistory,
-			corev1.ConditionFalse,
+		validHistoryCond := apputil.NewApplicationCondition(
+			shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse,
 			conditions.BrokenReleaseGeneration,
 			fmt.Sprintf("could not get the generation annotation from release %q: %q", latestRelease.GetName(), err),
 		)
-
+		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
 		return err
 	}
 
 	highestObserved, err := getAppHighestObservedGeneration(app)
 	if err != nil {
-		app.Status.Conditions = conditions.SetApplicationCondition(
-			app.Status.Conditions,
-			shipperv1.ApplicationConditionTypeValidHistory,
-			corev1.ConditionFalse,
+		validHistoryCond := apputil.NewApplicationCondition(
+			shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse,
 			conditions.BrokenApplicationObservedGeneration,
 			fmt.Sprintf("could not get the generation annotation: %q", err),
 		)
-
+		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
 		return err
 	}
 
@@ -348,30 +348,31 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	if generation < highestObserved {
 		app.Spec.Template = *(latestRelease.Environment.DeepCopy())
 		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
-		app.Status.Conditions = conditions.SetApplicationCondition(
-			app.Status.Conditions,
-			shipperv1.ApplicationConditionTypeAborting,
-			corev1.ConditionTrue,
+		abortingCond := apputil.NewApplicationCondition(
+			shipperv1.ApplicationConditionTypeAborting, corev1.ConditionTrue,
 			"",
 			fmt.Sprintf("abort in progress, returning state to release %q", latestRelease.GetName()),
 		)
+		apputil.SetApplicationCondition(&app.Status, *abortingCond)
+
+		rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
+		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
 
 		return nil
 	}
 
-	app.Status.Conditions = conditions.SetApplicationCondition(
-		app.Status.Conditions,
-		shipperv1.ApplicationConditionTypeAborting,
-		corev1.ConditionFalse,
+	abortingCond := apputil.NewApplicationCondition(
+		shipperv1.ApplicationConditionTypeAborting, corev1.ConditionFalse,
 		"", "",
 	)
+	apputil.SetApplicationCondition(&app.Status, *abortingCond)
 
 	// Assume history is ok...
-	app.Status.Conditions = conditions.SetApplicationCondition(
-		app.Status.Conditions,
+	validHistoryCond := apputil.NewApplicationCondition(
 		shipperv1.ApplicationConditionTypeValidHistory,
 		corev1.ConditionTrue, "", "",
 	)
+	apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
 
 	// ... but overwrite that condition if it is not. This means something is
 	// screwy; likely a human changed an annotation themselves, or the process was
@@ -381,36 +382,27 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	// I think the best we can do is bump up to this new high water mark and then
 	// proceed as normal.
 	if generation > highestObserved {
-		highestObserved = generation
 		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
 
-		app.Status.Conditions = conditions.SetApplicationCondition(
-			app.Status.Conditions,
-			shipperv1.ApplicationConditionTypeValidHistory,
-			corev1.ConditionFalse,
+		validHistoryCond := apputil.NewApplicationCondition(
+			shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse,
 			conditions.BrokenReleaseGeneration,
 			fmt.Sprintf("the generation on release %q (%d) is higher than the highest observed by this application (%d). syncing application's highest observed generation to match. this should self-heal.", latestRelease.GetName(), generation, highestObserved),
 		)
+		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
+		highestObserved = generation
 	}
-
-	app.Status.Conditions = conditions.SetApplicationCondition(
-		app.Status.Conditions,
-		shipperv1.ApplicationConditionTypeValidHistory,
-		corev1.ConditionTrue,
-		"", "",
-	)
 
 	// Great! Nothing to do. highestObserved == latestRelease && the templates are
 	// identical.
 	if identicalEnvironments(app.Spec.Template, latestRelease.Environment) {
 		// explicitly setting the annotation here helps recover from a broken 0 case
 		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
-		app.Status.Conditions = conditions.SetApplicationCondition(
-			app.Status.Conditions,
-			shipperv1.ApplicationConditionTypeReleaseSynced,
-			corev1.ConditionTrue,
+		releaseSyncedCondition := apputil.NewApplicationCondition(
+			shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionTrue,
 			"", "",
 		)
+		apputil.SetApplicationCondition(&app.Status, *releaseSyncedCondition)
 		return nil
 	}
 
@@ -419,23 +411,57 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	newGen := highestObserved + 1
 	err = c.createReleaseForApplication(app, newGen)
 	if err != nil {
-		app.Status.Conditions = conditions.SetApplicationCondition(
-			app.Status.Conditions,
-			shipperv1.ApplicationConditionTypeReleaseSynced,
-			corev1.ConditionFalse,
+		releaseSyncedCond := apputil.NewApplicationCondition(
+			shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionFalse,
 			conditions.CreateReleaseFailed,
 			fmt.Sprintf("could not create a new release: %q", err),
 		)
+		apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
+
+		rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionFalse, "", "")
+		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
+
 		return err
 	}
 
 	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(newGen)
-	app.Status.Conditions = conditions.SetApplicationCondition(
-		app.Status.Conditions,
-		shipperv1.ApplicationConditionTypeReleaseSynced,
-		corev1.ConditionTrue,
-		"", "",
+	releaseSyncedCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionTrue, "", "")
+	apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
+
+	var (
+		contenderRel *shipperv1.Release
+		incumbentRel *shipperv1.Release
 	)
+
+	rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionUnknown, "", "")
+	contenderRel, err = c.relLister.Releases(app.Namespace).ContenderForApplication(app.Name)
+	if err != nil && !errors.IsContenderNotFoundError(err) && !errors.IsIncumbentNotFoundError(err) {
+		rollingOutCond.Message = err.Error()
+		goto End
+	}
+
+	incumbentRel, err = c.relLister.Releases(app.Namespace).IncumbentForApplication(app.Name)
+	if err != nil && !errors.IsIncumbentNotFoundError(err) {
+		rollingOutCond.Message = err.Error()
+		goto End
+	}
+
+	if releaseutil.ReleaseComplete(contenderRel) {
+		rollingOutCond.Status = corev1.ConditionFalse
+		rollingOutCond.Message = fmt.Sprintf(`Release %q is active`, contenderRel.Name)
+		goto End
+	}
+
+	if incumbentRel != nil {
+		rollingOutCond.Status = corev1.ConditionTrue
+		rollingOutCond.Message = fmt.Sprintf(`Transitioning from %q to %q`, incumbentRel.Name, contenderRel.Name)
+	} else {
+		rollingOutCond.Status = corev1.ConditionTrue
+		rollingOutCond.Message = fmt.Sprintf(`Rolling out initial release %q`, contenderRel.Name)
+	}
+
+End:
+	apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
 
 	return nil
 }
