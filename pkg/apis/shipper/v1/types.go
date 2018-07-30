@@ -88,6 +88,7 @@ const (
 	ApplicationConditionTypeValidHistory  ApplicationConditionType = "ValidHistory"
 	ApplicationConditionTypeReleaseSynced ApplicationConditionType = "ReleaseSynced"
 	ApplicationConditionTypeAborting      ApplicationConditionType = "Aborting"
+	ApplicationConditionTypeRollingOut    ApplicationConditionType = "RollingOut"
 )
 
 type ApplicationCondition struct {
