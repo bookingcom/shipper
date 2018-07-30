@@ -9,6 +9,8 @@ import (
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
+	"github.com/bookingcom/shipper/pkg/errors"
+	"github.com/bookingcom/shipper/pkg/util/release"
 )
 
 // ReleaseListerExpansion allows custom methods to be added to
@@ -20,7 +22,9 @@ type ReleaseListerExpansion interface{}
 type ReleaseNamespaceListerExpansion interface {
 	ReleasesForApplication(appName string) ([]*shipperv1.Release, error)
 	ContenderForApplication(appName string) (*shipperv1.Release, error)
+	IncumbentForApplication(appName string) (*shipperv1.Release, error)
 	ReleaseForInstallationTarget(it *shipperv1.InstallationTarget) (*shipperv1.Release, error)
+	TransitionPairForApplication(appName string) (*shipperv1.Release, *shipperv1.Release, error)
 }
 
 // ReleasesForApplication returns Releases related to the given application
@@ -68,9 +72,38 @@ func (s releaseNamespaceLister) ContenderForApplication(appName string) (*shippe
 		return nil, err
 	}
 	if len(rels) == 0 {
-		return nil, fmt.Errorf("no contender found for application %q", appName)
+		return nil, errors.NewContenderNotFoundError(appName)
 	}
 	return rels[len(rels)-1], nil
+}
+
+// IncumbentForApplication returns the incumbent Release for the given application name.
+func (s releaseNamespaceLister) IncumbentForApplication(appName string) (*shipperv1.Release, error) {
+	rels, err := s.ReleasesForApplication(appName)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rels {
+		if release.ReleaseComplete(r) {
+			return r, nil
+		}
+	}
+	return nil, errors.NewIncumbentNotFoundError(appName)
+}
+
+func (s releaseNamespaceLister) TransitionPairForApplication(appName string) (*shipperv1.Release, *shipperV1.Release,
+	error) {
+	contenderRel, err := s.ContenderForApplication(appName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	incumbentRel, err := s.IncumbentForApplication(appName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return contenderRel, incumbentRel, nil
 }
 
 // ReleaseForInstallationTarget returns the Release associated with given
