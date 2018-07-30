@@ -61,7 +61,7 @@ func TestContenderDoNothingClusterInstallationNotReady(t *testing.T) {
 	f.addObjects(contender, incumbent)
 
 	r := contender.release.DeepCopy()
-	f.expectInstallationNotReady(r, 0, Contender)
+	f.expectInstallationNotReady(r, nil, 0, Contender)
 	f.run()
 }
 
@@ -570,7 +570,6 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipperV1.CapacityTarget, r *shi
 		)
 	}
 
-	r.Status.AchievedStep = 0
 	r.Status.Strategy = &shipperV1.ReleaseStrategyStatus{
 		Conditions: strategyConditions.AsReleaseStrategyConditions(),
 		State:      strategyConditions.AsReleaseStrategyState(r.Spec.TargetStep, true, false),
@@ -653,7 +652,6 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipperV1.TrafficTarget, r *shipp
 		)
 	}
 
-	r.Status.AchievedStep = 0
 	r.Status.Strategy = &shipperV1.ReleaseStrategyStatus{
 		Conditions: strategyConditions.AsReleaseStrategyConditions(),
 		State:      strategyConditions.AsReleaseStrategyState(r.Spec.TargetStep, true, false),
@@ -676,7 +674,10 @@ func (f *fixture) expectReleaseReleased(rel *shipperV1.Release, targetStep int32
 	gvr := shipperV1.SchemeGroupVersion.WithResource("releases")
 	newStatus := map[string]interface{}{
 		"status": shipperV1.ReleaseStatus{
-			AchievedStep: rel.Spec.TargetStep,
+			AchievedStep: &shipperV1.AchievedStep{
+				Step: targetStep,
+				Name: rel.Environment.Strategy.Steps[targetStep].Name,
+			},
 			Conditions: []shipperV1.ReleaseCondition{
 				{Type: shipperV1.ReleaseConditionTypeComplete, Status: coreV1.ConditionTrue},
 				{Type: shipperV1.ReleaseConditionTypeInstalled, Status: coreV1.ConditionTrue},
@@ -739,7 +740,10 @@ func (f *fixture) expectReleaseWaitingForCommand(rel *shipperV1.Release, step in
 	gvr := shipperV1.SchemeGroupVersion.WithResource("releases")
 	newStatus := map[string]interface{}{
 		"status": shipperV1.ReleaseStatus{
-			AchievedStep: step,
+			AchievedStep: &shipperV1.AchievedStep{
+				Step: step,
+				Name: rel.Environment.Strategy.Steps[step].Name,
+			},
 			Conditions: []shipperV1.ReleaseCondition{
 				{Type: shipperV1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
 			},
@@ -794,11 +798,22 @@ func (f *fixture) expectReleaseWaitingForCommand(rel *shipperV1.Release, step in
 	}
 }
 
-func (f *fixture) expectInstallationNotReady(rel *shipperV1.Release, step int32, role role) {
+// NOTE(btyler): when we add tests to use this function with a wider set of use
+// cases, we'll need a "pint32(int32) *int32" func to let us take pointers to literals
+func (f *fixture) expectInstallationNotReady(rel *shipperV1.Release, achievedStepIndex *int32, targetStepIndex int32, role role) {
 	gvr := shipperV1.SchemeGroupVersion.WithResource("releases")
+
+	var achievedStep *shipperV1.AchievedStep
+	if achievedStepIndex != nil {
+		achievedStep = &shipperV1.AchievedStep{
+			Step: *achievedStepIndex,
+			Name: rel.Environment.Strategy.Steps[*achievedStepIndex].Name,
+		}
+	}
+
 	newStatus := map[string]interface{}{
 		"status": shipperV1.ReleaseStatus{
-			AchievedStep: step,
+			AchievedStep: achievedStep,
 			Conditions: []shipperV1.ReleaseCondition{
 				{Type: shipperV1.ReleaseConditionTypeScheduled, Status: coreV1.ConditionTrue},
 			},
@@ -814,7 +829,7 @@ func (f *fixture) expectInstallationNotReady(rel *shipperV1.Release, step int32,
 						Type:    shipperV1.StrategyConditionContenderAchievedInstallation,
 						Status:  coreV1.ConditionFalse,
 						Reason:  conditions.ClustersNotReady,
-						Step:    step,
+						Step:    targetStepIndex,
 						Message: "clusters pending installation: [broken-installation-cluster]",
 					},
 				},
@@ -830,10 +845,18 @@ func (f *fixture) expectInstallationNotReady(rel *shipperV1.Release, step int32,
 	f.expectedOrderedEvents = []string{}
 }
 
-func (f *fixture) expectCapacityNotReady(rel *shipperV1.Release, targetStep, achievedStep int32, role role, brokenClusterName string) {
+func (f *fixture) expectCapacityNotReady(rel *shipperV1.Release, targetStep, achievedStepIndex int32, role role, brokenClusterName string) {
 	gvr := shipperV1.SchemeGroupVersion.WithResource("releases")
 
 	var newStatus map[string]interface{}
+
+	var achievedStep *shipperV1.AchievedStep
+	if achievedStepIndex != 0 {
+		achievedStep = &shipperV1.AchievedStep{
+			Step: achievedStepIndex,
+			Name: rel.Environment.Strategy.Steps[achievedStepIndex].Name,
+		}
+	}
 
 	if role == Contender {
 		newStatus = map[string]interface{}{
@@ -922,9 +945,17 @@ func (f *fixture) expectCapacityNotReady(rel *shipperV1.Release, targetStep, ach
 	f.expectedOrderedEvents = []string{}
 }
 
-func (f *fixture) expectTrafficNotReady(rel *shipperV1.Release, targetStep, achievedStep int32, role role, brokenClusterName string) {
+func (f *fixture) expectTrafficNotReady(rel *shipperV1.Release, targetStep, achievedStepIndex int32, role role, brokenClusterName string) {
 	gvr := shipperV1.SchemeGroupVersion.WithResource("releases")
 	var newStatus map[string]interface{}
+
+	var achievedStep *shipperV1.AchievedStep
+	if achievedStepIndex != 0 {
+		achievedStep = &shipperV1.AchievedStep{
+			Step: achievedStepIndex,
+			Name: rel.Environment.Strategy.Steps[achievedStepIndex].Name,
+		}
+	}
 
 	if role == Contender {
 		newStatus = map[string]interface{}{

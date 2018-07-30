@@ -170,7 +170,13 @@ func (c *Controller) computeState(app *shipperv1.Application) (shipperv1.Applica
 func isRollingOut(rel *shipperv1.Release) (*int32, bool) {
 	lastStep := int32(len(rel.Environment.Strategy.Steps) - 1)
 
-	achievedStep := rel.Status.AchievedStep
+	achieved := rel.Status.AchievedStep
+	if achieved == nil {
+		return nil, true
+	}
+
+	achievedStep := achieved.Step
+
 	targetStep := rel.Spec.TargetStep
 
 	return &achievedStep, achievedStep != targetStep ||
