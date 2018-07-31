@@ -259,7 +259,7 @@ func (ssm ShipperStateMetrics) collectTrafficTargets(ch chan<- prometheus.Metric
 func (ssm ShipperStateMetrics) collectClusters(ch chan<- prometheus.Metric) {
 	clusters, err := ssm.clustersLister.List(everything)
 	if err != nil {
-		glog.Warningf("collect Clusters: %s")
+		glog.Warningf("collect Clusters: %s", err)
 		return
 	}
 
@@ -274,7 +274,7 @@ func (ssm ShipperStateMetrics) collectClusters(ch chan<- prometheus.Metric) {
 		schedulable := "true"
 		if cluster.Spec.Scheduler.Unschedulable {
 			schedulable = "false"
-	}
+		}
 
 		ch <- prometheus.MustNewConstMetric(clustersDesc, prometheus.GaugeValue, 1.0, cluster.Name, schedulable, hasSecret)
 	}
@@ -295,7 +295,7 @@ func getNamespaces(lister kubelisters.NamespaceLister) ([]*corev1.Namespace, err
 		return nil, err
 	}
 
-	nsBlacklist := []string{"kube-system", "kube-public", "kube-dns", "shipper-system"}
+	nsBlacklist := []string{"kube-system", "kube-public", "kube-dns", shipperv1.ShipperNamespace}
 
 	filtered := make([]*corev1.Namespace, 0, len(nss))
 NS:
