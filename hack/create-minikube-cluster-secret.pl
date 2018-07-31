@@ -104,3 +104,5 @@ spec:
   apiMaster: https://%s:8443
   capabilities: []
   region: eu-west
+  scheduler:
+    unschedulable: false
