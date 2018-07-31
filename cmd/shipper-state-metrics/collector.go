@@ -7,6 +7,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	kubelisters "k8s.io/client-go/listers/core/v1"
 
@@ -53,7 +54,7 @@ var (
 	clustersDesc = prometheus.NewDesc(
 		fqn("clusters"),
 		"Number of Cluster objects",
-		[]string{"schedulable"},
+		[]string{"name", "schedulable", "has_secret"},
 		nil,
 	)
 )
@@ -68,7 +69,10 @@ type ShipperStateMetrics struct {
 	ttsLister      shipperlisters.TrafficTargetLister
 	clustersLister shipperlisters.ClusterLister
 
-	nssLister kubelisters.NamespaceLister
+	nssLister     kubelisters.NamespaceLister
+	secretsLister kubelisters.SecretLister
+
+	shipperNs string
 }
 
 func (ssm ShipperStateMetrics) Collect(ch chan<- prometheus.Metric) {
@@ -259,22 +263,21 @@ func (ssm ShipperStateMetrics) collectClusters(ch chan<- prometheus.Metric) {
 		return
 	}
 
-	var (
-		yes float64
-		no  float64
-	)
 	for _, cluster := range clusters {
-		if cluster.Spec.Scheduler.Unschedulable {
-			no++
-		} else {
-			yes++
+		_, err := ssm.secretsLister.Secrets(ssm.shipperNs).Get(cluster.Name)
+
+		hasSecret := "true"
+		if kerrors.IsNotFound(err) {
+			hasSecret = "false"
 		}
+
+		schedulable := "true"
+		if cluster.Spec.Scheduler.Unschedulable {
+			schedulable = "false"
 	}
 
-	glog.V(4).Infof("schedulable clusters: %.0f; unschedulable clusters: %.0f", yes, no)
-
-	ch <- prometheus.MustNewConstMetric(clustersDesc, prometheus.GaugeValue, yes, "true")
-	ch <- prometheus.MustNewConstMetric(clustersDesc, prometheus.GaugeValue, no, "false")
+		ch <- prometheus.MustNewConstMetric(clustersDesc, prometheus.GaugeValue, 1.0, cluster.Name, schedulable, hasSecret)
+	}
 }
 
 func fqn(name string) string {

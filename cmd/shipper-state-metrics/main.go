@@ -16,6 +16,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 )
@@ -25,6 +26,7 @@ var (
 	kubeconfig   = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
 	resyncPeriod = flag.String("resync", "5m", "Informer's cache re-sync in Go's duration format.")
 	addr         = flag.String("addr", ":8890", "Addr to expose /metrics on.")
+	ns           = flag.String("namespace", shipperv1.ShipperNamespace, "Namespace for Shipper resources.")
 )
 
 func main() {
@@ -67,7 +69,10 @@ func main() {
 		ttsLister:      shipperInformerFactory.Shipper().V1().TrafficTargets().Lister(),
 		clustersLister: shipperInformerFactory.Shipper().V1().Clusters().Lister(),
 
-		nssLister: kubeInformerFactory.Core().V1().Namespaces().Lister(),
+		nssLister:     kubeInformerFactory.Core().V1().Namespaces().Lister(),
+		secretsLister: kubeInformerFactory.Core().V1().Secrets().Lister(),
+
+		shipperNs: *ns,
 	}
 	prometheus.MustRegister(ssm)
 
