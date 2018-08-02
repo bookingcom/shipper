@@ -65,17 +65,6 @@ func IsGetResourceError(err error) bool {
 
 type RenderManifestError error
 
-type NotContenderError error
-
-func NewNotContenderError(format string, args ...interface{}) NotContenderError {
-	return NotContenderError(fmt.Errorf(format, args...))
-}
-
-func IsNotContenderError(err error) bool {
-	_, ok := err.(NotContenderError)
-	return ok
-}
-
 type IncompleteReleaseError error
 
 func NewIncompleteReleaseError(format string, args ...interface{}) IncompleteReleaseError {

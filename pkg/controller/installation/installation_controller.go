@@ -199,9 +199,9 @@ func (c *Controller) syncOne(key string) bool {
 			return true
 		}
 
-			runtime.HandleError(fmt.Errorf("error syncing InstallationTarget %q (will not retry): %s", key, err))
-			return false
-		}
+		runtime.HandleError(fmt.Errorf("error syncing InstallationTarget %q (will not retry): %s", key, err))
+		return false
+	}
 
 	return false
 }
@@ -236,7 +236,9 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	}
 
 	if contenderRel.Name != release.Name {
-		return NewNotContenderError(`release %q is not the contender %q`, release.Name, contenderRel.Name)
+		glog.V(3).Infof("InstallationTarget %q: Release %q is not the contender for Application %q, skipping",
+			it.Name, release.Name, appName)
+		return nil
 	}
 
 	if appLabelValue, ok := release.GetLabels()[shipperV1.AppLabel]; !ok {
