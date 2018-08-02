@@ -190,16 +190,18 @@ func (c *Controller) syncOne(key string) bool {
 	}
 
 	if err := c.processInstallation(it.DeepCopy()); err != nil {
-		shouldNotRetry := shipperController.IsMultipleOwnerReferencesError(err) || shipperController.IsWrongOwnerReferenceError(err) || IsIncompleteReleaseError(err)
+		shouldRetry := !shipperController.IsMultipleOwnerReferencesError(err) &&
+			!shipperController.IsWrongOwnerReferenceError(err) &&
+			!IsIncompleteReleaseError(err)
 
-		if shouldNotRetry {
+		if shouldRetry {
+			runtime.HandleError(fmt.Errorf("error syncing InstallationTarget %q (will retry): %s", key, err))
+			return true
+		}
+
 			runtime.HandleError(fmt.Errorf("error syncing InstallationTarget %q (will not retry): %s", key, err))
 			return false
 		}
-
-		runtime.HandleError(fmt.Errorf("error syncing InstallationTarget %q (will retry): %s", key, err))
-		return true
-	}
 
 	return false
 }
