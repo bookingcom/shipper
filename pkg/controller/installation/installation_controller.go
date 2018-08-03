@@ -190,15 +190,17 @@ func (c *Controller) syncOne(key string) bool {
 	}
 
 	if err := c.processInstallation(it.DeepCopy()); err != nil {
-		shouldNotRetry := shipperController.IsMultipleOwnerReferencesError(err) || shipperController.IsWrongOwnerReferenceError(err) || IsIncompleteReleaseError(err)
+		shouldRetry := !shipperController.IsMultipleOwnerReferencesError(err) &&
+			!shipperController.IsWrongOwnerReferenceError(err) &&
+			!IsIncompleteReleaseError(err)
 
-		if shouldNotRetry {
-			runtime.HandleError(fmt.Errorf("error syncing InstallationTarget %q (will not retry): %s", key, err))
-			return false
+		if shouldRetry {
+			runtime.HandleError(fmt.Errorf("error syncing InstallationTarget %q (will retry): %s", key, err))
+			return true
 		}
 
-		runtime.HandleError(fmt.Errorf("error syncing InstallationTarget %q (will retry): %s", key, err))
-		return true
+		runtime.HandleError(fmt.Errorf("error syncing InstallationTarget %q (will not retry): %s", key, err))
+		return false
 	}
 
 	return false
@@ -234,7 +236,9 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	}
 
 	if contenderRel.Name != release.Name {
-		return NewNotContenderError(`release %q is not the contender %q`, release.Name, contenderRel.Name)
+		glog.V(3).Infof("InstallationTarget %q: Release %q is not the contender for Application %q, skipping",
+			it.Name, release.Name, appName)
+		return nil
 	}
 
 	if appLabelValue, ok := release.GetLabels()[shipperV1.AppLabel]; !ok {
