@@ -14,7 +14,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	kubefake "k8s.io/client-go/kubernetes/fake"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 )
@@ -25,11 +24,9 @@ func init() {
 
 func newController(fixtures ...runtime.Object) (*Controller, *shipperfake.Clientset) {
 	shipperclient := shipperfake.NewSimpleClientset(fixtures...)
-	kubeclient := kubefake.NewSimpleClientset()
 	informerFactory := shipperinformers.NewSharedInformerFactory(shipperclient, time.Millisecond*0)
 
 	c := NewController(
-		kubeclient,
 		shipperclient,
 		informerFactory,
 		chart.FetchRemote(),

@@ -10,7 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -35,7 +34,6 @@ const (
 
 // Controller is a Kubernetes controller that knows how to schedule Releases.
 type Controller struct {
-	kubeclientset    kubernetes.Interface
 	shipperclientset clientset.Interface
 
 	releasesLister listers.ReleaseLister
@@ -51,7 +49,6 @@ type Controller struct {
 
 // NewController returns a new Schedule controller.
 func NewController(
-	kubeclientset kubernetes.Interface,
 	shipperclientset clientset.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
 	chartFetchFunc chart.FetchFunc,
@@ -62,7 +59,6 @@ func NewController(
 	clusterInformer := shipperInformerFactory.Shipper().V1().Clusters()
 
 	controller := &Controller{
-		kubeclientset:    kubeclientset,
 		shipperclientset: shipperclientset,
 
 		releasesLister: releaseInformer.Lister(),

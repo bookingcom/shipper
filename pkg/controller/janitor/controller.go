@@ -14,7 +14,6 @@ import (
 	kubeRuntimeUtil "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeInformers "k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -44,7 +43,6 @@ const AnchorSuffix = "-anchor"
 const InstallationTargetUID = "InstallationTargetUID"
 
 func NewController(
-	_ kubernetes.Interface,
 	shipperclientset shipper.Interface,
 	shipperInformerFactory shipperInformers.SharedInformerFactory,
 	store clusterclientstore.Interface,

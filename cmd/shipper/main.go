@@ -417,7 +417,6 @@ func startScheduleController(cfg *cfg) (bool, error) {
 	}
 
 	c := schedulecontroller.NewController(
-		cfg.kubeClient,
 		cfg.shipperClient,
 		cfg.shipperInformerFactory,
 		cfg.chartFetchFunc,
@@ -518,7 +517,6 @@ func startTrafficController(cfg *cfg) (bool, error) {
 	}
 
 	c := traffic.NewController(
-		cfg.kubeClient,
 		cfg.shipperClient,
 		cfg.shipperInformerFactory,
 		cfg.store,
@@ -541,7 +539,6 @@ func startJanitorController(cfg *cfg) (bool, error) {
 	}
 
 	c := janitor.NewController(
-		cfg.kubeClient,
 		cfg.shipperClient,
 		cfg.shipperInformerFactory,
 		cfg.store,
