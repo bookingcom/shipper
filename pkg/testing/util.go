@@ -3,10 +3,13 @@ package testing
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"k8s.io/apimachinery/pkg/util/diff"
 	kubetesting "k8s.io/client-go/testing"
 )
+
+const NoResyncPeriod time.Duration = 0
 
 const (
 	TestNamespace = "test-namespace"
