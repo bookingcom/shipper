@@ -65,6 +65,53 @@ func TestSingleCluster(t *testing.T) {
 	f.run()
 }
 
+func TestExtraClustersNoExtraStatuses(t *testing.T) {
+	f := newFixture(t)
+	app := "test-app"
+	releaseA := "test-app-1234"
+	releaseB := "test-app-4567"
+
+	clusterA := f.newCluster()
+	clusterB := f.newCluster()
+
+	clusterA.AddOne(buildService(app))
+	clusterB.AddOne(buildService(app))
+
+	const withTraffic = true
+	podsA := buildPods(app, releaseA, 1, withTraffic)
+	clusterA.AddMany(podsA)
+
+	podsB := buildPods(app, releaseB, 1, withTraffic)
+	clusterB.AddMany(podsB)
+
+	ttA := buildTrafficTarget(
+		app, releaseA,
+		map[string]uint32{
+			clusterA.Name: 10,
+		},
+	)
+
+	ttB := buildTrafficTarget(
+		app, releaseB,
+		map[string]uint32{
+			clusterB.Name: 10,
+		},
+	)
+
+	f.addTrafficTarget(ttA)
+	f.addTrafficTarget(ttB)
+
+	updatedA := ttA.DeepCopy()
+	updatedA.Status.Clusters = buildTotalSuccessStatus(updatedA)
+
+	updatedB := ttB.DeepCopy()
+	updatedB.Status.Clusters = buildTotalSuccessStatus(updatedB)
+
+	f.expectTrafficTargetUpdate(updatedA)
+	f.expectTrafficTargetUpdate(updatedB)
+	f.run()
+}
+
 type fixture struct {
 	t *testing.T
 
