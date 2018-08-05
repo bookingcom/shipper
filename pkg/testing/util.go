@@ -112,6 +112,7 @@ func FilterActions(actions []kubetesting.Action) []kubetesting.Action {
 				"traffictargets",
 				"capacitytargets",
 				"deployments",
+				"services",
 				"pods",
 			} {
 				if action.Matches(v, r) {
