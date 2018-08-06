@@ -217,13 +217,12 @@ func TestRolloutAllIn(t *testing.T) {
 	f.checkPods(contender.GetName(), targetReplicas)
 }
 
-func TestNewApplicationVanguard(t *testing.T) {
+func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
 	if !*runEndToEnd {
 		t.Skip("skipping end-to-end tests: --e2e is false")
 	}
 
 	t.Parallel()
-	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -268,13 +267,20 @@ func TestNewApplicationVanguard(t *testing.T) {
 	}
 }
 
-func TestRolloutVanguard(t *testing.T) {
+func TestNewApplicationVanguardMultipleReplicas(t *testing.T) {
+	testNewApplicationVanguard(4, t)
+}
+
+func TestNewApplicationVanguardOneReplica(t *testing.T) {
+	testNewApplicationVanguard(1, t)
+}
+
+func testRolloutVanguard(targetReplicas int, t *testing.T) {
 	if !*runEndToEnd {
 		t.Skip("skipping end-to-end tests: --e2e is false")
 	}
 
 	t.Parallel()
-	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -343,6 +349,14 @@ func TestRolloutVanguard(t *testing.T) {
 		f.checkPods(contenderName, expectedContenderCapacity)
 		f.checkPods(incumbentName, expectedIncumbentCapacity)
 	}
+}
+
+func TestRolloutVanguardMultipleReplicas(t *testing.T) {
+	testRolloutVanguard(4, t)
+}
+
+func TestRolloutVanguardOneReplica(t *testing.T) {
+	testRolloutVanguard(1, t)
 }
 
 // TODO(btyler): cover a variety of broken chart cases as soon as we report
