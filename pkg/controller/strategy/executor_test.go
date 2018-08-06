@@ -61,8 +61,8 @@ var vanguard = shipperv1.RolloutStrategy{
 // the expected for the strategy at a given moment.
 func TestCompleteStrategyNoController(t *testing.T) {
 	executor := &Executor{
-		contender: buildContender(),
-		incumbent: buildIncumbent(),
+		contender: buildContender(10),
+		incumbent: buildIncumbent(10),
 		recorder:  record.NewFakeRecorder(42),
 		strategy:  vanguard,
 	}
@@ -192,7 +192,7 @@ func TestCompleteStrategyNoController(t *testing.T) {
 
 // buildIncumbent returns a releaseInfo with an incumbent release and
 // associated objects.
-func buildIncumbent() *releaseInfo {
+func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 
 	rel := &shipperv1.Release{
 		TypeMeta: metav1.TypeMeta{
@@ -292,8 +292,9 @@ func buildIncumbent() *releaseInfo {
 		Spec: shipperv1.CapacityTargetSpec{
 			Clusters: []shipperv1.ClusterCapacityTarget{
 				{
-					Name:    clusterName,
-					Percent: 100,
+					Name:              clusterName,
+					Percent:           100,
+					TotalReplicaCount: int32(totalReplicaCount),
 				},
 			},
 		},
@@ -342,7 +343,7 @@ func buildIncumbent() *releaseInfo {
 
 // buildContender returns a releaseInfo with a contender release and
 // associated objects.
-func buildContender() *releaseInfo {
+func buildContender(totalReplicaCount uint) *releaseInfo {
 	rel := &shipperv1.Release{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "shipper.booking.com/v1",
@@ -437,8 +438,9 @@ func buildContender() *releaseInfo {
 		Spec: shipperv1.CapacityTargetSpec{
 			Clusters: []shipperv1.ClusterCapacityTarget{
 				{
-					Name:    clusterName,
-					Percent: 0,
+					Name:              clusterName,
+					Percent:           0,
+					TotalReplicaCount: int32(totalReplicaCount),
 				},
 			},
 		},
