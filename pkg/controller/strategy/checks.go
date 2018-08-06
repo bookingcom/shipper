@@ -58,7 +58,7 @@ type capacityState struct {
 func checkCapacity(
 	capacityTarget *shipperv1.CapacityTarget,
 	stepCapacity uint,
-	compFn func(achieved uint, desired uint) bool,
+	compFn func(achieved, desired, total uint) bool,
 ) (
 	bool,
 	*shipperv1.CapacityTargetSpec,
@@ -109,7 +109,7 @@ func checkCapacity(
 			newSpec.Clusters = append(newSpec.Clusters, r)
 			canProceed = false
 			clustersNotReady = append(clustersNotReady, clusterName)
-		} else if !compFn(v.achievedCapacity, v.desiredCapacity) {
+		} else if !compFn(v.achievedCapacity, v.desiredCapacity, uint(v.totalReplicaCount)) {
 			canProceed = false
 			clustersNotReady = append(clustersNotReady, clusterName)
 		}
