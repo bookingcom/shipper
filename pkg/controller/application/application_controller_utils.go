@@ -21,37 +21,31 @@ import (
 func (c *Controller) createReleaseForApplication(app *shipperv1.Application, generation int) error {
 	// Label releases with their hash; select by that label and increment if needed
 	// appname-hash-of-template-iteration.
-	releaseName, iteration, err := c.releaseNameForApplication(app)
-	if err != nil {
+	var (
+		releaseName string
+		iteration   int
+		err         error
+	)
+
+	if releaseName, iteration, err = c.releaseNameForApplication(app); err != nil {
 		return err
 	}
-	releaseNs := app.GetNamespace()
 	glog.V(4).Infof("Generated Release name for Application %q: %q", controller.MetaKey(app), releaseName)
 
-	labels := make(map[string]string)
-	for k, v := range app.GetLabels() {
-		labels[k] = v
-	}
-
-	labels[shipperv1.ReleaseLabel] = releaseName
-	labels[shipperv1.AppLabel] = app.GetName()
-	labels[shipperv1.ReleaseEnvironmentHashLabel] = hashReleaseEnvironment(app.Spec.Template)
-
-	annotations := map[string]string{
-		shipperv1.ReleaseTemplateIterationAnnotation: strconv.Itoa(iteration),
-		shipperv1.ReleaseGenerationAnnotation:        strconv.Itoa(generation),
-	}
-
-	glog.V(4).Infof("Release %q labels: %v", controller.MetaKey(app), labels)
-	glog.V(4).Infof("Release %q annotations: %v", controller.MetaKey(app), annotations)
-
-	new := &shipperv1.Release{
+	newRelease := &shipperv1.Release{
 		ReleaseMeta: shipperv1.ReleaseMeta{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:        releaseName,
-				Namespace:   releaseNs,
-				Labels:      labels,
-				Annotations: annotations,
+				Name:      releaseName,
+				Namespace: app.Namespace,
+				Labels: map[string]string{
+					shipperv1.ReleaseLabel:                releaseName,
+					shipperv1.AppLabel:                    app.Name,
+					shipperv1.ReleaseEnvironmentHashLabel: hashReleaseEnvironment(app.Spec.Template),
+				},
+				Annotations: map[string]string{
+					shipperv1.ReleaseTemplateIterationAnnotation: strconv.Itoa(iteration),
+					shipperv1.ReleaseGenerationAnnotation:        strconv.Itoa(generation),
+				},
 				OwnerReferences: []metav1.OwnerReference{
 					createOwnerRefFromApplication(app),
 				},
@@ -62,7 +56,14 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application, gen
 		Status: shipperv1.ReleaseStatus{},
 	}
 
-	_, err = c.shipperClientset.ShipperV1().Releases(releaseNs).Create(new)
+	for k, v := range app.GetLabels() {
+		newRelease.Labels[k] = v
+	}
+
+	glog.V(4).Infof("Release %q labels: %v", controller.MetaKey(app), newRelease.Labels)
+	glog.V(4).Infof("Release %q annotations: %v", controller.MetaKey(app), newRelease.Annotations)
+
+	_, err = c.shipperClientset.ShipperV1().Releases(app.Namespace).Create(newRelease)
 	if err != nil {
 		return fmt.Errorf("create Release for Application %q: %s", controller.MetaKey(app), err)
 	}
