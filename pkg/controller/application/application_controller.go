@@ -275,20 +275,6 @@ func (c *Controller) handleApplicationWithEmptyHistory(app *shipperv1.Applicatio
 
 }
 
-func (c *Controller) getReleaseGeneration(latestRelease *shipperv1.Release, app *shipperv1.Application) (int, error) {
-	generation, err := controller.GetReleaseGeneration(latestRelease)
-	if err != nil {
-		validHistoryCond := apputil.NewApplicationCondition(
-			shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse,
-			conditions.BrokenReleaseGeneration,
-			fmt.Sprintf("could not get the generation annotation from release %q: %q", latestRelease.GetName(), err),
-		)
-		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
-		return 0, err
-	}
-	return generation, nil
-}
-
 func (c *Controller) getAppHighestObservedGeneration(app *shipperv1.Application) (int, error) {
 	highestObserved, err := getAppHighestObservedGeneration(app)
 	if err != nil {
@@ -461,7 +447,9 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		return err
 	}
 
-	if generation, err = c.getReleaseGeneration(contender, app); err != nil {
+	if generation, err = controller.GetReleaseGeneration(contender); err != nil {
+		validHistoryCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse, conditions.BrokenReleaseGeneration, err.Error())
+		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
 		return err
 	}
 
