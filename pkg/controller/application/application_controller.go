@@ -253,6 +253,28 @@ func (c *Controller) syncApplication(key string) bool {
 	return shouldRetry
 }
 
+func (c *Controller) handleApplicationWithEmptyHistory(app *shipperv1.Application) error {
+	// This case covers the first ever release for an application.
+	err := c.createReleaseForApplication(app, 0)
+	if err != nil {
+		releaseSyncedCond := apputil.NewApplicationCondition(
+			shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionFalse,
+			conditions.CreateReleaseFailed,
+			fmt.Sprintf("could not create a new release: %q", err),
+		)
+		apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
+		return err
+	}
+	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
+	releaseSyncedCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionTrue, "", "")
+	apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
+	rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
+	apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
+
+	return nil
+
+}
+
 /*
 * Get all the releases owned by this application.
 * If 0, create new one (generation 0), return.
@@ -297,30 +319,14 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	}
 
 	if latestRelease == nil {
-		err = c.createReleaseForApplication(app, 0)
-		if err != nil {
-			releaseSyncedCond := apputil.NewApplicationCondition(
-				shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionFalse,
-				conditions.CreateReleaseFailed,
-				fmt.Sprintf("could not create a new release: %q", err),
-			)
-			apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
-			return err
-		}
-		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
-		releaseSyncedCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionTrue, "", "")
-		apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
-		rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
-		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
-
-		return nil
-	} else {
-		rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionFalse, "", "")
-		if _, ok := isRollingOut(latestRelease); ok {
-			rollingOutCond.Status = corev1.ConditionTrue
-		}
-		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
+		return c.handleApplicationWithEmptyHistory(app)
 	}
+
+	rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionFalse, "", "")
+	if _, ok := isRollingOut(latestRelease); ok {
+		rollingOutCond.Status = corev1.ConditionTrue
+	}
+	apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
 
 	generation, err := controller.GetReleaseGeneration(latestRelease)
 	if err != nil {
@@ -433,7 +439,7 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		incumbentRel *shipperv1.Release
 	)
 
-	rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionUnknown, "", "")
+	rollingOutCond = apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionUnknown, "", "")
 	contenderRel, err = c.relLister.Releases(app.Namespace).ContenderForApplication(app.Name)
 	if err != nil && !errors.IsContenderNotFoundError(err) && !errors.IsIncumbentNotFoundError(err) {
 		rollingOutCond.Message = err.Error()
