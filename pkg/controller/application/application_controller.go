@@ -275,6 +275,21 @@ func (c *Controller) handleApplicationWithEmptyHistory(app *shipperv1.Applicatio
 
 }
 
+func (c *Controller) getReleaseGeneration(latestRelease *shipperv1.Release, app *shipperv1.Application) (int, error) {
+	generation, err := controller.GetReleaseGeneration(latestRelease)
+	if err != nil {
+		validHistoryCond := apputil.NewApplicationCondition(
+			shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse,
+			conditions.BrokenReleaseGeneration,
+			fmt.Sprintf("could not get the generation annotation from release %q: %q", latestRelease.GetName(), err),
+		)
+		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
+		return 0, err
+	}
+	return generation, nil
+
+}
+
 /*
 * Get all the releases owned by this application.
 * If 0, create new one (generation 0), return.
@@ -322,14 +337,8 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	}
 	apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
 
-	generation, err := controller.GetReleaseGeneration(latestRelease)
+	generation, err := c.getReleaseGeneration(latestRelease, app)
 	if err != nil {
-		validHistoryCond := apputil.NewApplicationCondition(
-			shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse,
-			conditions.BrokenReleaseGeneration,
-			fmt.Sprintf("could not get the generation annotation from release %q: %q", latestRelease.GetName(), err),
-		)
-		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
 		return err
 	}
 
