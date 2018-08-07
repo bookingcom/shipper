@@ -154,7 +154,6 @@ func TestStatusStableState(t *testing.T) {
 	var step int32 = 2
 	expectedApp.Status.State = shipperv1.ApplicationState{
 		RolloutStep: &step,
-		RollingOut:  false,
 	}
 
 	f.expectApplicationUpdate(expectedApp)
@@ -217,7 +216,6 @@ func TestRevisionHistoryLimit(t *testing.T) {
 	var step int32 = 2
 	expectedApp.Status.State = shipperv1.ApplicationState{
 		RolloutStep: &step,
-		RollingOut:  false,
 	}
 
 	f.expectReleaseDelete(releaseFoo)
@@ -303,7 +301,6 @@ func TestCreateSecondRelease(t *testing.T) {
 	var step int32 = 2
 	expectedApp.Status.State = shipperv1.ApplicationState{
 		RolloutStep: &step,
-		RollingOut:  false,
 	}
 
 	f.expectReleaseCreate(expectedRelease)
@@ -380,7 +377,6 @@ func TestAbort(t *testing.T) {
 	var step int32 = 2
 	expectedApp.Status.State = shipperv1.ApplicationState{
 		RolloutStep: &step,
-		RollingOut:  false,
 	}
 
 	f.expectApplicationUpdate(expectedApp)
@@ -438,7 +434,6 @@ func TestStateRollingOut(t *testing.T) {
 		RolloutStep: &step,
 	}
 
-	appRollingOut.Status.State.RollingOut = true
 	appRollingOut.Status.Conditions = []shipperv1.ApplicationCondition{
 		shipperv1.ApplicationCondition{
 			Type:   shipperv1.ApplicationConditionTypeAborting,
@@ -511,7 +506,6 @@ func TestDeletingAbortedReleases(t *testing.T) {
 	var step int32 = 2
 	expectedApp.Status.State = shipperv1.ApplicationState{
 		RolloutStep: &step,
-		RollingOut:  false,
 	}
 
 	f.expectReleaseDelete(releaseFoo)

@@ -78,7 +78,6 @@ type ApplicationStatus struct {
 }
 
 type ApplicationState struct {
-	RollingOut  bool   `json:"rollingOut"`
 	RolloutStep *int32 `json:"rolloutStep,omitempty"`
 }
 

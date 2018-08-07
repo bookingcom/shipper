@@ -162,7 +162,7 @@ func (c *Controller) computeState(app *shipperv1.Application) (shipperv1.Applica
 		return state, nil
 	}
 
-	state.RolloutStep, state.RollingOut = isRollingOut(latestRelease)
+	state.RolloutStep, _ = isRollingOut(latestRelease)
 	return state, nil
 }
 
