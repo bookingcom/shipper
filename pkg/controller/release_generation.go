@@ -1,11 +1,11 @@
 package controller
 
 import (
-	"fmt"
 	"sort"
 	"strconv"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/errors"
 )
 
 func SortReleasesByGeneration(releases []*shipperv1.Release) ([]*shipperv1.Release, error) {
@@ -39,12 +39,12 @@ func SortReleasesByGeneration(releases []*shipperv1.Release) ([]*shipperv1.Relea
 func GetReleaseGeneration(release *shipperv1.Release) (int, error) {
 	rawGen, ok := release.GetAnnotations()[shipperv1.ReleaseGenerationAnnotation]
 	if !ok {
-		return 0, fmt.Errorf("release %q missing generation annotation", release.GetName())
+		return 0, errors.NewMissingGenerationAnnotationError(release.Name)
 	}
 
 	generation, err := strconv.Atoi(rawGen)
 	if err != nil {
-		return 0, fmt.Errorf("release %q invalid generation annotation: %s", release.GetName(), err)
+		return 0, errors.NewInvalidGenerationAnnotationError(release.Name, err)
 	}
 	return generation, nil
 }

@@ -1,6 +1,9 @@
 package errors
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+)
 
 type ContenderNotFoundError struct {
 	appName string
@@ -34,4 +37,39 @@ func IsIncumbentNotFoundError(err error) bool {
 
 func NewIncumbentNotFoundError(appName string) error {
 	return &IncumbentNotFoundError{appName: appName}
+}
+
+type MissingGenerationAnnotationError struct {
+	relName string
+}
+
+func (e MissingGenerationAnnotationError) Error() string {
+	return fmt.Sprintf("missing label %q in release %q", v1.ReleaseGenerationAnnotation, e.relName)
+}
+
+func IsMissingGenerationAnnotationError(err error) bool {
+	_, ok := err.(*MissingGenerationAnnotationError)
+	return ok
+}
+
+func NewMissingGenerationAnnotationError(relName string) error {
+	return &MissingGenerationAnnotationError{relName}
+}
+
+type InvalidGenerationAnnotationError struct {
+	relName string
+	err     error
+}
+
+func (e *InvalidGenerationAnnotationError) Error() string {
+	return fmt.Sprintf("invalid value for label %q in release %q: %s", v1.ReleaseGenerationAnnotation, e.relName, e.err)
+}
+
+func IsInvalidGenerationAnnotationError(err error) bool {
+	_, ok := err.(*InvalidGenerationAnnotationError)
+	return ok
+}
+
+func NewInvalidGenerationAnnotationError(relName string, err error) error {
+	return &InvalidGenerationAnnotationError{relName: relName, err: err}
 }
