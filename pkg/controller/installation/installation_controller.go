@@ -23,9 +23,9 @@ import (
 	shipperInformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperListers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
-	clientcache "github.com/bookingcom/shipper/pkg/clusterclientstore/cache"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shipperController "github.com/bookingcom/shipper/pkg/controller"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
 const (
@@ -377,21 +377,25 @@ func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interfa
 }
 
 func reasonForOperationalCondition(err error) string {
-	if err == clientcache.ErrClusterNotInStore || err == clientcache.ErrClusterNotReady {
+	if shippererrors.IsClusterNotInStore(err) || shippererrors.IsClusterNotReady(err) {
 		return conditions.TargetClusterClientError
 	}
 	return conditions.ServerError
 }
 
 func reasonForReadyCondition(err error) string {
-	if IsCreateResourceError(err) || IsGetResourceError(err) {
+	if shippererrors.IsFailedCRUD(err) || shippererrors.IsFailedAPICall(err) {
 		return conditions.ServerError
 	}
 
-	if IsDecodeManifestError(err) || IsConvertUnstructuredError(err) {
+	if shippererrors.IsUnreadableManifest(err) ||
+		shippererrors.IsCannotConvertUnstructured(err) ||
+		shippererrors.IsChartFetchFailure(err) ||
+		shippererrors.IsBrokenChart(err) {
 		return conditions.ChartError
 	}
 
+	// asdfasdfadf
 	if IsResourceClientError(err) {
 		return conditions.ClientError
 	}

@@ -50,13 +50,10 @@ func TestSuccessfulDeleteInstallationTarget(t *testing.T) {
 		fakeClusterClientStore,
 		fakeRecorder)
 
-	anchorName, err := CreateAnchorName(installationTarget)
-	if err != nil {
-		t.Fatal(err)
-	}
+	anchorName := buildAnchorName(installationTarget)
 
-	var key string
-	if key, err = cache.MetaNamespaceKeyFunc(installationTarget); err != nil {
+	key, err := cache.MetaNamespaceKeyFunc(installationTarget)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -92,11 +89,8 @@ func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
 	cluster := loadCluster("minikube-a")
 	installationTarget := loadInstallationTarget()
 
-	// Create a ConfigMap based on the existing installation target object.
-	configMap, err := CreateConfigMapAnchor(installationTarget)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Build a ConfigMap based on the existing installation target object.
+	configMap := BuildConfigMapAnchor(installationTarget)
 
 	// Setup clients with only the existing installation target object, that
 	// will be retrieved and compared by syncAnchor() later on.
@@ -128,18 +122,18 @@ func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
 		fakeClusterClientStore,
 		fakeRecorder)
 
-	var key string
-	if key, err = cache.MetaNamespaceKeyFunc(configMap); err != nil {
+	key, err := cache.MetaNamespaceKeyFunc(configMap)
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	item := &AnchorWorkItem{
 		ClusterName:           cluster.Name,
 		InstallationTargetUID: configMap.Data[InstallationTargetUID],
-		Key:                   key,
-		Name:                  configMap.Name,
-		Namespace:             configMap.GetNamespace(),
-		ReleaseName:           configMap.GetLabels()[shipperV1.ReleaseLabel],
+		Key:         key,
+		Name:        configMap.Name,
+		Namespace:   configMap.GetNamespace(),
+		ReleaseName: configMap.GetLabels()[shipperV1.ReleaseLabel],
 	}
 
 	// Execute c.syncAnchor() here since I couldn't find an API to trigger the Update event handler.
@@ -162,10 +156,7 @@ func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
 	cluster := loadCluster("minikube-a")
 	installationTarget := loadInstallationTarget()
 
-	configMap, err := CreateConfigMapAnchor(installationTarget)
-	if err != nil {
-		t.Fatal(err)
-	}
+	configMap := BuildConfigMapAnchor(installationTarget)
 
 	// Change the installation target object's UID present in the config map.
 	configMap.Data[InstallationTargetUID] = "some-other-installation-target-uid"
@@ -199,18 +190,18 @@ func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
 		fakeClusterClientStore,
 		fakeRecorder)
 
-	var key string
-	if key, err = cache.MetaNamespaceKeyFunc(configMap); err != nil {
+	key, err := cache.MetaNamespaceKeyFunc(configMap)
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	item := &AnchorWorkItem{
 		ClusterName:           cluster.GetName(),
 		InstallationTargetUID: configMap.Data[InstallationTargetUID],
-		Key:                   key,
-		Name:                  configMap.GetName(),
-		Namespace:             configMap.GetNamespace(),
-		ReleaseName:           configMap.GetLabels()[shipperV1.ReleaseLabel],
+		Key:         key,
+		Name:        configMap.GetName(),
+		Namespace:   configMap.GetNamespace(),
+		ReleaseName: configMap.GetLabels()[shipperV1.ReleaseLabel],
 	}
 
 	// Execute c.syncAnchor() here since I couldn't find an API to trigger the
@@ -237,10 +228,7 @@ func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
 	cluster := loadCluster("minikube-a")
 	installationTarget := loadInstallationTarget()
 
-	configMap, err := CreateConfigMapAnchor(installationTarget)
-	if err != nil {
-		t.Fatal(err)
-	}
+	configMap := BuildConfigMapAnchor(installationTarget)
 
 	// Setup without any extra object in the cache.
 	kubeFakeClientset, shipperFakeClientset, shipperInformerFactory, kubeInformerFactory :=
@@ -271,18 +259,18 @@ func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
 		fakeClusterClientStore,
 		fakeRecorder)
 
-	var key string
-	if key, err = cache.MetaNamespaceKeyFunc(configMap); err != nil {
+	key, err := cache.MetaNamespaceKeyFunc(configMap)
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	item := &AnchorWorkItem{
 		ClusterName:           cluster.GetName(),
 		InstallationTargetUID: configMap.Data[InstallationTargetUID],
-		Key:                   key,
-		Name:                  configMap.Name,
-		Namespace:             configMap.GetNamespace(),
-		ReleaseName:           configMap.GetLabels()[shipperV1.ReleaseLabel],
+		Key:         key,
+		Name:        configMap.Name,
+		Namespace:   configMap.GetNamespace(),
+		ReleaseName: configMap.GetLabels()[shipperV1.ReleaseLabel],
 	}
 
 	// Execute c.syncAnchor() here since I couldn't find an API to trigger the

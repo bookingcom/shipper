@@ -22,6 +22,7 @@ import (
 
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperChart "github.com/bookingcom/shipper/pkg/chart"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
 type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipperV1.Cluster) dynamic.Interface
@@ -55,7 +56,10 @@ func (i *Installer) renderManifests(_ *shipperV1.Cluster) ([]string, error) {
 	rel := i.Release
 	chart, err := i.fetchChart(rel.Environment.Chart)
 	if err != nil {
-		return nil, RenderManifestError(err)
+		return nil, shippererrors.NewChartFetchFailure(
+			rel.Environment.Chart,
+			err,
+		)
 	}
 
 	rendered, err := shipperChart.Render(
@@ -66,7 +70,10 @@ func (i *Installer) renderManifests(_ *shipperV1.Cluster) ([]string, error) {
 	)
 
 	if err != nil {
-		err = RenderManifestError(err)
+		err = shippererrors.NewBrokenChart(
+			rel.Environment.Chart,
+			err,
+		)
 	}
 
 	for _, v := range rendered {
@@ -92,7 +99,11 @@ func (i *Installer) buildResourceClient(
 	var resource *metaV1.APIResource
 	gv := gvk.GroupVersion().String()
 	if resources, err := client.Discovery().ServerResourcesForGroupVersion(gv); err != nil {
-		return nil, err
+		return nil, shippererrors.NewFailedAPICall(
+			shippererrors.API.Discover,
+			gv,
+			err,
+		)
 	} else {
 		for _, e := range resources.APIResources {
 			if e.Kind == gvk.Kind {
@@ -101,6 +112,7 @@ func (i *Installer) buildResourceClient(
 			}
 		}
 		if resource == nil {
+			// shippererrors.UnrecognizedResource
 			return nil, fmt.Errorf("resource %s not found", gvk.Kind)
 		}
 	}
@@ -218,27 +230,32 @@ func (i *Installer) installManifests(
 	manifests []string,
 ) error {
 
-	var configMap *coreV1.ConfigMap
-	var createdConfigMap *coreV1.ConfigMap
-	var existingConfigMap *coreV1.ConfigMap
-	var err error
+	var anchor *coreV1.ConfigMap
 
-	if configMap, err = janitor.CreateConfigMapAnchor(i.InstallationTarget); err != nil {
-		return NewCreateResourceError("error creating anchor config map: %s ", err)
-	} else if existingConfigMap, err = client.CoreV1().ConfigMaps(i.Release.Namespace).Get(configMap.Name, metaV1.GetOptions{}); err != nil && !errors.IsNotFound(err) {
-		return NewGetResourceError(`error getting anchor %q: %s`, configMap.Name, err)
-	} else if err != nil { // errors.IsNotFound(err) == true
-		if createdConfigMap, err = client.CoreV1().ConfigMaps(configMap.Namespace).Create(configMap); err != nil {
-			return NewCreateResourceError(
-				`error creating anchor resource %s "%s/%s": %s`,
-				configMap.Kind, configMap.Namespace, configMap.Name, err)
+	configMap := janitor.BuildConfigMapAnchor(i.InstallationTarget)
+
+	existingConfigMap, err := client.CoreV1().ConfigMaps(i.Release.Namespace).Get(configMap.Name, metaV1.GetOptions{})
+	anchor = existingConfigMap
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			createdConfigMap, err := client.CoreV1().ConfigMaps(configMap.Namespace).Create(configMap)
+			if err != nil {
+				return shippererrors.NewFailedCRUD(
+					shippererrors.API.Create,
+					configMap,
+					fmt.Errorf("anchor configmap error: %s", err),
+				)
+			}
+			// we had to create one, so the anchor is the newly-created configMap
+			anchor = createdConfigMap
+		} else {
+			return shippererrors.NewFailedCRUD(shippererrors.API.Get, configMap, err)
 		}
-	} else {
-		createdConfigMap = existingConfigMap
 	}
 
 	// Create the OwnerReference for the manifest objects
-	ownerReference := janitor.ConfigMapAnchorToOwnerReference(createdConfigMap)
+	ownerReference := janitor.ConfigMapAnchorToOwnerReference(anchor)
 
 	// Try to install all the rendered objects in the target cluster. We should
 	// fail in the first error to report that this cluster has an issue. Since
@@ -258,7 +275,7 @@ func (i *Installer) installManifests(
 				Decode([]byte(manifest), nil, nil)
 
 		if err != nil {
-			return NewDecodeManifestError("error decoding manifest: %s", err)
+			return shippererrors.NewUnreadableManifest(err)
 		}
 
 		// We label final objects with Release labels so that we can find/filter them
@@ -277,14 +294,20 @@ func (i *Installer) installManifests(
 		obj := &unstructured.Unstructured{}
 		err = i.Scheme.Convert(decodedObj, obj, nil)
 		if err != nil {
-			return NewConvertUnstructuredError("error converting object to unstructured: %s", err)
+			return shippererrors.NewCannotConvertUnstructured(
+				obj,
+				err,
+			)
 		}
 
 		// Once we've gathered enough information about the document we want to install,
 		// we're able to build a resource client to interact with the target cluster.
 		resourceClient, err := i.buildResourceClient(cluster, client, restConfig, dynamicClientBuilderFunc, gvk)
 		if err != nil {
-			return NewResourceClientError("error building resource client: %s", err)
+			return shippererrors.NewCannotBuildResourceClient(
+				*gvk,
+				err,
+			)
 		}
 
 		// "fetch-and-create-or-update" strategy in here; this is required to
@@ -298,7 +321,7 @@ func (i *Installer) installManifests(
 
 		// Any error other than NotFound is not recoverable from this point on.
 		if err != nil && !errors.IsNotFound(err) {
-			return NewGetResourceError(`error getting resource %s '%s/%s': %s`, obj.GetKind(), obj.GetNamespace(), obj.GetName(), err)
+			return shippererrors.NewFailedCRUD(shippererrors.API.Get, obj, err)
 		}
 
 		// If have an error here, it means it is NotFound, so proceed to
@@ -306,7 +329,7 @@ func (i *Installer) installManifests(
 		if err != nil {
 			_, err = resourceClient.Create(obj)
 			if err != nil {
-				return NewCreateResourceError(`error creating resource %s "%s/%s": %s`, obj.GetKind(), obj.GetNamespace(), obj.GetName(), err)
+				return shippererrors.NewFailedCRUD(shippererrors.API.Create, obj, err)
 			}
 			continue
 		}
@@ -323,7 +346,7 @@ func (i *Installer) installManifests(
 		if releaseLabelValue, ok := existingObj.GetLabels()[shipperV1.ReleaseLabel]; ok && releaseLabelValue == i.Release.Name {
 			continue
 		} else if !ok {
-			return NewIncompleteReleaseError(`Release "%s/%s" misses the required label %q`, existingObj.GetNamespace(), existingObj.GetName(), shipperV1.ReleaseLabel)
+			return shippererrors.NewIncompleteRelease(existingObj.GetNamespace(), existingObj.GetName())
 		}
 
 		ownerReferenceFound := false
@@ -354,8 +377,7 @@ func (i *Installer) installManifests(
 		unstructured.SetNestedField(existingUnstructuredObj, newUnstructuredObj["spec"], "spec")
 		existingObj.SetUnstructuredContent(existingUnstructuredObj)
 		if _, clientErr := resourceClient.Update(existingObj); clientErr != nil {
-			return NewUpdateResourceError(`error updating resource %s "%s/%s": %s`,
-				existingObj.GetKind(), obj.GetNamespace(), obj.GetName(), clientErr)
+			return shippererrors.NewFailedCRUD(shippererrors.API.Update, obj, err)
 		}
 	}
 
