@@ -309,12 +309,6 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 
 	latestRelease, err := c.getLatestReleaseForApp(app)
 	if err != nil {
-		validHistoryCond := apputil.NewApplicationCondition(
-			shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse,
-			conditions.FetchReleaseFailed,
-			fmt.Sprintf("could not fetch the latest release: %q", err),
-		)
-		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
 		return err
 	}
 

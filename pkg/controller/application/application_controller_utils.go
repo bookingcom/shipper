@@ -7,11 +7,15 @@ import (
 	"strconv"
 
 	"github.com/golang/glog"
+
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/conditions"
 	"github.com/bookingcom/shipper/pkg/controller"
+	apputil "github.com/bookingcom/shipper/pkg/util/application"
 )
 
 func (c *Controller) createReleaseForApplication(app *shipperv1.Application, generation int) error {
@@ -68,6 +72,13 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application, gen
 func (c *Controller) getLatestReleaseForApp(app *shipperv1.Application) (*shipperv1.Release, error) {
 	sortedReleases, err := c.getSortedAppReleases(app)
 	if err != nil {
+		validHistoryCond := apputil.NewApplicationCondition(
+			shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse,
+			conditions.FetchReleaseFailed,
+			fmt.Sprintf("could not fetch the latest release: %q", err),
+		)
+		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
+
 		return nil, err
 	}
 
