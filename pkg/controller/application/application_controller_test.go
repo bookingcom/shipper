@@ -19,7 +19,6 @@ import (
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	"github.com/bookingcom/shipper/pkg/util/application"
-	"github.com/bookingcom/shipper/pkg/conditions"
 )
 
 const (
@@ -206,10 +205,8 @@ func TestRevisionHistoryLimit(t *testing.T) {
 			Status: corev1.ConditionFalse,
 		},
 		shipperv1.ApplicationCondition{
-			Type:    shipperv1.ApplicationConditionTypeValidHistory,
-			Status:  corev1.ConditionFalse,
-			Reason:  conditions.BrokenReleaseGeneration,
-			Message: `the generation on release "baz" (2) is higher than the highest observed by this application (0). syncing application's highest observed generation to match. this should self-heal.`,
+			Type:   shipperv1.ApplicationConditionTypeValidHistory,
+			Status: corev1.ConditionTrue,
 		},
 	}
 
@@ -496,10 +493,8 @@ func TestDeletingAbortedReleases(t *testing.T) {
 			Status: corev1.ConditionFalse,
 		},
 		shipperv1.ApplicationCondition{
-			Type:    shipperv1.ApplicationConditionTypeValidHistory,
-			Status:  corev1.ConditionFalse,
-			Reason:  conditions.BrokenReleaseGeneration,
-			Message: `the generation on release "bar" (1) is higher than the highest observed by this application (0). syncing application's highest observed generation to match. this should self-heal.`,
+			Type:   shipperv1.ApplicationConditionTypeValidHistory,
+			Status: corev1.ConditionTrue,
 		},
 	}
 
