@@ -287,6 +287,36 @@ func (c *Controller) getReleaseGeneration(latestRelease *shipperv1.Release, app 
 		return 0, err
 	}
 	return generation, nil
+}
+
+func (c *Controller) getAppHighestObservedGeneration(app *shipperv1.Application) (int, error) {
+	highestObserved, err := getAppHighestObservedGeneration(app)
+	if err != nil {
+		validHistoryCond := apputil.NewApplicationCondition(
+			shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse,
+			conditions.BrokenApplicationObservedGeneration,
+			fmt.Sprintf("could not get the generation annotation: %q", err),
+		)
+		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
+		return 0, err
+	}
+	return highestObserved, err
+}
+
+func (c *Controller) handleRollbackToLatestObserved(generation int, latestRelease *shipperv1.Release, app *shipperv1.Application) error {
+	app.Spec.Template = *(latestRelease.Environment.DeepCopy())
+	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
+	abortingCond := apputil.NewApplicationCondition(
+		shipperv1.ApplicationConditionTypeAborting, corev1.ConditionTrue,
+		"",
+		fmt.Sprintf("abort in progress, returning state to release %q", latestRelease.GetName()),
+	)
+	apputil.SetApplicationCondition(&app.Status, *abortingCond)
+
+	rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
+	apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
+
+	return nil
 
 }
 
@@ -342,32 +372,14 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		return err
 	}
 
-	highestObserved, err := getAppHighestObservedGeneration(app)
+	highestObserved, err := c.getAppHighestObservedGeneration(app)
 	if err != nil {
-		validHistoryCond := apputil.NewApplicationCondition(
-			shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse,
-			conditions.BrokenApplicationObservedGeneration,
-			fmt.Sprintf("could not get the generation annotation: %q", err),
-		)
-		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
 		return err
 	}
 
 	// Rollback: reset app template & reset latest observed.
 	if generation < highestObserved {
-		app.Spec.Template = *(latestRelease.Environment.DeepCopy())
-		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
-		abortingCond := apputil.NewApplicationCondition(
-			shipperv1.ApplicationConditionTypeAborting, corev1.ConditionTrue,
-			"",
-			fmt.Sprintf("abort in progress, returning state to release %q", latestRelease.GetName()),
-		)
-		apputil.SetApplicationCondition(&app.Status, *abortingCond)
-
-		rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
-		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
-
-		return nil
+		return c.handleRollbackToLatestObserved(generation, latestRelease, app)
 	}
 
 	abortingCond := apputil.NewApplicationCondition(
