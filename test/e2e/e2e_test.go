@@ -366,8 +366,8 @@ func newFixture(ns string, t *testing.T) *fixture {
 }
 
 func (f *fixture) targetStep(step int, relName string) {
-	patch := fmt.Sprintf(`{"spec": {"targetStep": %d}}`, step)
-	_, err := shipperClient.ShipperV1().Releases(f.namespace).Patch(relName, types.MergePatchType, []byte(patch))
+	patch := fmt.Sprintf(`[{ "op": "replace", "path": "/spec/targetStep", "value": %d }]`, step)
+	_, err := shipperClient.ShipperV1().Releases(f.namespace).Patch(relName, types.JSONPatchType, []byte(patch))
 	if err != nil {
 		f.t.Fatalf("could not patch release with targetStep %v: %q", step, err)
 	}
