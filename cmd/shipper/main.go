@@ -448,6 +448,10 @@ func startInstallationController(cfg *cfg) (bool, error) {
 		config.APIPath = dynamic.LegacyAPIPathResolverFunc(*gvk)
 		config.GroupVersion = &schema.GroupVersion{Group: gvk.Group, Version: gvk.Version}
 
+		if cfg.restTimeout != nil {
+			config.Timeout = *cfg.restTimeout
+		}
+
 		dynamicClient, newClientErr := dynamic.NewClient(config)
 		if newClientErr != nil {
 			glog.Fatal(newClientErr)
