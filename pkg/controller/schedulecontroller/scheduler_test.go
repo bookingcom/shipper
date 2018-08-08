@@ -179,7 +179,25 @@ func TestScheduleSkipsUnschedulable(t *testing.T) {
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
-func expectedActions(ns string, release *shipperV1.Release) []kubetesting.Action {
+func buildExpectedActions(ns string, release *shipperV1.Release) []kubetesting.Action {
+	installationTarget := &shipperV1.InstallationTarget{
+		ObjectMeta: metaV1.ObjectMeta{
+			Name:      release.Name,
+			Namespace: ns,
+			OwnerReferences: []metaV1.OwnerReference{
+				{
+					APIVersion: release.APIVersion,
+					Kind:       release.Kind,
+					Name:       release.Name,
+					UID:        release.UID,
+				},
+			},
+		},
+		Spec: shipperV1.InstallationTargetSpec{
+			Clusters: []string{"minikube-a"},
+		},
+	}
+
 	capacityTarget := &shipperV1.CapacityTarget{
 		ObjectMeta: metaV1.ObjectMeta{
 			Name:      release.Name,
@@ -204,15 +222,37 @@ func expectedActions(ns string, release *shipperV1.Release) []kubetesting.Action
 		},
 	}
 
+	trafficTarget := &shipperV1.TrafficTarget{
+		ObjectMeta: metaV1.ObjectMeta{
+			Name:      release.Name,
+			Namespace: ns,
+			OwnerReferences: []metaV1.OwnerReference{
+				{
+					APIVersion: release.APIVersion,
+					Kind:       release.Kind,
+					Name:       release.Name,
+					UID:        release.UID,
+				},
+			},
+		},
+		Spec: shipperV1.TrafficTargetSpec{
+			Clusters: []shipperV1.ClusterTrafficTarget{
+				shipperV1.ClusterTrafficTarget{
+					Name: "minikube-a",
+				},
+			},
+		},
+	}
+
 	actions := []kubetesting.Action{
 		kubetesting.NewCreateAction(
 			shipperV1.SchemeGroupVersion.WithResource("installationtargets"),
 			ns,
-			nil),
+			installationTarget),
 		kubetesting.NewCreateAction(
 			shipperV1.SchemeGroupVersion.WithResource("traffictargets"),
 			ns,
-			nil),
+			trafficTarget),
 		kubetesting.NewCreateAction(
 			shipperV1.SchemeGroupVersion.WithResource("capacitytargets"),
 			ns,
@@ -242,7 +282,7 @@ func TestCreateAssociatedObjects(t *testing.T) {
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
-	expectedActions := expectedActions(release.GetNamespace(), expected)
+	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
 	// Business logic...
 	c, clientset := newScheduler(release, fixtures)
@@ -282,7 +322,7 @@ func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
-	expectedActions := expectedActions(release.GetNamespace(), expected)
+	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
 	// Business logic...
 	c, clientset := newScheduler(release, fixtures)
@@ -322,7 +362,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
-	expectedActions := expectedActions(release.GetNamespace(), expected)
+	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
 	// Business logic...
 	c, clientset := newScheduler(release, fixtures)
@@ -362,7 +402,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
-	expectedActions := expectedActions(release.GetNamespace(), expected)
+	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
 	// Business logic...
 	c, clientset := newScheduler(release, fixtures)

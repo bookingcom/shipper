@@ -97,7 +97,7 @@ func TestControllerCreateAssociatedObjects(t *testing.T) {
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
-	expectedActions := expectedActions(release.GetNamespace(), expected)
+	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
 	// Business logic...
 	c, clientset := newController(fixtures...)
@@ -134,7 +134,7 @@ func TestControllerCreateAssociatedObjectsDuplicateInstallationTarget(t *testing
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
-	expectedActions := expectedActions(release.GetNamespace(), expected)
+	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
 	// Business logic...
 	c, clientset := newController(fixtures...)
@@ -171,7 +171,7 @@ func TestControllerCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
-	expectedActions := expectedActions(release.GetNamespace(), expected)
+	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
 	// Business logic...
 	c, clientset := newController(fixtures...)
@@ -208,7 +208,7 @@ func TestControllerCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) 
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
-	expectedActions := expectedActions(release.GetNamespace(), expected)
+	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
 	// Business logic...
 	c, clientset := newController(fixtures...)
