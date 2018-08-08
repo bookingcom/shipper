@@ -2,7 +2,6 @@ package application
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/golang/glog"
@@ -20,7 +19,6 @@ import (
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/conditions"
-	"github.com/bookingcom/shipper/pkg/controller"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	"github.com/bookingcom/shipper/pkg/errors"
@@ -223,6 +221,28 @@ func (c *Controller) syncApplication(key string) bool {
 
 	app = app.DeepCopy()
 
+	// Initialize annotations
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
+	}
+
+	if app.Spec.RevisionHistoryLimit == nil {
+		var i int32 = DefaultRevisionHistoryLimit
+		app.Spec.RevisionHistoryLimit = &i
+	}
+
+	// this would be better as OpenAPI validation, but it does not support
+	// 'nullable' so it cannot be an optional field
+	if *app.Spec.RevisionHistoryLimit < MinRevisionHistoryLimit {
+		var min int32 = MinRevisionHistoryLimit
+		app.Spec.RevisionHistoryLimit = &min
+	}
+
+	if *app.Spec.RevisionHistoryLimit > MaxRevisionHistoryLimit {
+		var max int32 = MaxRevisionHistoryLimit
+		app.Spec.RevisionHistoryLimit = &max
+	}
+
 	var shouldRetry bool
 	if err := c.processApplication(app); err != nil {
 		shouldRetry = true
@@ -253,168 +273,50 @@ func (c *Controller) syncApplication(key string) bool {
 	return shouldRetry
 }
 
-func (c *Controller) handleApplicationWithEmptyHistory(app *shipperv1.Application) error {
-	// This case covers the first ever release for an application.
-	err := c.createReleaseForApplication(app, 0)
-	if err != nil {
-		releaseSyncedCond := apputil.NewApplicationCondition(
-			shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionFalse,
-			conditions.CreateReleaseFailed,
-			fmt.Sprintf("could not create a new release: %q", err),
-		)
-		apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
-		return err
-	}
-	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
-	releaseSyncedCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionTrue, "", "")
-	apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
-	rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
-	apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
-
-	return nil
-
-}
-
-func (c *Controller) getAppHighestObservedGeneration(app *shipperv1.Application) (int, error) {
-	highestObserved, err := getAppHighestObservedGeneration(app)
-	if err != nil {
-		validHistoryCond := apputil.NewApplicationCondition(
-			shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse,
-			conditions.BrokenApplicationObservedGeneration,
-			fmt.Sprintf("could not get the generation annotation: %q", err),
-		)
-		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
-		return 0, err
-	}
-	return highestObserved, err
-}
-
-func (c *Controller) handleRollbackToLatestObserved(highestObserved, generation int, latestRelease *shipperv1.Release, app *shipperv1.Application) error {
-	app.Spec.Template = *(latestRelease.Environment.DeepCopy())
-
-	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation);
-	abortingCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeAborting, corev1.ConditionTrue, "", fmt.Sprintf("abort in progress, returning state to release %q", latestRelease.GetName()))
-	apputil.SetApplicationCondition(&app.Status, *abortingCond)
-
-	rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
-	apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
-
-	return nil
-}
-
-func (c *Controller) handleIdenticalEnvironments(latestRelease *shipperv1.Release, app *shipperv1.Application, generation, highestObserved int) {
-	// explicitly setting the annotation here helps recover from a broken 0 case
-	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(highestObserved)
-
-	validHistoryCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionTrue, "", "")
-	apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
-
-	releaseSyncedCondition := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionTrue, "", "")
-	apputil.SetApplicationCondition(&app.Status, *releaseSyncedCondition)
-
-	abortingCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeAborting, corev1.ConditionFalse, "", "")
-	apputil.SetApplicationCondition(&app.Status, *abortingCond)
-
-	rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionFalse, "", "")
-	if _, ok := isRollingOut(latestRelease); ok {
-		rollingOutCond.Status = corev1.ConditionTrue
-	}
-	apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
-
-}
-
-func (c *Controller) handleNewRelease(highestObserved int, app *shipperv1.Application) (int, error) {
-	newGen := highestObserved + 1
-	err := c.createReleaseForApplication(app, newGen)
-	if err != nil {
-		releaseSyncedCond := apputil.NewApplicationCondition(
-			shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionFalse,
-			conditions.CreateReleaseFailed,
-			fmt.Sprintf("could not create a new release: %q", err),
-		)
-		apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
-
-		rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionFalse, "", "")
-		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
-
-		return 0, err
-	}
-	return newGen, nil
-}
-
-func (c *Controller) fooBarBaz(app *shipperv1.Application, newGen int) error {
-	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(newGen)
-
-	//
-	abortingCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeAborting, corev1.ConditionFalse, "", "")
-	apputil.SetApplicationCondition(&app.Status, *abortingCond)
-
-	// assume history is ok
-	validHistoryCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionTrue, "", "")
-	apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
-
-	releaseSyncedCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionTrue, "", "")
-	apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
-
+func (c *Controller) wrapUpApplicationConditions(app *shipperv1.Application) error {
 	var (
 		contenderRel *shipperv1.Release
 		incumbentRel *shipperv1.Release
+		err          error
 	)
 
+	abortingCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeAborting, corev1.ConditionFalse, "", "")
+	apputil.SetApplicationCondition(&app.Status, *abortingCond)
+	validHistoryCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionTrue, "", "")
+	apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
+	releaseSyncedCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionTrue, "", "")
+	apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
 	rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionUnknown, "", "")
-	contenderRel, err := c.relLister.Releases(app.Namespace).ContenderForApplication(app.Name)
-	if err != nil && !errors.IsContenderNotFoundError(err) {
+
+	if contenderRel, err = c.relLister.Releases(app.Namespace).ContenderForApplication(app.Name); err != nil {
+		// There's no contender release yet, so RollingOut condition is
+		// Unknown, with error as message.
 		rollingOutCond.Message = err.Error()
 		goto End
 	}
 
-	incumbentRel, err = c.relLister.Releases(app.Namespace).IncumbentForApplication(app.Name)
-	if err != nil && !errors.IsIncumbentNotFoundError(err) {
+	if incumbentRel, err = c.relLister.Releases(app.Namespace).IncumbentForApplication(app.Name); err != nil && !errors.IsIncumbentNotFoundError(err) {
+		// Errors other than incumbent release not found bail out to not
+		// report inconsistent status.
 		rollingOutCond.Message = err.Error()
 		goto End
 	}
 
 	if releaseutil.ReleaseComplete(contenderRel) {
 		rollingOutCond.Status = corev1.ConditionFalse
-		rollingOutCond.Message = fmt.Sprintf(`Release %q is active`, contenderRel.Name)
-		goto End
-	}
-
-	if incumbentRel != nil {
+		rollingOutCond.Message = fmt.Sprintf(ReleaseActiveMessageFormat, contenderRel.Name)
+	} else if incumbentRel != nil {
 		rollingOutCond.Status = corev1.ConditionTrue
-		rollingOutCond.Message = fmt.Sprintf(`Transitioning from %q to %q`, incumbentRel.Name, contenderRel.Name)
+		rollingOutCond.Message = fmt.Sprintf(TransitioningMessageFormat, incumbentRel.Name, contenderRel.Name)
 	} else {
 		rollingOutCond.Status = corev1.ConditionTrue
-		rollingOutCond.Message = fmt.Sprintf(`Rolling out initial release %q`, contenderRel.Name)
+		rollingOutCond.Message = fmt.Sprintf(InitialReleaseMessageFormat, contenderRel.Name)
 	}
 
 End:
 	apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
 
 	return nil
-}
-
-func (c *Controller) initializeApplication(app *shipperv1.Application) {
-	if app.Annotations == nil {
-		app.Annotations = map[string]string{}
-	}
-
-	if app.Spec.RevisionHistoryLimit == nil {
-		var i int32 = DefaultRevisionHistoryLimit
-		app.Spec.RevisionHistoryLimit = &i
-	}
-
-	// this would be better as OpenAPI validation, but it does not support
-	// 'nullable' so it cannot be an optional field
-	if *app.Spec.RevisionHistoryLimit < MinRevisionHistoryLimit {
-		var min int32 = MinRevisionHistoryLimit
-		app.Spec.RevisionHistoryLimit = &min
-	}
-
-	if *app.Spec.RevisionHistoryLimit > MaxRevisionHistoryLimit {
-		var max int32 = MaxRevisionHistoryLimit
-		app.Spec.RevisionHistoryLimit = &max
-	}
 }
 
 /*
@@ -425,10 +327,6 @@ func (c *Controller) initializeApplication(app *shipperv1.Application) {
 * if different, create new release (highest generation # + 1)
  */
 func (c *Controller) processApplication(app *shipperv1.Application) error {
-	// initialize some application nullable fields and ensure fields that can'
-	// t be validated using OpenAPI specification are within limits.
-	c.initializeApplication(app)
-
 	// clean up excessive releases regardless of exit path
 	defer c.cleanUpReleasesForApplication(app)
 
@@ -437,56 +335,83 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		err             error
 		generation      int
 		highestObserved int
-		newGen          int
 	)
 
 	if contender, err = c.relLister.Releases(app.Namespace).ContenderForApplication(app.Name); err != nil {
 		if errors.IsContenderNotFoundError(err) {
-			return c.handleApplicationWithEmptyHistory(app)
+			// Contender doesn't exist, so we are covering the case where Shipper
+			// is creating the first release for this application.
+			var generation = 0
+			if releaseName, iteration, err := c.releaseNameForApplication(app); err != nil {
+				return err
+			} else if err := c.createReleaseForApplication(app, releaseName, iteration, generation); err != nil {
+				releaseSyncedCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionFalse, conditions.CreateReleaseFailed, fmt.Sprintf("could not create a new release: %q", err))
+				apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
+				return err
+			}
+			// It seems that adding an object to the fakeClient doesn't
+			// update listers and informers automatically during tests...
+			// How should we do it then?
+			apputil.SetHighestObservedGeneration(app, generation)
+			return c.wrapUpApplicationConditions(app)
 		}
 		return err
 	}
 
-	if generation, err = controller.GetReleaseGeneration(contender); err != nil {
+	if generation, err = releaseutil.GetGeneration(contender); err != nil {
 		validHistoryCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse, conditions.BrokenReleaseGeneration, err.Error())
 		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
 		return err
 	}
 
-	if highestObserved, err = c.getAppHighestObservedGeneration(app); err != nil {
+	if highestObserved, err = apputil.GetHighestObservedGeneration(app); err != nil {
+		validHistoryCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse, conditions.BrokenApplicationObservedGeneration, err.Error())
+		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
 		return err
 	}
 
-	// rollback: reset app template & reset latest observed
 	if generation < highestObserved {
-		return c.handleRollbackToLatestObserved(highestObserved, generation, contender, app)
-	}
-
-	// ... but overwrite that condition if it is not. this means something is
-	// screwy; likely a human changed an annotation themselves, or the process
-	// was abnormally exited by some weird reason between the new release was
-	// created and app updated with the new water mark.
-	//
-	// I think the best we can do is bump up to this new high water mark and then proceed as normal
-	if generation > highestObserved {
-		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
-		validHistoryCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse, conditions.BrokenReleaseGeneration, "")
-		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
-		highestObserved = generation
-	}
-
-	// great! nothing to do. highestObserved == latestRelease && the templates are identical
-	if identicalEnvironments(app.Spec.Template, contender.Environment) {
-		c.handleIdenticalEnvironments(contender, app, generation, highestObserved)
+		// the current contender's generation is lower than highest observed
+		// generation. This usually means that a newer release has been
+		// created and deleted. As side-effect of this, the contender's
+		// environment will be copied back to the application.
+		apputil.CopyEnvironment(app, contender)
+		apputil.SetHighestObservedGeneration(app, generation)
+		abortingCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeAborting, corev1.ConditionTrue, "", fmt.Sprintf("abort in progress, returning state to release %q", contender.Name))
+		apputil.SetApplicationCondition(&app.Status, *abortingCond)
+		rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
+		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
 		return nil
 	}
 
-	// the normal case: the application template has changed so we should create a new release
-	if newGen, err = c.handleNewRelease(highestObserved, app); err != nil {
-		return err
+	if generation > highestObserved {
+		// I think the best we can do is bump up to this new high water mark and
+		// then proceed as normal if for some reason generation is higher than
+		// highest observed. This should be possible in the case of a new release
+		// with the higher generation is created but the application object
+		// failed to update with the new highest observed generation.
+		apputil.SetHighestObservedGeneration(app, generation)
+		highestObserved = generation
 	}
 
-	return c.fooBarBaz(app, newGen);
+	if !identicalEnvironments(app.Spec.Template, contender.Environment) {
+		// The application's template has been modified and is different than
+		// the contender's environment. This means that a new release should
+		// be created with the new template.
+		highestObserved = highestObserved + 1
+		if releaseName, iteration, err := c.releaseNameForApplication(app); err != nil {
+			return err
+		} else if err = c.createReleaseForApplication(app, releaseName, iteration, highestObserved); err != nil {
+			releaseSyncedCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionFalse, conditions.CreateReleaseFailed, err.Error())
+			apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
+			rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionFalse, conditions.CreateReleaseFailed, err.Error())
+			apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
+			return err
+		}
+	}
+
+	apputil.SetHighestObservedGeneration(app, highestObserved)
+	return c.wrapUpApplicationConditions(app)
 }
 
 func (c *Controller) cleanUpReleasesForApplication(app *shipperv1.Application) {

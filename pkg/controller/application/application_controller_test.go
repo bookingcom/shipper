@@ -11,14 +11,16 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubetesting "k8s.io/client-go/testing"
-	"k8s.io/client-go/tools/record"
 	"k8s.io/helm/pkg/repo/repotest"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/record"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
-	"github.com/bookingcom/shipper/pkg/util/application"
+	apputil "github.com/bookingcom/shipper/pkg/util/application"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 const (
@@ -26,7 +28,7 @@ const (
 )
 
 func init() {
-	application.ConditionsShouldDiscardTimestamps = true
+	apputil.ConditionsShouldDiscardTimestamps = true
 }
 
 // Private method, but other tests make use of it.
@@ -64,16 +66,25 @@ func TestCreateFirstRelease(t *testing.T) {
 	expectedApp := app.DeepCopy()
 	expectedApp.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
 	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
-		shipperv1.ApplicationCondition{
+		{
+			Type:   shipperv1.ApplicationConditionTypeAborting,
+			Status: corev1.ConditionFalse,
+		},
+		{
 			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
 			Status: corev1.ConditionTrue,
 		},
-		shipperv1.ApplicationCondition{
-			Type:   shipperv1.ApplicationConditionTypeRollingOut,
+		{
+			Type:    shipperv1.ApplicationConditionTypeRollingOut,
+			Status:  corev1.ConditionTrue,
+			Message: fmt.Sprintf(InitialReleaseMessageFormat, expectedRelName),
+		},
+		{
+			Type:   shipperv1.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
 	}
-	expectedApp.Status.History = []string{}
+	expectedApp.Status.History = []string{expectedRelName}
 
 	// We do not expect entries in the history or 'RollingOut: true' in the state
 	// because the testing client does not update listers after Create actions.
@@ -132,19 +143,20 @@ func TestStatusStableState(t *testing.T) {
 		expectedRelNameB,
 	}
 	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
-		shipperv1.ApplicationCondition{
+		{
 			Type:   shipperv1.ApplicationConditionTypeAborting,
 			Status: corev1.ConditionFalse,
 		},
-		shipperv1.ApplicationCondition{
+		{
 			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
 			Status: corev1.ConditionTrue,
 		},
-		shipperv1.ApplicationCondition{
-			Type:   shipperv1.ApplicationConditionTypeRollingOut,
-			Status: corev1.ConditionFalse,
+		{
+			Type:    shipperv1.ApplicationConditionTypeRollingOut,
+			Status:  corev1.ConditionFalse,
+			Message: fmt.Sprintf(ReleaseActiveMessageFormat, expectedRelNameB),
 		},
-		shipperv1.ApplicationCondition{
+		{
 			Type:   shipperv1.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
@@ -173,7 +185,8 @@ func TestRevisionHistoryLimit(t *testing.T) {
 	releaseBar.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
 
 	releaseBaz := newRelease("baz", app)
-	releaseBaz.Annotations[shipperv1.ReleaseGenerationAnnotation] = "2"
+	releaseutil.SetReleaseCondition(&releaseBaz.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
+	releaseutil.SetGeneration(releaseBaz, 2)
 	releaseBaz.Spec.TargetStep = 2
 	releaseBaz.Status.AchievedStep = &shipperv1.AchievedStep{
 		Step: 2,
@@ -192,19 +205,20 @@ func TestRevisionHistoryLimit(t *testing.T) {
 
 	//expectedApp.Status.History = []string{"baz"}
 	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
-		shipperv1.ApplicationCondition{
+		{
 			Type:   shipperv1.ApplicationConditionTypeAborting,
 			Status: corev1.ConditionFalse,
 		},
-		shipperv1.ApplicationCondition{
+		{
 			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
 			Status: corev1.ConditionTrue,
 		},
-		shipperv1.ApplicationCondition{
-			Type:   shipperv1.ApplicationConditionTypeRollingOut,
-			Status: corev1.ConditionFalse,
+		{
+			Type:    shipperv1.ApplicationConditionTypeRollingOut,
+			Status:  corev1.ConditionFalse,
+			Message: fmt.Sprintf(ReleaseActiveMessageFormat, releaseBaz.Name),
 		},
-		shipperv1.ApplicationCondition{
+		{
 			Type:   shipperv1.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
@@ -235,72 +249,67 @@ func TestCreateSecondRelease(t *testing.T) {
 
 	f := newFixture(t)
 	app := newApplication(testAppName)
+	apputil.SetHighestObservedGeneration(app, 0)
 	app.Spec.Template.Chart.RepoURL = srv.URL()
 	f.objects = append(f.objects, app)
 
-	oldEnvHash := hashReleaseEnvironment(app.Spec.Template)
-	oldRelName := fmt.Sprintf("%s-%s-0", testAppName, oldEnvHash)
+	incumbentEnvHash := hashReleaseEnvironment(app.Spec.Template)
+	incumbentRelName := fmt.Sprintf("%s-%s-0", testAppName, incumbentEnvHash)
 
-	release := newRelease(oldRelName, app)
-	release.Environment.Chart.RepoURL = srv.URL()
-	release.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
-	release.Spec.TargetStep = 2
-	release.Status.AchievedStep = &shipperv1.AchievedStep{
+	incumbentRel := newRelease(incumbentRelName, app)
+	releaseutil.SetGeneration(incumbentRel, 0)
+	releaseutil.SetIteration(incumbentRel, 0)
+	releaseutil.SetReleaseCondition(&incumbentRel.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
+	incumbentRel.Environment.Chart.RepoURL = srv.URL()
+	incumbentRel.Spec.TargetStep = 2
+	incumbentRel.Status.AchievedStep = &shipperv1.AchievedStep{
 		Step: 2,
-		Name: release.Environment.Strategy.Steps[2].Name,
+		Name: incumbentRel.Environment.Strategy.Steps[2].Name,
 	}
 
-	f.objects = append(f.objects, release)
+	f.objects = append(f.objects, incumbentRel)
 
-	app.Status.History = []string{oldRelName}
-
+	app.Status.History = []string{incumbentRelName}
 	app.Spec.Template.ClusterRequirements = shipperv1.ClusterRequirements{
 		Regions: []shipperv1.RegionRequirement{{Name: "foo"}},
 	}
 
-	newEnvHash := hashReleaseEnvironment(app.Spec.Template)
-	newRelName := fmt.Sprintf("%s-%s-0", testAppName, newEnvHash)
+	contenderEnvHash := hashReleaseEnvironment(app.Spec.Template)
+	contenderRelName := fmt.Sprintf("%s-%s-0", testAppName, contenderEnvHash)
 
-	expectedRelease := newRelease(newRelName, app)
-	expectedRelease.Labels[shipperv1.ReleaseEnvironmentHashLabel] = newEnvHash
-	expectedRelease.Annotations[shipperv1.ReleaseTemplateIterationAnnotation] = "0"
-	expectedRelease.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
+	contenderRel := newRelease(contenderRelName, app)
+	contenderRel.Labels[shipperv1.ReleaseEnvironmentHashLabel] = contenderEnvHash
+	releaseutil.SetIteration(contenderRel, 0)
+	releaseutil.SetGeneration(contenderRel, 1)
 
 	expectedApp := app.DeepCopy()
-	expectedApp.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "1"
+	apputil.SetHighestObservedGeneration(expectedApp, 1)
 	expectedApp.Status.History = []string{
-		oldRelName,
-		// Ought to have newRelName, but kubetesting doesn't catch Create actions in
-		// the lister.
+		incumbentRelName,
+		contenderRelName,
 	}
 
 	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
-		shipperv1.ApplicationCondition{
+		{
 			Type:   shipperv1.ApplicationConditionTypeAborting,
 			Status: corev1.ConditionFalse,
 		},
-		shipperv1.ApplicationCondition{
+		{
 			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
 			Status: corev1.ConditionTrue,
 		},
-		shipperv1.ApplicationCondition{
+		{
 			Type:    shipperv1.ApplicationConditionTypeRollingOut,
 			Status:  corev1.ConditionTrue,
-			Message: fmt.Sprintf(`Rolling out initial release %q`, oldRelName),
+			Message: fmt.Sprintf(TransitioningMessageFormat, incumbentRelName, contenderRelName),
 		},
-		shipperv1.ApplicationCondition{
+		{
 			Type:   shipperv1.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
 	}
 
-	// This still refers to the incumbent's state on this first update.
-	var step int32 = 2
-	expectedApp.Status.State = shipperv1.ApplicationState{
-		RolloutStep: &step,
-	}
-
-	f.expectReleaseCreate(expectedRelease)
+	f.expectReleaseCreate(contenderRel)
 	f.expectApplicationUpdate(expectedApp)
 	f.run()
 }
@@ -358,13 +367,13 @@ func TestAbort(t *testing.T) {
 	expectedApp.Status.History = []string{relName}
 
 	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
-		shipperv1.ApplicationCondition{
+		{
 			Type:    shipperv1.ApplicationConditionTypeAborting,
 			Status:  corev1.ConditionTrue,
 			Reason:  "",
 			Message: fmt.Sprintf("abort in progress, returning state to release %q", relName),
 		},
-		shipperv1.ApplicationCondition{
+		{
 			Type:   shipperv1.ApplicationConditionTypeRollingOut,
 			Status: corev1.ConditionTrue,
 		},
@@ -432,19 +441,20 @@ func TestStateRollingOut(t *testing.T) {
 	}
 
 	appRollingOut.Status.Conditions = []shipperv1.ApplicationCondition{
-		shipperv1.ApplicationCondition{
+		{
 			Type:   shipperv1.ApplicationConditionTypeAborting,
 			Status: corev1.ConditionFalse,
 		},
-		shipperv1.ApplicationCondition{
+		{
 			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
 			Status: corev1.ConditionTrue,
 		},
-		shipperv1.ApplicationCondition{
-			Type:   shipperv1.ApplicationConditionTypeRollingOut,
-			Status: corev1.ConditionTrue,
+		{
+			Type:    shipperv1.ApplicationConditionTypeRollingOut,
+			Status:  corev1.ConditionTrue,
+			Message: fmt.Sprintf(TransitioningMessageFormat, incumbent.Name, contender.Name),
 		},
-		shipperv1.ApplicationCondition{
+		{
 			Type:   shipperv1.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
@@ -465,7 +475,8 @@ func TestDeletingAbortedReleases(t *testing.T) {
 	releaseFoo.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
 
 	releaseBar := newRelease("bar", app)
-	releaseBar.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
+	releaseutil.SetGeneration(releaseBar, 1)
+	releaseutil.SetReleaseCondition(&releaseBar.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
 	releaseBar.Spec.TargetStep = 2
 	releaseBar.Status.AchievedStep = &shipperv1.AchievedStep{
 		Step: 2,
@@ -480,19 +491,20 @@ func TestDeletingAbortedReleases(t *testing.T) {
 	expectedApp.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "1"
 
 	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
-		shipperv1.ApplicationCondition{
+		{
 			Type:   shipperv1.ApplicationConditionTypeAborting,
 			Status: corev1.ConditionFalse,
 		},
-		shipperv1.ApplicationCondition{
+		{
 			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
 			Status: corev1.ConditionTrue,
 		},
-		shipperv1.ApplicationCondition{
-			Type:   shipperv1.ApplicationConditionTypeRollingOut,
-			Status: corev1.ConditionFalse,
+		{
+			Type:    shipperv1.ApplicationConditionTypeRollingOut,
+			Status:  corev1.ConditionFalse,
+			Message: fmt.Sprintf(ReleaseActiveMessageFormat, releaseBar.Name),
 		},
-		shipperv1.ApplicationCondition{
+		{
 			Type:   shipperv1.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
@@ -590,8 +602,30 @@ func newFixture(t *testing.T) *fixture {
 func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerFactory) {
 	f.client = shipperfake.NewSimpleClientset(f.objects...)
 
+	var shipperInformerFactory shipperinformers.SharedInformerFactory
 	const noResyncPeriod time.Duration = 0
-	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(f.client, noResyncPeriod)
+	f.client.PrependReactor("*", "*", func(action kubetesting.Action) (handled bool, ret runtime.Object, err error) {
+		// Actions issued by the client don't propagate to the
+		// informer's index by default, thus we prepend this
+		// reactor that is used to modify the indexer so listers
+		// work as expected.
+		gvr := action.GetResource()
+		informer, err := shipperInformerFactory.ForResource(schema.GroupVersionResource{Group: gvr.Group, Version: gvr.Version, Resource: gvr.Resource})
+		if err != nil {
+			panic(err)
+		}
+		indexer := informer.Informer().GetIndexer()
+		switch a := action.(type) {
+		case kubetesting.CreateActionImpl:
+			indexer.Add(a.GetObject())
+		case kubetesting.UpdateActionImpl:
+			indexer.Update(a.GetObject())
+		case kubetesting.DeleteActionImpl:
+			indexer.Delete(a.Name)
+		}
+		return false, nil, nil
+	})
+	shipperInformerFactory = shipperinformers.NewSharedInformerFactory(f.client, noResyncPeriod)
 
 	c := NewController(f.client, shipperInformerFactory, record.NewFakeRecorder(42))
 

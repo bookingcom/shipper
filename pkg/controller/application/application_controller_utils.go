@@ -16,20 +16,16 @@ import (
 	"github.com/bookingcom/shipper/pkg/conditions"
 	"github.com/bookingcom/shipper/pkg/controller"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
+	"github.com/bookingcom/shipper/pkg/errors"
 )
 
-func (c *Controller) createReleaseForApplication(app *shipperv1.Application, generation int) error {
+func (c *Controller) createReleaseForApplication(app *shipperv1.Application, releaseName string, iteration, generation int) error {
 	// Label releases with their hash; select by that label and increment if needed
 	// appname-hash-of-template-iteration.
 	var (
-		releaseName string
-		iteration   int
-		err         error
+		err error
 	)
 
-	if releaseName, iteration, err = c.releaseNameForApplication(app); err != nil {
-		return err
-	}
 	glog.V(4).Infof("Generated Release name for Application %q: %q", controller.MetaKey(app), releaseName)
 
 	newRelease := &shipperv1.Release{
@@ -141,8 +137,7 @@ func (c *Controller) releaseNameForApplication(app *shipperv1.Application) (stri
 	for _, rel := range releases {
 		iterationStr, ok := rel.GetAnnotations()[shipperv1.ReleaseTemplateIterationAnnotation]
 		if !ok {
-			return "", 0, fmt.Errorf("generate name for Release %q: no iteration annotation",
-				controller.MetaKey(rel))
+			return "", 0, errors.NewMissingGenerationAnnotationError(controller.MetaKey(rel))
 		}
 
 		iteration, err := strconv.Atoi(iterationStr)
@@ -192,20 +187,6 @@ func isRollingOut(rel *shipperv1.Release) (*int32, bool) {
 
 	return &achievedStep, achievedStep != targetStep ||
 		achievedStep != lastStep
-}
-
-func getAppHighestObservedGeneration(app *shipperv1.Application) (int, error) {
-	rawObserved, ok := app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation]
-	if !ok {
-		return 0, nil
-	}
-
-	generation, err := strconv.Atoi(rawObserved)
-	if err != nil {
-		return 0, err
-	}
-
-	return generation, nil
 }
 
 func identicalEnvironments(envs ...shipperv1.ReleaseEnvironment) bool {

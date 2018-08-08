@@ -10,7 +10,7 @@ import (
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	"github.com/bookingcom/shipper/pkg/errors"
-	"github.com/bookingcom/shipper/pkg/util/release"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 // ReleaseListerExpansion allows custom methods to be added to
@@ -46,7 +46,7 @@ func (s releaseNamespaceLister) ReleasesForApplication(appName string) ([]*shipp
 		if rel.DeletionTimestamp != nil {
 			continue
 		}
-		g, err := shippercontroller.GetReleaseGeneration(rel)
+		g, err := releaseutil.GetGeneration(rel)
 		if err != nil {
 			return nil, fmt.Errorf(`incomplete Release "%s/%s": %s`, rel.Namespace, rel.Name, err)
 		}
@@ -84,14 +84,14 @@ func (s releaseNamespaceLister) IncumbentForApplication(appName string) (*shippe
 		return nil, err
 	}
 	for _, r := range rels {
-		if release.ReleaseComplete(r) {
+		if releaseutil.ReleaseComplete(r) {
 			return r, nil
 		}
 	}
 	return nil, errors.NewIncumbentNotFoundError(appName)
 }
 
-func (s releaseNamespaceLister) TransitionPairForApplication(appName string) (*shipperv1.Release, *shipperV1.Release,
+func (s releaseNamespaceLister) TransitionPairForApplication(appName string) (*shipperv1.Release, *shipperv1.Release,
 	error) {
 	contenderRel, err := s.ContenderForApplication(appName)
 	if err != nil {
