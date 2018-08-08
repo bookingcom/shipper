@@ -154,6 +154,10 @@ func main() {
 	wg := &sync.WaitGroup{}
 
 	store := clusterclientstore.NewStore(
+		func(clusterName string, config *rest.Config) (kubernetes.Interface, error) {
+			glog.V(8).Infof("Building a KubeClient for cluster %q", clusterName)
+			return kubernetes.NewForConfig(config)
+		},
 		kubeInformerFactory.Core().V1().Secrets(),
 		shipperInformerFactory.Shipper().V1().Clusters(),
 		*ns,

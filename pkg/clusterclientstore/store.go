@@ -22,9 +22,14 @@ import (
 	"github.com/bookingcom/shipper/pkg/clusterclientstore/cache"
 )
 
+// this enables tests to inject an appropriate fake client, which allows us to
+// use the real cluster client store in unit tests
+type ClientBuilderFunc func(string, *rest.Config) (kubernetes.Interface, error)
+
 type Store struct {
-	ns    string
-	cache cache.CacheServer
+	ns          string
+	buildClient ClientBuilderFunc
+	cache       cache.CacheServer
 
 	secretInformer  corev1informer.SecretInformer
 	clusterInformer shipperv1informer.ClusterInformer
@@ -42,13 +47,15 @@ type Store struct {
 // NewStore creates a new client store that will use the specified
 // informers to maintain a cache of clientsets, rest.Configs, and informers for target clusters
 func NewStore(
+	buildClient ClientBuilderFunc,
 	secretInformer corev1informer.SecretInformer,
 	clusterInformer shipperv1informer.ClusterInformer,
 	ns string,
 ) *Store {
 	s := &Store{
-		ns:    ns,
-		cache: cache.NewServer(),
+		ns:          ns,
+		buildClient: buildClient,
+		cache:       cache.NewServer(),
 
 		secretInformer:  secretInformer,
 		clusterInformer: clusterInformer,
@@ -235,7 +242,7 @@ func (s *Store) syncSecret(key string) error {
 
 func (s *Store) create(cluster *shipperv1.Cluster, secret *corev1.Secret) error {
 	config := buildConfig(cluster.Spec.APIMaster, secret)
-	client, err := kubernetes.NewForConfig(config)
+	client, err := s.buildClient(cluster.Name, config)
 	if err != nil {
 		return err
 	}

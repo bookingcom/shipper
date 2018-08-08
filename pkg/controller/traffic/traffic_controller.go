@@ -381,12 +381,31 @@ func (c *Controller) syncHandler(key string) bool {
 		}
 	}
 
+	// at this point 'statuses' has an entry for every cluster touched by any
+	// traffic target object for this application. This might be the same as the
+	// syncing TT, but it could also be a superset. If it's a superset, we
+	// don't want to put a bunch of extra statuses in the syncingTT status
+	// output; this is confusing and breaks the strategy controller's checks
+	// (which guard against unexpected statuses).
+	specClusters := map[string]struct{}{}
+	for _, specCluster := range syncingTT.Spec.Clusters {
+		specClusters[specCluster.Name] = struct{}{}
+	}
+
+	filteredStatuses := make([]*shipperv1.ClusterTrafficStatus, 0, len(statuses))
+	for _, statusCluster := range statuses {
+		_, ok := specClusters[statusCluster.Name]
+		if ok {
+			filteredStatuses = append(filteredStatuses, statusCluster)
+		}
+	}
+
 	// NEVER modify objects from the store. It's a read-only, local cache.
 	// You can use DeepCopy() to make a deep copy of original object and modify this copy
 	// Or create a copy manually for better performance
 	ttCopy := syncingTT.DeepCopy()
 	ttCopy.Status = shipperv1.TrafficTargetStatus{
-		Clusters: statuses,
+		Clusters: filteredStatuses,
 	}
 	// Until #38113 is merged, we must use Update instead of UpdateStatus to
 	// update the Status block of the TrafficTarget resource. UpdateStatus will not

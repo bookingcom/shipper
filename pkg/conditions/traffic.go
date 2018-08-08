@@ -10,6 +10,8 @@ import (
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
 
+var TrafficConditionsShouldDiscardTimestamps = false
+
 func SetTrafficCondition(
 	conditions []shipperV1.ClusterTrafficCondition,
 	typ shipperV1.ClusterConditionType,
@@ -28,7 +30,7 @@ func SetTrafficCondition(
 
 	if conditionIndex == -1 {
 		lastTransitionTime := metaV1.Time{}
-		if !CapacityConditionsShouldDiscardTimestamps {
+		if !TrafficConditionsShouldDiscardTimestamps {
 			lastTransitionTime = metaV1.NewTime(time.Now())
 		}
 		aCondition := shipperV1.ClusterTrafficCondition{
@@ -45,7 +47,7 @@ func SetTrafficCondition(
 	} else {
 		aCondition := &conditions[conditionIndex]
 		if aCondition.Status != status {
-			if CapacityConditionsShouldDiscardTimestamps {
+			if TrafficConditionsShouldDiscardTimestamps {
 				aCondition.LastTransitionTime = metaV1.Time{}
 			} else {
 				aCondition.LastTransitionTime = metaV1.NewTime(time.Now())

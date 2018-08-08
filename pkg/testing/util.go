@@ -5,6 +5,7 @@ import (
 
 	"reflect"
 	"testing"
+	"time"
 
 	"k8s.io/apimachinery/pkg/util/diff"
 	kubetesting "k8s.io/client-go/testing"
@@ -13,9 +14,11 @@ import (
 	"github.com/pmezard/go-difflib/difflib"
 )
 
-const ContextLines = 4
-
 const (
+    NoResyncPeriod time.Duration = 0
+
+    ContextLines = 4
+
 	TestNamespace = "test-namespace"
 	TestLabel     = "shipper-e2e-test"
 
@@ -131,6 +134,7 @@ func FilterActions(actions []kubetesting.Action) []kubetesting.Action {
 				"traffictargets",
 				"capacitytargets",
 				"deployments",
+				"services",
 				"pods",
 			} {
 				if action.Matches(v, r) {

@@ -172,7 +172,7 @@ func TestSyncCluster(t *testing.T) {
 func TestWeightCalculatedForJustOneApplication(t *testing.T) {
 	var weight uint32 = 100
 	pods := 2
-	f := newFixture(t, "test unmanaged pods not in weight calculation")
+	f := newPodLabelShifterFixture(t, "test unmanaged pods not in weight calculation")
 	f.addTrafficTarget("release-a", weight)
 	f.addPods("release-a", pods)
 
@@ -226,7 +226,7 @@ func clusterSyncTestCase(
 		releaseNames = append(releaseNames, fmt.Sprintf("release-%d", i))
 	}
 
-	f := newFixture(t, name)
+	f := newPodLabelShifterFixture(t, name)
 
 	for i, weight := range weights {
 		f.addTrafficTarget(releaseNames[i], weight)
@@ -252,7 +252,7 @@ func clusterSyncTestCase(
 	}
 }
 
-type fixture struct {
+type podLabelShifterFixture struct {
 	t                *testing.T
 	name             string
 	contenderRelease string
@@ -263,12 +263,12 @@ type fixture struct {
 	trafficTargets   []*shipperv1.TrafficTarget
 }
 
-func newFixture(t *testing.T, name string) *fixture {
-	f := &fixture{t: t, name: name}
+func newPodLabelShifterFixture(t *testing.T, name string) *podLabelShifterFixture {
+	f := &podLabelShifterFixture{t: t, name: name}
 	return f
 }
 
-func (f *fixture) Errorf(template string, args ...interface{}) {
+func (f *podLabelShifterFixture) Errorf(template string, args ...interface{}) {
 	argsWithName := make([]interface{}, 0, len(args)+1)
 	argsWithName = append(argsWithName, f.name)
 	argsWithName = append(argsWithName, args...)
@@ -276,21 +276,21 @@ func (f *fixture) Errorf(template string, args ...interface{}) {
 }
 
 // each TT pertains to exactly one release
-func (f *fixture) addTrafficTarget(release string, weight uint32) {
+func (f *podLabelShifterFixture) addTrafficTarget(release string, weight uint32) {
 	tt := newTrafficTarget(release, map[string]uint32{
 		testClusterName: weight,
 	})
 	f.trafficTargets = append(f.trafficTargets, tt)
 }
 
-func (f *fixture) addPods(releaseName string, count int) {
+func (f *podLabelShifterFixture) addPods(releaseName string, count int) {
 	for _, pod := range newReleasePods(releaseName, count) {
 		f.objects = append(f.objects, pod)
 		f.pods = append(f.pods, pod)
 	}
 }
 
-func (f *fixture) addService() {
+func (f *podLabelShifterFixture) addService() {
 	labels := map[string]string{
 		shipperv1.AppLabel: testApplicationName,
 		shipperv1.LBLabel:  shipperv1.LBForProduction,
@@ -313,7 +313,7 @@ func (f *fixture) addService() {
 	f.objects = append(f.objects, svc)
 }
 
-func (f *fixture) run(expectedWeights map[string]uint32) bool {
+func (f *podLabelShifterFixture) run(expectedWeights map[string]uint32) bool {
 	clientset := kubefake.NewSimpleClientset(f.objects...)
 	f.client = clientset
 
@@ -369,7 +369,7 @@ func (f *fixture) run(expectedWeights map[string]uint32) bool {
 	return keepTesting
 }
 
-func (f *fixture) checkReleasePodsWithTraffic(release string, expectedCount int) {
+func (f *podLabelShifterFixture) checkReleasePodsWithTraffic(release string, expectedCount int) {
 	trafficSelector := f.svc.Spec.Selector
 	trafficCount := 0
 	for _, action := range f.client.Actions() {
