@@ -29,6 +29,7 @@ type ClientBuilderFunc func(string, *rest.Config) (kubernetes.Interface, error)
 type Store struct {
 	ns          string
 	buildClient ClientBuilderFunc
+	restTimeout *time.Duration
 	cache       cache.CacheServer
 
 	secretInformer  corev1informer.SecretInformer
@@ -51,10 +52,12 @@ func NewStore(
 	secretInformer corev1informer.SecretInformer,
 	clusterInformer shipperv1informer.ClusterInformer,
 	ns string,
+	restTimeout *time.Duration,
 ) *Store {
 	s := &Store{
 		ns:          ns,
 		buildClient: buildClient,
+		restTimeout: restTimeout,
 		cache:       cache.NewServer(),
 
 		secretInformer:  secretInformer,
@@ -241,20 +244,31 @@ func (s *Store) syncSecret(key string) error {
 }
 
 func (s *Store) create(cluster *shipperv1.Cluster, secret *corev1.Secret) error {
-	config := buildConfig(cluster.Spec.APIMaster, secret)
-	client, err := s.buildClient(cluster.Name, config)
-	if err != nil {
-		return err
-	}
-
 	checksum, ok := secret.GetAnnotations()[shipperv1.SecretChecksumAnnotation]
-	// programmer error: this is filtered for at the informer level
+	// Programmer error: this is filtered for at the informer level.
 	if !ok {
 		panic(fmt.Sprintf("Secret %q doesn't have a checksum annotation. this should be checked before calling 'create'", secret.Name))
 	}
 
-	informerFactory := kubeinformers.NewSharedInformerFactory(client, time.Second*30)
-	// register all the resources that the controllers are interested in, e.g. informerFactory.Core().V1().Pods().Informer()
+	config := buildConfig(cluster.Spec.APIMaster, secret, s.restTimeout)
+	client, err := s.buildClient(cluster.Name, config)
+	if err != nil {
+		return fmt.Errorf("create client for Cluster %q: %s", cluster.Name, err)
+	}
+
+	// These are only used in shared informers. Setting HTTP timeout here would
+	// affect watches which is undesirable. Instead, we leave it to client-go (see
+	// k8s.io/client-go/tools/cache) to govern watch durations.
+	informerConfig := buildConfig(cluster.Spec.APIMaster, secret, nil)
+	informerClient, err := s.buildClient(cluster.Name, informerConfig)
+	if err != nil {
+		return fmt.Errorf("create informer client for Cluster %q: %s", cluster.Name, err)
+	}
+
+	// TODO(asurikov): propagate -resync from cmd/shipper here.
+	informerFactory := kubeinformers.NewSharedInformerFactory(informerClient, time.Second*30)
+	// Register all the resources that the controllers are interested in, e.g.
+	// informerFactory.Core().V1().Pods().Informer().
 	for _, cb := range s.subscriptionRegisterFuncs {
 		cb(informerFactory)
 	}
@@ -274,9 +288,13 @@ func (s *Store) create(cluster *shipperv1.Cluster, secret *corev1.Secret) error 
 
 // TODO(btyler) error here or let any invalid data get picked up by errors from
 // kube.NewForConfig or auth problems at connection time?
-func buildConfig(host string, secret *corev1.Secret) *rest.Config {
+func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration) *rest.Config {
 	config := &rest.Config{
 		Host: host,
+	}
+
+	if restTimeout != nil {
+		config.Timeout = *restTimeout
 	}
 
 	// can't use the ServiceAccountToken type because we don't want the service

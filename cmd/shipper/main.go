@@ -162,6 +162,7 @@ func main() {
 		kubeInformerFactory.Core().V1().Secrets(),
 		shipperInformerFactory.Shipper().V1().Clusters(),
 		*ns,
+		restTimeout,
 	)
 
 	wg.Add(1)

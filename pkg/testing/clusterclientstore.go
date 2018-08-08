@@ -48,6 +48,7 @@ func ClusterClientStore(
 		kubeInformerFactory.Core().V1().Secrets(),
 		shipperInformerFactory.Shipper().V1().Clusters(),
 		TestNamespace,
+		nil,
 	)
 
 	kubeInformerFactory.Start(stopCh)
