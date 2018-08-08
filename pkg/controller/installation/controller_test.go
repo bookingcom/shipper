@@ -94,7 +94,7 @@ func TestInstallOneCluster(t *testing.T) {
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
 	}
-	shippertesting.CheckActions(expectedActions, clusterPair.fakeDynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, clusterPair.fakeDynamicClient.Actions(), t)
 
 	// We are interested only in "update" actions here.
 	var filteredActions []kubetesting.Action
@@ -175,7 +175,7 @@ func TestInstallMultipleClusters(t *testing.T) {
 	}
 
 	for _, fakePair := range clientsPerCluster {
-		shippertesting.CheckActions(expectedActions, fakePair.fakeDynamicClient.Actions(), t)
+		shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeDynamicClient.Actions(), t)
 	}
 
 	// We are interested only in "update" actions here.
