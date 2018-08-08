@@ -162,11 +162,6 @@ func TestStatusStableState(t *testing.T) {
 		},
 	}
 
-	var step int32 = 2
-	expectedApp.Status.State = shipperv1.ApplicationState{
-		RolloutStep: &step,
-	}
-
 	f.expectApplicationUpdate(expectedApp)
 	f.run()
 }
@@ -222,11 +217,6 @@ func TestRevisionHistoryLimit(t *testing.T) {
 			Type:   shipperv1.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
-	}
-
-	var step int32 = 2
-	expectedApp.Status.State = shipperv1.ApplicationState{
-		RolloutStep: &step,
 	}
 
 	f.expectReleaseDelete(releaseFoo)
@@ -379,12 +369,6 @@ func TestAbort(t *testing.T) {
 		},
 	}
 
-	// This still refers to the incumbent's state on this first update.
-	var step int32 = 2
-	expectedApp.Status.State = shipperv1.ApplicationState{
-		RolloutStep: &step,
-	}
-
 	f.expectApplicationUpdate(expectedApp)
 	f.run()
 }
@@ -433,12 +417,6 @@ func TestStateRollingOut(t *testing.T) {
 	f.objects = append(f.objects, contender)
 
 	appRollingOut := app.DeepCopy()
-	// TODO(btyler): this is 0 because there's an invalid strategy name; it will be
-	// fixed when we inline strategies.
-	var step int32 = 0
-	appRollingOut.Status.State = shipperv1.ApplicationState{
-		RolloutStep: &step,
-	}
 
 	appRollingOut.Status.Conditions = []shipperv1.ApplicationCondition{
 		{
@@ -508,11 +486,6 @@ func TestDeletingAbortedReleases(t *testing.T) {
 			Type:   shipperv1.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
-	}
-
-	var step int32 = 2
-	expectedApp.Status.State = shipperv1.ApplicationState{
-		RolloutStep: &step,
 	}
 
 	f.expectReleaseDelete(releaseFoo)

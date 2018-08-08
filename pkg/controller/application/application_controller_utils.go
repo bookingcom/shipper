@@ -155,40 +155,6 @@ func (c *Controller) releaseNameForApplication(app *shipperv1.Application) (stri
 	return fmt.Sprintf("%s-%s-%d", app.GetName(), hash, newIteration), newIteration, nil
 }
 
-func (c *Controller) computeState(app *shipperv1.Application) (shipperv1.ApplicationState, error) {
-	state := shipperv1.ApplicationState{}
-
-	latestRelease, err := c.getLatestReleaseForApp(app)
-	if err != nil {
-		return state, err
-	}
-
-	// If there's no history, it means we are about to rollout app but we haven't
-	// started yet.
-	if latestRelease == nil {
-		return state, nil
-	}
-
-	state.RolloutStep, _ = isRollingOut(latestRelease)
-	return state, nil
-}
-
-func isRollingOut(rel *shipperv1.Release) (*int32, bool) {
-	lastStep := int32(len(rel.Environment.Strategy.Steps) - 1)
-
-	achieved := rel.Status.AchievedStep
-	if achieved == nil {
-		return nil, true
-	}
-
-	achievedStep := achieved.Step
-
-	targetStep := rel.Spec.TargetStep
-
-	return &achievedStep, achievedStep != targetStep ||
-		achievedStep != lastStep
-}
-
 func identicalEnvironments(envs ...shipperv1.ReleaseEnvironment) bool {
 	if len(envs) == 0 {
 		return true

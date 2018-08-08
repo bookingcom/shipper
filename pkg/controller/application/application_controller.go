@@ -257,13 +257,7 @@ func (c *Controller) syncApplication(key string) bool {
 		runtime.HandleError(fmt.Errorf("error fetching history for Application %q (will retry): %s", key, err))
 	}
 
-	if newState, err := c.computeState(app); err == nil {
-		app.Status.State = newState
-	} else {
-		shouldRetry = true
-		runtime.HandleError(fmt.Errorf("error computing state for Application %q (will retry): %s", key, err))
-	}
-
+	// TODO(asurikov): change to UpdateStatus when it's available.
 	_, err = c.shipperClientset.ShipperV1().Applications(app.Namespace).Update(app)
 	if err != nil {
 		shouldRetry = true

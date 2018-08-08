@@ -72,13 +72,8 @@ type ApplicationSpec struct {
 }
 
 type ApplicationStatus struct {
-	State      ApplicationState       `json:"state"`
 	Conditions []ApplicationCondition `json:"conditions,omitempty"`
 	History    []string               `json:"history,omitempty"`
-}
-
-type ApplicationState struct {
-	RolloutStep *int32 `json:"rolloutStep,omitempty"`
 }
 
 type ApplicationConditionType string
