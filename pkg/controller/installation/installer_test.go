@@ -117,7 +117,7 @@ func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObject
 		t.Fatal(err)
 	}
 
-	shippertesting.CheckActions(expectedActions, fakePair.fakeDynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeDynamicClient.Actions(), t)
 
 	filteredActions := filterActions(fakePair.fakeDynamicClient.Actions(), "create")
 	validateAction(t, filteredActions[0], "ConfigMap")
