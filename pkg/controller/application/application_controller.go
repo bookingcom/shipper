@@ -244,19 +244,11 @@ func (c *Controller) syncApplication(key string) bool {
 	}
 
 	var shouldRetry bool
-	var rels []*shipperv1.Release
 
-	if rels, err = c.processApplication(app); err != nil {
+	if err = c.processApplication(app); err != nil {
 		shouldRetry = true
 		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
 		c.recorder.Event(app, corev1.EventTypeWarning, "FailedApplication", err.Error())
-	}
-
-	if newHistory, err := c.getAppHistory(app, rels); err == nil {
-		app.Status.History = newHistory
-	} else {
-		shouldRetry = true
-		runtime.HandleError(fmt.Errorf("error fetching history for Application %q (will retry): %s", key, err))
 	}
 
 	// TODO(asurikov): change to UpdateStatus when it's available.
@@ -269,7 +261,7 @@ func (c *Controller) syncApplication(key string) bool {
 	return shouldRetry
 }
 
-func (c *Controller) wrapUpApplicationConditions(app *shipperv1.Application, rels []*shipperv1.Release) ([]*shipperv1.Release, error) {
+func (c *Controller) wrapUpApplicationConditions(app *shipperv1.Application, rels []*shipperv1.Release) error {
 	var (
 		contenderRel *shipperv1.Release
 		incumbentRel *shipperv1.Release
@@ -316,7 +308,7 @@ func (c *Controller) wrapUpApplicationConditions(app *shipperv1.Application, rel
 End:
 	apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
 
-	return rels, nil
+	return nil
 }
 
 /*
@@ -326,7 +318,7 @@ End:
 * if same, do nothing
 * if different, create new release (highest generation # + 1)
  */
-func (c *Controller) processApplication(app *shipperv1.Application) ([]*shipperv1.Release, error) {
+func (c *Controller) processApplication(app *shipperv1.Application) error {
 
 	var (
 		appReleases     []*shipperv1.Release
@@ -337,11 +329,12 @@ func (c *Controller) processApplication(app *shipperv1.Application) ([]*shipperv
 	)
 
 	if appReleases, err = c.relLister.Releases(app.Namespace).ReleasesForApplication(app.Name); err != nil {
-		return nil, err
+		return err
 	}
 
 	// clean up excessive releases regardless of exit path
 	defer func() {
+		app.Status.History = apputil.ReleasesToHistory(appReleases)
 		c.cleanUpReleasesForApplication(app, appReleases)
 	}()
 
@@ -351,11 +344,11 @@ func (c *Controller) processApplication(app *shipperv1.Application) ([]*shipperv
 			// is creating the first release for this application.
 			var generation = 0
 			if releaseName, iteration, err := c.releaseNameForApplication(app); err != nil {
-				return nil, err
+				return err
 			} else if rel, err := c.createReleaseForApplication(app, releaseName, iteration, generation); err != nil {
 				releaseSyncedCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionFalse, conditions.CreateReleaseFailed, fmt.Sprintf("could not create a new release: %q", err))
 				apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
-				return nil, err
+				return err
 			} else {
 				appReleases = append(appReleases, rel)
 			}
@@ -365,19 +358,19 @@ func (c *Controller) processApplication(app *shipperv1.Application) ([]*shipperv
 			apputil.SetHighestObservedGeneration(app, generation)
 			return c.wrapUpApplicationConditions(app, appReleases)
 		}
-		return nil, err
+		return err
 	}
 
 	if generation, err = releaseutil.GetGeneration(contender); err != nil {
 		validHistoryCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse, conditions.BrokenReleaseGeneration, err.Error())
 		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
-		return nil, err
+		return err
 	}
 
 	if highestObserved, err = apputil.GetHighestObservedGeneration(app); err != nil {
 		validHistoryCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse, conditions.BrokenApplicationObservedGeneration, err.Error())
 		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
-		return nil, err
+		return err
 	}
 
 	if generation < highestObserved {
@@ -391,7 +384,7 @@ func (c *Controller) processApplication(app *shipperv1.Application) ([]*shipperv
 		apputil.SetApplicationCondition(&app.Status, *abortingCond)
 		rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
 		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
-		return appReleases, nil
+		return nil
 	}
 
 	if generation > highestObserved {
@@ -410,13 +403,13 @@ func (c *Controller) processApplication(app *shipperv1.Application) ([]*shipperv
 		// be created with the new template.
 		highestObserved = highestObserved + 1
 		if releaseName, iteration, err := c.releaseNameForApplication(app); err != nil {
-			return nil, err
+			return err
 		} else if rel, err := c.createReleaseForApplication(app, releaseName, iteration, highestObserved); err != nil {
 			releaseSyncedCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionFalse, conditions.CreateReleaseFailed, err.Error())
 			apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
 			rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionFalse, conditions.CreateReleaseFailed, err.Error())
 			apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
-			return nil, err
+			return err
 		} else {
 			appReleases = append(appReleases, rel)
 		}

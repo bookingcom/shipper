@@ -53,3 +53,12 @@ func SortReleases(rels []*shipperV1.Release) ([]*shipperV1.Release, error) {
 
 	return relsToReturn, nil
 }
+
+func ReleasesToHistory(releases []*shipperV1.Release) []string {
+	names := make([]string, 0, len(releases))
+	for _, rel := range releases {
+		names = append(names, rel.GetName())
+	}
+	return names
+
+}
