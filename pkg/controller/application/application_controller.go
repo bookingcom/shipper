@@ -269,7 +269,7 @@ func (c *Controller) wrapUpApplicationConditions(app *shipperv1.Application, rel
 	)
 
 	if rels, err = apputil.SortReleases(rels); err != nil {
-		panic(err)
+		return err
 	}
 
 	abortingCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeAborting, corev1.ConditionFalse, "", "")
