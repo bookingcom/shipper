@@ -63,14 +63,6 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application, rel
 	return rel, nil
 }
 
-func (c *Controller) getAppHistory(app *shipperv1.Application, releases []*shipperv1.Release) ([]string, error) {
-	names := make([]string, 0, len(releases))
-	for _, rel := range releases {
-		names = append(names, rel.GetName())
-	}
-	return names, nil
-}
-
 func (c *Controller) releaseNameForApplication(app *shipperv1.Application) (string, int, error) {
 	hash := hashReleaseEnvironment(app.Spec.Template)
 	// TODO(asurikov): move the hash to annotations.
