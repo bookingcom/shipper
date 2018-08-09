@@ -244,13 +244,15 @@ func (c *Controller) syncApplication(key string) bool {
 	}
 
 	var shouldRetry bool
-	if err := c.processApplication(app); err != nil {
+	var rels []*shipperv1.Release
+
+	if rels, err = c.processApplication(app); err != nil {
 		shouldRetry = true
 		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
 		c.recorder.Event(app, corev1.EventTypeWarning, "FailedApplication", err.Error())
 	}
 
-	if newHistory, err := c.getAppHistory(app); err == nil {
+	if newHistory, err := c.getAppHistory(app, rels); err == nil {
 		app.Status.History = newHistory
 	} else {
 		shouldRetry = true
@@ -267,12 +269,16 @@ func (c *Controller) syncApplication(key string) bool {
 	return shouldRetry
 }
 
-func (c *Controller) wrapUpApplicationConditions(app *shipperv1.Application) error {
+func (c *Controller) wrapUpApplicationConditions(app *shipperv1.Application, rels []*shipperv1.Release) ([]*shipperv1.Release, error) {
 	var (
 		contenderRel *shipperv1.Release
 		incumbentRel *shipperv1.Release
 		err          error
 	)
+
+	if rels, err = apputil.SortReleases(rels); err != nil {
+		panic(err)
+	}
 
 	abortingCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeAborting, corev1.ConditionFalse, "", "")
 	apputil.SetApplicationCondition(&app.Status, *abortingCond)
@@ -282,14 +288,14 @@ func (c *Controller) wrapUpApplicationConditions(app *shipperv1.Application) err
 	apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
 	rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionUnknown, "", "")
 
-	if contenderRel, err = c.relLister.Releases(app.Namespace).ContenderForApplication(app.Name); err != nil {
+	if contenderRel, err = apputil.GetContender(app.Name, rels); err != nil {
 		// There's no contender release yet, so RollingOut condition is
 		// Unknown, with error as message.
 		rollingOutCond.Message = err.Error()
 		goto End
 	}
 
-	if incumbentRel, err = c.relLister.Releases(app.Namespace).IncumbentForApplication(app.Name); err != nil && !errors.IsIncumbentNotFoundError(err) {
+	if incumbentRel, err = apputil.GetIncumbent(app.Name, rels); err != nil && !errors.IsIncumbentNotFoundError(err) {
 		// Errors other than incumbent release not found bail out to not
 		// report inconsistent status.
 		rollingOutCond.Message = err.Error()
@@ -310,7 +316,7 @@ func (c *Controller) wrapUpApplicationConditions(app *shipperv1.Application) err
 End:
 	apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
 
-	return nil
+	return rels, nil
 }
 
 /*
@@ -320,48 +326,58 @@ End:
 * if same, do nothing
 * if different, create new release (highest generation # + 1)
  */
-func (c *Controller) processApplication(app *shipperv1.Application) error {
-	// clean up excessive releases regardless of exit path
-	defer c.cleanUpReleasesForApplication(app)
+func (c *Controller) processApplication(app *shipperv1.Application) ([]*shipperv1.Release, error) {
 
 	var (
+		appReleases     []*shipperv1.Release
 		contender       *shipperv1.Release
 		err             error
 		generation      int
 		highestObserved int
 	)
 
-	if contender, err = c.relLister.Releases(app.Namespace).ContenderForApplication(app.Name); err != nil {
+	if appReleases, err = c.relLister.Releases(app.Namespace).ReleasesForApplication(app.Name); err != nil {
+		return nil, err
+	}
+
+	// clean up excessive releases regardless of exit path
+	defer func() {
+		c.cleanUpReleasesForApplication(app, appReleases)
+	}()
+
+	if contender, err = apputil.GetContender(app.Name, appReleases); err != nil {
 		if errors.IsContenderNotFoundError(err) {
 			// Contender doesn't exist, so we are covering the case where Shipper
 			// is creating the first release for this application.
 			var generation = 0
 			if releaseName, iteration, err := c.releaseNameForApplication(app); err != nil {
-				return err
-			} else if err := c.createReleaseForApplication(app, releaseName, iteration, generation); err != nil {
+				return nil, err
+			} else if rel, err := c.createReleaseForApplication(app, releaseName, iteration, generation); err != nil {
 				releaseSyncedCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionFalse, conditions.CreateReleaseFailed, fmt.Sprintf("could not create a new release: %q", err))
 				apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
-				return err
+				return nil, err
+			} else {
+				appReleases = append(appReleases, rel)
 			}
 			// It seems that adding an object to the fakeClient doesn't
 			// update listers and informers automatically during tests...
 			// How should we do it then?
 			apputil.SetHighestObservedGeneration(app, generation)
-			return c.wrapUpApplicationConditions(app)
+			return c.wrapUpApplicationConditions(app, appReleases)
 		}
-		return err
+		return nil, err
 	}
 
 	if generation, err = releaseutil.GetGeneration(contender); err != nil {
 		validHistoryCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse, conditions.BrokenReleaseGeneration, err.Error())
 		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
-		return err
+		return nil, err
 	}
 
 	if highestObserved, err = apputil.GetHighestObservedGeneration(app); err != nil {
 		validHistoryCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeValidHistory, corev1.ConditionFalse, conditions.BrokenApplicationObservedGeneration, err.Error())
 		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
-		return err
+		return nil, err
 	}
 
 	if generation < highestObserved {
@@ -375,7 +391,7 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		apputil.SetApplicationCondition(&app.Status, *abortingCond)
 		rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
 		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
-		return nil
+		return appReleases, nil
 	}
 
 	if generation > highestObserved {
@@ -394,28 +410,24 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		// be created with the new template.
 		highestObserved = highestObserved + 1
 		if releaseName, iteration, err := c.releaseNameForApplication(app); err != nil {
-			return err
-		} else if err = c.createReleaseForApplication(app, releaseName, iteration, highestObserved); err != nil {
+			return nil, err
+		} else if rel, err := c.createReleaseForApplication(app, releaseName, iteration, highestObserved); err != nil {
 			releaseSyncedCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeReleaseSynced, corev1.ConditionFalse, conditions.CreateReleaseFailed, err.Error())
 			apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
 			rollingOutCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeRollingOut, corev1.ConditionFalse, conditions.CreateReleaseFailed, err.Error())
 			apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
-			return err
+			return nil, err
+		} else {
+			appReleases = append(appReleases, rel)
 		}
 	}
 
 	apputil.SetHighestObservedGeneration(app, highestObserved)
-	return c.wrapUpApplicationConditions(app)
+	return c.wrapUpApplicationConditions(app, appReleases)
 }
 
-func (c *Controller) cleanUpReleasesForApplication(app *shipperv1.Application) {
-	installedReleases := []*shipperv1.Release{}
-
-	releases, err := c.getSortedAppReleases(app)
-	if err != nil {
-		runtime.HandleError(err)
-		return
-	}
+func (c *Controller) cleanUpReleasesForApplication(app *shipperv1.Application, releases []*shipperv1.Release) {
+	var installedReleases []*shipperv1.Release
 
 	// Delete any releases that are not installed. Don't touch the latest release
 	// because a release that isn't installed and is the last release just means
@@ -427,7 +439,7 @@ func (c *Controller) cleanUpReleasesForApplication(app *shipperv1.Application) {
 			continue
 		}
 
-		err = c.shipperClientset.ShipperV1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})
+		err := c.shipperClientset.ShipperV1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})
 		if err != nil {
 			if kerrors.IsNotFound(err) {
 				// Skip this release: it's already deleted.
@@ -446,7 +458,7 @@ func (c *Controller) cleanUpReleasesForApplication(app *shipperv1.Application) {
 	overhead := len(installedReleases) - int(*app.Spec.RevisionHistoryLimit)
 	for i := 0; i < overhead; i++ {
 		rel := installedReleases[i]
-		err = c.shipperClientset.ShipperV1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})
+		err := c.shipperClientset.ShipperV1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})
 		if err != nil {
 			runtime.HandleError(err)
 			return

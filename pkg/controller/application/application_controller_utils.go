@@ -16,7 +16,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/errors"
 )
 
-func (c *Controller) createReleaseForApplication(app *shipperv1.Application, releaseName string, iteration, generation int) error {
+func (c *Controller) createReleaseForApplication(app *shipperv1.Application, releaseName string, iteration, generation int) (*shipperv1.Release, error) {
 	// Label releases with their hash; select by that label and increment if needed
 	// appname-hash-of-template-iteration.
 	var (
@@ -56,40 +56,19 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application, rel
 	glog.V(4).Infof("Release %q labels: %v", controller.MetaKey(app), newRelease.Labels)
 	glog.V(4).Infof("Release %q annotations: %v", controller.MetaKey(app), newRelease.Annotations)
 
-	_, err = c.shipperClientset.ShipperV1().Releases(app.Namespace).Create(newRelease)
+	rel, err := c.shipperClientset.ShipperV1().Releases(app.Namespace).Create(newRelease)
 	if err != nil {
-		return fmt.Errorf("create Release for Application %q: %s", controller.MetaKey(app), err)
+		return nil, fmt.Errorf("create Release for Application %q: %s", controller.MetaKey(app), err)
 	}
-	return nil
+	return rel, nil
 }
 
-func (c *Controller) getAppHistory(app *shipperv1.Application) ([]string, error) {
-	releases, err := c.getSortedAppReleases(app)
-	if err != nil {
-		return nil, err
-	}
+func (c *Controller) getAppHistory(app *shipperv1.Application, releases []*shipperv1.Release) ([]string, error) {
 	names := make([]string, 0, len(releases))
 	for _, rel := range releases {
 		names = append(names, rel.GetName())
 	}
 	return names, nil
-}
-
-func (c *Controller) getSortedAppReleases(app *shipperv1.Application) ([]*shipperv1.Release, error) {
-	selector := labels.Set{
-		shipperv1.AppLabel: app.GetName(),
-	}.AsSelector()
-
-	releases, err := c.relLister.Releases(app.GetNamespace()).List(selector)
-	if err != nil {
-		return nil, err
-	}
-	sorted, err := controller.SortReleasesByGeneration(releases)
-	if err != nil {
-		return nil, err
-	}
-
-	return sorted, nil
 }
 
 func (c *Controller) releaseNameForApplication(app *shipperv1.Application) (string, int, error) {

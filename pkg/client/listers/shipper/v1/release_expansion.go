@@ -1,16 +1,13 @@
 package v1
 
 import (
-	"fmt"
-	"sort"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	"github.com/bookingcom/shipper/pkg/errors"
-	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
+	apputil "github.com/bookingcom/shipper/pkg/util/application"
 )
 
 // ReleaseListerExpansion allows custom methods to be added to
@@ -36,33 +33,7 @@ func (s releaseNamespaceLister) ReleasesForApplication(appName string) ([]*shipp
 		return nil, err
 	}
 
-	type releaseAndGeneration struct {
-		release    *shipperv1.Release
-		generation int
-	}
-
-	filteredRels := make([]releaseAndGeneration, 0, len(selectedRels))
-	for _, rel := range selectedRels {
-		if rel.DeletionTimestamp != nil {
-			continue
-		}
-		g, err := releaseutil.GetGeneration(rel)
-		if err != nil {
-			return nil, fmt.Errorf(`incomplete Release "%s/%s": %s`, rel.Namespace, rel.Name, err)
-		}
-		filteredRels = append(filteredRels, releaseAndGeneration{rel, g})
-	}
-
-	sort.Slice(filteredRels, func(i, j int) bool {
-		return filteredRels[i].generation < filteredRels[j].generation
-	})
-
-	relsToReturn := make([]*shipperv1.Release, 0, len(filteredRels))
-	for _, e := range filteredRels {
-		relsToReturn = append(relsToReturn, e.release)
-	}
-
-	return relsToReturn, nil
+	return apputil.SortReleases(selectedRels)
 }
 
 // ContenderForApplication returns the contender Release for the given application name.

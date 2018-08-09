@@ -12,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/helm/pkg/repo/repotest"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
@@ -575,30 +574,8 @@ func newFixture(t *testing.T) *fixture {
 func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerFactory) {
 	f.client = shipperfake.NewSimpleClientset(f.objects...)
 
-	var shipperInformerFactory shipperinformers.SharedInformerFactory
 	const noResyncPeriod time.Duration = 0
-	f.client.PrependReactor("*", "*", func(action kubetesting.Action) (handled bool, ret runtime.Object, err error) {
-		// Actions issued by the client don't propagate to the
-		// informer's index by default, thus we prepend this
-		// reactor that is used to modify the indexer so listers
-		// work as expected.
-		gvr := action.GetResource()
-		informer, err := shipperInformerFactory.ForResource(schema.GroupVersionResource{Group: gvr.Group, Version: gvr.Version, Resource: gvr.Resource})
-		if err != nil {
-			panic(err)
-		}
-		indexer := informer.Informer().GetIndexer()
-		switch a := action.(type) {
-		case kubetesting.CreateActionImpl:
-			indexer.Add(a.GetObject())
-		case kubetesting.UpdateActionImpl:
-			indexer.Update(a.GetObject())
-		case kubetesting.DeleteActionImpl:
-			indexer.Delete(a.Name)
-		}
-		return false, nil, nil
-	})
-	shipperInformerFactory = shipperinformers.NewSharedInformerFactory(f.client, noResyncPeriod)
+	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(f.client, noResyncPeriod)
 
 	c := NewController(f.client, shipperInformerFactory, record.NewFakeRecorder(42))
 
