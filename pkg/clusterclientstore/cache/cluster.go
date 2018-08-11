@@ -6,6 +6,8 @@ import (
 	kubeinformers "k8s.io/client-go/informers"
 	kubernetes "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+
+	"github.com/bookingcom/shipper/pkg/errors"
 )
 
 const (
@@ -53,14 +55,18 @@ type cluster struct {
 }
 
 func (c *cluster) IsReady() bool {
+	return c.State() == StateReady
+}
+
+func (c *cluster) State() string {
 	c.stateMut.RLock()
 	defer c.stateMut.RUnlock()
-	return c.state == StateReady
+	return c.state
 }
 
 func (c *cluster) GetClient() (kubernetes.Interface, error) {
 	if !c.IsReady() {
-		return c.client, ErrClusterNotReady
+		return c.client, errors.NewClusterNotReady(c.name, c.State())
 	}
 
 	return c.client, nil
@@ -68,7 +74,7 @@ func (c *cluster) GetClient() (kubernetes.Interface, error) {
 
 func (c *cluster) GetConfig() (*rest.Config, error) {
 	if !c.IsReady() {
-		return c.config, ErrClusterNotReady
+		return c.config, errors.NewClusterNotReady(c.name, c.State())
 	}
 
 	return c.config, nil
@@ -76,7 +82,7 @@ func (c *cluster) GetConfig() (*rest.Config, error) {
 
 func (c *cluster) GetChecksum() (string, error) {
 	if !c.IsReady() {
-		return c.checksum, ErrClusterNotReady
+		return c.checksum, errors.NewClusterNotReady(c.name, c.State())
 	}
 
 	return c.checksum, nil
@@ -84,7 +90,7 @@ func (c *cluster) GetChecksum() (string, error) {
 
 func (c *cluster) GetInformerFactory() (kubeinformers.SharedInformerFactory, error) {
 	if !c.IsReady() {
-		return nil, ErrClusterNotReady
+		return nil, errors.NewClusterNotReady(c.name, c.State())
 	}
 
 	return c.informerFactory, nil
