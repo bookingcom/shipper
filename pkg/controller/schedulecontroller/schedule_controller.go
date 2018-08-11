@@ -18,6 +18,7 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
@@ -203,12 +204,12 @@ func (c *Controller) syncOne(key string) bool {
 			err.Error(),
 		)
 
-		reason, shouldRetry := classifyError(err)
+		selfAwareError := shippererrors.Classify(err)
 		condition := releaseutil.NewReleaseCondition(
 			shipperv1.ReleaseConditionTypeScheduled,
 			corev1.ConditionFalse,
-			reason,
-			err.Error(),
+			selfAwareError.Name(),
+			selfAwareError.Error(),
 		)
 
 		releaseutil.SetReleaseCondition(&release.Status, *condition)
@@ -219,12 +220,12 @@ func (c *Controller) syncOne(key string) bool {
 			return true
 		}
 
-		if shouldRetry {
-			runtime.HandleError(fmt.Errorf("error syncing Release %q (will retry): %s", key, err))
+		if selfAwareError.ShouldRetry() {
+			runtime.HandleError(fmt.Errorf("error syncing Release %q (will retry): %s", key, selfAwareError.Error()))
 			return true
 		}
 
-		runtime.HandleError(fmt.Errorf("error syncing Release %q (will NOT retry): %s", key, err))
+		runtime.HandleError(fmt.Errorf("error syncing Release %q (will NOT retry): %s", key, selfAwareError.Error()))
 		return false
 	}
 

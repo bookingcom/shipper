@@ -17,6 +17,7 @@ import (
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/controller"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
@@ -70,7 +71,11 @@ func (c *Scheduler) scheduleRelease() error {
 	if !c.HasClusters() {
 		clusterList, err := c.clustersLister.List(labels.Everything())
 		if err != nil {
-			return NewFailedAPICallError("ListClusters", err)
+			return shippererrors.NewFailedAPICall(
+				shippererrors.API.List,
+				"all clusters",
+				err,
+			)
 		}
 
 		clusters, err := computeTargetClusters(c.Release, clusterList)
@@ -81,7 +86,11 @@ func (c *Scheduler) scheduleRelease() error {
 		c.SetClusters(clusters)
 		newRelease, err := c.UpdateRelease()
 		if err != nil {
-			return NewFailedAPICallError("UpdateRelease", err)
+			return shippererrors.NewFailedCRUD(
+				shippererrors.API.Update,
+				c.Release,
+				err,
+			)
 		}
 		c.Release = newRelease
 
@@ -153,10 +162,8 @@ func (c *Scheduler) UpdateRelease() (*v1.Release, error) {
 func (c *Scheduler) fetchChartAndExtractReplicaCount() (int32, error) {
 	chart, err := c.fetchChart(c.Release.Spec.Environment.Chart)
 	if err != nil {
-		return 0, NewChartFetchFailureError(
-			c.Release.Spec.Environment.Chart.Name,
-			c.Release.Spec.Environment.Chart.Version,
-			c.Release.Spec.Environment.Chart.RepoURL,
+		return 0, shippererrors.NewChartFetchFailure(
+			c.Release.Environment.Chart,
 			err,
 		)
 	}
@@ -175,26 +182,22 @@ func (c *Scheduler) fetchChartAndExtractReplicaCount() (int32, error) {
 func (c *Scheduler) extractReplicasFromChart(chart *helmchart.Chart) (int32, error) {
 	owners := c.Release.OwnerReferences
 	if l := len(owners); l != 1 {
-		return 0, NewInvalidReleaseOwnerRefsError(len(owners))
+		return 0, shippererrors.NewInvalidReleaseOwnerRefs(len(owners))
 	}
 
 	applicationName := owners[0].Name
 	rendered, err := shipperchart.Render(chart, applicationName, c.Release.Namespace, c.Release.Spec.Environment.Values)
 	if err != nil {
-		return 0, NewBrokenChartError(
-			c.Release.Spec.Environment.Chart.Name,
-			c.Release.Spec.Environment.Chart.Version,
-			c.Release.Spec.Environment.Chart.RepoURL,
+		return 0, shippererrors.NewBrokenChart(
+			c.Release.Environment.Chart,
 			err,
 		)
 	}
 
 	deployments := shipperchart.GetDeployments(rendered)
 	if len(deployments) != 1 {
-		return 0, NewWrongChartDeploymentsError(
-			c.Release.Spec.Environment.Chart.Name,
-			c.Release.Spec.Environment.Chart.Version,
-			c.Release.Spec.Environment.Chart.RepoURL,
+		return 0, shippererrors.NewWrongChartDeployments(
+			c.Release.Environment.Chart,
 			len(deployments),
 		)
 	}
@@ -248,7 +251,11 @@ func (c *Scheduler) CreateInstallationTarget() error {
 
 			return err
 		}
-		return NewFailedAPICallError("CreateInstallationTarget", err)
+		return shippererrors.NewFailedCRUD(
+			shippererrors.API.Create,
+			installationTarget,
+			err,
+		)
 	}
 
 	c.recorder.Eventf(
@@ -305,7 +312,11 @@ func (c *Scheduler) CreateCapacityTarget(totalReplicaCount int32) error {
 
 			return err
 		}
-		return NewFailedAPICallError("CreateCapacityTarget", err)
+		return shippererrors.NewFailedCRUD(
+			shippererrors.API.Create,
+			capacityTarget,
+			err,
+		)
 	}
 
 	c.recorder.Eventf(
@@ -362,7 +373,11 @@ func (c *Scheduler) CreateTrafficTarget() error {
 
 			return err
 		}
-		return NewFailedAPICallError("CreateTrafficTarget", err)
+		return shippererrors.NewFailedCRUD(
+			shippererrors.API.Create,
+			trafficTarget,
+			err,
+		)
 	}
 
 	c.recorder.Eventf(
@@ -385,7 +400,7 @@ func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]st
 	regionReplicas := map[string]int{}
 
 	if len(regionSpecs) == 0 {
-		return nil, NewNoRegionsSpecifiedError()
+		return nil, shippererrors.NewNoRegionsSpecified()
 	}
 
 	app, err := releaseutil.ApplicationNameForRelease(release)
@@ -434,14 +449,14 @@ func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]st
 			}
 		}
 		if regionReplicas[region.Name] > matchedRegion {
-			return nil, NewNotEnoughClustersInRegionError(region.Name, regionReplicas[region.Name], matchedRegion)
+			return nil, shippererrors.NewNotEnoughClustersInRegion(region.Name, regionReplicas[region.Name], matchedRegion)
 		}
 	}
 
 	clusterNames := []string{}
 	for region, clusters := range capableClustersByRegion {
 		if regionReplicas[region] > len(clusters) {
-			return nil, NewNotEnoughCapableClustersInRegionError(
+			return nil, shippererrors.NewNotEnoughCapableClustersInRegion(
 				region,
 				requiredCapabilities,
 				regionReplicas[region],
@@ -473,7 +488,7 @@ func validateClusterRequirements(requirements v1.ClusterRequirements) error {
 	for _, capability := range requirements.Capabilities {
 		_, ok := seenCapabilities[capability]
 		if ok {
-			return NewDuplicateCapabilityRequirementError(capability)
+			return shippererrors.NewDuplicateCapabilityRequirement(capability)
 		}
 		seenCapabilities[capability] = struct{}{}
 	}
