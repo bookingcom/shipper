@@ -168,8 +168,6 @@ func (f *fixture) newController(
 
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(client, shippertesting.NoResyncPeriod)
 	c := NewController(
-		// this kubefake client should die when #102 is merged
-		kubefake.NewSimpleClientset(),
 		client, shipperInformerFactory, store, record.NewFakeRecorder(42),
 	)
 
