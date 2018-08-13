@@ -43,7 +43,6 @@ func TestSuccessfulDeleteInstallationTarget(t *testing.T) {
 	// called directly later in this test.
 	c := newController(
 		false,
-		kubeFakeClientset,
 		kubeInformerFactory,
 		shipperFakeClientset,
 		shipperInformerFactory,
@@ -121,7 +120,6 @@ func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
 	// later in this test.
 	c := newController(
 		false,
-		kubeFakeClientset,
 		kubeInformerFactory,
 		shipperFakeClientset,
 		shipperInformerFactory,
@@ -192,7 +190,6 @@ func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
 	// later on.
 	c := newController(
 		false,
-		kubeFakeClientset,
 		kubeInformerFactory,
 		shipperFakeClientset,
 		shipperInformerFactory,
@@ -264,7 +261,6 @@ func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
 	// later on.
 	c := newController(
 		false,
-		kubeFakeClientset,
 		kubeInformerFactory,
 		shipperFakeClientset,
 		shipperInformerFactory,

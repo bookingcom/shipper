@@ -70,7 +70,6 @@ func (f *FakeClusterClientStore) GetInformerFactory(string) (kubeinformers.Share
 // workqueue.
 func newController(
 	populateWorkqueue bool,
-	kubeclientset kubernetes.Interface,
 	kubeInformerFactory kubeinformers.SharedInformerFactory,
 	shipperclientset *shipperfake.Clientset,
 	shipperInformerFactory shipperinformers.SharedInformerFactory,
@@ -78,7 +77,6 @@ func newController(
 	fakeRecorder record.EventRecorder,
 ) *Controller {
 	c := NewController(
-		kubeclientset,
 		shipperclientset,
 		shipperInformerFactory,
 		fakeClientStore,

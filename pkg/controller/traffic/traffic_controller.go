@@ -86,7 +86,6 @@ type Controller struct {
 // NewController returns a new TrafficTarget controller
 //noinspection GoUnusedParameter
 func NewController(
-	kubeclientset kubernetes.Interface,
 	shipperclientset shipper.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
 	store *clusterclientstore.Store,
