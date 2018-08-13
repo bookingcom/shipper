@@ -3,6 +3,7 @@ package schedulecontroller
 import (
 	"fmt"
 	"strings"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 const (
@@ -37,6 +38,18 @@ func classifyError(err error) (string, bool) {
 	}
 
 	return "unknown error! tell Shipper devs to classify it", retry
+}
+
+func IsChartError(err error) (string, string, bool) {
+	switch {
+	case IsChartFetchFailureError(err):
+		return releaseutil.NotReachableReason, err.Error(), true
+	case IsBrokenChartError(err):
+		return releaseutil.BadSyntaxReason, err.Error(), true
+	case IsWrongChartDeploymentsError(err):
+		return releaseutil.BadObjectsReason, err.Error(), true
+	}
+	return "", "", false
 }
 
 type FailedAPICallError struct {
@@ -125,6 +138,11 @@ func NewInvalidReleaseOwnerRefsError(count int) InvalidReleaseOwnerRefsError {
 	}
 }
 
+func IsInvalidReleaseOwnerRefsError(err error) bool {
+	_, ok := err.(InvalidReleaseOwnerRefsError)
+	return ok
+}
+
 type ChartError struct {
 	chartName    string
 	chartVersion string
@@ -154,6 +172,11 @@ func NewChartFetchFailureError(chartName, chartVersion, chartRepo string, err er
 	}
 }
 
+func IsChartFetchFailureError(err error) bool {
+	_, ok := err.(ChartFetchFailureError)
+	return ok
+}
+
 type BrokenChartError struct {
 	ChartError
 	err error
@@ -179,6 +202,11 @@ func NewBrokenChartError(chartName, chartVersion, chartRepo string, err error) B
 	}
 }
 
+func IsBrokenChartError(err error) bool {
+	_, ok := err.(BrokenChartError)
+	return ok
+}
+
 type WrongChartDeploymentsError struct {
 	ChartError
 	deploymentCount int
@@ -202,6 +230,11 @@ func NewWrongChartDeploymentsError(chartName, chartVersion, chartRepo string, de
 		},
 		deploymentCount: deploymentCount,
 	}
+}
+
+func IsWrongChartDeploymentsError(err error) bool {
+	_, ok := err.(WrongChartDeploymentsError)
+	return ok
 }
 
 type DuplicateCapabilityRequirementError struct {

@@ -83,6 +83,22 @@ func (c *Scheduler) scheduleRelease() error {
 
 	replicaCount, err := c.fetchChartAndExtractReplicaCount()
 	if err != nil {
+		chartCond := releaseutil.NewReleaseCondition(v1.ReleaseConditionTypeChart, corev1.ConditionTrue, "", "")
+		if reason, message, ok := IsChartError(err); ok {
+			chartCond.Status = corev1.ConditionFalse
+			chartCond.Reason = reason
+			chartCond.Message = message
+		}
+		releaseutil.SetReleaseCondition(&c.Release.Status, *chartCond)
+		scheduledCond := releaseutil.NewReleaseCondition(v1.ReleaseConditionTypeScheduled, corev1.ConditionFalse, "ChartNotReachable", "")
+		releaseutil.SetReleaseCondition(&c.Release.Status, *scheduledCond)
+
+		// TODO(isutton): This is fugly. Perhaps we shouldn't call UpdateRelease() several times in here?
+		r, updateErr := c.UpdateRelease()
+		if updateErr != nil {
+			return updateErr
+		}
+		c.Release = r
 		return err
 	}
 

@@ -209,6 +209,7 @@ const (
 	ReleaseConditionTypeScheduled ReleaseConditionType = "Scheduled"
 	ReleaseConditionTypeInstalled ReleaseConditionType = "Installed"
 	ReleaseConditionTypeComplete  ReleaseConditionType = "Complete"
+	ReleaseConditionTypeChart     ReleaseConditionType = "Chart"
 )
 
 type ReleaseCondition struct {

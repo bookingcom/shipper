@@ -11,6 +11,12 @@ import (
 
 var ConditionsShouldDiscardTimestamps = false
 
+const (
+	NotReachableReason = "NotReachable"
+	BadSyntaxReason    = "BadSyntax"
+	BadObjectsReason   = "BadObjects"
+)
+
 func NewReleaseCondition(condType shipperv1.ReleaseConditionType, status corev1.ConditionStatus, reason, message string) *shipperv1.ReleaseCondition {
 	now := metav1.Now()
 	if ConditionsShouldDiscardTimestamps {
