@@ -224,6 +224,95 @@ func TestRevisionHistoryLimit(t *testing.T) {
 	f.run()
 }
 
+func TestCreateThirdRelease(t *testing.T) {
+	srv, hh, err := repotest.NewTempServer("testdata/*.tgz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		os.RemoveAll(hh.String())
+		srv.Stop()
+	}()
+
+	f := newFixture(t)
+	app := newApplication(testAppName)
+	apputil.SetHighestObservedGeneration(app, 1)
+	app.Spec.Template.Chart.RepoURL = srv.URL()
+
+	incumbentEnvHash := hashReleaseEnvironment(app.Spec.Template)
+
+	firstRelName := fmt.Sprintf("%s-%s-0", testAppName, incumbentEnvHash)
+	firstRel := newRelease(firstRelName, app)
+	releaseutil.SetIteration(firstRel, 0)
+	releaseutil.SetGeneration(firstRel, 0)
+	releaseutil.SetReleaseCondition(&firstRel.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
+	firstRel.Environment.Chart.RepoURL = srv.URL()
+	firstRel.Spec.TargetStep = 2
+	firstRel.Status.AchievedStep = &shipperv1.AchievedStep{
+		Step: 2,
+		Name: firstRel.Environment.Strategy.Steps[2].Name,
+	}
+
+	incumbentRelName := fmt.Sprintf("%s-%s-1", testAppName, incumbentEnvHash)
+	incumbentRel := newRelease(incumbentRelName, app)
+	releaseutil.SetIteration(incumbentRel, 1)
+	releaseutil.SetGeneration(incumbentRel, 1)
+	releaseutil.SetReleaseCondition(&incumbentRel.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
+	incumbentRel.Environment.Chart.RepoURL = srv.URL()
+	incumbentRel.Spec.TargetStep = 2
+	incumbentRel.Status.AchievedStep = &shipperv1.AchievedStep{
+		Step: 2,
+		Name: incumbentRel.Environment.Strategy.Steps[2].Name,
+	}
+
+	app.Status.History = []string{firstRelName, incumbentRelName}
+	app.Spec.Template.ClusterRequirements = shipperv1.ClusterRequirements{
+		Regions: []shipperv1.RegionRequirement{{Name: "foo"}},
+	}
+
+	f.objects = append(f.objects, app, firstRel, incumbentRel)
+
+	contenderEnvHash := hashReleaseEnvironment(app.Spec.Template)
+	expectedContenderRelName := fmt.Sprintf("%s-%s-0", testAppName, contenderEnvHash)
+
+	expectedContenderRel := newRelease(expectedContenderRelName, app)
+	expectedContenderRel.Labels[shipperv1.ReleaseEnvironmentHashLabel] = contenderEnvHash
+	releaseutil.SetIteration(expectedContenderRel, 0)
+	releaseutil.SetGeneration(expectedContenderRel, 2)
+
+	expectedApp := app.DeepCopy()
+	apputil.SetHighestObservedGeneration(expectedApp, 2)
+	expectedApp.Status.History = []string{
+		firstRelName,
+		incumbentRelName,
+		expectedContenderRelName,
+	}
+
+	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
+		{
+			Type:   shipperv1.ApplicationConditionTypeAborting,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:    shipperv1.ApplicationConditionTypeRollingOut,
+			Status:  corev1.ConditionTrue,
+			Message: fmt.Sprintf(TransitioningMessageFormat, incumbentRelName, expectedContenderRelName),
+		},
+		{
+			Type:   shipperv1.ApplicationConditionTypeValidHistory,
+			Status: corev1.ConditionTrue,
+		},
+	}
+
+	f.expectReleaseCreate(expectedContenderRel)
+	f.expectApplicationUpdate(expectedApp)
+	f.run()
+}
+
 // An app with 1 existing release should create a new one when its template has
 // changed.
 func TestCreateSecondRelease(t *testing.T) {

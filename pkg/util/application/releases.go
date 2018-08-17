@@ -12,7 +12,7 @@ func GetContender(appName string, rels []*shipperV1.Release) (*shipperV1.Release
 	if len(rels) == 0 {
 		return nil, errors.NewContenderNotFoundError(appName)
 	}
-	return rels[len(rels)-1], nil
+	return rels[0], nil
 }
 
 func GetIncumbent(appName string, rels []*shipperV1.Release) (*shipperV1.Release, error) {
@@ -43,7 +43,7 @@ func SortReleases(rels []*shipperV1.Release) ([]*shipperV1.Release, error) {
 	}
 
 	sort.Slice(filteredRels, func(i, j int) bool {
-		return filteredRels[i].generation < filteredRels[j].generation
+		return filteredRels[i].generation > filteredRels[j].generation
 	})
 
 	relsToReturn := make([]*shipperV1.Release, 0, len(filteredRels))
@@ -55,6 +55,11 @@ func SortReleases(rels []*shipperV1.Release) ([]*shipperV1.Release, error) {
 }
 
 func ReleasesToHistory(releases []*shipperV1.Release) []string {
+	sort.Slice(releases, func(i, j int) bool {
+		gi, _ := releaseutil.GetGeneration(releases[i])
+		gj, _ := releaseutil.GetGeneration(releases[j])
+		return gi < gj
+	})
 	names := make([]string, 0, len(releases))
 	for _, rel := range releases {
 		names = append(names, rel.GetName())
