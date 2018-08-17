@@ -3,6 +3,7 @@ package application
 import (
 	"fmt"
 	"time"
+	"sort"
 
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
@@ -268,9 +269,8 @@ func (c *Controller) wrapUpApplicationConditions(app *shipperv1.Application, rel
 		err          error
 	)
 
-	if rels, err = apputil.SortReleases(rels); err != nil {
-		return err
-	}
+	// Required by GetContender() and GetIncumbent() below.
+	sort.Sort(releaseutil.ByGenerationAscending(rels))
 
 	abortingCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeAborting, corev1.ConditionFalse, "", "")
 	apputil.SetApplicationCondition(&app.Status, *abortingCond)
@@ -332,9 +332,12 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		return err
 	}
 
+	// Required by subsequent calls to GetContender and GetIncumbent.
+	sort.Sort(releaseutil.ByGenerationAscending(appReleases))
+
 	// clean up excessive releases regardless of exit path
 	defer func() {
-		app.Status.History = apputil.ReleasesToHistory(appReleases)
+		app.Status.History = apputil.ReleasesToApplicationHistory(appReleases)
 		c.cleanUpReleasesForApplication(app, appReleases)
 	}()
 
