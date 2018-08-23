@@ -156,8 +156,17 @@ func main() {
 
 	store := clusterclientstore.NewStore(
 		func(clusterName string, config *rest.Config) (kubernetes.Interface, error) {
-			glog.V(8).Infof("Building a KubeClient for cluster %q", clusterName)
-			return kubernetes.NewForConfig(config)
+			glog.V(8).Infof("Building a client for Cluster %q", clusterName)
+
+			// Ooookaaayyy. This is temporary. I promise. No, really. This is to buy us
+			// time to think how the clusterclientstore API needs to change to make it
+			// nice and easy keeping distinct clients per controller per cluster.
+			// The number 3 is the number of controllers that share clients in the
+			// current implementation.
+			shallowCopy := *config
+			shallowCopy.QPS = shallowCopy.QPS * 3
+
+			return kubernetes.NewForConfig(&shallowCopy)
 		},
 		kubeInformerFactory.Core().V1().Secrets(),
 		shipperInformerFactory.Shipper().V1().Clusters(),
