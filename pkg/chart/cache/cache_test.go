@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"strings"
 )
 
 const (
@@ -68,6 +69,7 @@ func TestCacheNameSanitization(t *testing.T) {
 			t.Fatalf("cleaned repoURL fetched chart different from stored data")
 		}
 
+		repoURL = strings.Replace(repoURL, ":", "_", -1)
 		unsanitizedPath := filepath.Join(testCacheDir, repoURL)
 		if _, err = os.Stat(unsanitizedPath); err == nil {
 			t.Fatalf("found a path at %q where there should be no path if santiziation is working", unsanitizedPath)
