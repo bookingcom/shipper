@@ -7,7 +7,7 @@ import (
 )
 
 // GetContender returns the contender from the given Release slice. The slice
-// is expected to be sorted by ascending generation.
+// is expected to be sorted by descending generation.
 func GetContender(appName string, rels []*shipperV1.Release) (*shipperV1.Release, error) {
 	if len(rels) == 0 {
 		return nil, errors.NewContenderNotFoundError(appName)
@@ -16,7 +16,7 @@ func GetContender(appName string, rels []*shipperV1.Release) (*shipperV1.Release
 }
 
 // GetIncumbent returns the incumbent from the given Release slice. The slice
-// is expected to be sorted by ascending generation.
+// is expected to be sorted by descending generation.
 //
 // An incumbent release is the first release in this slice that is considered
 // completed.
