@@ -3,7 +3,6 @@ package application
 import (
 	"fmt"
 	"time"
-	"sort"
 
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
@@ -270,7 +269,7 @@ func (c *Controller) wrapUpApplicationConditions(app *shipperv1.Application, rel
 	)
 
 	// Required by GetContender() and GetIncumbent() below.
-	sort.Sort(releaseutil.ByGenerationAscending(rels))
+	rels = releaseutil.SortByGenerationDescending(rels)
 
 	abortingCond := apputil.NewApplicationCondition(shipperv1.ApplicationConditionTypeAborting, corev1.ConditionFalse, "", "")
 	apputil.SetApplicationCondition(&app.Status, *abortingCond)
@@ -333,7 +332,7 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	}
 
 	// Required by subsequent calls to GetContender and GetIncumbent.
-	sort.Sort(releaseutil.ByGenerationAscending(appReleases))
+	appReleases = releaseutil.SortByGenerationDescending(appReleases)
 
 	// clean up excessive releases regardless of exit path
 	defer func() {
@@ -425,6 +424,9 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 func (c *Controller) cleanUpReleasesForApplication(app *shipperv1.Application, releases []*shipperv1.Release) {
 	var installedReleases []*shipperv1.Release
 
+	// Process releases by a predictable, ascending generation order.
+	releases = releaseutil.SortByGenerationAscending(releases)
+
 	// Delete any releases that are not installed. Don't touch the latest release
 	// because a release that isn't installed and is the last release just means
 	// that the user is rolling out the application.
@@ -451,7 +453,7 @@ func (c *Controller) cleanUpReleasesForApplication(app *shipperv1.Application, r
 	// maintain the invariant that we always delete oldest first (rather than
 	// failing to delete A and successfully deleting B and C in an 'A B C'
 	// history).
-	overhead := len(installedReleases) - int(*app.Spec.RevisionHistoryLimit)
+	overhead := len(installedReleases) - int(*app.Spec.RevisionHistoryLimit) + 1
 	for i := 0; i < overhead; i++ {
 		rel := installedReleases[i]
 		err := c.shipperClientset.ShipperV1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})

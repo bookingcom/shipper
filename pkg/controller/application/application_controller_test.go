@@ -173,19 +173,31 @@ func TestRevisionHistoryLimit(t *testing.T) {
 	f.objects = append(f.objects, app)
 
 	releaseFoo := newRelease("foo", app)
-	releaseFoo.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
+	releaseFoo.Spec.TargetStep = 2
+	releaseFoo.Status.AchievedStep = &shipperv1.AchievedStep{
+		Step: 2,
+		Name: releaseFoo.Environment.Strategy.Steps[2].Name,
+	}
+	releaseutil.SetReleaseCondition(&releaseFoo.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
+	releaseutil.SetGeneration(releaseFoo, 0)
 
 	releaseBar := newRelease("bar", app)
-	releaseBar.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
+	releaseBar.Spec.TargetStep = 2
+	releaseBar.Status.AchievedStep = &shipperv1.AchievedStep{
+		Step: 2,
+		Name: releaseBar.Environment.Strategy.Steps[2].Name,
+	}
+	releaseutil.SetReleaseCondition(&releaseBar.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
+	releaseutil.SetGeneration(releaseBar, 1)
 
 	releaseBaz := newRelease("baz", app)
-	releaseutil.SetReleaseCondition(&releaseBaz.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
-	releaseutil.SetGeneration(releaseBaz, 2)
 	releaseBaz.Spec.TargetStep = 2
 	releaseBaz.Status.AchievedStep = &shipperv1.AchievedStep{
 		Step: 2,
 		Name: releaseBaz.Environment.Strategy.Steps[2].Name,
 	}
+	releaseutil.SetReleaseCondition(&releaseBaz.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
+	releaseutil.SetGeneration(releaseBaz, 2)
 
 	f.objects = append(f.objects, releaseFoo, releaseBar, releaseBaz)
 

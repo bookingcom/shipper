@@ -1,8 +1,6 @@
 package application
 
 import (
-	"sort"
-
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/errors"
@@ -35,7 +33,7 @@ func GetIncumbent(appName string, rels []*shipperV1.Release) (*shipperV1.Release
 // string slice sorted by descending generation, suitable to be used set
 // in ApplicationStatus.History.
 func ReleasesToApplicationHistory(releases []*shipperV1.Release) []string {
-	sort.Sort(releaseutil.ByGenerationDescending(releases))
+	releases = releaseutil.SortByGenerationAscending(releases)
 	names := make([]string, 0, len(releases))
 	for _, rel := range releases {
 		names = append(names, rel.GetName())
