@@ -27,6 +27,7 @@ func (f *fsCache) Fetch(repo, name, version string) (*bytes.Buffer, error) {
 
 	file := fmt.Sprintf("%s-%s.tgz", name, version)
 	path := filepath.Join(f.dir, repo, name, file)
+	path = strings.Replace(path, ":", "_", -1)
 	_, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -97,6 +98,7 @@ func (f *fsCache) Store(data []byte, repo, name, version string) error {
 	}
 
 	filename := fmt.Sprintf("%s-%s.tgz", name, version)
+	filename = strings.Replace(filename, ":", "_", -1)
 	chartPath := filepath.Join(familyPath, filename)
 
 	// Atomic rename swap to avoid cache hits against partially-written charts.
@@ -121,6 +123,7 @@ func clean(names ...string) (string, string, string) {
 		// names a nicer read (not http:__blorg.baz.com).
 		names[i] = strings.TrimPrefix(names[i], "https://")
 		names[i] = strings.TrimPrefix(names[i], "http://")
+		names[i] = strings.Replace(names[i], ":", "_", -1)
 		names[i] = strings.Replace(names[i], string(filepath.Separator), "_", -1)
 	}
 	return names[0], names[1], names[2]
