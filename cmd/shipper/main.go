@@ -57,14 +57,7 @@ var controllers = []string{
 	"janitor",
 }
 
-const (
-	// Number of controllers we run in-process plus some extra.
-	rateLimitScaleFactor = 10
-
-	// Default rate limiting scaled for the number of controllers we run in-process.
-	defaultQPS   = rest.DefaultQPS * rateLimitScaleFactor
-	defaultBurst = rest.DefaultBurst * rateLimitScaleFactor
-)
+const defaultRESTTimeout time.Duration = 10 * time.Second
 
 var (
 	masterURL           = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
@@ -78,8 +71,7 @@ var (
 	workers             = flag.Int("workers", 2, "Number of workers to start for each controller.")
 	metricsAddr         = flag.String("metrics-addr", ":8889", "Addr to expose /metrics on.")
 	chartCacheDir       = flag.String("cachedir", filepath.Join(os.TempDir(), "chart-cache"), "location for the local cache of downloaded charts")
-	rateLimitQPS        = flag.Float64("ratelimit-qps", float64(defaultQPS), "QPS value for the REST client's rate-limiter.")
-	rateLimitBurst      = flag.Int("ratelimit-burst", defaultBurst, "Burst value for the REST client's rate-limiter.")
+	restTimeout         = flag.Duration("rest-timeout", defaultRESTTimeout, "Timeout value for management and target REST clients. Does not affect informer watches.")
 )
 
 type metricsCfg struct {
@@ -93,10 +85,9 @@ type metricsCfg struct {
 type cfg struct {
 	enabledControllers map[string]bool
 
-	restCfg *rest.Config
+	restCfg     *rest.Config
+	restTimeout *time.Duration
 
-	kubeClient             kubernetes.Interface
-	shipperClient          shipperclientset.Interface
 	kubeInformerFactory    informers.SharedInformerFactory
 	shipperInformerFactory shipperinformers.SharedInformerFactory
 	resync                 time.Duration
@@ -124,21 +115,31 @@ func main() {
 		glog.Fatal(err)
 	}
 
-	kubeClient, shipperClient, restCfg, err := buildClients(*masterURL, *kubeconfig)
+	baseRestCfg, err := clientcmd.BuildConfigFromFlags(*masterURL, *kubeconfig)
 	if err != nil {
 		glog.Fatal(err)
 	}
 
+	// These are only used in shared informers. Setting HTTP timeout here would
+	// affect watches which is undesirable. Instead, we leave it to client-go (see
+	// k8s.io/client-go/tools/cache) to govern watch durations.
+	informerKubeClient := buildKubeClient(baseRestCfg, "kube-shared-informer", nil)
+	informerShipperClient := buildShipperClient(baseRestCfg, "shipper-shared-informer", nil)
+
 	stopCh := setupSignalHandler()
 	metricsReadyCh := make(chan struct{})
 
-	kubeInformerFactory := informers.NewSharedInformerFactory(kubeClient, resync)
-	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(shipperClient, resync)
+	kubeInformerFactory := informers.NewSharedInformerFactory(informerKubeClient, resync)
+	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(informerShipperClient, resync)
+
+	shipperscheme.AddToScheme(scheme.Scheme)
 
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(glog.Infof)
-	broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
-	shipperscheme.AddToScheme(scheme.Scheme)
+	func() {
+		kubeClient := buildKubeClient(baseRestCfg, "event-broadcaster", restTimeout)
+		broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
+	}()
 
 	recorder := func(component string) record.EventRecorder {
 		return broadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: component})
@@ -155,12 +156,22 @@ func main() {
 
 	store := clusterclientstore.NewStore(
 		func(clusterName string, config *rest.Config) (kubernetes.Interface, error) {
-			glog.V(8).Infof("Building a KubeClient for cluster %q", clusterName)
-			return kubernetes.NewForConfig(config)
+			glog.V(8).Infof("Building a client for Cluster %q", clusterName)
+
+			// Ooookaaayyy. This is temporary. I promise. No, really. This is to buy us
+			// time to think how the clusterclientstore API needs to change to make it
+			// nice and easy keeping distinct clients per controller per cluster.
+			// The number 3 is the number of controllers that share clients in the
+			// current implementation.
+			shallowCopy := *config
+			shallowCopy.QPS = shallowCopy.QPS * 3
+
+			return kubernetes.NewForConfig(&shallowCopy)
 		},
 		kubeInformerFactory.Core().V1().Secrets(),
 		shipperInformerFactory.Shipper().V1().Clusters(),
 		*ns,
+		restTimeout,
 	)
 
 	wg.Add(1)
@@ -170,12 +181,13 @@ func main() {
 	}()
 
 	glog.V(1).Infof("Chart cache stored at %q", *chartCacheDir)
+	glog.V(1).Infof("REST client timeout is %s", *restTimeout)
+
 	cfg := &cfg{
 		enabledControllers: enabledControllers,
-		restCfg:            restCfg,
+		restCfg:            baseRestCfg,
+		restTimeout:        restTimeout,
 
-		kubeClient:             kubeClient,
-		shipperClient:          shipperClient,
 		kubeInformerFactory:    kubeInformerFactory,
 		shipperInformerFactory: shipperInformerFactory,
 		resync:                 resync,
@@ -238,29 +250,6 @@ func runMetrics(cfg *metricsCfg) {
 		),
 	}
 	srv.ListenAndServe()
-}
-
-func buildClients(masterURL, kubeconfig string) (kubernetes.Interface, shipperclientset.Interface, *rest.Config, error) {
-	restCfg, err := clientcmd.BuildConfigFromFlags(masterURL, kubeconfig)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	restCfg.QPS = float32(*rateLimitQPS)
-	restCfg.Burst = *rateLimitBurst
-	glog.V(3).Infof("Setting REST client rate limiter to %v QPS (burst %d)", *rateLimitQPS, *rateLimitBurst)
-
-	kubeClient, err := kubernetes.NewForConfig(restCfg)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	shipperClient, err := shipperclientset.NewForConfig(restCfg)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	return kubeClient, shipperClient, restCfg, nil
 }
 
 func buildEnabledControllers(enabledControllers, disabledControllers string) map[string]bool {
@@ -375,7 +364,7 @@ func startApplicationController(cfg *cfg) (bool, error) {
 	}
 
 	c := application.NewController(
-		cfg.shipperClient,
+		buildShipperClient(cfg.restCfg, application.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.recorder(application.AgentName),
 	)
@@ -397,7 +386,7 @@ func startClusterSecretController(cfg *cfg) (bool, error) {
 
 	c := clustersecret.NewController(
 		cfg.shipperInformerFactory,
-		cfg.kubeClient,
+		buildKubeClient(cfg.restCfg, clustersecret.AgentName, cfg.restTimeout),
 		cfg.kubeInformerFactory,
 		cfg.certPath,
 		cfg.keyPath,
@@ -421,7 +410,7 @@ func startScheduleController(cfg *cfg) (bool, error) {
 	}
 
 	c := schedulecontroller.NewController(
-		cfg.shipperClient,
+		buildShipperClient(cfg.restCfg, schedulecontroller.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.chartFetchFunc,
 		cfg.recorder(schedulecontroller.AgentName),
@@ -443,7 +432,7 @@ func startStrategyController(cfg *cfg) (bool, error) {
 	}
 
 	c := strategy.NewController(
-		cfg.shipperClient,
+		buildShipperClient(cfg.restCfg, strategy.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		dynamic.NewDynamicClientPool(cfg.restCfg),
 		cfg.recorder(strategy.AgentName),
@@ -459,10 +448,19 @@ func startStrategyController(cfg *cfg) (bool, error) {
 }
 
 func startInstallationController(cfg *cfg) (bool, error) {
+	enabled := cfg.enabledControllers["installation"]
+	if !enabled {
+		return false, nil
+	}
+
 	dynamicClientBuilderFunc := func(gvk *schema.GroupVersionKind, config *rest.Config, cluster *shipperv1.Cluster) dynamic.Interface {
 		// Probably this needs to be fixed, according to @asurikov's latest findings.
 		config.APIPath = dynamic.LegacyAPIPathResolverFunc(*gvk)
 		config.GroupVersion = &schema.GroupVersion{Group: gvk.Group, Version: gvk.Version}
+
+		if cfg.restTimeout != nil {
+			config.Timeout = *cfg.restTimeout
+		}
 
 		dynamicClient, newClientErr := dynamic.NewClient(config)
 		if newClientErr != nil {
@@ -471,13 +469,8 @@ func startInstallationController(cfg *cfg) (bool, error) {
 		return dynamicClient
 	}
 
-	enabled := cfg.enabledControllers["installation"]
-	if !enabled {
-		return false, nil
-	}
-
 	c := installation.NewController(
-		cfg.shipperClient,
+		buildShipperClient(cfg.restCfg, installation.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.store,
 		dynamicClientBuilderFunc,
@@ -501,7 +494,7 @@ func startCapacityController(cfg *cfg) (bool, error) {
 	}
 
 	c := capacity.NewController(
-		cfg.shipperClient,
+		buildShipperClient(cfg.restCfg, capacity.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.store,
 		cfg.recorder(capacity.AgentName),
@@ -521,7 +514,7 @@ func startTrafficController(cfg *cfg) (bool, error) {
 	}
 
 	c := traffic.NewController(
-		cfg.shipperClient,
+		buildShipperClient(cfg.restCfg, traffic.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.store,
 		cfg.recorder(traffic.AgentName),
@@ -543,7 +536,7 @@ func startJanitorController(cfg *cfg) (bool, error) {
 	}
 
 	c := janitor.NewController(
-		cfg.shipperClient,
+		buildShipperClient(cfg.restCfg, janitor.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.store,
 		cfg.recorder(janitor.AgentName),
@@ -556,4 +549,28 @@ func startJanitorController(cfg *cfg) (bool, error) {
 	}()
 
 	return true, nil
+}
+
+func buildShipperClient(restCfg *rest.Config, ua string, timeout *time.Duration) *shipperclientset.Clientset {
+	shallowCopy := *restCfg
+
+	rest.AddUserAgent(&shallowCopy, ua)
+
+	if timeout != nil {
+		shallowCopy.Timeout = *timeout
+	}
+
+	return shipperclientset.NewForConfigOrDie(&shallowCopy)
+}
+
+func buildKubeClient(restCfg *rest.Config, ua string, timeout *time.Duration) *kubernetes.Clientset {
+	shallowCopy := *restCfg
+
+	rest.AddUserAgent(&shallowCopy, ua)
+
+	if timeout != nil {
+		shallowCopy.Timeout = *timeout
+	}
+
+	return kubernetes.NewForConfigOrDie(&shallowCopy)
 }

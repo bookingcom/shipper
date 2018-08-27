@@ -197,6 +197,36 @@ func TestInvalidClientCredentials(t *testing.T) {
 	}
 }
 
+func TestConfigTimeout(t *testing.T) {
+	f := newFixture(t)
+
+	sevenSeconds := 7 * time.Second
+	f.restTimeout = &sevenSeconds
+
+	f.addCluster(testClusterName)
+	f.addSecret(newValidSecret(testClusterName))
+
+	store := f.run()
+
+	wait.PollUntil(
+		10*time.Millisecond,
+		func() (bool, error) {
+			cluster, ok := store.cache.Fetch(testClusterName)
+			return ok && cluster.IsReady(), nil
+		},
+		stopAfter(3*time.Second),
+	)
+
+	restCfg, err := store.GetConfig(testClusterName)
+	if err != nil {
+		t.Fatalf("expected a REST config, but got error: %s", err)
+	}
+
+	if restCfg.Timeout != sevenSeconds {
+		t.Errorf("expected REST config to have timeout of %s, but got %s", sevenSeconds, restCfg.Timeout)
+	}
+}
+
 type fixture struct {
 	t              *testing.T
 	s              *Store
@@ -204,6 +234,7 @@ type fixture struct {
 	shipperClient  *shipperfake.Clientset
 	kubeObjects    []runtime.Object
 	shipperObjects []runtime.Object
+	restTimeout    *time.Duration
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -240,6 +271,7 @@ func (f *fixture) newStore() (*Store, kubeinformers.SharedInformerFactory, shipp
 		kubeInformerFactory.Core().V1().Secrets(),
 		shipperInformerFactory.Shipper().V1().Clusters(),
 		shipperv1.ShipperNamespace,
+		f.restTimeout,
 	)
 
 	return store, kubeInformerFactory, shipperInformerFactory
