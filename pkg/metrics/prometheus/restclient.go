@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang/glog"
 	prom "github.com/prometheus/client_golang/prometheus"
 )
 
@@ -20,7 +21,7 @@ func NewRESTLatencyMetric() *RESTLatencyMetric {
 			Name:      "latency_seconds",
 			Help:      "How long it takes for the Kubernetes REST client to do a request",
 		},
-		[]string{"verb", "url", "watch"},
+		[]string{"verb", "host", "gvr", "watch"},
 	)}
 }
 
@@ -30,20 +31,12 @@ func (m *RESTLatencyMetric) Observe(verb string, u url.URL, latency time.Duratio
 		watch = "false"
 	}
 
-	// Completely remove things like '?resourceVersion=42'.
-	u.RawQuery = ""
+	// TODO(asurikov): see if there's an easy way to substitute u.Host with cluster
+	// name?
 
-	// The REST client replaces some unbounded values with an incovenient
-	// placeholder that needs to be URL-encoded.
-	u.Path = strings.Replace(u.Path, "{namespace}", "...", -1)
-	u.Path = strings.Replace(u.Path, "{name}", "...", -1)
+	gvr := extractGVR(u.Path)
 
-	// It's always HTTPS, we know that.
-	u.Scheme = ""
-
-	// XXX see if there's an easy way to substitute u.Host with cluster name?
-
-	m.Summary.WithLabelValues(verb, u.String(), watch).Observe(latency.Seconds())
+	m.Summary.WithLabelValues(verb, u.Hostname(), gvr, watch).Observe(latency.Seconds())
 }
 
 type RESTResultMetric struct {
@@ -64,4 +57,53 @@ func NewRESTResultMetric() *RESTResultMetric {
 
 func (m *RESTResultMetric) Increment(code string, method string, host string) {
 	m.Counter.WithLabelValues(code, method, host).Inc()
+}
+
+func extractGVR(path string) string {
+	gvr := "unknown"
+
+	if len(path) == 0 {
+		return gvr
+	}
+
+	origPath := path
+
+	if path[0] == '/' {
+		path = path[1:]
+	}
+
+	pieces := strings.Split(path, "/")
+	if len(pieces) < 3 {
+		return gvr
+	}
+
+	prefix := pieces[0]
+	pieces = pieces[1:]
+
+	if prefix == "apis" {
+		switch len(pieces) {
+		case 3:
+			// shipper.booking.com/v1/traffictargets
+			gvr = pieces[0] + "/" + pieces[1] + "/" + pieces[2]
+		case 5, 6:
+			// shipper.booking.com/v1/namespaces/.../traffictargets
+			// shipper.booking.com/v1/namespaces/.../traffictargets/...
+			gvr = pieces[0] + "/" + pieces[1] + "/" + pieces[4]
+		}
+	} else if prefix == "api" {
+		switch len(pieces) {
+		case 2:
+			// v1/events
+			gvr = "core/" + pieces[0] + "/" + pieces[1]
+		case 4, 5:
+			// v1/namespaces/.../events
+			// v1/namespaces/.../events/...
+			gvr = "core/" + pieces[0] + "/" + pieces[3]
+		}
+
+	}
+
+	glog.V(8).Infof("Parsed API path %q into GVR %q", origPath, gvr)
+
+	return gvr
 }
