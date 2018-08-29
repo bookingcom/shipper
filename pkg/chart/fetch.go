@@ -19,9 +19,10 @@ import (
 
 type FetchFunc func(shipperv1.Chart) (*helmchart.Chart, error)
 
-// 5mb limit per chart family (all versions of a given chart)
-// a large chart with many objects (but no big bundled files) is 20kb -> 256 versions
-// this fits ~2k distinct charts into 10gb of disk
+// 5mb limit per chart family (all versions of a given chart).
+// A large chart with many objects (but no big bundled files) is 20kb -> 256
+// versions.
+// This fits ~2k distinct charts into 10gb of disk.
 const DefaultCacheLimit = 5 * 1024 * 1024
 
 func FetchRemoteWithCache(dir string, perChartFamilyByteLimit int) FetchFunc {
@@ -29,7 +30,7 @@ func FetchRemoteWithCache(dir string, perChartFamilyByteLimit int) FetchFunc {
 	return func(chart shipperv1.Chart) (*helmchart.Chart, error) {
 		cachedChart, err := cache.Fetch(chart.RepoURL, chart.Name, chart.Version)
 		if err != nil {
-			// There's a good case to make that it would be better to log and download
+			// There's a good case to make that it would be better to log and download.
 			return nil, err
 		}
 
@@ -41,13 +42,14 @@ func FetchRemoteWithCache(dir string, perChartFamilyByteLimit int) FetchFunc {
 			return chrt, nil
 		}
 
-		// 0 bytes returned -> no cache hit. download it
+		// 0 bytes returned -> no cache hit. Download it.
 		data, err := downloadChart(chart.RepoURL, chart.Name, chart.Version)
 		if err != nil {
 			return nil, chartcache.DownloadChartError(err)
 		}
 
-		// we didn't find it in the cache earlier and had to fall through to downloading, so write it to the cache
+		// We didn't find it in the cache earlier and had to fall through to
+		// downloading, so write it to the cache.
 		err = cache.Store(data, chart.RepoURL, chart.Name, chart.Version)
 		if err != nil {
 			return nil, chartcache.CacheStoreChartError(err)
@@ -80,7 +82,7 @@ func downloadChart(repoURL, name, version string) ([]byte, error) {
 
 	u.Path = fmt.Sprintf("%s/%s-%s.tgz", u.Path, name, version)
 	glog.V(10).Infof("trying to download %s", u)
-	resp, err := instrumentedclient.Get(u.String()) // TODO retry
+	resp, err := instrumentedclient.Get(u.String())
 	if err != nil {
 		return nil, err
 	}

@@ -32,7 +32,7 @@ import (
 
 var chartFetchFunc = chart.FetchRemoteWithCache("testdata/chart-cache", chart.DefaultCacheLimit)
 
-// FakeClientProvider implements clusterclientstore.ClientProvider
+// FakeClientProvider implements clusterclientstore.ClientProvider.
 type FakeClientProvider struct {
 	clientsPerCluster   clientsPerClusterMap
 	restConfig          *rest.Config
@@ -146,8 +146,7 @@ func buildCluster(name string) *shipperV1.Cluster {
 	}
 }
 
-// populateFakeDiscovery adds the apiResourceList into the given fake
-// discovery.
+// populateFakeDiscovery adds the apiResourceList into the given fake discovery.
 func populateFakeDiscovery(discovery discovery.DiscoveryInterface, apiResourceList []*v1.APIResourceList) {
 	fakeDiscovery := discovery.(*fakediscovery.FakeDiscovery)
 	fakeDiscovery.Resources = apiResourceList
@@ -160,8 +159,8 @@ type fakePair struct {
 }
 type clientsPerClusterMap map[string]fakePair
 
-// initializeClients returns some objects that are used in several
-// tests, basically to reduce boilerplate.
+// initializeClients returns some objects that are used in several tests,
+// basically to reduce boilerplate.
 func initializeClients(apiResourceList []*v1.APIResourceList, shipperObjects []runtime.Object, kubeObjectsPerCluster objectsPerClusterMap) (
 	clientsPerClusterMap,
 	*shipperfake.Clientset,

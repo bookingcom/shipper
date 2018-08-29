@@ -151,7 +151,6 @@ func (c *Controller) processNextWorkItem() bool {
 		return false
 	}
 
-	// We're done processing this object.
 	defer c.appWorkqueue.Done(obj)
 
 	var (
@@ -186,7 +185,6 @@ func (c *Controller) processNextWorkItem() bool {
 	return true
 }
 
-// Translate Release changes into Application changes (to handle e.g. aborts).
 func (c *Controller) enqueueRel(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
@@ -261,7 +259,6 @@ func (c *Controller) syncApplication(key string) bool {
 		runtime.HandleError(fmt.Errorf("error computing state for Application %q (will retry): %s", key, err))
 	}
 
-	// TODO(asurikov): change to UpdateStatus when it's available.
 	_, err = c.shipperClientset.ShipperV1().Applications(app.Namespace).Update(app)
 	if err != nil {
 		shouldRetry = true
@@ -272,11 +269,11 @@ func (c *Controller) syncApplication(key string) bool {
 }
 
 /*
-* get all the releases owned by this application
-* if 0, create new one (generation 0), return
-* if >1, find latest (highest generation #), compare hash of that one to application template hash
-* if same, do nothing
-* if different, create new release (highest generation # + 1)
+* Get all the releases owned by this application.
+* If 0, create new one (generation 0), return.
+* If >1, find latest (highest generation #), compare hash of that one to application template hash.
+*   If same, do nothing.
+*   If different, create new release (highest generation # + 1).
  */
 func (c *Controller) processApplication(app *shipperv1.Application) error {
 	if app.Annotations == nil {
@@ -288,8 +285,8 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		app.Spec.RevisionHistoryLimit = &i
 	}
 
-	// this would be better as OpenAPI validation, but it does not support
-	// 'nullable' so it cannot be an optional field
+	// This would be better as OpenAPI validation, but it does not support
+	// 'nullable' so it cannot be an optional field.
 	if *app.Spec.RevisionHistoryLimit < MinRevisionHistoryLimit {
 		var min int32 = MinRevisionHistoryLimit
 		app.Spec.RevisionHistoryLimit = &min
@@ -300,7 +297,7 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		app.Spec.RevisionHistoryLimit = &max
 	}
 
-	// clean up excessive releases regardless of exit path
+	// Clean up excessive releases regardless of exit path.
 	defer c.cleanUpReleasesForApplication(app)
 
 	latestRelease, err := c.getLatestReleaseForApp(app)
@@ -364,7 +361,7 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		return err
 	}
 
-	// rollback: reset app template & reset latest observed
+	// Rollback: reset app template & reset latest observed.
 	if generation < highestObserved {
 		app.Spec.Template = *(latestRelease.Environment.DeepCopy())
 		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
@@ -386,19 +383,20 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		"", "",
 	)
 
-	// assume history is ok
+	// Assume history is ok...
 	app.Status.Conditions = conditions.SetApplicationCondition(
 		app.Status.Conditions,
 		shipperv1.ApplicationConditionTypeValidHistory,
 		corev1.ConditionTrue, "", "",
 	)
 
-	// ... but overwrite that condition if it is not. this means something is
-	// screwy; likely a human changed an annotation themselves, or the process
-	// was abnormally exited by some weird reason between the new release was
-	// created and app updated with the new water mark.
+	// ... but overwrite that condition if it is not. This means something is
+	// screwy; likely a human changed an annotation themselves, or the process was
+	// abnormally exited by some weird reason between the new release was created
+	// and app updated with the new water mark.
 	//
-	// I think the best we can do is bump up to this new high water mark and then proceed as normal
+	// I think the best we can do is bump up to this new high water mark and then
+	// proceed as normal.
 	if generation > highestObserved {
 		highestObserved = generation
 		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
@@ -419,7 +417,8 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		"", "",
 	)
 
-	// great! nothing to do. highestObserved == latestRelease && the templates are identical
+	// Great! Nothing to do. highestObserved == latestRelease && the templates are
+	// identical.
 	if identicalEnvironments(app.Spec.Template, latestRelease.Environment) {
 		// explicitly setting the annotation here helps recover from a broken 0 case
 		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
@@ -432,7 +431,8 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		return nil
 	}
 
-	// the normal case: the application template has changed so we should create a new release
+	// The normal case: the application template has changed so we should create a
+	// new release.
 	newGen := highestObserved + 1
 	err = c.createReleaseForApplication(app, newGen)
 	if err != nil {
@@ -466,10 +466,9 @@ func (c *Controller) cleanUpReleasesForApplication(app *shipperv1.Application) {
 		return
 	}
 
-	// Delete any releases that are not installed. Don't touch the
-	// latest release because a release that isn't installed and
-	// is the last release just means that the user is rolling out
-	// the application
+	// Delete any releases that are not installed. Don't touch the latest release
+	// because a release that isn't installed and is the last release just means
+	// that the user is rolling out the application.
 	for i := 0; i < len(releases)-1; i++ {
 		rel := releases[i]
 		if releaseutil.ReleaseComplete(releases[i]) {
@@ -480,20 +479,19 @@ func (c *Controller) cleanUpReleasesForApplication(app *shipperv1.Application) {
 		err = c.shipperClientset.ShipperV1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})
 		if err != nil {
 			if kerrors.IsNotFound(err) {
-				// Skip this release: it's already deleted
+				// Skip this release: it's already deleted.
 				continue
 			}
 
-			// Handle the error, but keep on going
+			// Handle the error, but keep on going.
 			runtime.HandleError(err)
 		}
 	}
 
-	// Delete the first X ordered by generation. bail out
-	// on any error so that we maintain the invariant that
-	// we always delete oldest first (rather than failing
-	// to delete A and successfully deleting B and C in an
-	// 'A B C' history)
+	// Delete the first X ordered by generation. Bail out on any error so that we
+	// maintain the invariant that we always delete oldest first (rather than
+	// failing to delete A and successfully deleting B and C in an 'A B C'
+	// history).
 	overhead := len(installedReleases) - int(*app.Spec.RevisionHistoryLimit)
 	for i := 0; i < overhead; i++ {
 		rel := installedReleases[i]

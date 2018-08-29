@@ -17,7 +17,9 @@ func NewClusterFixture(name string) *ClusterFixture {
 	}
 }
 
-// I would love for this to be a single 'Add' with varargs runtime.Object, but Go doesn't support that.
+// I would love for this to be a single 'Add' with varargs runtime.Object, but
+// Go doesn't support that.
+
 func (c *ClusterFixture) AddOne(object runtime.Object) {
 	c.objects = append(c.objects, object)
 }

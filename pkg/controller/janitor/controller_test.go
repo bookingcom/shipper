@@ -134,13 +134,14 @@ func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
 	item := &AnchorWorkItem{
 		ClusterName:           cluster.Name,
 		InstallationTargetUID: configMap.Data[InstallationTargetUID],
-		Key:                   key,
-		Name:                  configMap.Name,
-		Namespace:             configMap.GetNamespace(),
-		ReleaseName:           configMap.GetLabels()[shipperV1.ReleaseLabel],
+		Key:         key,
+		Name:        configMap.Name,
+		Namespace:   configMap.GetNamespace(),
+		ReleaseName: configMap.GetLabels()[shipperV1.ReleaseLabel],
 	}
 
-	// Execute c.syncAnchor() here since I couldn't find an API to trigger the Update event handler.
+	// Execute c.syncAnchor() here since I couldn't find an API to trigger the
+	// Update event handler.
 	if err := c.syncAnchor(item); err != nil {
 		t.Fatal(err)
 	}
@@ -204,10 +205,10 @@ func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
 	item := &AnchorWorkItem{
 		ClusterName:           cluster.GetName(),
 		InstallationTargetUID: configMap.Data[InstallationTargetUID],
-		Key:                   key,
-		Name:                  configMap.GetName(),
-		Namespace:             configMap.GetNamespace(),
-		ReleaseName:           configMap.GetLabels()[shipperV1.ReleaseLabel],
+		Key:         key,
+		Name:        configMap.GetName(),
+		Namespace:   configMap.GetNamespace(),
+		ReleaseName: configMap.GetLabels()[shipperV1.ReleaseLabel],
 	}
 
 	// Execute c.syncAnchor() here since I couldn't find an API to trigger the
@@ -275,10 +276,10 @@ func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
 	item := &AnchorWorkItem{
 		ClusterName:           cluster.GetName(),
 		InstallationTargetUID: configMap.Data[InstallationTargetUID],
-		Key:                   key,
-		Name:                  configMap.Name,
-		Namespace:             configMap.GetNamespace(),
-		ReleaseName:           configMap.GetLabels()[shipperV1.ReleaseLabel],
+		Key:         key,
+		Name:        configMap.Name,
+		Namespace:   configMap.GetNamespace(),
+		ReleaseName: configMap.GetLabels()[shipperV1.ReleaseLabel],
 	}
 
 	// Execute c.syncAnchor() here since I couldn't find an API to trigger the

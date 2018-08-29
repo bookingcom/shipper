@@ -4,6 +4,8 @@ import (
 	"fmt"
 )
 
+// TODO(asurikov): fix error types to be structs that implement error.
+
 type NotWorkingOnStrategyError error
 
 func IsNotWorkingOnStrategy(err error) bool {

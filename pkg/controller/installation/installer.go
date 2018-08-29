@@ -26,8 +26,8 @@ import (
 
 type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipperV1.Cluster) dynamic.Interface
 
-// Installer is an object that knows how to install Helm charts directly
-// into Kubernetes clusters.
+// Installer is an object that knows how to install Helm charts directly into
+// Kubernetes clusters.
 type Installer struct {
 	fetchChart shipperChart.FetchFunc
 
@@ -49,8 +49,8 @@ func NewInstaller(chartFetchFunc shipperChart.FetchFunc,
 	}
 }
 
-// renderManifests returns a list of rendered manifests for the given release and
-// cluster, or an error.
+// renderManifests returns a list of rendered manifests for the given release
+// and cluster, or an error.
 func (i *Installer) renderManifests(_ *shipperV1.Cluster) ([]string, error) {
 	rel := i.Release
 	chart, err := i.fetchChart(rel.Environment.Chart)
@@ -87,8 +87,8 @@ func (i *Installer) buildResourceClient(
 ) (dynamic.ResourceInterface, error) {
 	dynamicClient := dynamicClientBuilder(gvk, restConfig, cluster)
 
-	// From the list of resources the target cluster knows about, find the resource for the
-	// kind of object we have at hand.
+	// From the list of resources the target cluster knows about, find the resource
+	// for the kind of object we have at hand.
 	var resource *metaV1.APIResource
 	gv := gvk.GroupVersion().String()
 	if resources, err := client.Discovery().ServerResourcesForGroupVersion(gv); err != nil {
@@ -105,10 +105,9 @@ func (i *Installer) buildResourceClient(
 		}
 	}
 
-	// If it gets into this point, it means we have a resource, so we can create
-	// a client for it scoping to the application's namespace. The namespace can
-	// be ignored if creating, for example, objects that aren't bound to a
-	// namespace.
+	// If it gets to this point, it means we have a resource, so we can create a
+	// client for it scoping to the application's namespace. The namespace can be
+	// ignored if creating, for example, objects that aren't bound to a namespace.
 	resourceClient := dynamicClient.Resource(resource, i.Release.Namespace)
 	return resourceClient, nil
 }
@@ -124,7 +123,6 @@ func (i *Installer) patchDeployment(
 	replicas := int32(0)
 	d.Spec.Replicas = &replicas
 
-	// patch .metadata.labels
 	newLabels := d.Labels
 	if newLabels == nil {
 		newLabels = map[string]string{}
@@ -135,7 +133,6 @@ func (i *Installer) patchDeployment(
 	}
 	d.SetLabels(newLabels)
 
-	// Patch .spec.selector
 	var newSelector *metaV1.LabelSelector
 	if d.Spec.Selector != nil {
 		newSelector = d.Spec.Selector.DeepCopy()
@@ -150,7 +147,6 @@ func (i *Installer) patchDeployment(
 	}
 	d.Spec.Selector = newSelector
 
-	// Patch .spec.template.metadata.labels
 	podTemplateLabels := d.Spec.Template.Labels
 	for k, v := range labelsToInject {
 		podTemplateLabels[k] = v
@@ -237,21 +233,14 @@ func (i *Installer) installManifests(
 		createdConfigMap = existingConfigMap
 	}
 
-	// Create the OwnerReference for the manifest objects
+	// Create the OwnerReference for the manifest objects.
 	ownerReference := janitor.ConfigMapAnchorToOwnerReference(createdConfigMap)
 
 	// Try to install all the rendered objects in the target cluster. We should
-	// fail in the first error to report that this cluster has an issue. Since
-	// the InstallationTarget.Status represent a per cluster status with a
-	// scalar value, we don't try to install other objects for now.
+	// fail in the first error to report that this cluster has an issue. Since the
+	// InstallationTarget.Status represent a per cluster status with a scalar
+	// value, we don't try to install other objects for now.
 	for _, manifest := range manifests {
-
-		// This one was tricky to find out. @asurikov pointed me out to the
-		// UniversalDeserializer, which can decode a []byte representing the
-		// k8s manifest into the proper k8s object (for example, v1.Service).
-		// Haven't tested the decoder with CRDs, so please keep a mental note
-		// that it might not work as expected (meaning more research might be
-		// necessary).
 		decodedObj, gvk, err :=
 			kubescheme.Codecs.
 				UniversalDeserializer().
@@ -269,31 +258,28 @@ func (i *Installer) installManifests(
 		labelsToInject := i.Release.Labels
 		decodedObj = i.patchObject(decodedObj, labelsToInject, &ownerReference)
 
-		// ResourceClient.Create() requires an Unstructured object to work with, so
-		// we need to convert from v1.Service into a map[string]interface{}, which
-		// is what ToUnstrucured() below does. To find this one, I had to find a
-		// Merge Request then track the git history to find out where it was moved
-		// to, since there's no documentation whatsoever about it anywhere.
+		// ResourceClient.Create() requires an Unstructured object to work with, so we
+		// need to convert.
 		obj := &unstructured.Unstructured{}
 		err = i.Scheme.Convert(decodedObj, obj, nil)
 		if err != nil {
 			return NewConvertUnstructuredError("error converting object to unstructured: %s", err)
 		}
 
-		// Once we've gathered enough information about the document we want to install,
-		// we're able to build a resource client to interact with the target cluster.
+		// Once we've gathered enough information about the document we want to
+		// install, we're able to build a resource client to interact with the target
+		// cluster.
 		resourceClient, err := i.buildResourceClient(cluster, client, restConfig, dynamicClientBuilderFunc, gvk)
 		if err != nil {
 			return NewResourceClientError("error building resource client: %s", err)
 		}
 
-		// "fetch-and-create-or-update" strategy in here; this is required to
-		// overcome an issue in Kubernetes where a "create-or-update" strategy
-		// leads to exceeding quotas when those are enabled very quickly,
-		// since Kubernetes machinery first increase quota usage and then
-		// attempts to create the resource, taking some time to re-sync
-		// the quota information when objects can't be created since they
-		// already exist.
+		// "Fetch-and-create-or-update" strategy in here; this is required to overcome
+		// an issue in Kubernetes where a "create-or-update" strategy leads to
+		// exceeding quotas when those are enabled very quickly, since Kubernetes
+		// machinery first increase quota usage and then attempts to create the
+		// resource, taking some time to re-sync the quota information when objects
+		// can't be created since they already exist.
 		existingObj, err := resourceClient.Get(obj.GetName(), metaV1.GetOptions{})
 
 		// Any error other than NotFound is not recoverable from this point on.
@@ -302,7 +288,7 @@ func (i *Installer) installManifests(
 		}
 
 		// If have an error here, it means it is NotFound, so proceed to
-		// create the object on the application cluster
+		// create the object on the application cluster.
 		if err != nil {
 			_, err = resourceClient.Create(obj)
 			if err != nil {
@@ -312,14 +298,14 @@ func (i *Installer) installManifests(
 		}
 
 		// We inject a Namespace object in the objects to be installed for a
-		// particular Release; we don't want to continue if the Namespace
-		// already exists.
+		// particular Release; we don't want to continue if the Namespace already
+		// exists.
 		if gvk := existingObj.GroupVersionKind(); gvk.Kind == "Namespace" {
 			continue
 		}
 
-		// If the existing object was stamped with the driving release,
-		// continue to the next manifest.
+		// If the existing object was stamped with the driving release, continue to
+		// the next manifest.
 		if releaseLabelValue, ok := existingObj.GetLabels()[shipperV1.ReleaseLabel]; ok && releaseLabelValue == i.Release.Name {
 			continue
 		} else if !ok {

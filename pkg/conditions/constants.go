@@ -1,10 +1,10 @@
 package conditions
 
 const (
-	// Operational
+	// Operational.
 	ServerError = "ServerError"
 
-	// Capacity Ready
+	// Capacity Ready.
 	MissingDeployment  = "MissingDeployment"
 	TooManyDeployments = "TooManyDeployments"
 	PodsNotReady       = "PodsNotReady"

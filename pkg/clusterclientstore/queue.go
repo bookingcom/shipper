@@ -31,8 +31,8 @@ func (s *Store) bindEventHandlers() {
 			if !ok {
 				return false
 			}
-			// NOTE(btyler) this is a bit aggressive, but I think it makes sense;
-			// otherwise we get logs about the service account token
+			// This is a bit aggressive, but I think it makes sense; otherwise we get
+			// logs about the service account token.
 			_, ok = secret.GetAnnotations()[shipperv1.SecretChecksumAnnotation]
 			return ok && secret.Namespace == shipperv1.ShipperNamespace
 		},
@@ -101,7 +101,6 @@ func processNextWorkItem(wq workqueue.RateLimitingInterface, handler func(string
 		return false
 	}
 
-	// We're done processing this object.
 	defer wq.Done(obj)
 
 	var (
@@ -110,7 +109,6 @@ func processNextWorkItem(wq workqueue.RateLimitingInterface, handler func(string
 	)
 
 	if key, ok = obj.(string); !ok {
-		// Do not attempt to process invalid objects again.
 		wq.Forget(obj)
 		runtime.HandleError(fmt.Errorf("invalid object key: %#v", obj))
 		return true
@@ -122,7 +120,6 @@ func processNextWorkItem(wq workqueue.RateLimitingInterface, handler func(string
 		return true
 	}
 
-	// Do not requeue this object because it's already processed.
 	wq.Forget(obj)
 
 	glog.Infof("Successfully synced %q", key)

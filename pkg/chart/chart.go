@@ -13,8 +13,8 @@ import (
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
 
-// Render renders a chart, with the given values. It returns a list
-// of rendered Kubernetes objects.
+// Render renders a chart, with the given values. It returns a list of rendered
+// Kubernetes objects.
 func Render(chart *helmchart.Chart, name, ns string, shipperValues *shipperv1.ChartValues) ([]string, error) {
 	chartConfig := &helmchart.Config{}
 	if shipperValues != nil {
@@ -55,7 +55,8 @@ func Render(chart *helmchart.Chart, name, ns string, shipperValues *shipperv1.Ch
 
 	objects := make([]string, 0, len(rendered))
 	for n, o := range rendered {
-		// it's annoying to ensure that your template doesn't render spurious newlines
+		// It's annoying to ensure that your template doesn't render spurious
+		// newlines.
 		o = strings.TrimSpace(o)
 		if len(o) > 0 && strings.HasSuffix(n, ".yaml") {
 			objects = append(objects, o)

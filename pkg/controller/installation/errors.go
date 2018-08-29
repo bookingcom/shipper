@@ -2,6 +2,8 @@ package installation
 
 import "fmt"
 
+// TODO(asurikov): fix error types to be structs that implement error.
+
 type DecodeManifestError error
 
 func NewDecodeManifestError(format string, args ...interface{}) DecodeManifestError {

@@ -10,7 +10,8 @@ import (
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// StrategyConditionsShouldDiscardTimestamps can be used to skip timestamps in condition transitions in tests.
+// StrategyConditionsShouldDiscardTimestamps can be used to skip timestamps in
+// condition transitions in tests.
 var StrategyConditionsShouldDiscardTimestamps = false
 
 // StrategyConditionsMap is used to manage a list of ReleaseStrategyConditions.
@@ -43,13 +44,14 @@ func (sc StrategyConditionsMap) SetFalse(conditionType shipperV1.StrategyConditi
 	sc.update(conditionType, coreV1.ConditionFalse, update)
 }
 
-// SetUnknown transitions an existing condition from its current status to Unknown.
+// SetUnknown transitions an existing condition from its current status to
+// Unknown.
 func (sc StrategyConditionsMap) SetUnknown(conditionType shipperV1.StrategyConditionType, update StrategyConditionsUpdate) {
 	sc.update(conditionType, coreV1.ConditionUnknown, update)
 }
 
-// Merge merges another StrategyConditionsMap object into the receiver. Conditions
-// from "other" can override existing conditions in the receiver.
+// Merge merges another StrategyConditionsMap object into the receiver.
+// Conditions from "other" can override existing conditions in the receiver.
 func (sc StrategyConditionsMap) Merge(other StrategyConditionsMap) {
 	for _, e := range other {
 		sc[e.Type] = e
@@ -88,22 +90,26 @@ func (sc StrategyConditionsMap) AsReleaseStrategyConditions() []shipperV1.Releas
 	return conditions
 }
 
-// IsUnknown returns true if all the given conditions have their status Unknown in the receiver.
+// IsUnknown returns true if all the given conditions have their status Unknown
+// in the receiver.
 func (sc StrategyConditionsMap) IsUnknown(step int32, conditionTypes ...shipperV1.StrategyConditionType) bool {
 	return sc.isState(coreV1.ConditionUnknown, step, conditionTypes...)
 }
 
-// IsFalse returns true if all the given conditions have their status False in the receiver.
+// IsFalse returns true if all the given conditions have their status False in
+// the receiver.
 func (sc StrategyConditionsMap) IsFalse(step int32, conditionTypes ...shipperV1.StrategyConditionType) bool {
 	return sc.isState(coreV1.ConditionFalse, step, conditionTypes...)
 }
 
-// IsTrue returns true if all the given conditions have their status True in the receiver.
+// IsTrue returns true if all the given conditions have their status True in the
+// receiver.
 func (sc StrategyConditionsMap) IsTrue(step int32, conditionTypes ...shipperV1.StrategyConditionType) bool {
 	return sc.isState(coreV1.ConditionTrue, step, conditionTypes...)
 }
 
-// AllTrue returns true if all the existing conditions in the receiver have their status True.
+// AllTrue returns true if all the existing conditions in the receiver have
+// their status True.
 func (sc StrategyConditionsMap) AllTrue(step int32) bool {
 	return sc.isState(coreV1.ConditionTrue, step, sc.allConditionTypes()...)
 }
@@ -117,7 +123,6 @@ func (sc StrategyConditionsMap) IsNotTrue(step int32, conditionTypes ...shipperV
 	return true
 }
 
-// allConditionTypes returns an unordered list of all conditions in the receiver.
 func (sc StrategyConditionsMap) allConditionTypes() []shipperV1.StrategyConditionType {
 	conditionTypes := make([]shipperV1.StrategyConditionType, 0, len(sc))
 	for _, v := range sc {
@@ -126,14 +131,15 @@ func (sc StrategyConditionsMap) allConditionTypes() []shipperV1.StrategyConditio
 	return conditionTypes
 }
 
-// AsReleaseStrategyState returns a ReleaseStrategyState computed from the conditions in the receiver.
+// AsReleaseStrategyState returns a ReleaseStrategyState computed from the
+// conditions in the receiver.
 func (sc StrategyConditionsMap) AsReleaseStrategyState(
 	step int32,
 	hasIncumbent bool,
 	isLastStep bool,
 ) shipperV1.ReleaseStrategyState {
 
-	// States we don't know just yet are set to Unknown
+	// States we don't know just yet are set to Unknown.
 	state := shipperV1.ReleaseStrategyState{
 		WaitingForCapacity:     shipperV1.StrategyStateUnknown,
 		WaitingForCommand:      shipperV1.StrategyStateUnknown,
@@ -150,6 +156,7 @@ func (sc StrategyConditionsMap) AsReleaseStrategyState(
 	incumbentAchievedTraffic := sc.IsTrue(step, shipperV1.StrategyConditionIncumbentAchievedTraffic)
 
 	// WaitingForInstallation
+
 	if !achievedInstallation {
 		state.WaitingForInstallation = shipperV1.StrategyStateTrue
 	} else {
@@ -182,6 +189,7 @@ func (sc StrategyConditionsMap) AsReleaseStrategyState(
 	}
 
 	// WaitingForTraffic
+
 	contenderWaitingForTraffic := achievedInstallation &&
 		contenderAchievedCapacity &&
 		!contenderAchievedTraffic

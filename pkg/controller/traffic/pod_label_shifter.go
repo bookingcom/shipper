@@ -201,9 +201,9 @@ func addToLB(pod *corev1.Pod, trafficSelector map[string]string) {
 	}
 }
 
-// NOTE(btyler) there's probably a case to make about not deleting the label
-// entirely, but just changing it. however, without a known alternate value to
-// change to I think deletion is the only reasonable approach
+// NOTE(btyler): there's probably a case to make about not deleting the label
+// entirely, but just changing it. However, without a known alternate value to
+// change to I think deletion is the only reasonable approach.
 func removeFromLB(pod *corev1.Pod, trafficSelector map[string]string) {
 	for key, _ := range trafficSelector {
 		delete(pod.Labels, key)
@@ -211,14 +211,15 @@ func removeFromLB(pod *corev1.Pod, trafficSelector map[string]string) {
 }
 
 func calculateReleasePodTarget(releasePods int, releaseWeight uint32, totalPods int, totalWeight uint32) int {
-	// what percentage of the entire fleet (across all releases) should this set of pods represent
+	// What percentage of the entire fleet (across all releases) should this set of
+	// pods represent.
 	var targetPercent float64
 	if totalWeight == 0 {
 		targetPercent = 0
 	} else {
 		targetPercent = float64(releaseWeight) / float64(totalWeight)
 	}
-	// round up to the nearest pod, clamped to the number of pods this release has
+	// Round up to the nearest pod, clamped to the number of pods this release has.
 	targetPods := int(
 		math.Min(
 			float64(releasePods),
@@ -229,14 +230,14 @@ func calculateReleasePodTarget(releasePods int, releaseWeight uint32, totalPods 
 }
 
 /*
-	transform this (a list of each release's traffic target object in this namespace):
+	Transform this (a list of each release's traffic target object in this namespace):
 	[
 		{ tt-reviewsapi-1: { cluster-1: 90 } },
 		{ tt-reviewsapi-2: { cluster-1: 5 } },
 		{ tt-reviewsapi-3: { cluster-1: 5 } },
 	]
 
-	into this (a map of release weight per cluster):
+	Into this (a map of release weight per cluster):
 	{
 		cluster-1: {
 			reviewsapi-1: 90,
@@ -277,7 +278,6 @@ func buildClusterReleaseWeights(trafficTargets []*shipperv1.TrafficTarget) (clus
 	return clusterReleaseWeights(clusterReleases), nil
 }
 
-// math.Round arrives in go 1.10
 func round(num float64) int {
 	if num < 0 {
 		return int(num - 0.5)

@@ -51,7 +51,8 @@ func TestInstallIncumbent(t *testing.T) {
 	shippertesting.CheckActions(expectedActions, clusterPair.fakeDynamicClient.Actions(), t)
 }
 
-// TestInstallOneCluster tests the installation process using the installation.Controller.
+// TestInstallOneCluster tests the installation process using the
+// installation.Controller.
 func TestInstallOneCluster(t *testing.T) {
 	cluster := buildCluster("minikube-a")
 	appName := "reviews-api"
@@ -78,14 +79,13 @@ func TestInstallOneCluster(t *testing.T) {
 		t.Fatal("Could not process work item")
 	}
 
-	// The chart contained in the test release produces a service and a
-	// deployment manifest. The events order should be always the same,
-	// since we changed the renderer behavior to always return a
-	// consistently ordered list of manifests, according to Kind and
-	// Name. The actions described below are expected to be executed
-	// against the dynamic client that is returned by the
-	// fakeDynamicClientBuilder function passed to the controller, which
-	// mimics a connection to a Target Cluster.
+	// The chart contained in the test release produces a service and a deployment
+	// manifest. The events order should be always the same, since we changed the
+	// renderer behavior to always return a consistently ordered list of manifests,
+	// according to Kind and Name. The actions described below are expected to be
+	// executed against the dynamic client that is returned by the
+	// fakeDynamicClientBuilder function passed to the controller, which mimics a
+	// connection to a Target Cluster.
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
@@ -157,14 +157,13 @@ func TestInstallMultipleClusters(t *testing.T) {
 		t.Fatal("Could not process work item")
 	}
 
-	// The chart contained in the test release produces a service and a
-	// deployment manifest. The events order should be always the same,
-	// since we changed the renderer behavior to always return a
-	// consistently ordered list of manifests, according to Kind and
-	// Name. The actions described below are expected to be executed
-	// against the dynamic client that is returned by the
-	// fakeDynamicClientBuilder function passed to the controller, which
-	// mimics a connection to a Target Cluster.
+	// The chart contained in the test release produces a service and a deployment
+	// manifest. The events order should be always the same, since we changed the
+	// renderer behavior to always return a consistently ordered list of manifests,
+	// according to Kind and Name. The actions described below are expected to be
+	// executed against the dynamic client that is returned by the
+	// fakeDynamicClientBuilder function passed to the controller, which mimics a
+	// connection to a Target Cluster.
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
@@ -186,8 +185,8 @@ func TestInstallMultipleClusters(t *testing.T) {
 		}
 	}
 
-	// Now we need to check if the installation target process was properly
-	// patched and the clusters are listed in alphabetical order.
+	// Now we need to check if the installation target process was properly patched
+	// and the clusters are listed in alphabetical order.
 	it := installationTarget.DeepCopy()
 	it.Status.Clusters = []*shipperV1.ClusterInstallationStatus{
 		{
@@ -225,14 +224,13 @@ func TestInstallMultipleClusters(t *testing.T) {
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
-// TestMissingRelease tests a case that the installation target object is
-// being processed but the release it refers to doesn't exist in the
-// management cluster anymore.
+// TestMissingRelease tests a case that the installation target object is being
+// processed but the release it refers to doesn't exist in the management
+// cluster anymore.
 //
-// This doesn't raise an error, but handles it to Kubernetes
-// runtime.HandleError instead, so this test checks whether or not
-// HandleError has been called and if it has been called with the
-// message we expect.
+// This doesn't raise an error, but handles it to Kubernetes runtime.HandleError
+// instead, so this test checks whether or not HandleError has been called and
+// if it has been called with the message we expect.
 func TestMissingRelease(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
 
@@ -273,9 +271,9 @@ func TestMissingRelease(t *testing.T) {
 // TestClientError tests a case where an error has been returned by the
 // clusterclientstore when requesting a client.
 //
-// This doesn't raise an error, but it updates the installation target
-// status, so this test checks whether the manifest has been updated
-// with the desired status.
+// This doesn't raise an error, but it updates the installation target status,
+// so this test checks whether the manifest has been updated with the desired
+// status.
 func TestClientError(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
 
@@ -350,12 +348,12 @@ func TestClientError(t *testing.T) {
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
-// TestTargetClusterMissesGVK tests a case where the rendered manifest refers
-// to a GroupVersionKind that the Target Cluster doesn't understand.
+// TestTargetClusterMissesGVK tests a case where the rendered manifest refers to
+// a GroupVersionKind that the Target Cluster doesn't understand.
 //
-// This doesn't raise an error, but it updates the installation target
-// status, so this test checks whether the manifest has been updated
-// with the desired status.
+// This doesn't raise an error, but it updates the installation target status,
+// so this test checks whether the manifest has been updated with the desired
+// status.
 func TestTargetClusterMissesGVK(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
 
@@ -427,12 +425,12 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
-// TestManagementServerMissesCluster tests a case where the installation
-// target refers to a cluster the management cluster doesn't know.
+// TestManagementServerMissesCluster tests a case where the installation target
+// refers to a cluster the management cluster doesn't know.
 //
-// This doesn't raise an error, but it updates the installation target
-// status, so this test checks whether the manifest has been updated
-// with the desired status.
+// This doesn't raise an error, but it updates the installation target status,
+// so this test checks whether the manifest has been updated with the desired
+// status.
 func TestManagementServerMissesCluster(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
 

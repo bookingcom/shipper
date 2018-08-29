@@ -170,9 +170,9 @@ func (c *Controller) getWorkingReleasePair(app *v1.Application) (*v1.Release, *v
 	}
 
 	var incumbent *v1.Release
-	// walk backwards until we find an installed release that isn't the head of history
-	// (for releases A -> B -> C, if B was never finished this allows C to
-	// ignore it and let it get deleted so the transition is A->C)
+	// Walk backwards until we find an installed release that isn't the head of
+	// history. Ffor releases A -> B -> C, if B was never finished this allows C to
+	// ignore it and let it get deleted so the transition is A->C.
 	for i := len(appReleases) - 1; i >= 0; i-- {
 		if releaseutil.ReleaseComplete(appReleases[i]) && contender != appReleases[i] {
 			incumbent = appReleases[i]
@@ -180,7 +180,7 @@ func (c *Controller) getWorkingReleasePair(app *v1.Application) (*v1.Release, *v
 		}
 	}
 
-	// it is totally OK if incumbent is nil; that just means this is our first rollout
+	// It is OK if incumbent is nil. It just means this is our first rollout.
 	return incumbent, contender, nil
 }
 
@@ -411,7 +411,8 @@ func (c *Controller) clientForGroupVersionKind(
 		return nil, err
 	}
 
-	// This is sort of stupid, it might exist some better way to get the APIResource here...
+	// This is sort of stupid, there might exist some better way to get the
+	// APIResource here...
 	var resource *metav1.APIResource
 	gv := gvk.GroupVersion().String()
 
@@ -469,7 +470,7 @@ func (c *Controller) buildExecutor(incumbentRelease, contenderRelease *v1.Releas
 
 	strategy := *contenderReleaseInfo.release.Environment.Strategy
 
-	// no incumbent, only this contender: a new application
+	// No incumbent, only this contender: a new application.
 	if incumbentRelease == nil {
 		return &Executor{
 			contender: contenderReleaseInfo,
