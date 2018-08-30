@@ -1,10 +1,10 @@
 package installation
 
 import (
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
 
-type byClusterName []*shipperV1.ClusterInstallationStatus
+type byClusterName []*shipperv1.ClusterInstallationStatus
 
 func (c byClusterName) Len() int {
 	return len(c)

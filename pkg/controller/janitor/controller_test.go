@@ -3,14 +3,14 @@ package janitor
 import (
 	"testing"
 
-	coreV1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
@@ -75,7 +75,7 @@ func TestSuccessfulDeleteInstallationTarget(t *testing.T) {
 
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewDeleteAction(
-			schema.GroupVersionResource{Resource: string(coreV1.ResourceConfigMaps), Version: "v1"},
+			schema.GroupVersionResource{Resource: string(corev1.ResourceConfigMaps), Version: "v1"},
 			item.Namespace,
 			item.AnchorName,
 		),
@@ -134,10 +134,10 @@ func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
 	item := &AnchorWorkItem{
 		ClusterName:           cluster.Name,
 		InstallationTargetUID: configMap.Data[InstallationTargetUID],
-		Key:                   key,
-		Name:                  configMap.Name,
-		Namespace:             configMap.GetNamespace(),
-		ReleaseName:           configMap.GetLabels()[shipperV1.ReleaseLabel],
+		Key:         key,
+		Name:        configMap.Name,
+		Namespace:   configMap.GetNamespace(),
+		ReleaseName: configMap.GetLabels()[shipperv1.ReleaseLabel],
 	}
 
 	// Execute c.syncAnchor() here since I couldn't find an API to trigger the Update event handler.
@@ -204,10 +204,10 @@ func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
 	item := &AnchorWorkItem{
 		ClusterName:           cluster.GetName(),
 		InstallationTargetUID: configMap.Data[InstallationTargetUID],
-		Key:                   key,
-		Name:                  configMap.GetName(),
-		Namespace:             configMap.GetNamespace(),
-		ReleaseName:           configMap.GetLabels()[shipperV1.ReleaseLabel],
+		Key:         key,
+		Name:        configMap.GetName(),
+		Namespace:   configMap.GetNamespace(),
+		ReleaseName: configMap.GetLabels()[shipperv1.ReleaseLabel],
 	}
 
 	// Execute c.syncAnchor() here since I couldn't find an API to trigger the
@@ -218,7 +218,7 @@ func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
 
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewDeleteAction(
-			schema.GroupVersionResource{Resource: string(coreV1.ResourceConfigMaps), Version: "v1"},
+			schema.GroupVersionResource{Resource: string(corev1.ResourceConfigMaps), Version: "v1"},
 			configMap.GetNamespace(),
 			configMap.GetName(),
 		),
@@ -275,10 +275,10 @@ func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
 	item := &AnchorWorkItem{
 		ClusterName:           cluster.GetName(),
 		InstallationTargetUID: configMap.Data[InstallationTargetUID],
-		Key:                   key,
-		Name:                  configMap.Name,
-		Namespace:             configMap.GetNamespace(),
-		ReleaseName:           configMap.GetLabels()[shipperV1.ReleaseLabel],
+		Key:         key,
+		Name:        configMap.Name,
+		Namespace:   configMap.GetNamespace(),
+		ReleaseName: configMap.GetLabels()[shipperv1.ReleaseLabel],
 	}
 
 	// Execute c.syncAnchor() here since I couldn't find an API to trigger the
@@ -289,7 +289,7 @@ func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
 
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewDeleteAction(
-			schema.GroupVersionResource{Resource: string(coreV1.ResourceConfigMaps), Version: "v1"},
+			schema.GroupVersionResource{Resource: string(corev1.ResourceConfigMaps), Version: "v1"},
 			configMap.GetNamespace(),
 			configMap.GetName(),
 		),

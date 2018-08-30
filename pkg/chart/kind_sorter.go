@@ -3,7 +3,7 @@ package chart
 import (
 	"fmt"
 
-	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -78,7 +78,7 @@ type extendedManifest struct {
 	manifest        string
 	gvk             *schema.GroupVersionKind
 	decodedManifest runtime.Object
-	object          metaV1.Object
+	object          metav1.Object
 }
 
 type kindSorter struct {
@@ -96,7 +96,7 @@ func newKindSorter(m []string, s SortOrder) (*kindSorter, error) {
 	for _, s := range m {
 		if decodedManifest, gvk, err := scheme.Codecs.UniversalDeserializer().Decode([]byte(s), nil, nil); err != nil {
 			return nil, fmt.Errorf("could not decode manifest: %s", err)
-		} else if object, ok := decodedManifest.(metaV1.Object); !ok {
+		} else if object, ok := decodedManifest.(metav1.Object); !ok {
 			return nil, fmt.Errorf("object does not implement metaV1.Object")
 		} else {
 			e := extendedManifest{decodedManifest: decodedManifest, gvk: gvk, object: object, manifest: s}

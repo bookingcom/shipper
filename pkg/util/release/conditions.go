@@ -3,20 +3,20 @@ package release
 import (
 	"sort"
 
-	coreV1 "k8s.io/api/core/v1"
-	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
 
 var ConditionsShouldDiscardTimestamps = false
 
-func NewReleaseCondition(condType shipper.ReleaseConditionType, status coreV1.ConditionStatus, reason, message string) *shipper.ReleaseCondition {
-	now := metaV1.Now()
+func NewReleaseCondition(condType shipperv1.ReleaseConditionType, status corev1.ConditionStatus, reason, message string) *shipperv1.ReleaseCondition {
+	now := metav1.Now()
 	if ConditionsShouldDiscardTimestamps {
-		now = metaV1.Time{}
+		now = metav1.Time{}
 	}
-	return &shipper.ReleaseCondition{
+	return &shipperv1.ReleaseCondition{
 		Type:               condType,
 		Status:             status,
 		LastTransitionTime: now,
@@ -25,7 +25,7 @@ func NewReleaseCondition(condType shipper.ReleaseConditionType, status coreV1.Co
 	}
 }
 
-func SetReleaseCondition(status *shipper.ReleaseStatus, condition shipper.ReleaseCondition) {
+func SetReleaseCondition(status *shipperv1.ReleaseStatus, condition shipperv1.ReleaseCondition) {
 	currentCond := GetReleaseCondition(*status, condition.Type)
 	if currentCond != nil && currentCond.Status == condition.Status && currentCond.Reason == condition.Reason {
 		return
@@ -40,7 +40,7 @@ func SetReleaseCondition(status *shipper.ReleaseStatus, condition shipper.Releas
 	})
 }
 
-func GetReleaseCondition(status shipper.ReleaseStatus, condType shipper.ReleaseConditionType) *shipper.ReleaseCondition {
+func GetReleaseCondition(status shipperv1.ReleaseStatus, condType shipperv1.ReleaseConditionType) *shipperv1.ReleaseCondition {
 	for i := range status.Conditions {
 		c := status.Conditions[i]
 		if c.Type == condType {
@@ -50,31 +50,31 @@ func GetReleaseCondition(status shipper.ReleaseStatus, condType shipper.ReleaseC
 	return nil
 }
 
-func RemoveReleaseCondition(status shipper.ReleaseStatus, condType shipper.ReleaseConditionType) {
+func RemoveReleaseCondition(status shipperv1.ReleaseStatus, condType shipperv1.ReleaseConditionType) {
 	status.Conditions = filterOutCondition(status.Conditions, condType)
 }
 
-func ReleaseInstalled(release *shipper.Release) bool {
-	installedCond := GetReleaseCondition(release.Status, shipper.ReleaseConditionTypeInstalled)
-	return installedCond != nil && installedCond.Status == coreV1.ConditionTrue
+func ReleaseInstalled(release *shipperv1.Release) bool {
+	installedCond := GetReleaseCondition(release.Status, shipperv1.ReleaseConditionTypeInstalled)
+	return installedCond != nil && installedCond.Status == corev1.ConditionTrue
 }
 
-func ReleaseScheduled(release *shipper.Release) bool {
-	scheduledCond := GetReleaseCondition(release.Status, shipper.ReleaseConditionTypeScheduled)
-	return scheduledCond != nil && scheduledCond.Status == coreV1.ConditionTrue
+func ReleaseScheduled(release *shipperv1.Release) bool {
+	scheduledCond := GetReleaseCondition(release.Status, shipperv1.ReleaseConditionTypeScheduled)
+	return scheduledCond != nil && scheduledCond.Status == corev1.ConditionTrue
 }
 
-func ReleaseComplete(release *shipper.Release) bool {
-	releasedCond := GetReleaseCondition(release.Status, shipper.ReleaseConditionTypeComplete)
-	return releasedCond != nil && releasedCond.Status == coreV1.ConditionTrue
+func ReleaseComplete(release *shipperv1.Release) bool {
+	releasedCond := GetReleaseCondition(release.Status, shipperv1.ReleaseConditionTypeComplete)
+	return releasedCond != nil && releasedCond.Status == corev1.ConditionTrue
 }
 
-func ReleaseProgressing(release *shipper.Release) bool {
+func ReleaseProgressing(release *shipperv1.Release) bool {
 	return !(ReleaseComplete(release))
 }
 
-func filterOutCondition(conditions []shipper.ReleaseCondition, condType shipper.ReleaseConditionType) []shipper.ReleaseCondition {
-	var newConditions []shipper.ReleaseCondition
+func filterOutCondition(conditions []shipperv1.ReleaseCondition, condType shipperv1.ReleaseConditionType) []shipperv1.ReleaseCondition {
+	var newConditions []shipperv1.ReleaseCondition
 	for _, c := range conditions {
 		if c.Type == condType {
 			continue

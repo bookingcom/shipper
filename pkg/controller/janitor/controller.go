@@ -8,33 +8,33 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	coreV1 "k8s.io/api/core/v1"
+
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubeRuntimeUtil "k8s.io/apimachinery/pkg/util/runtime"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	kubeInformers "k8s.io/client-go/informers"
+	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	shipperInformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	shipperListers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 )
 
 const AgentName = "janitor-controller"
 
 type Controller struct {
-	shipperClientset   clientset.Interface
+	shipperClientset   shipper.Interface
 	workqueue          workqueue.RateLimitingInterface
 	clusterClientStore clusterclientstore.Interface
 	recorder           record.EventRecorder
 
-	itLister shipperListers.InstallationTargetLister
+	itLister shipperlisters.InstallationTargetLister
 	itSynced cache.InformerSynced
 }
 
@@ -44,7 +44,7 @@ const InstallationTargetUID = "InstallationTargetUID"
 
 func NewController(
 	shipperclientset shipper.Interface,
-	shipperInformerFactory shipperInformers.SharedInformerFactory,
+	shipperInformerFactory shipperinformers.SharedInformerFactory,
 	store clusterclientstore.Interface,
 	recorder record.EventRecorder,
 ) *Controller {
@@ -67,14 +67,14 @@ func NewController(
 	itInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		DeleteFunc: func(obj interface{}) {
 			if key, err := cache.MetaNamespaceKeyFunc(obj); err != nil {
-				kubeRuntimeUtil.HandleError(err)
+				runtime.HandleError(err)
 				return
 			} else if namespace, name, err := cache.SplitMetaNamespaceKey(key); err != nil {
-				kubeRuntimeUtil.HandleError(err)
+				runtime.HandleError(err)
 				return
 			} else {
-				it := obj.(*shipperV1.InstallationTarget)
-				releaseName := it.GetLabels()[shipperV1.ReleaseLabel]
+				it := obj.(*shipperv1.InstallationTarget)
+				releaseName := it.GetLabels()[shipperv1.ReleaseLabel]
 				wi := &InstallationTargetWorkItem{
 					ObjectMeta: *it.ObjectMeta.DeepCopy(),
 					Key:        key,
@@ -88,7 +88,7 @@ func NewController(
 		},
 	})
 
-	store.AddSubscriptionCallback(func(informerFactory kubeInformers.SharedInformerFactory) {
+	store.AddSubscriptionCallback(func(informerFactory kubeinformers.SharedInformerFactory) {
 		// Subscribe to receive notifications for events related to config maps
 		// from all the clusters available in the store. Config maps are used as
 		// anchor, since they're owner of all of the release related objects
@@ -96,7 +96,7 @@ func NewController(
 		informerFactory.Core().V1().ConfigMaps().Informer()
 	})
 
-	store.AddEventHandlerCallback(func(informerFactory kubeInformers.SharedInformerFactory, clusterName string) {
+	store.AddEventHandlerCallback(func(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
 		informerFactory.Core().V1().ConfigMaps().Informer().AddEventHandler(
 			cache.FilteringResourceEventHandler{
 				// Anchor objects are basically config maps with the
@@ -105,13 +105,13 @@ func NewController(
 				// Data field has the InstallationTargetUID key, ignoring those
 				// config maps that don't have it.
 				FilterFunc: func(obj interface{}) bool {
-					cm := obj.(*coreV1.ConfigMap)
+					cm := obj.(*corev1.ConfigMap)
 					hasRightName := strings.HasSuffix(cm.GetName(), AnchorSuffix)
-					_, hasReleaseLabel := cm.GetLabels()[shipperV1.ReleaseLabel]
+					_, hasReleaseLabel := cm.GetLabels()[shipperv1.ReleaseLabel]
 					_, hasUID := cm.Data[InstallationTargetUID]
 					if hasRightName && hasReleaseLabel && !hasUID {
 						controller.recorder.Eventf(cm,
-							coreV1.EventTypeWarning,
+							corev1.EventTypeWarning,
 							"ConfigMapIncomplete",
 							"Anchor config map doesn't have %q key, skipping", InstallationTargetUID)
 					}
@@ -122,19 +122,19 @@ func NewController(
 					// shipperV1.ReleaseLabel, extracting all the information
 					// required for the worker to, well, work.
 					UpdateFunc: func(oldObj, newObj interface{}) {
-						cm := newObj.(*coreV1.ConfigMap)
+						cm := newObj.(*corev1.ConfigMap)
 						if key, err := cache.MetaNamespaceKeyFunc(cm); err != nil {
-							kubeRuntimeUtil.HandleError(err)
+							runtime.HandleError(err)
 							return
 						} else if namespace, name, err := cache.SplitMetaNamespaceKey(key); err != nil {
-							kubeRuntimeUtil.HandleError(err)
+							runtime.HandleError(err)
 							return
 						} else {
 							// In theory, if we are in this block it means that the
 							// object has a shipperV1.ReleaseLabel label *and* the
 							// InstallationTargetUID key in Data, so it should be
 							// fine to just get them both.
-							releaseName := cm.GetLabels()[shipperV1.ReleaseLabel]
+							releaseName := cm.GetLabels()[shipperv1.ReleaseLabel]
 							uid := cm.Data[InstallationTargetUID]
 							wi := &AnchorWorkItem{
 								ObjectMeta:            *cm.ObjectMeta.DeepCopy(),
@@ -142,8 +142,8 @@ func NewController(
 								Name:                  name,
 								ClusterName:           clusterName,
 								InstallationTargetUID: uid,
-								Key:                   key,
-								ReleaseName:           releaseName,
+								Key:         key,
+								ReleaseName: releaseName,
 							}
 							controller.workqueue.Add(wi)
 						}
@@ -161,7 +161,7 @@ type WorkItem interface {
 }
 
 type InstallationTargetWorkItem struct {
-	ObjectMeta metaV1.ObjectMeta
+	ObjectMeta metav1.ObjectMeta
 	Key        string
 	Namespace  string
 	Name       string
@@ -174,7 +174,7 @@ func (i InstallationTargetWorkItem) GetKey() string {
 }
 
 type AnchorWorkItem struct {
-	ObjectMeta            metaV1.ObjectMeta
+	ObjectMeta            metav1.ObjectMeta
 	Key                   string
 	InstallationTargetUID string
 	ReleaseName           string
@@ -188,14 +188,14 @@ func (i AnchorWorkItem) GetKey() string {
 }
 
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
-	defer kubeRuntimeUtil.HandleCrash()
+	defer runtime.HandleCrash()
 	defer c.workqueue.ShutDown()
 
 	glog.V(2).Info("Starting Janitor controller")
 	defer glog.V(2).Info("Shutting down Janitor controller")
 
 	if ok := cache.WaitForCacheSync(stopCh, c.itSynced); !ok {
-		kubeRuntimeUtil.HandleError(fmt.Errorf("failed to wait for caches to sync"))
+		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
 		return
 	}
 
@@ -223,7 +223,7 @@ func (c *Controller) processNextWorkItem() bool {
 
 	if workItem, ok := obj.(WorkItem); !ok {
 		c.workqueue.Forget(obj)
-		kubeRuntimeUtil.HandleError(fmt.Errorf("skipping since object it isn't a WorkItem, is a %q", reflect.TypeOf(obj)))
+		runtime.HandleError(fmt.Errorf("skipping since object it isn't a WorkItem, is a %q", reflect.TypeOf(obj)))
 	} else {
 		// If any of the sync methods return an error we should retry.
 		var err error
@@ -235,7 +235,7 @@ func (c *Controller) processNextWorkItem() bool {
 		default:
 			// Ask the workqueue to forget about this item, since we don't know
 			// how to handle it.
-			kubeRuntimeUtil.HandleError(fmt.Errorf("don't know how to handle %q", reflect.TypeOf(obj)))
+			runtime.HandleError(fmt.Errorf("don't know how to handle %q", reflect.TypeOf(obj)))
 			c.workqueue.Forget(obj)
 		}
 
@@ -270,13 +270,13 @@ func (c *Controller) syncAnchor(item *AnchorWorkItem) error {
 			item.InstallationTargetUID)
 	}
 
-	configMap := &coreV1.ConfigMap{ObjectMeta: item.ObjectMeta}
+	configMap := &corev1.ConfigMap{ObjectMeta: item.ObjectMeta}
 	if ok, err := c.removeAnchor(item.ClusterName, item.Namespace, item.Name); err != nil {
 		err.Broadcast(configMap, c.recorder)
 		return err
 	} else if ok {
 		c.recorder.Eventf(configMap,
-			coreV1.EventTypeNormal,
+			corev1.EventTypeNormal,
 			"ConfigMapDeleted",
 			"Config map %q has been deleted from cluster %q",
 			item.Key, item.ClusterName)
@@ -288,13 +288,13 @@ func (c *Controller) syncAnchor(item *AnchorWorkItem) error {
 func (c *Controller) removeAnchor(clusterName string, namespace string, name string) (bool, *RecordableError) {
 	if client, err := c.clusterClientStore.GetClient(clusterName); err != nil {
 		return false, NewRecordableError(
-			coreV1.EventTypeWarning,
+			corev1.EventTypeWarning,
 			"ClusterClientError",
 			"Error acquiring a client for cluster %q: %s",
 			clusterName, err)
-	} else if err := client.CoreV1().ConfigMaps(namespace).Delete(name, &metaV1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+	} else if err := client.CoreV1().ConfigMaps(namespace).Delete(name, &metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 		return false, NewRecordableError(
-			coreV1.EventTypeWarning,
+			corev1.EventTypeWarning,
 			"ConfigMapDeletionFailed",
 			"Config map '%s/%s' deletion on cluster %q failed: %s",
 			namespace, name, clusterName, err)
@@ -316,12 +316,12 @@ func (c *Controller) syncInstallationTarget(item *InstallationTargetWorkItem) er
 	for _, clusterName := range item.Clusters {
 		wg.Add(1)
 		go func(clusterName string) {
-			installationTarget := &shipperV1.InstallationTarget{ObjectMeta: item.ObjectMeta}
+			installationTarget := &shipperv1.InstallationTarget{ObjectMeta: item.ObjectMeta}
 			if ok, err := c.removeAnchor(clusterName, item.Namespace, item.AnchorName); err != nil {
 				err.Broadcast(installationTarget, c.recorder)
 			} else if ok {
 				c.recorder.Eventf(installationTarget,
-					coreV1.EventTypeNormal,
+					corev1.EventTypeNormal,
 					"ConfigMapDeleted",
 					"Config map %q has been deleted from cluster %q",
 					item.Key, clusterName)

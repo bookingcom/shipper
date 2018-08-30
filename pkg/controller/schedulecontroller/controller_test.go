@@ -4,18 +4,18 @@ import (
 	"testing"
 	"time"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	kubetesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/record"
+
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/chart"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
-
-	corev1 "k8s.io/api/core/v1"
-	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	kubetesting "k8s.io/client-go/testing"
-	"k8s.io/client-go/tools/record"
 )
 
 func init() {
@@ -52,19 +52,19 @@ func TestControllerComputeTargetClusters(t *testing.T) {
 	// logic, a list of clusters containing the sole cluster we've added to
 	// the client.
 	expected := release.DeepCopy()
-	expected.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
+	expected.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
 
 	relWithConditions := expected.DeepCopy()
-	condition := releaseutil.NewReleaseCondition(shipperV1.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	condition := releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 	releaseutil.SetReleaseCondition(&relWithConditions.Status, *condition)
 
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
-			shipperV1.SchemeGroupVersion.WithResource("releases"),
+			shipperv1.SchemeGroupVersion.WithResource("releases"),
 			release.GetNamespace(),
 			expected),
 		kubetesting.NewUpdateAction(
-			shipperV1.SchemeGroupVersion.WithResource("releases"),
+			shipperv1.SchemeGroupVersion.WithResource("releases"),
 			release.GetNamespace(),
 			relWithConditions),
 	}
@@ -82,7 +82,7 @@ func TestControllerCreateAssociatedObjects(t *testing.T) {
 	// Fixtures
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
-	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
+	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
 	fixtures := []runtime.Object{release, cluster}
 
 	// Expected release and actions. The release should have, at the end of
@@ -91,8 +91,8 @@ func TestControllerCreateAssociatedObjects(t *testing.T) {
 	// status. Expected actions contain the intent to create all the
 	// associated target objects.
 	expected := release.DeepCopy()
-	expected.Status.Conditions = []shipperV1.ReleaseCondition{
-		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	expected.Status.Conditions = []shipperv1.ReleaseCondition{
+		{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
@@ -113,9 +113,9 @@ func TestControllerCreateAssociatedObjectsDuplicateInstallationTarget(t *testing
 	// Fixtures
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
-	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
-	installationtarget := &shipperV1.InstallationTarget{
-		ObjectMeta: metaV1.ObjectMeta{
+	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
+	installationtarget := &shipperv1.InstallationTarget{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      release.GetName(),
 			Namespace: release.GetNamespace(),
 		},
@@ -128,8 +128,8 @@ func TestControllerCreateAssociatedObjectsDuplicateInstallationTarget(t *testing
 	// Expected actions contain the intent to create all the associated target
 	// objects.
 	expected := release.DeepCopy()
-	expected.Status.Conditions = []shipperV1.ReleaseCondition{
-		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	expected.Status.Conditions = []shipperv1.ReleaseCondition{
+		{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
@@ -150,9 +150,9 @@ func TestControllerCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	// Fixtures
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
-	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
-	traffictarget := &shipperV1.TrafficTarget{
-		ObjectMeta: metaV1.ObjectMeta{
+	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
+	traffictarget := &shipperv1.TrafficTarget{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      release.GetName(),
 			Namespace: release.GetNamespace(),
 		},
@@ -165,8 +165,8 @@ func TestControllerCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	// Expected actions contain the intent to create all the associated target
 	// objects.
 	expected := release.DeepCopy()
-	expected.Status.Conditions = []shipperV1.ReleaseCondition{
-		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	expected.Status.Conditions = []shipperv1.ReleaseCondition{
+		{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
@@ -187,9 +187,9 @@ func TestControllerCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) 
 	// Fixtures
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
-	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
-	capacitytarget := &shipperV1.CapacityTarget{
-		ObjectMeta: metaV1.ObjectMeta{
+	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
+	capacitytarget := &shipperv1.CapacityTarget{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      release.GetName(),
 			Namespace: release.GetNamespace(),
 		},
@@ -202,8 +202,8 @@ func TestControllerCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) 
 	// Expected actions contain the intent to create all the associated target
 	// objects.
 	expected := release.DeepCopy()
-	expected.Status.Conditions = []shipperV1.ReleaseCondition{
-		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	expected.Status.Conditions = []shipperv1.ReleaseCondition{
+		{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 

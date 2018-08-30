@@ -6,12 +6,11 @@ import (
 	"sort"
 
 	"github.com/golang/glog"
-	"github.com/bookingcom/shipper/pkg/controller/janitor"
 
-	appsV1 "k8s.io/api/apps/v1"
-	coreV1 "k8s.io/api/core/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -20,26 +19,27 @@ import (
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipperChart "github.com/bookingcom/shipper/pkg/chart"
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperchart "github.com/bookingcom/shipper/pkg/chart"
+	"github.com/bookingcom/shipper/pkg/controller/janitor"
 )
 
-type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipperV1.Cluster) dynamic.Interface
+type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipperv1.Cluster) dynamic.Interface
 
 // Installer is an object that knows how to install Helm charts directly
 // into Kubernetes clusters.
 type Installer struct {
-	fetchChart shipperChart.FetchFunc
+	fetchChart shipperchart.FetchFunc
 
-	Release            *shipperV1.Release
-	InstallationTarget *shipperV1.InstallationTarget
+	Release            *shipperv1.Release
+	InstallationTarget *shipperv1.InstallationTarget
 	Scheme             *runtime.Scheme
 }
 
 // NewInstaller returns a new Installer.
-func NewInstaller(chartFetchFunc shipperChart.FetchFunc,
-	release *shipperV1.Release,
-	it *shipperV1.InstallationTarget,
+func NewInstaller(chartFetchFunc shipperchart.FetchFunc,
+	release *shipperv1.Release,
+	it *shipperv1.InstallationTarget,
 ) *Installer {
 	return &Installer{
 		fetchChart:         chartFetchFunc,
@@ -51,14 +51,14 @@ func NewInstaller(chartFetchFunc shipperChart.FetchFunc,
 
 // renderManifests returns a list of rendered manifests for the given release and
 // cluster, or an error.
-func (i *Installer) renderManifests(_ *shipperV1.Cluster) ([]string, error) {
+func (i *Installer) renderManifests(_ *shipperv1.Cluster) ([]string, error) {
 	rel := i.Release
 	chart, err := i.fetchChart(rel.Environment.Chart)
 	if err != nil {
 		return nil, RenderManifestError(err)
 	}
 
-	rendered, err := shipperChart.Render(
+	rendered, err := shipperchart.Render(
 		chart,
 		rel.GetName(),
 		rel.GetNamespace(),
@@ -79,7 +79,7 @@ func (i *Installer) renderManifests(_ *shipperV1.Cluster) ([]string, error) {
 // buildResourceClient returns a ResourceClient suitable to manipulate the kind
 // of resource represented by the given GroupVersionKind at the given Cluster.
 func (i *Installer) buildResourceClient(
-	cluster *shipperV1.Cluster,
+	cluster *shipperv1.Cluster,
 	client kubernetes.Interface,
 	restConfig *rest.Config,
 	dynamicClientBuilder DynamicClientBuilderFunc,
@@ -89,7 +89,7 @@ func (i *Installer) buildResourceClient(
 
 	// From the list of resources the target cluster knows about, find the resource for the
 	// kind of object we have at hand.
-	var resource *metaV1.APIResource
+	var resource *metav1.APIResource
 	gv := gvk.GroupVersion().String()
 	if resources, err := client.Discovery().ServerResourcesForGroupVersion(gv); err != nil {
 		return nil, err
@@ -114,12 +114,12 @@ func (i *Installer) buildResourceClient(
 }
 
 func (i *Installer) patchDeployment(
-	d *appsV1.Deployment,
+	d *appsv1.Deployment,
 	labelsToInject map[string]string,
-	ownerReference *metaV1.OwnerReference,
+	ownerReference *metav1.OwnerReference,
 ) runtime.Object {
 
-	d.OwnerReferences = []metaV1.OwnerReference{*ownerReference}
+	d.OwnerReferences = []metav1.OwnerReference{*ownerReference}
 
 	replicas := int32(0)
 	d.Spec.Replicas = &replicas
@@ -136,11 +136,11 @@ func (i *Installer) patchDeployment(
 	d.SetLabels(newLabels)
 
 	// Patch .spec.selector
-	var newSelector *metaV1.LabelSelector
+	var newSelector *metav1.LabelSelector
 	if d.Spec.Selector != nil {
 		newSelector = d.Spec.Selector.DeepCopy()
 	} else {
-		newSelector = &metaV1.LabelSelector{
+		newSelector = &metav1.LabelSelector{
 			MatchLabels: map[string]string{},
 		}
 	}
@@ -161,11 +161,11 @@ func (i *Installer) patchDeployment(
 }
 
 func (i *Installer) patchService(
-	s *coreV1.Service,
+	s *corev1.Service,
 	labelsToInject map[string]string,
-	ownerReference *metaV1.OwnerReference,
+	ownerReference *metav1.OwnerReference,
 ) runtime.Object {
-	s.SetOwnerReferences([]metaV1.OwnerReference{*ownerReference})
+	s.SetOwnerReferences([]metav1.OwnerReference{*ownerReference})
 	s.SetLabels(mergeLabels(s.GetLabels(), labelsToInject))
 	return s
 }
@@ -173,10 +173,10 @@ func (i *Installer) patchService(
 func (i *Installer) patchUnstructured(
 	o *unstructured.Unstructured,
 	labelsToInject map[string]string,
-	ownerReference *metaV1.OwnerReference,
+	ownerReference *metav1.OwnerReference,
 ) runtime.Object {
 
-	o.SetOwnerReferences([]metaV1.OwnerReference{*ownerReference})
+	o.SetOwnerReferences([]metav1.OwnerReference{*ownerReference})
 
 	labels := o.GetLabels()
 	if labels == nil {
@@ -192,12 +192,12 @@ func (i *Installer) patchUnstructured(
 func (i *Installer) patchObject(
 	object runtime.Object,
 	labelsToInject map[string]string,
-	ownerReference *metaV1.OwnerReference,
+	ownerReference *metav1.OwnerReference,
 ) runtime.Object {
 	switch o := object.(type) {
-	case *appsV1.Deployment:
+	case *appsv1.Deployment:
 		return i.patchDeployment(o, labelsToInject, ownerReference)
-	case *coreV1.Service:
+	case *corev1.Service:
 		return i.patchService(o, labelsToInject, ownerReference)
 	default:
 		unstructuredObj := &unstructured.Unstructured{}
@@ -211,21 +211,21 @@ func (i *Installer) patchObject(
 
 // installManifests attempts to install the manifests on the specified cluster.
 func (i *Installer) installManifests(
-	cluster *shipperV1.Cluster,
+	cluster *shipperv1.Cluster,
 	client kubernetes.Interface,
 	restConfig *rest.Config,
 	dynamicClientBuilderFunc DynamicClientBuilderFunc,
 	manifests []string,
 ) error {
 
-	var configMap *coreV1.ConfigMap
-	var createdConfigMap *coreV1.ConfigMap
-	var existingConfigMap *coreV1.ConfigMap
+	var configMap *corev1.ConfigMap
+	var createdConfigMap *corev1.ConfigMap
+	var existingConfigMap *corev1.ConfigMap
 	var err error
 
 	if configMap, err = janitor.CreateConfigMapAnchor(i.InstallationTarget); err != nil {
 		return NewCreateResourceError("error creating anchor config map: %s ", err)
-	} else if existingConfigMap, err = client.CoreV1().ConfigMaps(i.Release.Namespace).Get(configMap.Name, metaV1.GetOptions{}); err != nil && !errors.IsNotFound(err) {
+	} else if existingConfigMap, err = client.CoreV1().ConfigMaps(i.Release.Namespace).Get(configMap.Name, metav1.GetOptions{}); err != nil && !errors.IsNotFound(err) {
 		return NewGetResourceError(`error getting anchor %q: %s`, configMap.Name, err)
 	} else if err != nil { // errors.IsNotFound(err) == true
 		if createdConfigMap, err = client.CoreV1().ConfigMaps(configMap.Namespace).Create(configMap); err != nil {
@@ -294,7 +294,7 @@ func (i *Installer) installManifests(
 		// attempts to create the resource, taking some time to re-sync
 		// the quota information when objects can't be created since they
 		// already exist.
-		existingObj, err := resourceClient.Get(obj.GetName(), metaV1.GetOptions{})
+		existingObj, err := resourceClient.Get(obj.GetName(), metav1.GetOptions{})
 
 		// Any error other than NotFound is not recoverable from this point on.
 		if err != nil && !errors.IsNotFound(err) {
@@ -320,10 +320,10 @@ func (i *Installer) installManifests(
 
 		// If the existing object was stamped with the driving release,
 		// continue to the next manifest.
-		if releaseLabelValue, ok := existingObj.GetLabels()[shipperV1.ReleaseLabel]; ok && releaseLabelValue == i.Release.Name {
+		if releaseLabelValue, ok := existingObj.GetLabels()[shipperv1.ReleaseLabel]; ok && releaseLabelValue == i.Release.Name {
 			continue
 		} else if !ok {
-			return NewIncompleteReleaseError(`Release "%s/%s" misses the required label %q`, existingObj.GetNamespace(), existingObj.GetName(), shipperV1.ReleaseLabel)
+			return NewIncompleteReleaseError(`Release "%s/%s" misses the required label %q`, existingObj.GetNamespace(), existingObj.GetName(), shipperv1.ReleaseLabel)
 		}
 
 		ownerReferenceFound := false
@@ -344,7 +344,7 @@ func (i *Installer) installManifests(
 		existingUnstructuredObj := existingObj.UnstructuredContent()
 		newUnstructuredObj := obj.UnstructuredContent()
 		switch decodedObj.(type) {
-		case *coreV1.Service:
+		case *corev1.Service:
 			// Copy over clusterIP from existing object's .spec to the
 			// rendered one.
 			if clusterIP, ok := unstructured.NestedString(existingUnstructuredObj, "spec", "clusterIP"); ok {
@@ -364,7 +364,7 @@ func (i *Installer) installManifests(
 
 // installRelease attempts to install the given release on the given cluster.
 func (i *Installer) installRelease(
-	cluster *shipperV1.Cluster,
+	cluster *shipperv1.Cluster,
 	client kubernetes.Interface,
 	restConfig *rest.Config,
 	dynamicClientBuilder DynamicClientBuilderFunc,

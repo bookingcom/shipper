@@ -14,11 +14,11 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/chart"
-	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
@@ -34,12 +34,12 @@ const (
 
 // Controller is a Kubernetes controller that knows how to schedule Releases.
 type Controller struct {
-	shipperclientset clientset.Interface
+	shipperclientset shipper.Interface
 
-	releasesLister listers.ReleaseLister
+	releasesLister shipperlisters.ReleaseLister
 	releasesSynced cache.InformerSynced
 
-	clustersLister listers.ClusterLister
+	clustersLister shipperlisters.ClusterLister
 	clustersSynced cache.InformerSynced
 
 	workqueue      workqueue.RateLimitingInterface
@@ -49,8 +49,8 @@ type Controller struct {
 
 // NewController returns a new Schedule controller.
 func NewController(
-	shipperclientset clientset.Interface,
-	shipperInformerFactory informers.SharedInformerFactory,
+	shipperclientset shipper.Interface,
+	shipperInformerFactory shipperinformers.SharedInformerFactory,
 	chartFetchFunc chart.FetchFunc,
 	recorder record.EventRecorder,
 ) *Controller {
@@ -190,7 +190,7 @@ func (c *Controller) syncOne(key string) bool {
 
 		reason, shouldRetry := classifyError(err)
 		condition := releaseutil.NewReleaseCondition(
-			shipperV1.ReleaseConditionTypeScheduled,
+			shipperv1.ReleaseConditionTypeScheduled,
 			corev1.ConditionFalse,
 			reason,
 			err.Error(),
