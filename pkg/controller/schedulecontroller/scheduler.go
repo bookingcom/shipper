@@ -4,15 +4,13 @@ import (
 	"sort"
 	"strings"
 
-	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
-
 	"github.com/golang/glog"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/record"
+	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 
 	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"

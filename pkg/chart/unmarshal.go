@@ -2,7 +2,6 @@ package chart
 
 import (
 	"github.com/golang/glog"
-
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 )

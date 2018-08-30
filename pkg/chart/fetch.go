@@ -8,7 +8,6 @@ import (
 	"net/url"
 
 	"github.com/golang/glog"
-
 	"k8s.io/helm/pkg/chartutil"
 	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 

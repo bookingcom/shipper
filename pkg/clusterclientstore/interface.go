@@ -1,7 +1,7 @@
 package clusterclientstore
 
 import (
-	kubeInformers "k8s.io/client-go/informers"
+	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -15,5 +15,5 @@ type Interface interface {
 	AddSubscriptionCallback(SubscriptionRegisterFunc)
 	AddEventHandlerCallback(EventHandlerRegisterFunc)
 	GetClient(string) (kubernetes.Interface, error)
-	GetInformerFactory(string) (kubeInformers.SharedInformerFactory, error)
+	GetInformerFactory(string) (kubeinformers.SharedInformerFactory, error)
 }
