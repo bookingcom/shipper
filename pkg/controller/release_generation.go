@@ -13,7 +13,7 @@ func SortReleasesByGeneration(releases []*shipperv1.Release) ([]*shipperv1.Relea
 		return releases, nil
 	}
 
-	// brutal schwartzian transform
+	// Brutal Schwartzian transform.
 	gens := map[string]int{}
 	for _, rel := range releases {
 		generation, err := GetReleaseGeneration(rel)
@@ -23,7 +23,8 @@ func SortReleasesByGeneration(releases []*shipperv1.Release) ([]*shipperv1.Relea
 		gens[rel.GetName()] = generation
 	}
 
-	// this might be paranoid, but I'd rather not mutate the slice that the lister returns
+	// This might be paranoid, but I'd rather not mutate the slice that the lister
+	// returns.
 	sortCopy := releases[:]
 
 	sort.SliceStable(sortCopy, func(i, j int) bool {

@@ -13,8 +13,8 @@ import (
 )
 
 func (c *Controller) processCluster(cluster *shipperv1.Cluster) error {
-	// cluster is not a copy here!
-	// this controller must not modify the Cluster resource
+	// This controller must not modify the Cluster resource: `cluster` is not a
+	// copy here!
 
 	secretName := secretNameForCluster(cluster)
 	secret, err := c.secretLister.Secrets(c.ownNamespace).Get(secretName)
@@ -38,28 +38,28 @@ func (c *Controller) processCluster(cluster *shipperv1.Cluster) error {
 		return err
 	}
 
-	// from this point on we can modify the Secret
+	// From this point on we can modify the Secret.
 	secret = secret.DeepCopy()
 
 	clusterName := cluster.GetName()
 
 	got, ok := secret.GetAnnotations()[shipperv1.SecretChecksumAnnotation]
 	if !ok {
-		// we got a Secret that's controlled by us (because we must've passed the
+		// We got a Secret that's controlled by us (because we must've passed the
 		// owner ref check to get here) but it does not have the right annotation,
-		// somehow
-		// this likely means that someone or something is messing with Secrets that
-		// don't belong to them! stand up and protect what's rightfully ours!
+		// somehow.
+		// This likely means that someone or something is messing with Secrets that
+		// don't belong to them! Stand up and protect what's rightfully ours!
 		return c.updateClusterSecret(secret, clusterName, crt, key, csum)
 	}
 
 	if hex.EncodeToString(csum) != got {
-		// the cert on disk has changed, update the Secret to reflect this
+		// The cert on disk has changed, update the Secret to reflect this.
 		glog.V(6).Infof("Expected: %v; got: %v", csum, got)
 		return c.updateClusterSecret(secret, clusterName, crt, key, csum)
 	}
 
-	// all good, nothing to do
+	// All good, nothing to do.
 	return nil
 }
 
@@ -73,10 +73,9 @@ func (c *Controller) createSecretForCluster(cluster *shipperv1.Cluster, crt, key
 			Namespace: c.ownNamespace,
 			Annotations: map[string]string{
 				shipperv1.SecretChecksumAnnotation: hex.EncodeToString(csum),
-				// the convention is that Secrets should be named after their respective
-				// target Clusters
-				// but I don't want this to be a hard dependency so I'm putting the cluster
-				// name separately in the annotations, just in case
+				// The convention is that Secrets should be named after their respective
+				// target Clusters but I don't want this to be a hard dependency so I'm
+				// putting the cluster name separately in the annotations, just in case.
 				shipperv1.SecretClusterNameAnnotation: clusterName,
 			},
 			OwnerReferences: []metav1.OwnerReference{
@@ -131,7 +130,7 @@ func (c *Controller) updateClusterSecret(secret *corev1.Secret, clusterName stri
 		return fmt.Errorf("update Secret %q for Cluster %q: %s", secretName, clusterName, err)
 	}
 
-	// XXX do we need to update ownership info, just in case?
+	// NOTE(asurikov): do we need to update ownership info, just in case?
 
 	c.recorder.Eventf(
 		secret,

@@ -45,7 +45,8 @@ func TestStoreCount(t *testing.T) {
 	}
 }
 
-// new clusters with the same name + key properties should not overwrite the existing cluster
+// New clusters with the same name + key properties should not overwrite the
+// existing cluster.
 func TestStoreDuplicatesNoReplacement(t *testing.T) {
 	expected := newCluster(testClusterName)
 	srv := NewServer()
@@ -109,7 +110,7 @@ func TestReplacement(t *testing.T) {
 		return
 	}
 
-	// checksum is different, so the replacement should replace the existing
+	// Checksum is different, so the replacement should replace the existing.
 	srv.Store(replacement)
 
 	fetched, ok = srv.Fetch(testClusterName)

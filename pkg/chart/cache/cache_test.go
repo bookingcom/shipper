@@ -80,7 +80,8 @@ func TestCacheNameSanitization(t *testing.T) {
 }
 
 func TestCacheEviction(t *testing.T) {
-	// two existing charts totaling 8 bytes; want to add a 4 byte chart which would exceed 10 byte limit; delete one chart to make room.
+	// Two existing charts totaling 8 bytes. Want to add a 4 byte chart which would
+	// exceed 10 byte limit. Delete one chart to make room.
 	charts := [][]byte{
 		[]byte("abcd"),
 		[]byte("efgh"),

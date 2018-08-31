@@ -18,8 +18,8 @@ func checkInstallation(contenderRelease *releaseInfo) (bool, []string) {
 		clustersFromStatusMap[e.Name] = struct{}{}
 	}
 
-	// NOTE(btyler) not comparing against 0 because 'uninstall' looks like
-	// a 0-len Clusters in the Spec, which is correct.
+	// NOTE(btyler): not comparing against 0 because 'uninstall' looks like a 0-len
+	// Clusters in the Spec, which is correct.
 	if len(clustersFromStatusMap) != len(clustersFromSpecMap) {
 		for k := range clustersFromSpecMap {
 			if _, ok := clustersFromStatusMap[k]; !ok {
@@ -65,8 +65,8 @@ func checkCapacity(
 	[]string,
 ) {
 
-	// capacityState holds the capacity data collected for the release the executor is
-	// processing.
+	// capacityState holds the capacity data collected for the release the executor
+	// is processing.
 	clusterCapacityData := make(map[string]capacityState)
 
 	specs := capacityTarget.Spec.Clusters
@@ -85,9 +85,9 @@ func checkCapacity(
 
 	for _, status := range statuses {
 		cd, ok := clusterCapacityData[status.Name]
-		// this means that we have a status for a cluster which is not present
-		// in the spec. suspicious, sketchy, and probably fixed by the responsible
-		// controller by the next time we look
+		// This means that we have a status for a cluster which is not present in the
+		// spec. Suspicious, sketchy, and probably fixed by the responsible controller
+		// by the next time we look.
 		if !ok {
 			return false, nil, nil
 		}
@@ -155,9 +155,9 @@ func checkTraffic(
 
 	for _, status := range statuses {
 		td, ok := clusterTrafficData[status.Name]
-		// this means that we have a status for a cluster which is not present
-		// in the spec. suspicious, sketchy, and probably fixed by the responsible
-		// controller by the next time we look
+		// This means that we have a status for a cluster which is not present in the
+		// spec. Suspicious, sketchy, and probably fixed by the responsible controller
+		// by the next time we look.
 		if !ok {
 			return false, nil, nil
 		}

@@ -15,8 +15,8 @@ import (
 )
 
 func (c *Controller) createReleaseForApplication(app *shipperv1.Application, generation int) error {
-	// label releases with their hash; select by that label and increment if needed
-	// appname-hash-of-template-iteration
+	// Label releases with their hash; select by that label and increment if needed
+	// appname-hash-of-template-iteration.
 	releaseName, iteration, err := c.releaseNameForApplication(app)
 	if err != nil {
 		return err

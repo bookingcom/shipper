@@ -303,7 +303,7 @@ func TestRolloutVanguard(t *testing.T) {
 	f.waitForComplete(incumbentName)
 	f.checkPods(incumbentName, targetReplicas)
 
-	// refetch so that the update has a fresh version to work with
+	// Refetch so that the update has a fresh version to work with.
 	app, err = shipperClient.ShipperV1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("could not refetch app: %q", err)
@@ -345,7 +345,8 @@ func TestRolloutVanguard(t *testing.T) {
 	}
 }
 
-//TODO(btyler): cover a variety of broken chart cases as soon as we report those outcomes somewhere other than stderr
+// TODO(btyler): cover a variety of broken chart cases as soon as we report
+// those outcomes somewhere other than stderr.
 
 /*
 func TestInvalidChartApp(t *testing.T) { }
@@ -382,8 +383,10 @@ func (f *fixture) checkPods(relName string, expectedCount int) {
 	readyCount := 0
 	for _, pod := range podList.Items {
 		for _, condition := range pod.Status.Conditions {
-			// this line imitates how ReplicaSets calculate 'ready replicas'; shipper uses 'availableReplicas' but the minReadySeconds in this test is 0
-			// there's no handy library for this because the functionality is split between k8s controller_util.go and api v1 podUtil.
+			// This line imitates how ReplicaSets calculate 'ready replicas'; Shipper
+			// uses 'availableReplicas' but the minReadySeconds in this test is 0.
+			// There's no handy library for this because the functionality is split
+			// between k8s' controller_util.go and api v1 podUtil.
 			if condition.Type == "Ready" && condition.Status == "True" && pod.DeletionTimestamp == nil {
 				readyCount++
 			}
@@ -398,7 +401,8 @@ func (f *fixture) checkPods(relName string, expectedCount int) {
 func (f *fixture) waitForRelease(appName string, historyIndex int) *shipperv1.Release {
 	var newRelease *shipperv1.Release
 	start := time.Now()
-	// not logging because we poll pretty fast and that'd be a bunch of garbage to read through
+	// Not logging because we poll pretty fast and that'd be a bunch of garbage to
+	// read through.
 	var state string
 	err := poll(globalTimeout, func() (bool, error) {
 		app, err := shipperClient.ShipperV1().Applications(f.namespace).Get(appName, metav1.GetOptions{})
@@ -534,13 +538,6 @@ func purgeTestNamespaces() {
 		return
 	}
 
-	/* 'server does not allow this method on the requested resource'
-	err = kubeClient.CoreV1().Namespaces().DeleteCollection(&metav1.DeleteOptions{}, listOptions)
-	if err != nil {
-		glog.Fatalf("failed to delete namespaces matching %q: %q", selector.String(), err)
-	}
-	*/
-
 	for _, namespace := range list.Items {
 		err = kubeClient.CoreV1().Namespaces().Delete(namespace.GetName(), &metav1.DeleteOptions{})
 		if err != nil {
@@ -616,10 +613,10 @@ func buildTargetClient(clusterName string) kubernetes.Interface {
 		Host: cluster.Spec.APIMaster,
 	}
 
-	// the cluster secret controller does not include the CA in the secret:
-	// you end up using the system CA trust store. However, it's much handier
-	// for integration testing to be able to create a secret that is
-	// independent of the underlying system trust store.
+	// The cluster secret controller does not include the CA in the secret: you end
+	// up using the system CA trust store. However, it's much handier for
+	// integration testing to be able to create a secret that is independent of the
+	// underlying system trust store.
 	if ca, ok := secret.Data["tls.ca"]; ok {
 		config.CAData = ca
 	}
@@ -646,8 +643,9 @@ func newApplication(namespace, name string, strategy *shipperv1.RolloutStrategy)
 					RepoURL: chartRepo,
 				},
 				Strategy: strategy,
-				// TODO(btyler) implement enough cluster selector stuff to only pick the target cluster we care about
-				// (or just panic if that cluster isn't listed)
+				// TODO(btyler): implement enough cluster selector stuff to only pick the
+				// target cluster we care about (or just panic if that cluster isn't
+				// listed).
 				ClusterRequirements: shipperv1.ClusterRequirements{Regions: []shipperv1.RegionRequirement{{Name: regionFromMinikubePerlScript}}},
 				Values:              &shipperv1.ChartValues{},
 			},
@@ -657,6 +655,6 @@ func newApplication(namespace, name string, strategy *shipperv1.RolloutStrategy)
 
 func capacityInPods(percentage int32, targetReplicas int) int {
 	mult := float64(percentage) / 100
-	// round up to nearest whole pod
+	// Round up to nearest whole pod.
 	return int(math.Ceil(mult * float64(targetReplicas)))
 }

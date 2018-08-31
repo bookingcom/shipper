@@ -43,14 +43,12 @@ func newController(fixtures ...runtime.Object) (*Controller, *shipperfake.Client
 }
 
 func TestControllerComputeTargetClusters(t *testing.T) {
-	// Fixtures
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
 	fixtures := []runtime.Object{cluster, release}
 
-	// Expected values. The release should have, at the end of the business
-	// logic, a list of clusters containing the sole cluster we've added to
-	// the client.
+	// Expected values. The release should have, at the end of the business logic,
+	// a list of clusters containing the sole cluster we've added to the client.
 	expected := release.DeepCopy()
 	expected.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
 
@@ -69,38 +67,32 @@ func TestControllerComputeTargetClusters(t *testing.T) {
 			relWithConditions),
 	}
 
-	// Business logic...
 	c, clientset := newController(fixtures...)
 	c.processNextWorkItem()
 
-	// Check actions
 	filteredActions := filterActions(clientset.Actions(), []string{"update"}, []string{"releases"})
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
 func TestControllerCreateAssociatedObjects(t *testing.T) {
-	// Fixtures
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
 	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
 	fixtures := []runtime.Object{release, cluster}
 
-	// Expected release and actions. The release should have, at the end of
-	// the business logic, a list of clusters containing the sole cluster
-	// we've added to the client, and also a Scheduled condition with True
-	// status. Expected actions contain the intent to create all the
-	// associated target objects.
+	// Expected release and actions. The release should have, at the end of the
+	// business logic, a list of clusters containing the sole cluster we've added
+	// to the client, and also a Scheduled condition with True status. Expected
+	// actions contain the intent to create all the associated target objects.
 	expected := release.DeepCopy()
 	expected.Status.Conditions = []shipperv1.ReleaseCondition{
 		{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
-	// Business logic...
 	c, clientset := newController(fixtures...)
 	c.processNextWorkItem()
 
-	// Check actions
 	filteredActions := filterActions(
 		clientset.Actions(),
 		[]string{"update", "create"},
@@ -110,7 +102,6 @@ func TestControllerCreateAssociatedObjects(t *testing.T) {
 }
 
 func TestControllerCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
-	// Fixtures
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
 	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
@@ -124,20 +115,17 @@ func TestControllerCreateAssociatedObjectsDuplicateInstallationTarget(t *testing
 
 	// Expected release and actions. Even with an existing installationtarget
 	// object for this release, at the end of the business logic the expected
-	// release should have its .status.phase set to "WaitingForStrategy".
-	// Expected actions contain the intent to create all the associated target
-	// objects.
+	// release should have its .status.phase set to "WaitingForStrategy". Expected
+	// actions contain the intent to create all the associated target objects.
 	expected := release.DeepCopy()
 	expected.Status.Conditions = []shipperv1.ReleaseCondition{
 		{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
-	// Business logic...
 	c, clientset := newController(fixtures...)
 	c.processNextWorkItem()
 
-	// Check actions
 	filteredActions := filterActions(
 		clientset.Actions(),
 		[]string{"update", "create"},
@@ -161,20 +149,17 @@ func TestControllerCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 
 	// Expected release and actions. Even with an existing installationtarget
 	// object for this release, at the end of the business logic the expected
-	// release should have its .status.phase set to "WaitingForStrategy".
-	// Expected actions contain the intent to create all the associated target
-	// objects.
+	// release should have its .status.phase set to "WaitingForStrategy". Expected
+	// actions contain the intent to create all the associated target objects.
 	expected := release.DeepCopy()
 	expected.Status.Conditions = []shipperv1.ReleaseCondition{
 		{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
-	// Business logic...
 	c, clientset := newController(fixtures...)
 	c.processNextWorkItem()
 
-	// Check actions
 	filteredActions := filterActions(
 		clientset.Actions(),
 		[]string{"update", "create"},
@@ -184,7 +169,6 @@ func TestControllerCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 }
 
 func TestControllerCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
-	// Fixtures
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
 	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
@@ -196,22 +180,19 @@ func TestControllerCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) 
 	}
 	fixtures := []runtime.Object{cluster, release, capacitytarget}
 
-	// Expected release and actions. Even with an existing capacitytarget
-	// object for this release, at the end of the business logic the expected
-	// release should have its .status.phase set to "WaitingForStrategy".
-	// Expected actions contain the intent to create all the associated target
-	// objects.
+	// Expected release and actions. Even with an existing capacitytarget object
+	// for this release, at the end of the business logic the expected release
+	// should have its .status.phase set to "WaitingForStrategy". Expected actions
+	// contain the intent to create all the associated target objects.
 	expected := release.DeepCopy()
 	expected.Status.Conditions = []shipperv1.ReleaseCondition{
 		{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
-	// Business logic...
 	c, clientset := newController(fixtures...)
 	c.processNextWorkItem()
 
-	// Check actions
 	actions := filterActions(
 		clientset.Actions(),
 		[]string{"update", "create"},

@@ -1,19 +1,3 @@
-/*
-Copyright 2017 The Kubernetes Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package capacity
 
 import (
@@ -58,33 +42,18 @@ const (
 
 // Controller is the controller implementation for CapacityTarget resources
 type Controller struct {
-	// shipperclientset is a clientset for our own API group
-	shipperclientset clientset.Interface
-
-	clusterClientStore clusterClientStoreInterface
-
-	capacityTargetsLister listers.CapacityTargetLister
-	capacityTargetsSynced cache.InformerSynced
-
-	releasesLister       listers.ReleaseLister
-	releasesListerSynced cache.InformerSynced
-
-	// capacityTargetWorkqueue is a rate limited work queue. This is used to queue work to be
-	// processed instead of performing it as soon as a change happens. This
-	// means we can ensure we only process a fixed amount of resources at a
-	// time, and makes it easy to ensure we are never processing the same item
-	// simultaneously in two different workers.
+	shipperclientset        clientset.Interface
+	clusterClientStore      clusterClientStoreInterface
+	capacityTargetsLister   listers.CapacityTargetLister
+	capacityTargetsSynced   cache.InformerSynced
+	releasesLister          listers.ReleaseLister
+	releasesListerSynced    cache.InformerSynced
 	capacityTargetWorkqueue workqueue.RateLimitingInterface
-
-	// deploymentWorkqueue is a rate-limited queue, similar to the capacityTargetWorkqueue
-	deploymentWorkqueue workqueue.RateLimitingInterface
-
-	// recorder is an event recorder for recording Event resources to the
-	// Kubernetes API.
-	recorder record.EventRecorder
+	deploymentWorkqueue     workqueue.RateLimitingInterface
+	recorder                record.EventRecorder
 }
 
-// NewController returns a new CapacityTarget controller
+// NewController returns a new CapacityTarget controller.
 func NewController(
 	shipperclientset clientset.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
@@ -92,7 +61,6 @@ func NewController(
 	recorder record.EventRecorder,
 ) *Controller {
 
-	// obtain references to shared index informers for the CapacityTarget type
 	capacityTargetInformer := shipperInformerFactory.Shipper().V1().CapacityTargets()
 
 	releaseInformer := shipperInformerFactory.Shipper().V1().Releases()
@@ -110,7 +78,6 @@ func NewController(
 	}
 
 	glog.Info("Setting up event handlers")
-	// Set up an event handler for when CapacityTarget resources change
 	capacityTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueCapacityTarget,
 		UpdateFunc: func(old, new interface{}) {
@@ -136,13 +103,11 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	glog.V(2).Info("Starting Capacity controller")
 	defer glog.V(2).Info("Shutting down Capacity controller")
 
-	// Wait for the caches to be synced before starting workers
 	if !cache.WaitForCacheSync(stopCh, c.capacityTargetsSynced, c.releasesListerSynced) {
 		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
 		return
 	}
 
-	// Launch workers to process CapacityTarget resources
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.runCapacityTargetWorker, time.Second, stopCh)
 		go wait.Until(c.runDeploymentWorker, time.Second, stopCh)
@@ -153,16 +118,11 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
-// runCapacityTargetWorker is a long-running function that will continually call the
-// processNextCapacityTargetWorkItem function in order to read and process a message on the
-// workqueue.
 func (c *Controller) runCapacityTargetWorker() {
 	for c.processNextCapacityTargetWorkItem() {
 	}
 }
 
-// processNextCapacityTargetWorkItem will read a single work item off the workqueue and
-// attempt to process it, by calling the syncHandler.
 func (c *Controller) processNextCapacityTargetWorkItem() bool {
 	obj, shutdown := c.capacityTargetWorkqueue.Get()
 	if shutdown {
@@ -203,8 +163,6 @@ func (c *Controller) processNextCapacityTargetWorkItem() bool {
 	return true
 }
 
-// capacityTargetSyncHandler compares the actual state with the desired, and attempts to
-// converge the two.
 func (c *Controller) capacityTargetSyncHandler(key string) bool {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -229,16 +187,13 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 	selector := labels.Set(ct.Labels).AsSelector()
 
 	for _, clusterSpec := range ct.Spec.Clusters {
-		// clusterStatus will be modified by functions called
-		// in this loop as a side effect
+		// clusterStatus will be modified by functions called in this loop as a side
+		// effect.
 		var clusterStatus *shipperv1.ClusterCapacityStatus
 		var targetDeployment *appsv1.Deployment
 
 		for i, cs := range ct.Status.Clusters {
 			if cs.Name == clusterSpec.Name {
-				// Getting a pointer to the element so
-				// that we can modify it in multiple
-				// functions
 				clusterStatus = &ct.Status.Clusters[i]
 			}
 		}
@@ -250,20 +205,19 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 			ct.Status.Clusters = append(ct.Status.Clusters, *clusterStatus)
 		}
 
-		// all the below functions add conditions to the
-		// clusterStatus as they do their business, hence
-		// we're passing them a pointer
+		// all the below functions add conditions to the clusterStatus as they do
+		// their business, hence we're passing them a pointer.
 		targetDeployment, err := c.findTargetDeploymentForClusterSpec(clusterSpec, targetNamespace, selector, clusterStatus)
 		if err != nil {
 			c.recordErrorEvent(ct, err)
 			continue
 		}
 
-		// Get the requested percentage of replicas from the capacity object
-		// This is only set by the scheduler
+		// Get the requested percentage of replicas from the capacity object. This is
+		// only set by the scheduler.
 		replicaCount := c.calculateReplicaCountFromPercentage(clusterSpec.TotalReplicaCount, clusterSpec.Percent)
 
-		// Patch the deployment if it doesn't match the cluster spec
+		// Patch the deployment if it doesn't match the cluster spec.
 		if targetDeployment.Spec.Replicas == nil || replicaCount != *targetDeployment.Spec.Replicas {
 			_, err = c.patchDeploymentWithReplicaCount(targetDeployment, clusterSpec.Name, replicaCount, clusterStatus)
 			if err != nil {
@@ -272,7 +226,6 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 			}
 		}
 
-		// Finished applying patches, now update the status
 		clusterStatus.AvailableReplicas = targetDeployment.Status.AvailableReplicas
 		clusterStatus.AchievedPercent = c.calculatePercentageFromAmount(clusterSpec.TotalReplicaCount, clusterStatus.AvailableReplicas)
 		sadPods, err := c.getSadPods(targetDeployment, clusterStatus)
@@ -282,14 +235,12 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 
 		clusterStatus.SadPods = sadPods
 
-		// If we have sad pods, don't go further
 		if len(sadPods) > 0 {
 			continue
 		}
 
-		// If we've got here, the capacity target has no sad
-		// pods and there have been no errors, so set
-		// conditions to true
+		// If we've got here, the capacity target has no sad pods and there have been
+		// no errors, so set conditions to true.
 		clusterStatus.Conditions = conditions.SetCapacityCondition(
 			clusterStatus.Conditions,
 			shipperv1.ClusterConditionTypeReady,
@@ -323,9 +274,6 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 	return false
 }
 
-// enqueueCapacityTarget takes a CapacityTarget resource and converts it into a namespace/name
-// string which is then put onto the work queue. This method should *not* be
-// passed resources of any type other than CapacityTarget.
 func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 	key, err := cache.MetaNamespaceKeyFunc(obj)
 	if err != nil {

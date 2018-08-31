@@ -22,19 +22,19 @@ func NewFakeClusterClientStore(
 	}
 }
 
-// FakeClusterClientStore stores only one informer and fake clientset,
-// and no matter what cluster name it's called with, returns the same
-// clientset and informer.
+// FakeClusterClientStore stores only one informer and fake clientset, and no
+// matter what cluster name it's called with, returns the same clientset and
+// informer.
 //
-// It also supports callbacks, meaning that when it's passed into a
-// controller, the controller can register callback and be notified
-// when the Run() method on FakeClusterClientstore is called.
+// It also supports callbacks, meaning that when it's passed into a controller,
+// the controller can register callback and be notified when the Run() method on
+// FakeClusterClientstore is called.
 type FakeClusterClientStore struct {
 	client                *fake.Clientset
 	informerFactory       informers.SharedInformerFactory
 	subscriptionCallbacks []clusterclientstore.SubscriptionRegisterFunc
 	eventHandlerCallbacks []clusterclientstore.EventHandlerRegisterFunc
-	// passed to the registered event handler callbacks
+	// Passed to the registered event handler callbacks.
 	FakeClusterName string
 }
 

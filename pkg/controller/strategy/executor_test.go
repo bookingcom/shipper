@@ -67,116 +67,124 @@ func TestCompleteStrategyNoController(t *testing.T) {
 		strategy:  vanguard,
 	}
 
-	// Mimic patch to .spec.targetStep
+	// Mimic patch to .spec.targetStep.
 	executor.contender.release.Spec.TargetStep = 1
 
-	// Execute first part of strategy's first step
+	// Execute first part of strategy's first step.
 	if newSpec, err := ensureCapacityPatch(executor, contenderName, Contender); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.contender.capacityTarget.Spec = *newSpec
 	}
 
-	// Mimic Capacity Controller patch to contender's .status.clusters.*.achievedPercent
+	// Mimic Capacity Controller patch to contender's
+	// .status.clusters.*.achievedPercent.
 	for i := range executor.contender.capacityTarget.Status.Clusters {
 		executor.contender.capacityTarget.Status.Clusters[i].AchievedPercent = 50
 	}
 
-	// Execute second part of strategy's first step
+	// Execute second part of strategy's first step.
 	if newSpec, err := ensureTrafficPatch(executor, contenderName, Contender); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.contender.trafficTarget.Spec = *newSpec
 	}
 
-	// Mimic Traffic Controller patch to contender's .status.clusters.*.achievedTraffic
+	// Mimic Traffic Controller patch to contender's
+	// .status.clusters.*.achievedTraffic.
 	for i := range executor.contender.trafficTarget.Status.Clusters {
 		executor.contender.trafficTarget.Status.Clusters[i].AchievedTraffic = 50
 	}
 
-	// Execute third part of strategy's first step
+	// Execute third part of strategy's first step.
 	if newSpec, err := ensureTrafficPatch(executor, incumbentName, Incumbent); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.incumbent.trafficTarget.Spec = *newSpec
 	}
 
-	// Mimic Traffic Controller patch to incumbent's .status.clusters.*.achievedTraffic
+	// Mimic Traffic Controller patch to incumbent's
+	// .status.clusters.*.achievedTraffic.
 	for i := range executor.incumbent.trafficTarget.Status.Clusters {
 		executor.incumbent.trafficTarget.Status.Clusters[i].AchievedTraffic = 50
 	}
 
-	// Execute fourth part of strategy's first step
+	// Execute fourth part of strategy's first step.
 	if newSpec, err := ensureCapacityPatch(executor, incumbentName, Incumbent); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.incumbent.capacityTarget.Spec = *newSpec
 	}
 
-	// Mimic Capacity Controller patch to incumbent's .status.clusters.*.achievedPercent
+	// Mimic Capacity Controller patch to incumbent's
+	// .status.clusters.*.achievedPercent.
 	for i := range executor.incumbent.capacityTarget.Status.Clusters {
 		executor.incumbent.capacityTarget.Status.Clusters[i].AchievedPercent = 50
 	}
 
-	// Execute fifth part of strategy's first step
+	// Execute fifth part of strategy's first step.
 	if newStatus, err := ensureReleasePatch(executor, contenderName); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.contender.release.Status = *newStatus
 	}
 
-	// Mimic patch to contender's .spec.targetStep
+	// Mimic patch to contender's .spec.targetStep.
 	executor.contender.release.Spec.TargetStep = 2
 
-	// Execute first part of strategy's second step
+	// Execute first part of strategy's second step.
 	if newSpec, err := ensureCapacityPatch(executor, contenderName, Contender); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.contender.capacityTarget.Spec = *newSpec
 	}
 
-	// Mimic Capacity Controller patch to contender's .status.clusters.*.achievedPercent
+	// Mimic Capacity Controller patch to contender's
+	// .status.clusters.*.achievedPercent.
 	for i := range executor.contender.capacityTarget.Status.Clusters {
 		executor.contender.capacityTarget.Status.Clusters[i].AchievedPercent = 100
 	}
 
-	// Execute second part of strategy's second step
+	// Execute second part of strategy's second step.
 	if newSpec, err := ensureTrafficPatch(executor, contenderName, Contender); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.contender.trafficTarget.Spec = *newSpec
 	}
 
-	// Mimic Traffic Controller patch to contender's .status.clusters.*.achievedTraffic
+	// Mimic Traffic Controller patch to contender's
+	// .status.clusters.*.achievedTraffic.
 	for i := range executor.contender.trafficTarget.Status.Clusters {
 		executor.contender.trafficTarget.Status.Clusters[i].AchievedTraffic = 100
 	}
 
-	// Execute third part of strategy's second step
+	// Execute third part of strategy's second step.
 	if newSpec, err := ensureTrafficPatch(executor, incumbentName, Incumbent); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.incumbent.trafficTarget.Spec = *newSpec
 	}
 
-	// Mimic Traffic Controller patch to incumbent's .status.clusters.*.achievedTraffic
+	// Mimic Traffic Controller patch to incumbent's
+	// .status.clusters.*.achievedTraffic.
 	for i := range executor.incumbent.trafficTarget.Status.Clusters {
 		executor.incumbent.trafficTarget.Status.Clusters[i].AchievedTraffic = 0
 	}
 
-	// Execute fourth part of strategy's second step
+	// Execute fourth part of strategy's second step.
 	if newSpec, err := ensureCapacityPatch(executor, incumbentName, Incumbent); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.incumbent.capacityTarget.Spec = *newSpec
 	}
 
-	// Mimic Capacity Controller patch to incumbent's .status.clusters.*.achievedPercent
+	// Mimic Capacity Controller patch to incumbent's
+	// .status.clusters.*.achievedPercent.
 	for i := range executor.incumbent.capacityTarget.Status.Clusters {
 		executor.incumbent.capacityTarget.Status.Clusters[i].AchievedPercent = 0
 	}
 
-	// Execute fifth part of strategy's second step, which is the last one
+	// Execute fifth part of strategy's second step, which is the last one.
 	if err := ensureFinalReleasePatches(executor); err != nil {
 		t.Fatal(err)
 	}

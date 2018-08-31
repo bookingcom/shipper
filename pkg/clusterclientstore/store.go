@@ -21,8 +21,8 @@ import (
 	"github.com/bookingcom/shipper/pkg/clusterclientstore/cache"
 )
 
-// this enables tests to inject an appropriate fake client, which allows us to
-// use the real cluster client store in unit tests
+// This enables tests to inject an appropriate fake client, which allows us to
+// use the real cluster client store in unit tests.
 type ClientBuilderFunc func(string, *rest.Config) (kubernetes.Interface, error)
 
 type Store struct {
@@ -37,15 +37,18 @@ type Store struct {
 	secretWorkqueue  workqueue.RateLimitingInterface
 	clusterWorkqueue workqueue.RateLimitingInterface
 
-	// called when the cluster caches have been populated, so that the controller can register event handlers
+	// Called when the cluster caches have been populated, so that the controller
+	// can register event handlers.
 	eventHandlerRegisterFuncs []EventHandlerRegisterFunc
 
-	// called before the informer factory is started, so that the controller can set watches on objects it's interested in
+	// Called before the informer factory is started, so that the controller can
+	// set watches on objects it's interested in.
 	subscriptionRegisterFuncs []SubscriptionRegisterFunc
 }
 
-// NewStore creates a new client store that will use the specified
-// informers to maintain a cache of clientsets, rest.Configs, and informers for target clusters
+// NewStore creates a new client store that will use the specified informers to
+// maintain a cache of clientsets, rest.Configs, and informers for target
+// clusters.
 func NewStore(
 	buildClient ClientBuilderFunc,
 	secretInformer corev1informer.SecretInformer,
@@ -141,8 +144,8 @@ func (s *Store) GetInformerFactory(clusterName string) (kubeinformers.SharedInfo
 	return cluster.GetInformerFactory()
 }
 
-// no splitting here because clusters are not namespaced
 func (s *Store) syncCluster(name string) error {
+	// No splitting here because clusters are not namespaced.
 	clusterObj, err := s.clusterInformer.Lister().Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -158,12 +161,12 @@ func (s *Store) syncCluster(name string) error {
 	if ok {
 		var config *rest.Config
 		config, err = cachedCluster.GetConfig()
-		// we don't want to regenerate the client if we already have one with
-		// the right properties (host or secret checksum) that's either ready
-		// (err == nil) or in the process of getting ready. Otherwise we'll
-		// refill the cache needlessly, or could even end up in a livelock
-		// where waiting for informer cache to fill takes longer than the
-		// resync period, and resync resets the informer.
+		// We don't want to regenerate the client if we already have one with the
+		// right properties (host or secret checksum) that's either ready (err == nil)
+		// or in the process of getting ready. Otherwise we'll refill the cache
+		// needlessly, or could even end up in a livelock where waiting for informer
+		// cache to fill takes longer than the resync period, and resync resets the
+		// informer.
 		if err == nil || err == cache.ErrClusterNotReady {
 			if config != nil && config.Host == clusterObj.Spec.APIMaster {
 				glog.Infof("Cluster %q syncing, but we already have a client with the right host in the cache", name)
@@ -191,7 +194,8 @@ func (s *Store) syncSecret(key string) error {
 		return fmt.Errorf("invalid resource key: %q", key)
 	}
 
-	// programmer error: there's a filter func on the callbacks before things get enqueued
+	// Programmer error: there's a filter func on the callbacks before things get
+	// enqueued.
 	if ns != s.ns {
 		panic("client store secret workqueue should only contain secrets from the shipper namespace")
 	}
@@ -225,12 +229,12 @@ func (s *Store) syncSecret(key string) error {
 	cachedCluster, ok := s.cache.Fetch(secret.Name)
 	if ok {
 		existingChecksum, err := cachedCluster.GetChecksum()
-		// we don't want to regenerate the client if we already have one with
-		// the right properties (host or secret checksum) that's either ready
-		// (err == nil) or in the process of getting ready. Otherwise we'll
-		// refill the cache needlessly, or could even end up in a livelock
-		// where waiting for informer cache to fill takes longer than the
-		// resync period, and resync resets the informer.
+		// We don't want to regenerate the client if we already have one with the
+		// right properties (host or secret checksum) that's either ready (err == nil)
+		// or in the process of getting ready. Otherwise we'll refill the cache
+		// needlessly, or could even end up in a livelock where waiting for informer
+		// cache to fill takes longer than the resync period, and resync resets the
+		// informer.
 		if err == nil || err == cache.ErrClusterNotReady {
 			if existingChecksum == checksum {
 				glog.Infof("Secret %q syncing but we already have a client based on the same checksum in the cache", key)
@@ -274,8 +278,9 @@ func (s *Store) create(cluster *shipperv1.Cluster, secret *corev1.Secret) error 
 
 	clusterName := cluster.Name
 	newCachedCluster := cache.NewCluster(clusterName, checksum, client, config, informerFactory, func() {
-		// if/when the informer cache finishes syncing, bind all of the event handler callbacks from the controllers
-		// if it does not finish (because the cluster was Shutdown) this will not be called
+		// If/when the informer cache finishes syncing, bind all of the event handler
+		// callbacks from the controllers if it does not finish (because the cluster
+		// was Shutdown) this will not be called.
 		for _, cb := range s.eventHandlerRegisterFuncs {
 			cb(informerFactory, clusterName)
 		}
@@ -285,7 +290,7 @@ func (s *Store) create(cluster *shipperv1.Cluster, secret *corev1.Secret) error 
 	return nil
 }
 
-// TODO(btyler) error here or let any invalid data get picked up by errors from
+// TODO(btyler): error here or let any invalid data get picked up by errors from
 // kube.NewForConfig or auth problems at connection time?
 func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration) *rest.Config {
 	config := &rest.Config{
@@ -296,8 +301,8 @@ func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration)
 		config.Timeout = *restTimeout
 	}
 
-	// can't use the ServiceAccountToken type because we don't want the service
-	// account controller to touch it
+	// Can't use the ServiceAccountToken type because we don't want the service
+	// account controller to touch it.
 	_, tokenOK := secret.Data["token"]
 	if tokenOK {
 		ca := secret.Data["ca.crt"]
@@ -308,13 +313,13 @@ func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration)
 		return config
 	}
 
-	// let's figure it's either a TLS secret or an opaque thing formatted like a TLS secret
-	// TODO(btyler) support basic auth, I guess?
+	// Let's figure it's either a TLS secret or an opaque thing formatted like a
+	// TLS secret.
 
-	// the cluster secret controller does not include the CA in the secret:
-	// you end up using the system CA trust store. However, it's much handier
-	// for integration testing to be able to create a secret that is
-	// independent of the underlying system trust store.
+	// The cluster secret controller does not include the CA in the secret: you end
+	// up using the system CA trust store. However, it's much handier for
+	// integration testing to be able to create a secret that is independent of the
+	// underlying system trust store.
 	if ca, ok := secret.Data["tls.ca"]; ok {
 		config.CAData = ca
 	}

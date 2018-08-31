@@ -35,7 +35,8 @@ func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.
 	contender := buildContender()
 	incumbent := buildIncumbent()
 
-	// strategy specifies that step 0 the contender has a minimum number of pods (1), no traffic yet
+	// Strategy specifies that step 0 the contender has a minimum number of pods
+	// (1), no traffic yet.
 	contender.capacityTarget.Spec.Clusters[0].Percent = 1
 
 	f.addObjects(contender, incumbent)
@@ -74,7 +75,7 @@ func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
 	brokenClusterName := "broken-capacity-cluster"
 	addCluster(contender, brokenClusterName)
 
-	// we'll set cluster 0 to be all set, but make cluster 1 broken
+	// We'll set cluster 0 to be all set, but make cluster 1 broken.
 	contender.release.Spec.TargetStep = 1
 	contender.capacityTarget.Spec.Clusters[0].Percent = 50
 	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
@@ -82,7 +83,7 @@ func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
 	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
 	contender.capacityTarget.Spec.Clusters[1].Percent = 50
-	// no capacity yet
+	// No capacity yet.
 	contender.capacityTarget.Status.Clusters[1].AchievedPercent = 0
 
 	contender.trafficTarget.Spec.Clusters[1].Weight = 50
@@ -108,7 +109,7 @@ func TestContenderDoNothingClusterTrafficNotReady(t *testing.T) {
 
 	brokenClusterName := "broken-traffic-cluster"
 	addCluster(contender, brokenClusterName)
-	// we'll set cluster 0 to be all set, but make cluster 1 broken
+	// We'll set cluster 0 to be all set, but make cluster 1 broken.
 	contender.release.Spec.TargetStep = 1
 	contender.capacityTarget.Spec.Clusters[0].Percent = 50
 	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
@@ -119,7 +120,7 @@ func TestContenderDoNothingClusterTrafficNotReady(t *testing.T) {
 	contender.capacityTarget.Status.Clusters[1].AchievedPercent = 50
 
 	contender.trafficTarget.Spec.Clusters[1].Weight = 50
-	// no traffic yet
+	// No traffic yet.
 	contender.trafficTarget.Status.Clusters[1].AchievedTraffic = 0
 
 	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
@@ -275,7 +276,7 @@ func workingOnContenderCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
 
 	contender.release.Spec.TargetStep = 1
 
-	// Working on contender capacity
+	// Working on contender capacity.
 	contender.capacityTarget.Spec.Clusters[0].Percent = 50
 	contender.capacityTarget.Status.Clusters[0].AchievedPercent = int32(percent)
 
@@ -296,11 +297,11 @@ func workingOnContenderTraffic(percent int, wg *sync.WaitGroup, t *testing.T) {
 
 	contender.release.Spec.TargetStep = 1
 
-	// Desired contender capacity achieved
+	// Desired contender capacity achieved.
 	contender.capacityTarget.Spec.Clusters[0].Percent = 50
 	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
 
-	// Working on contender traffic
+	// Working on contender traffic.
 	contender.trafficTarget.Spec.Clusters[0].Weight = 50
 	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = uint32(percent)
 
@@ -322,15 +323,15 @@ func workingOnIncumbentTraffic(percent int, wg *sync.WaitGroup, t *testing.T) {
 
 	contender.release.Spec.TargetStep = 1
 
-	// Desired contender capacity achieved
+	// Desired contender capacity achieved.
 	contender.capacityTarget.Spec.Clusters[0].Percent = 50
 	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
 
-	// Desired contender traffic achieved
+	// Desired contender traffic achieved.
 	contender.trafficTarget.Spec.Clusters[0].Weight = 50
 	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
-	// Working on incumbent traffic
+	// Working on incumbent traffic.
 	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
 	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 100 - uint32(percent)
 
@@ -351,19 +352,19 @@ func workingOnIncumbentCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
 
 	contender.release.Spec.TargetStep = 1
 
-	// Desired contender capacity achieved
+	// Desired contender capacity achieved.
 	contender.capacityTarget.Spec.Clusters[0].Percent = 50
 	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
 
-	// Desired contender traffic achieved
+	// Desired contender traffic achieved.
 	contender.trafficTarget.Spec.Clusters[0].Weight = 50
 	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
-	// Desired incumbent traffic achieved
+	// Desired incumbent traffic achieved.
 	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
 	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
-	// Working on incumbent capacity
+	// Working on incumbent capacity.
 	incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
 	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 100 - int32(percent)
 

@@ -453,7 +453,6 @@ func startInstallationController(cfg *cfg) (bool, error) {
 	}
 
 	dynamicClientBuilderFunc := func(gvk *schema.GroupVersionKind, config *rest.Config, cluster *shipperv1.Cluster) dynamic.Interface {
-		// Probably this needs to be fixed, according to @asurikov's latest findings.
 		config.APIPath = dynamic.LegacyAPIPathResolverFunc(*gvk)
 		config.GroupVersion = &schema.GroupVersion{Group: gvk.Group, Version: gvk.Version}
 

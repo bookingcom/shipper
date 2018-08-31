@@ -6,6 +6,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+// TODO(asurikov): fix error types to be structs that implement error.
+
 type ReleaseIsGoneError error
 
 func IsReleaseGone(err error) bool {
@@ -30,8 +32,8 @@ func NewInvalidCapacityTargetError(releaseName string, count int) InvalidCapacit
 		message = fmt.Errorf(
 			"expected one capacity target for release label %q, got %d instead", releaseName, count)
 	} else {
-		// Since we should have only 1 Capacity Target object per release,
-		// having a count of 1 here is a programmer error.
+		// Since we should have only 1 Capacity Target object per release, having a
+		// count of 1 here is a programmer error.
 		panic("programmer error: NewInvalidCapacityTargetError() should not be called with count of 1")
 	}
 	return InvalidCapacityTargetError(message)

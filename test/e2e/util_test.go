@@ -13,7 +13,7 @@ func kebabCaseName(testName string) string {
 		}
 		runes = append(runes, unicode.ToLower(r))
 	}
-	// strip off that first '-'
+	// Strip off that first '-'.
 	return string(runes[1:])
 }
 

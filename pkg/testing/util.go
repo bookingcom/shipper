@@ -13,9 +13,9 @@ import (
 )
 
 const (
-    NoResyncPeriod time.Duration = 0
+	NoResyncPeriod time.Duration = 0
 
-    ContextLines = 4
+	ContextLines = 4
 
 	TestNamespace = "test-namespace"
 	TestLabel     = "shipper-e2e-test"
@@ -48,8 +48,8 @@ func CheckActions(expected, actual []kubetesting.Action, t *testing.T) {
 }
 
 // ShallowCheckActions takes a slice of expected actions and a slice of observed
-// actions (typically obtained from fakeClient.Actions()) and compares them shallowly.
-// Calls Errorf on t for every difference it finds.
+// actions (typically obtained from fakeClient.Actions()) and compares them
+// shallowly. Calls Errorf on t for every difference it finds.
 func ShallowCheckActions(expected, actual []kubetesting.Action, t *testing.T) {
 	for i, action := range actual {
 		if len(expected) < i+1 {
@@ -103,7 +103,7 @@ func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
 		B:        difflib.SplitLines(prettyActual),
 		FromFile: "Expected Action",
 		ToFile:   "Actual Action",
-		// TODO(btyler) add a param or env var to change context size
+		// TODO(btyler): add a param or env var to change context size.
 		Context: ContextLines,
 	}
 	text, err := difflib.GetUnifiedDiffString(diff)

@@ -688,9 +688,9 @@ func TestStrategyConditions_AsList(t *testing.T) {
 	)
 
 	cList := c.AsReleaseStrategyConditions()
-	gotNames := make([]string, 0)
-	for _, e := range cList {
-		gotNames = append(gotNames, string(e.Type))
+	gotNames := make([]string, len(cList))
+	for i, e := range cList {
+		gotNames[i] = string(e.Type)
 	}
 
 	expectedNames := []string{

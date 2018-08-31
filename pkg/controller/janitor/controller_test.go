@@ -140,7 +140,8 @@ func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
 		ReleaseName: configMap.GetLabels()[shipperv1.ReleaseLabel],
 	}
 
-	// Execute c.syncAnchor() here since I couldn't find an API to trigger the Update event handler.
+	// Execute c.syncAnchor() here since I couldn't find an API to trigger the
+	// Update event handler.
 	if err := c.syncAnchor(item); err != nil {
 		t.Fatal(err)
 	}

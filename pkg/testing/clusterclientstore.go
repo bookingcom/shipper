@@ -22,9 +22,9 @@ func ClusterClientStore(
 	clientBuilderFunc clusterclientstore.ClientBuilderFunc,
 ) *clusterclientstore.Store {
 
-	// these are runtime.Object because NewSimpleClientset takes a varargs list
-	// of runtime.Object, and Go can't understand structs which fulfill that
-	// interface when the function is variadic.
+	// These are runtime.Object because NewSimpleClientset takes a varargs list of
+	// runtime.Object, and Go can't understand structs which fulfill that interface
+	// when the function is variadic.
 	clusters := []runtime.Object{}
 	secrets := []runtime.Object{}
 

@@ -80,8 +80,8 @@ var DefaultClient = &http.Client{
 	Timeout:   HTTPRequestResponseTimeout,
 }
 
-// NewClient returns a new instrumented http.Client with pre-set timeouts. Use it if
-// you want to adjust default timeouts.
+// NewClient returns a new instrumented http.Client with pre-set timeouts. Use
+// it if you want to adjust default timeouts.
 func NewClient() *http.Client {
 	return &http.Client{
 		Transport: roundTripper,

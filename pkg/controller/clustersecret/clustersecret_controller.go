@@ -1,19 +1,3 @@
-/*
-Copyright 2017 The Kubernetes Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package clustersecret
 
 import (
@@ -86,7 +70,7 @@ func NewController(
 	clusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    controller.enqueueCluster,
 		DeleteFunc: controller.enqueueCluster,
-		// changes to Cluster objects do not result in changes to Secrets
+		// Changes to Cluster objects do not result in changes to Secrets.
 	})
 
 	secretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -140,7 +124,6 @@ func (c *Controller) processNextWorkItem() bool {
 		return false
 	}
 
-	// We're done processing this object.
 	defer c.workqueue.Done(obj)
 
 	var (
@@ -149,7 +132,6 @@ func (c *Controller) processNextWorkItem() bool {
 	)
 
 	if key, ok = obj.(string); !ok {
-		// Do not attempt to process invalid objects again.
 		c.workqueue.Forget(obj)
 		runtime.HandleError(fmt.Errorf("invalid object key: %#v", obj))
 		return true
@@ -161,7 +143,6 @@ func (c *Controller) processNextWorkItem() bool {
 		return true
 	}
 
-	// Do not requeue this object because it's already processed.
 	c.workqueue.Forget(obj)
 
 	glog.V(6).Infof("Successfully synced %q", key)

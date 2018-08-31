@@ -66,7 +66,7 @@ func TestMissingChecksum(t *testing.T) {
 	f.expectSecretUpdate(newSecret)
 
 	oldSecret := newSecret.DeepCopy()
-	delete(oldSecret.Annotations, shipperv1.SecretChecksumAnnotation) // simulate missing annotation
+	delete(oldSecret.Annotations, shipperv1.SecretChecksumAnnotation) // Simulate missing annotation.
 	f.kubeObjects = append(f.kubeObjects, oldSecret)
 
 	f.run()
@@ -82,7 +82,7 @@ func TestNoAnnotations(t *testing.T) {
 	f.expectSecretUpdate(newSecret)
 
 	oldSecret := newSecret.DeepCopy()
-	oldSecret.Annotations = nil // simulate missing annotation
+	oldSecret.Annotations = nil // Simulate missing annotation.
 	f.kubeObjects = append(f.kubeObjects, oldSecret)
 
 	f.run()
@@ -248,4 +248,4 @@ func (f *fixture) expectSecretCreate(secret *corev1.Secret) {
 
 }
 
-// TODO test garbage collection?
+// NOTE(asurikov): test garbage collection?

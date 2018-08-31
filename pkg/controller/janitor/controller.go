@@ -98,11 +98,10 @@ func NewController(
 	store.AddEventHandlerCallback(func(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
 		informerFactory.Core().V1().ConfigMaps().Informer().AddEventHandler(
 			cache.FilteringResourceEventHandler{
-				// Anchor objects are basically config maps with the
-				// shipperV1.ReleaseLabel label, so we want to filter to this
-				// constraint. Additionally we check whether the config map's
-				// Data field has the InstallationTargetUID key, ignoring those
-				// config maps that don't have it.
+				// Anchor objects are basically config maps with the shipperV1.ReleaseLabel
+				// label, so we want to filter to this constraint. Additionally we check
+				// whether the config map's Data field has the InstallationTargetUID key,
+				// ignoring those config maps that don't have it.
 				FilterFunc: func(obj interface{}) bool {
 					cm := obj.(*corev1.ConfigMap)
 					hasRightName := strings.HasSuffix(cm.GetName(), AnchorSuffix)
@@ -117,9 +116,8 @@ func NewController(
 					return hasRightName && hasReleaseLabel && hasUID
 				},
 				Handler: cache.ResourceEventHandlerFuncs{
-					// Enqueue all the config maps that have a
-					// shipperV1.ReleaseLabel, extracting all the information
-					// required for the worker to, well, work.
+					// Enqueue all the config maps that have a shipperV1.ReleaseLabel,
+					// extracting all the information required for the worker to, well, work.
 					UpdateFunc: func(oldObj, newObj interface{}) {
 						cm := newObj.(*corev1.ConfigMap)
 						if key, err := cache.MetaNamespaceKeyFunc(cm); err != nil {

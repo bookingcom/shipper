@@ -20,16 +20,11 @@ type deploymentWorkqueueItem struct {
 	ClusterName string
 }
 
-// runDeploymentWorker is a long-running function that will continually call the
-// processNextDeploymentWorkItem function in order to read and process a message on the
-// workqueue.
 func (c *Controller) runDeploymentWorker() {
 	for c.processNextDeploymentWorkItem() {
 	}
 }
 
-// processNextWorkDeploymentItem will read a single work item off the workqueue and
-// attempt to process it, by calling the syncHandler.
 func (c *Controller) processNextDeploymentWorkItem() bool {
 	obj, shutdown := c.deploymentWorkqueue.Get()
 	if shutdown {
@@ -70,9 +65,6 @@ func (c *Controller) processNextDeploymentWorkItem() bool {
 	return true
 }
 
-// enqueueDeployment takes a Deployment resource and converts it into a deploymentWorkqueueItem
-// struct which is then put onto the work queue. This method should *not* be
-// passed resources of any type other than Deployment.
 func (c *Controller) enqueueDeployment(obj interface{}, clusterName string) {
 	key, err := cache.MetaNamespaceKeyFunc(obj)
 	if err != nil {
@@ -115,7 +107,6 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 		return err
 	}
 
-	// Get the informer for the cluster this item belongs to, and use the lister to fetch the deployment from the cache
 	informerFactory, err := c.clusterClientStore.GetInformerFactory(item.ClusterName)
 	if err != nil {
 		return err
@@ -176,10 +167,6 @@ func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployme
 	}
 
 	for _, pod := range pods {
-		// Stop adding sad pods to the status if we reach the
-		// limit. This should, hopefully, be replaced with a
-		// more heuristic way of reporting sad pods in the
-		// future.
 		if len(sadPods) == SadPodLimit {
 			break
 		}
@@ -202,12 +189,11 @@ func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployme
 func (c Controller) getFalsePodCondition(pod *corev1.Pod) (*corev1.PodCondition, bool) {
 	var sadCondition *corev1.PodCondition
 
-	// The loop below finds a condition with the `status` set to
-	// "false", which means there is something wrong with the pod.
-	// The reason the loop is not returning as it finds the first
-	// condition with the status of "false" is that we're testing the
-	// assumption that there is only one condition with the status of
-	// "false" at a time. That's why there is a log there for now.
+	// The loop below finds a condition with the `status` set to "false", which
+	// means there is something wrong with the pod. The reason the loop is not
+	// returning as it finds the first condition with the status of "false" is that
+	// we're testing the assumption that there is only one condition with the
+	// status of "false" at a time. That's why there is a log there for now.
 	for _, condition := range pod.Status.Conditions {
 		if condition.Status == corev1.ConditionFalse {
 			if sadCondition == nil {
