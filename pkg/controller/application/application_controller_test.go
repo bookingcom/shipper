@@ -29,8 +29,10 @@ func init() {
 	conditions.ApplicationConditionsShouldDiscardTimestamps = true
 }
 
-// private method, but other tests make use of it
+// Private method, but other tests make use of it.
+
 func TestHashReleaseEnv(t *testing.T) {
+
 	app := newApplication(testAppName)
 	rel := newRelease("test-release", app)
 
@@ -48,7 +50,8 @@ func TestHashReleaseEnv(t *testing.T) {
 	}
 }
 
-// an app with no history should create a release
+// An app with no history should create a release.
+
 func TestCreateFirstRelease(t *testing.T) {
 	f := newFixture(t)
 	app := newApplication(testAppName)
@@ -68,8 +71,8 @@ func TestCreateFirstRelease(t *testing.T) {
 	}
 	expectedApp.Status.History = []string{}
 
-	// we do not expect entries in the history or 'RollingOut: true' in the state because
-	// the testing client does not update listers after Create actions.
+	// We do not expect entries in the history or 'RollingOut: true' in the state
+	// because the testing client does not update listers after Create actions.
 
 	expectedRelease := newRelease(expectedRelName, app)
 	expectedRelease.Environment.Chart.RepoURL = "127.0.0.1"
@@ -177,7 +180,9 @@ func TestRevisionHistoryLimit(t *testing.T) {
 	expectedApp := app.DeepCopy()
 	expectedApp.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "2"
 
-	// this ought to be true, but deletes don't filter through the kubetesting lister
+	// This ought to be true, but deletes don't filter through the kubetesting
+	// lister.
+
 	//expectedApp.Status.History = []string{"baz"}
 	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
 		shipperv1.ApplicationCondition{
@@ -255,7 +260,8 @@ func TestCreateSecondRelease(t *testing.T) {
 	expectedApp.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "1"
 	expectedApp.Status.History = []string{
 		oldRelName,
-		// ought to have newRelName, but kubetesting doesn't catch Create actions in the lister
+		// Ought to have newRelName, but kubetesting doesn't catch Create actions in
+		// the lister.
 	}
 
 	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
@@ -273,7 +279,7 @@ func TestCreateSecondRelease(t *testing.T) {
 		},
 	}
 
-	// this still refers to the incumbent's state on this first update
+	// This still refers to the incumbent's state on this first update.
 	var step int32 = 2
 	expectedApp.Status.State = shipperv1.ApplicationState{
 		RolloutStep: &step,
@@ -285,7 +291,8 @@ func TestCreateSecondRelease(t *testing.T) {
 	f.run()
 }
 
-// An app's template should be rolled back to the previous release if the previous-highest was deleted.
+// An app's template should be rolled back to the previous release if the
+// previous-highest was deleted.
 func TestAbort(t *testing.T) {
 	srv, hh, err := repotest.NewTempServer("testdata/*.tgz")
 	if err != nil {
@@ -299,9 +306,9 @@ func TestAbort(t *testing.T) {
 	f := newFixture(t)
 	app := newApplication(testAppName)
 	app.Spec.Template.Chart.RepoURL = srv.URL()
-	// highest observed is higher than any known release. we have an older
-	// release (gen 0) with a different cluster selector. we expect app template
-	// to be reverted
+	// Highest observed is higher than any known release. We have an older release
+	// (gen 0) with a different cluster selector. We expect app template to be
+	// reverted.
 	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "1"
 	app.Spec.Template.ClusterRequirements = shipperv1.ClusterRequirements{
 		Regions: []shipperv1.RegionRequirement{{Name: "foo"}},
@@ -331,7 +338,7 @@ func TestAbort(t *testing.T) {
 
 	expectedApp := app.DeepCopy()
 	expectedApp.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
-	// should have overwritten the old template with the generation 0 one
+	// Should have overwritten the old template with the generation 0 one.
 	expectedApp.Spec.Template = release.Environment
 
 	expectedApp.Status.History = []string{relName}
@@ -345,7 +352,7 @@ func TestAbort(t *testing.T) {
 		},
 	}
 
-	// this still refers to the incumbent's state on this first update
+	// This still refers to the incumbent's state on this first update.
 	var step int32 = 2
 	expectedApp.Status.State = shipperv1.ApplicationState{
 		RolloutStep: &step,
@@ -400,7 +407,8 @@ func TestStateRollingOut(t *testing.T) {
 	f.objects = append(f.objects, contender)
 
 	appRollingOut := app.DeepCopy()
-	// TODO(btyler) this is 0 because there's an invalid strategy name; it will be fixed when we inline strategies
+	// TODO(btyler): this is 0 because there's an invalid strategy name; it will be
+	// fixed when we inline strategies.
 	var step int32 = 0
 	appRollingOut.Status.State = shipperv1.ApplicationState{
 		RolloutStep: &step,
@@ -426,8 +434,8 @@ func TestStateRollingOut(t *testing.T) {
 	f.run()
 }
 
-// If a release which is not installed is in the app history and it's
-// not the latest release, it should be nuked
+// If a release which is not installed is in the app history and it's not the
+// latest release, it should be nuked.
 func TestDeletingAbortedReleases(t *testing.T) {
 	f := newFixture(t)
 	app := newApplication(testAppName)

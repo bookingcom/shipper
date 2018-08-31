@@ -79,17 +79,17 @@ func buildPrefList(appIdentity string, clusterList []*v1.Cluster) []*v1.Cluster 
 
 		score := float64(-weight) * math.Log(float64(sum)/float64(math.MaxUint64))
 
-		// decorate
+		// Decorate.
 		scoredClusters = append(scoredClusters, scoredCluster{cluster: cluster, score: score})
 	}
 
-	// sort
-	// descending sort so highest scores are first (as you'd expect from higher weight)
+	// Descending sort so highest scores are first (as you'd expect from higher
+	// weight).
 	sort.Slice(scoredClusters, func(i, j int) bool {
 		return scoredClusters[j].score < scoredClusters[i].score
 	})
 
-	// undecorate
+	// Undecorate.
 	prefList := make([]*v1.Cluster, 0, len(scoredClusters))
 	for _, scoredCluster := range scoredClusters {
 		prefList = append(prefList, scoredCluster.cluster)

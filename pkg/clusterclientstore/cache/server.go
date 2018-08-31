@@ -9,7 +9,6 @@ type CacheServer interface {
 	Stop()
 }
 
-// my erlang is showing
 type server struct {
 	clusters map[string]*cluster
 	ch       ch
@@ -24,7 +23,6 @@ type ch struct {
 	store  chan *cluster
 	remove chan string
 
-	// mostly for testing
 	countReq chan struct{}
 	countRes chan int
 }
@@ -47,9 +45,10 @@ func NewServer() *server {
 	}
 }
 
-// originally this was a normal mutex in store.go, but this is not a high
-// performance application, so I think things are simpler with all
-// operations against the cluster map serialized, as in a server model
+// Originally this was a normal mutex in store.go, but this is not a high
+// performance application, so I think things are simpler with all operations
+// against the cluster map serialized, as in a server model.
+
 func (s *server) Serve() {
 	for {
 		select {

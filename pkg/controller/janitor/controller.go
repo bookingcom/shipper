@@ -99,11 +99,10 @@ func NewController(
 	store.AddEventHandlerCallback(func(informerFactory kubeInformers.SharedInformerFactory, clusterName string) {
 		informerFactory.Core().V1().ConfigMaps().Informer().AddEventHandler(
 			cache.FilteringResourceEventHandler{
-				// Anchor objects are basically config maps with the
-				// shipperV1.ReleaseLabel label, so we want to filter to this
-				// constraint. Additionally we check whether the config map's
-				// Data field has the InstallationTargetUID key, ignoring those
-				// config maps that don't have it.
+				// Anchor objects are basically config maps with the shipperV1.ReleaseLabel
+				// label, so we want to filter to this constraint. Additionally we check
+				// whether the config map's Data field has the InstallationTargetUID key,
+				// ignoring those config maps that don't have it.
 				FilterFunc: func(obj interface{}) bool {
 					cm := obj.(*coreV1.ConfigMap)
 					hasRightName := strings.HasSuffix(cm.GetName(), AnchorSuffix)
@@ -118,9 +117,8 @@ func NewController(
 					return hasRightName && hasReleaseLabel && hasUID
 				},
 				Handler: cache.ResourceEventHandlerFuncs{
-					// Enqueue all the config maps that have a
-					// shipperV1.ReleaseLabel, extracting all the information
-					// required for the worker to, well, work.
+					// Enqueue all the config maps that have a shipperV1.ReleaseLabel,
+					// extracting all the information required for the worker to, well, work.
 					UpdateFunc: func(oldObj, newObj interface{}) {
 						cm := newObj.(*coreV1.ConfigMap)
 						if key, err := cache.MetaNamespaceKeyFunc(cm); err != nil {
@@ -130,10 +128,9 @@ func NewController(
 							kubeRuntimeUtil.HandleError(err)
 							return
 						} else {
-							// In theory, if we are in this block it means that the
-							// object has a shipperV1.ReleaseLabel label *and* the
-							// InstallationTargetUID key in Data, so it should be
-							// fine to just get them both.
+							// In theory, if we are in this block it means that the object has a
+							// shipperV1.ReleaseLabel label *and* the InstallationTargetUID key in
+							// Data, so it should be fine to just get them both.
 							releaseName := cm.GetLabels()[shipperV1.ReleaseLabel]
 							uid := cm.Data[InstallationTargetUID]
 							wi := &AnchorWorkItem{
@@ -142,8 +139,8 @@ func NewController(
 								Name:                  name,
 								ClusterName:           clusterName,
 								InstallationTargetUID: uid,
-								Key:                   key,
-								ReleaseName:           releaseName,
+								Key:         key,
+								ReleaseName: releaseName,
 							}
 							controller.workqueue.Add(wi)
 						}

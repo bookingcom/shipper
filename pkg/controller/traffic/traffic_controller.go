@@ -46,13 +46,6 @@ import (
 const AgentName = "traffic-controller"
 
 const (
-	// SuccessSynced is used as part of the Event 'reason' when a TrafficTarget is
-	// synced.
-	SuccessSynced = "Synced"
-	// MessageResourceSynced is used as part of the 'Event' message when a
-	// TrafficTarget is synced.
-	MessageResourceSynced = "TrafficTarget synced successfully"
-
 	// maxRetries is the number of times a TrafficTarget will be retried before we
 	// drop it out of the workqueue. The number is chosen with the default rate
 	// limiter in mind. This results in the following backoff times: 5ms, 10ms,
@@ -60,31 +53,17 @@ const (
 	maxRetries = 11
 )
 
-// Controller is the controller implementation for TrafficTarget resources
+// Controller is the controller implementation for TrafficTarget resources.
 type Controller struct {
-	// shipperclientset is a clientset for our own API group
-	shipperclientset shipper.Interface
-
-	// the Kube clients for each of the target clusters
-	clusterClientStore *clusterclientstore.Store
-
+	shipperclientset     shipper.Interface
+	clusterClientStore   *clusterclientstore.Store
 	trafficTargetsLister listers.TrafficTargetLister
 	trafficTargetsSynced cache.InformerSynced
-
-	// workqueue is a rate limited work queue. This is used to queue work to be
-	// processed instead of performing it as soon as a change happens. This
-	// means we can ensure we only process a fixed amount of resources at a
-	// time, and makes it easy to ensure we are never processing the same item
-	// simultaneously in two different workers.
-	workqueue workqueue.RateLimitingInterface
-
-	// recorder is an event recorder for recording Event resources to the
-	// Kubernetes API.
-	recorder record.EventRecorder
+	workqueue            workqueue.RateLimitingInterface
+	recorder             record.EventRecorder
 }
 
-// NewController returns a new TrafficTarget controller
-//noinspection GoUnusedParameter
+// NewController returns a new TrafficTarget controller.
 func NewController(
 	shipperclientset shipper.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
@@ -92,7 +71,7 @@ func NewController(
 	recorder record.EventRecorder,
 ) *Controller {
 
-	// obtain references to shared index informers for the TrafficTarget type
+	// Obtain references to shared index informers for the TrafficTarget type.
 	trafficTargetInformer := shipperInformerFactory.Shipper().V1().TrafficTargets()
 
 	controller := &Controller{
@@ -106,13 +85,13 @@ func NewController(
 	}
 
 	glog.Info("Setting up event handlers")
-	// Set up an event handler for when TrafficTarget resources change
+	// Set up an event handler for when TrafficTarget resources change.
 	trafficTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueTrafficTarget,
 		UpdateFunc: func(old, new interface{}) {
 			controller.enqueueTrafficTarget(new)
 		},
-		// the syncHandler needs to cope with the case where the object was deleted
+		// The sync handler needs to cope with the case where the object was deleted.
 		DeleteFunc: controller.enqueueTrafficTarget,
 	})
 
@@ -123,10 +102,10 @@ func NewController(
 	return controller
 }
 
-// Run will set up the event handlers for types we are interested in, as well
-// as syncing informer caches and starting workers. It will block until stopCh
-// is closed, at which point it will shutdown the workqueue and wait for
-// workers to finish processing their current work items.
+// Run will set up the event handlers for types we are interested in, as well as
+// syncing informer caches and starting workers. It will block until stopCh is
+// closed, at which point it will shutdown the workqueue and wait for workers to
+// finish processing their current work items.
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.workqueue.ShutDown()
@@ -148,16 +127,11 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
-// runWorker is a long-running function that will continually call the
-// processNextWorkItem function in order to read and process a message on the
-// workqueue.
 func (c *Controller) runWorker() {
 	for c.processNextWorkItem() {
 	}
 }
 
-// processNextWorkItem will read a single work item off the workqueue and
-// attempt to process it, by calling the syncHandler.
 func (c *Controller) processNextWorkItem() bool {
 	obj, shutdown := c.workqueue.Get()
 	if shutdown {
@@ -198,11 +172,6 @@ func (c *Controller) processNextWorkItem() bool {
 	return true
 }
 
-// Any time a TrafficTarget resource is modified, we should:
-// - Get all TTs in the namespace
-// - For each TT, get desired weight in target clusters.
-// - For each cluster, compute pod label %s according to TT weights by release.
-// - For each cluster, add/remove pod labels accordingly (if too many, remove until correct and visa versa)
 func (c *Controller) syncHandler(key string) bool {
 	namespace, ttName, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -350,8 +319,8 @@ func (c *Controller) syncHandler(key string) bool {
 					err.Error())
 			}
 		} else {
-			// if the resulting map is missing the release we're working on,
-			// there's a significant bug in our code
+			// If the resulting map is missing the release we're working on, there's a
+			// significant bug in our code.
 			achievedReleaseWeight = achievedWeights[syncingReleaseName]
 			clusterStatus.AchievedTraffic = achievedReleaseWeight
 			if len(errs) == 0 {
@@ -380,12 +349,12 @@ func (c *Controller) syncHandler(key string) bool {
 		}
 	}
 
-	// at this point 'statuses' has an entry for every cluster touched by any
+	// At this point 'statuses' has an entry for every cluster touched by any
 	// traffic target object for this application. This might be the same as the
-	// syncing TT, but it could also be a superset. If it's a superset, we
-	// don't want to put a bunch of extra statuses in the syncingTT status
-	// output; this is confusing and breaks the strategy controller's checks
-	// (which guard against unexpected statuses).
+	// syncing TT, but it could also be a superset. If it's a superset, we don't
+	// want to put a bunch of extra statuses in the syncingTT status output; this
+	// is confusing and breaks the strategy controller's checks (which guard
+	// against unexpected statuses).
 	specClusters := map[string]struct{}{}
 	for _, specCluster := range syncingTT.Spec.Clusters {
 		specClusters[specCluster.Name] = struct{}{}
@@ -399,34 +368,28 @@ func (c *Controller) syncHandler(key string) bool {
 		}
 	}
 
-	// NEVER modify objects from the store. It's a read-only, local cache.
-	// You can use DeepCopy() to make a deep copy of original object and modify this copy
-	// Or create a copy manually for better performance
 	ttCopy := syncingTT.DeepCopy()
 	ttCopy.Status = shipperv1.TrafficTargetStatus{
 		Clusters: filteredStatuses,
 	}
-	// Until #38113 is merged, we must use Update instead of UpdateStatus to
-	// update the Status block of the TrafficTarget resource. UpdateStatus will not
-	// allow changes to the Spec of the resource, which is ideal for ensuring
-	// nothing other than resource status has been updated.
+
 	_, err = c.shipperclientset.ShipperV1().TrafficTargets(namespace).Update(ttCopy)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will retry): %s", key, err))
 		return true
 	}
 
-	//TODO(btyler) don't record "success" if it wasn't a total success: this
-	//should include some information about how many clusters worked and how many
-	//did not.
-	c.recorder.Event(syncingTT, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
+	// TODO(btyler): don't record "success" if it wasn't a total success: this
+	// should include some information about how many clusters worked and how many
+	// did not.
+	c.recorder.Event(syncingTT, corev1.EventTypeNormal, "Synced", "TrafficTarget synced successfully")
 
 	return false
 }
 
-// enqueueTrafficTarget takes a TrafficTarget resource and converts it into a namespace/name
-// string which is then put onto the work queue. This method should *not* be
-// passed resources of any type other than TrafficTarget.
+// enqueueTrafficTarget takes a TrafficTarget resource and converts it into a
+// namespace/name string which is then put onto the work queue. This method
+// should *not* be passed resources of any type other than TrafficTarget.
 func (c *Controller) enqueueTrafficTarget(obj interface{}) {
 	key, err := cache.MetaNamespaceKeyFunc(obj)
 	if err != nil {

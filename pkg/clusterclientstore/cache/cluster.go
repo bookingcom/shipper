@@ -41,7 +41,7 @@ type cluster struct {
 	stateMut sync.RWMutex
 	state    string
 
-	// these are all read-only after initialization, so no lock needed
+	// These are all read-only after initialization, so no lock needed.
 	checksum        string
 	client          kubernetes.Interface
 	config          *rest.Config
@@ -94,15 +94,14 @@ func (c *cluster) GetInformerFactory() (kubeinformers.SharedInformerFactory, err
 // (because you gave it an invalid hostname, for instance) it will hang around
 // until this cluster is Shutdown() and replaced by a new one.
 func (c *cluster) WaitForInformerCache() {
-	// no defer unlock here to keep cache sync out of lock scope
+	// No defer unlock here to keep cache sync out of lock scope.
 	c.stateMut.Lock()
 	if c.state != StateNotReady {
-		// this means that something happened and we already changed the
-		// state of the cluster cache entry. this is almost always in a test
-		// case where we're calling server.Store in close proximity to
-		// server.Stop(). If the state has changed to terminated, returning
-		// here is a totally sane and safe thing to do: we certainly don't want
-		// to warm up any cache
+		// This means that something happened and we already changed the state of the
+		// cluster cache entry. this is almost always in a test case where we're
+		// calling server.Store in close proximity to server.Stop(). If the state has
+		// changed to terminated, returning here is a totally sane and safe thing to
+		// do: we certainly don't want to warm up any cache.
 		c.stateMut.Unlock()
 		return
 	}
@@ -117,7 +116,8 @@ func (c *cluster) WaitForInformerCache() {
 	}
 
 	if ok {
-		// no defer unlock here because I don't want the lock scope to cover the callbacks
+		// No defer unlock here because I don't want the lock scope to cover the
+		// callbacks.
 		c.stateMut.Lock()
 		if c.state == StateTerminated {
 			c.stateMut.Unlock()

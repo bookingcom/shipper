@@ -10,8 +10,6 @@ import (
 func GetDeployments(rawRendered []string) []appsv1.Deployment {
 	var deployments []appsv1.Deployment
 
-	// TODO this probably be replaced with a decoder specifically for Deployment
-	// GVs
 	decoder := scheme.Codecs.UniversalDeserializer()
 
 	for _, raw := range rawRendered {

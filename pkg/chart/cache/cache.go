@@ -30,7 +30,7 @@ func (f *fsCache) Fetch(repo, name, version string) (*bytes.Buffer, error) {
 	_, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// it's cool, there's just no cache entry for this one
+			// It's cool, there's just no cache entry for this one.
 			return nil, nil
 		} else {
 			return nil, FetchError(err)
@@ -52,7 +52,7 @@ func (f *fsCache) Store(data []byte, repo, name, version string) error {
 		return err
 	}
 
-	// check size of dir against limit, delete oldest versions if needed
+	// Check size of dir against limit, delete oldest versions if needed.
 	versions, err := ioutil.ReadDir(familyPath)
 	if err != nil {
 		return err
@@ -70,8 +70,8 @@ func (f *fsCache) Store(data []byte, repo, name, version string) error {
 		size += int(fileinfo.Size())
 	}
 
-	// almost but not really LRU cache eviction via mtime sort: we're
-	// not using atime so we don't know if it was read recently.
+	// Almost but not really LRU cache eviction via mtime sort: we're not using
+	// atime so we don't know if it was read recently.
 	sort.SliceStable(versions, func(i, j int) bool {
 		return versions[i].ModTime().Before(versions[j].ModTime())
 	})
@@ -99,7 +99,7 @@ func (f *fsCache) Store(data []byte, repo, name, version string) error {
 	filename := fmt.Sprintf("%s-%s.tgz", name, version)
 	chartPath := filepath.Join(familyPath, filename)
 
-	// atomic rename swap to avoid cache hits against partially-written charts
+	// Atomic rename swap to avoid cache hits against partially-written charts.
 	tmp := fmt.Sprintf("%s_tmp", chartPath)
 	err = ioutil.WriteFile(tmp, data, 0644)
 	if err != nil {
@@ -116,9 +116,9 @@ func (f *fsCache) Clean() error {
 
 func clean(names ...string) (string, string, string) {
 	for i := range names {
-		// these first two aren't required, but I think there's not much risk
-		// in merging https/http repos from the same host, and it makes the
-		// directory names a nicer read (not http:__blorg.baz.com)
+		// These first two aren't required, but I think there's not much risk in
+		// merging https/http repos from the same host, and it makes the directory
+		// names a nicer read (not http:__blorg.baz.com).
 		names[i] = strings.TrimPrefix(names[i], "https://")
 		names[i] = strings.TrimPrefix(names[i], "http://")
 		names[i] = strings.Replace(names[i], string(filepath.Separator), "_", -1)

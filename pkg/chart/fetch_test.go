@@ -46,7 +46,8 @@ func TestFetchRemote(t *testing.T) {
 	}
 }
 
-// TestFetchCacheNoRemote tests fetching a chart from a pre-populated cache with no server available
+// TestFetchCacheNoRemote tests fetching a chart from a pre-populated cache with
+// no server available.
 func TestFetchCacheNoRemote(t *testing.T) {
 	_ = os.RemoveAll(cache)
 	defer func() {
@@ -82,8 +83,8 @@ func TestFetchCacheNoRemote(t *testing.T) {
 	}
 }
 
-// TestFetchCacheRemoteGoneAway tests fetching a chart from a remote, caching it,
-// then terminating the remote and ensuring the chart is still around
+// TestFetchCacheRemoteGoneAway tests fetching a chart from a remote, caching
+// it, then terminating the remote and ensuring the chart is still around.
 func TestFetchCacheRemoteGoneAway(t *testing.T) {
 	_ = os.RemoveAll(cache)
 	defer func() {
@@ -108,7 +109,8 @@ func TestFetchCacheRemoteGoneAway(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// terminate the server and fetch again: it should work, and it should be the same
+	// Terminate the server and fetch again: it should work, and it should be the
+	// same.
 	srv.Stop()
 	os.RemoveAll(hh.String())
 

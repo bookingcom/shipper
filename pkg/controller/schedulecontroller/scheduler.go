@@ -4,8 +4,6 @@ import (
 	"sort"
 	"strings"
 
-	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
-
 	"github.com/golang/glog"
 
 	corev1 "k8s.io/api/core/v1"
@@ -13,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/record"
+	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 
 	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
@@ -54,8 +53,7 @@ func (c *Scheduler) scheduleRelease() error {
 	glog.Infof("Processing release %q", controller.MetaKey(c.Release))
 	defer glog.Infof("Finished processing %q", controller.MetaKey(c.Release))
 
-	// Compute target clusters, and update the release if it
-	// doesn't have any
+	// Compute target clusters, and update the release if it doesn't have any.
 	if !c.HasClusters() {
 		clusterList, err := c.clustersLister.List(labels.Everything())
 		if err != nil {
@@ -101,9 +99,9 @@ func (c *Scheduler) scheduleRelease() error {
 		return err
 	}
 
-	// If we get to this point, it means that the clusters have already been selected and persisted in the Release
-	// document, and all the associated Release documents have already been created, so the last operation remaining is
-	// updating the PhaseStatus to ReleasePhaseWaitingForStrategy
+	// If we get to this point, it means that the clusters have already been
+	// selected and persisted in the Release, and all the associated Releases have
+	// already been created.
 	condition := releaseutil.NewReleaseCondition(v1.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 	releaseutil.SetReleaseCondition(&c.Release.Status, *condition)
 
@@ -189,8 +187,8 @@ func (c *Scheduler) extractReplicasFromChart(chart *helmchart.Chart) (int32, err
 	}
 
 	replicas := deployments[0].Spec.Replicas
-	// deployments default to 1 replica when replicas is nil or unspecified
-	// see k8s.io/api/apps/v1/types.go DeploymentSpec
+	// Deployments default to 1 replica when replicas is nil or unspecified. See
+	// k8s.io/api/apps/v1/types.go's DeploymentSpec.
 	if replicas == nil {
 		return 1, nil
 	}
@@ -234,9 +232,9 @@ func (c *Scheduler) CreateInstallationTarget() error {
 	return nil
 }
 
-// CreateCapacityTarget creates a new CapacityTarget object for
-// Scheduler's Release property. Returns an error if the object couldn't
-// be created, except in cases where the object already exists.
+// CreateCapacityTarget creates a new CapacityTarget object for Scheduler's
+// Release property. Returns an error if the object couldn't be created, except
+// in cases where the object already exists.
 func (c *Scheduler) CreateCapacityTarget(totalReplicaCount int32) error {
 	count := len(c.Clusters())
 	targets := make([]v1.ClusterCapacityTarget, count)
@@ -277,9 +275,9 @@ func (c *Scheduler) CreateCapacityTarget(totalReplicaCount int32) error {
 	return nil
 }
 
-// CreateTrafficTarget creates a new TrafficTarget object for
-// Scheduler's Release property. Returns an error if the object couldn't
-// be created, except in cases where the object already exists.
+// CreateTrafficTarget creates a new TrafficTarget object for Scheduler's
+// Release property. Returns an error if the object couldn't be created, except
+// in cases where the object already exists.
 func (c *Scheduler) CreateTrafficTarget() error {
 	count := len(c.Clusters())
 	trafficTargets := make([]v1.ClusterTrafficTarget, count)
@@ -320,7 +318,7 @@ func (c *Scheduler) CreateTrafficTarget() error {
 }
 
 // computeTargetClusters picks out the clusters from the given list which match
-// the release's clusterRequirements
+// the release's clusterRequirements.
 func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]string, error) {
 	regionSpecs := release.Environment.ClusterRequirements.Regions
 	requiredCapabilities := release.Environment.ClusterRequirements.Capabilities
@@ -342,9 +340,9 @@ func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]st
 	}
 
 	prefList := buildPrefList(app, clusterList)
-	// this algo could probably build up hashes instead of doing linear
-	// searches, but these data sets are so tiny (1-20 items) that it'd only be
-	// useful for readability
+	// This algo could probably build up hashes instead of doing linear searches,
+	// but these data sets are so tiny (1-20 items) that it'd only be useful for
+	// readability.
 	for _, region := range regionSpecs {
 		capableClustersByRegion[region.Name] = []*v1.Cluster{}
 		if region.Replicas == nil {
@@ -392,10 +390,10 @@ func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]st
 			)
 		}
 
-		//NOTE(btyler) this assumes we do not have duplicate cluster names. For
-		// the moment cluster objects are cluster scoped; if they become
-		// namespace scoped and releases can somehow be scheduled to clusters
-		// from multiple namespaces, this assumption will be wrong.
+		//NOTE(btyler): this assumes we do not have duplicate cluster names. For the
+		//moment cluster objects are cluster scoped; if they become namespace scoped
+		//and releases can somehow be scheduled to clusters from multiple namespaces,
+		//this assumption will be wrong.
 		for _, cluster := range clusters {
 			if regionReplicas[region] > 0 {
 				regionReplicas[region]--
@@ -409,9 +407,9 @@ func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]st
 }
 
 func validateClusterRequirements(requirements v1.ClusterRequirements) error {
-	// ensure capability uniqueness. erroring instead of de-duping in order to
-	// avoid second-guessing by operators about how shipper might treat
-	// repeated listings of the same capability
+	// Ensure capability uniqueness. Erroring instead of de-duping in order to
+	// avoid second-guessing by operators about how Shipper might treat repeated
+	// listings of the same capability.
 	seenCapabilities := map[string]struct{}{}
 	for _, capability := range requirements.Capabilities {
 		_, ok := seenCapabilities[capability]
@@ -424,9 +422,9 @@ func validateClusterRequirements(requirements v1.ClusterRequirements) error {
 	return nil
 }
 
-// the strings here are insane, but if you create a fresh release object for
-// some reason it lands in the work queue with an empty TypeMeta. This is resolved
-// if you restart the controllers, so I'm not sure what's going on.
+// The strings here are insane, but if you create a fresh release object for
+// some reason it lands in the work queue with an empty TypeMeta. This is
+// resolved if you restart the controllers, so I'm not sure what's going on.
 // https://github.com/kubernetes/client-go/issues/60#issuecomment-281533822 and
 // https://github.com/kubernetes/client-go/issues/60#issuecomment-281747911 give
 // some potential context.

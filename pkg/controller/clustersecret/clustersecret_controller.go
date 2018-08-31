@@ -87,7 +87,7 @@ func NewController(
 	clusterInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    controller.enqueueCluster,
 		DeleteFunc: controller.enqueueCluster,
-		// changes to Cluster objects do not result in changes to Secrets
+		// Changes to Cluster objects do not result in changes to Secrets.
 	})
 
 	secretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -141,7 +141,6 @@ func (c *Controller) processNextWorkItem() bool {
 		return false
 	}
 
-	// We're done processing this object.
 	defer c.workqueue.Done(obj)
 
 	var (
@@ -150,7 +149,6 @@ func (c *Controller) processNextWorkItem() bool {
 	)
 
 	if key, ok = obj.(string); !ok {
-		// Do not attempt to process invalid objects again.
 		c.workqueue.Forget(obj)
 		runtime.HandleError(fmt.Errorf("invalid object key: %#v", obj))
 		return true
@@ -162,7 +160,6 @@ func (c *Controller) processNextWorkItem() bool {
 		return true
 	}
 
-	// Do not requeue this object because it's already processed.
 	c.workqueue.Forget(obj)
 
 	glog.V(6).Infof("Successfully synced %q", key)

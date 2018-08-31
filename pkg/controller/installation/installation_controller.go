@@ -41,8 +41,7 @@ const (
 // Controller is a Kubernetes controller that processes InstallationTarget
 // objects.
 type Controller struct {
-	shipperclientset shipper.Interface
-	// the Kube clients for each of the target clusters
+	shipperclientset   shipper.Interface
 	clusterClientStore clusterclientstore.ClientProvider
 
 	workqueue workqueue.RateLimitingInterface
@@ -70,7 +69,6 @@ func NewController(
 	recorder record.EventRecorder,
 ) *Controller {
 
-	// Management Cluster InstallationTarget informer
 	installationTargetInformer := shipperInformerFactory.Shipper().V1().InstallationTargets()
 	clusterInformer := shipperInformerFactory.Shipper().V1().Clusters()
 	releaseInformer := shipperInformerFactory.Shipper().V1().Releases()
@@ -103,8 +101,6 @@ func NewController(
 	return controller
 }
 
-// Run starts Installation controller workers and blocks until stopCh is
-// closed.
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.workqueue.ShutDown()
@@ -216,7 +212,6 @@ func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 	c.workqueue.Add(key)
 }
 
-// processInstallation attempts to install the related release on all target clusters.
 func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error {
 	relNamespaceLister := c.releaseLister.Releases(it.Namespace)
 
@@ -242,10 +237,10 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	}
 
 	if appLabelValue, ok := release.GetLabels()[shipperV1.AppLabel]; !ok {
-		// TODO(isutton): Transform this into a real error
+		// TODO(isutton): transform this into a real error.
 		return fmt.Errorf("couldn't find label %q in release %q", shipperV1.AppLabel, release.GetName())
 	} else if app, appListerErr := c.appLister.Applications(release.GetNamespace()).Get(appLabelValue); appListerErr != nil {
-		// TODO(isutton): Wrap this error
+		// TODO(isutton): wrap this error.
 		return appListerErr
 	} else if len(app.Status.History) > 0 && app.Status.History[len(app.Status.History)-1] != release.GetName() {
 		// Current release isn't the contender, so we do not attempt to
@@ -258,21 +253,22 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	// Build .status over based on the current .spec.clusters.
 	newClusterStatuses := make([]*shipperV1.ClusterInstallationStatus, 0, len(it.Spec.Clusters))
 
-	// Collect the existing conditions for clusters present in .spec.clusters in a map
+	// Collect the existing conditions for clusters present in .spec.clusters in a
+	// map.
 	existingConditionsPerCluster := extractExistingConditionsPerCluster(it)
 
-	// The strategy here is try our best to install as many objects as possible
-	// in all target clusters. It is not the Installation Controller job to
-	// reason about an application cluster status, so it just report that a
-	// cluster might not be operational if operations on the application
-	// cluster fail for any reason.
+	// The strategy here is try our best to install as many objects as possible in
+	// all target clusters. It is not the Installation Controller job to reason
+	// about an application cluster status, so it just report that a cluster might
+	// not be operational if operations on the application cluster fail for any
+	// reason.
 	for _, name := range it.Spec.Clusters {
 
-		// IMPORTANT: Since we keep existing conditions from previous syncing
-		// points (as in existingConditionsPerCluster[name]), one needs to
-		// adjust all the dependent conditions. For example, whenever we
-		// transition "Operational" to "False", "Ready" *MUST* be transitioned
-		// to "Unknown" since we can't verify if it is actually "Ready".
+		// IMPORTANT: Since we keep existing conditions from previous syncing points
+		// (as in existingConditionsPerCluster[name]), one needs to adjust all the
+		// dependent conditions. For example, whenever we transition "Operational" to
+		// "False", "Ready" *MUST* be transitioned to "Unknown" since we can't verify
+		// if it is actually "Ready".
 		status := &shipperV1.ClusterInstallationStatus{
 			Name:       name,
 			Conditions: existingConditionsPerCluster[name],
@@ -343,7 +339,8 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	return err
 }
 
-// extractExistingConditionsPerCluster builds a map with values being a list of conditions.
+// extractExistingConditionsPerCluster builds a map with values being a list of
+// conditions.
 func extractExistingConditionsPerCluster(it *shipperV1.InstallationTarget) map[string][]shipperV1.ClusterInstallationCondition {
 	existingConditionsPerCluster := map[string][]shipperV1.ClusterInstallationCondition{}
 	for _, name := range it.Spec.Clusters {
@@ -369,8 +366,8 @@ func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interfa
 		return nil, nil, err
 	}
 
-	// the client store is just like an informer cache: it's a shared pointer
-	// to a read-only struct, so copy it before mutating
+	// The client store is just like an informer cache: it's a shared pointer to a
+	// read-only struct, so copy it before mutating.
 	referenceCopy := rest.CopyConfig(referenceConfig)
 
 	return client, referenceCopy, nil

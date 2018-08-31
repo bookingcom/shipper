@@ -89,16 +89,16 @@ func newScheduler(
 	return c, clientset
 }
 
-// TestSchedule tests the first part of the cluster scheduling,
-// which is find out which clusters the release must be installed, and
-// persisting it under .status.environment.clusters.
+// TestSchedule tests the first part of the cluster scheduling, which is find
+// out which clusters the release must be installed, and persisting it under
+// .status.environment.clusters.
 func TestSchedule(t *testing.T) {
 	// Fixtures
 	clusterA := buildCluster("minikube-a")
 	clusterB := buildCluster("minikube-b")
 	release := buildRelease()
 	fixtures := []runtime.Object{clusterA, clusterB, release}
-	// demand two clusters
+	// Demand two clusters.
 	release.Environment.ClusterRequirements.Regions[0].Replicas = pint32(2)
 
 	// Expected values. The release should have, at the end of the business
@@ -123,21 +123,19 @@ func TestSchedule(t *testing.T) {
 			relWithConditions),
 	}
 
-	// Business logic...
 	c, clientset := newScheduler(release, fixtures)
 	if err := c.scheduleRelease(); err != nil {
 		t.Fatal(err)
 	}
 
-	// Check actions
 	filteredActions := filterActions(clientset.Actions(), []string{"update"}, []string{"releases"})
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
-// TestScheduleSkipsUnschedulable tests the first part of the cluster scheduling,
-// which is find out which clusters the release must be installed, and
-// persisting it under .status.environment.clusters but skipping unschedulable
-// clusters this time.
+// TestScheduleSkipsUnschedulable tests the first part of the cluster
+// scheduling, which is find out which clusters the release must be installed,
+// and persisting it under .status.environment.clusters but skipping
+// unschedulable clusters this time.
 func TestScheduleSkipsUnschedulable(t *testing.T) {
 	// Fixtures
 	clusterA := buildCluster("minikube-a")
@@ -146,9 +144,8 @@ func TestScheduleSkipsUnschedulable(t *testing.T) {
 	release := buildRelease()
 	fixtures := []runtime.Object{clusterA, clusterB, release}
 
-	// Expected values. The release should have, at the end of the business
-	// logic, a list of clusters containing the schedulable cluster we've
-	// added to the client.
+	// The release should have, at the end of the business logic, a list of
+	// clusters containing the schedulable cluster we've added to the client.
 	expected := release.DeepCopy()
 	expected.Annotations[shipperV1.ReleaseClustersAnnotation] = clusterA.GetName()
 
@@ -168,13 +165,11 @@ func TestScheduleSkipsUnschedulable(t *testing.T) {
 			relWithConditions),
 	}
 
-	// Business logic...
 	c, clientset := newScheduler(release, fixtures)
 	if err := c.scheduleRelease(); err != nil {
 		t.Fatal(err)
 	}
 
-	// Check actions
 	filteredActions := filterActions(clientset.Actions(), []string{"update"}, []string{"releases"})
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
@@ -267,30 +262,26 @@ func buildExpectedActions(ns string, release *shipperV1.Release) []kubetesting.A
 }
 
 func TestCreateAssociatedObjects(t *testing.T) {
-	// Fixtures
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
 	fixtures := []runtime.Object{release, cluster}
 
-	// Expected release and actions. The release should have, at the end of
-	// the business logic, a list of clusters containing the sole cluster
-	// we've added to the client, and also a Scheduled condition with True
-	// status. Expected actions contain the intent to create all the
-	// associated target objects.
+	// Expected release and actions. The release should have, at the end of the
+	// business logic, a list of clusters containing the sole cluster we've added
+	// to the client, and also a Scheduled condition with True status. Expected
+	// actions contain the intent to create all the associated target objects.
 	expected := release.DeepCopy()
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
-	// Business logic...
 	c, clientset := newScheduler(release, fixtures)
 	if err := c.scheduleRelease(); err != nil {
 		t.Fatal(err)
 	}
 
-	// Check actions
 	filteredActions := filterActions(
 		clientset.Actions(),
 		[]string{"update", "create"},
@@ -300,7 +291,6 @@ func TestCreateAssociatedObjects(t *testing.T) {
 }
 
 func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
-	// Fixtures
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
 	release.Annotations[shipperV1.ReleaseClustersAnnotation] = cluster.GetName()
@@ -315,22 +305,19 @@ func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 
 	// Expected release and actions. Even with an existing installationtarget
 	// object for this release, at the end of the business logic the expected
-	// release should have its .status.phase set to "WaitingForStrategy".
-	// Expected actions contain the intent to create all the associated target
-	// objects.
+	// release should have its .status.phase set to "WaitingForStrategy". Expected
+	// actions contain the intent to create all the associated target objects.
 	expected := release.DeepCopy()
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
-	// Business logic...
 	c, clientset := newScheduler(release, fixtures)
 	if err := c.scheduleRelease(); err != nil {
 		t.Fatal(err)
 	}
 
-	// Check actions
 	filteredActions := filterActions(
 		clientset.Actions(),
 		[]string{"update", "create"},
@@ -355,22 +342,19 @@ func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 
 	// Expected release and actions. Even with an existing installationtarget
 	// object for this release, at the end of the business logic the expected
-	// release should have its .status.phase set to "WaitingForStrategy".
-	// Expected actions contain the intent to create all the associated target
-	// objects.
+	// release should have its .status.phase set to "WaitingForStrategy". Expected
+	// actions contain the intent to create all the associated target objects.
 	expected := release.DeepCopy()
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
-	// Business logic...
 	c, clientset := newScheduler(release, fixtures)
 	if err := c.scheduleRelease(); err != nil {
 		t.Fatal(err)
 	}
 
-	// Check actions
 	filteredActions := filterActions(
 		clientset.Actions(),
 		[]string{"update", "create"},
@@ -393,24 +377,21 @@ func TestCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 	}
 	fixtures := []runtime.Object{cluster, release, capacitytarget}
 
-	// Expected release and actions. Even with an existing capacitytarget
-	// object for this release, at the end of the business logic the expected
-	// release should have its .status.phase set to "WaitingForStrategy".
-	// Expected actions contain the intent to create all the associated target
-	// objects.
+	// Expected release and actions. Even with an existing capacitytarget object
+	// for this release, at the end of the business logic the expected release
+	// should have its .status.phase set to "WaitingForStrategy". Expected actions
+	// contain the intent to create all the associated target objects.
 	expected := release.DeepCopy()
 	expected.Status.Conditions = []shipperV1.ReleaseCondition{
 		{Type: shipperV1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
-	// Business logic...
 	c, clientset := newScheduler(release, fixtures)
 	if err := c.scheduleRelease(); err != nil {
 		t.Fatal(err)
 	}
 
-	// Check actions
 	actions := filterActions(
 		clientset.Actions(),
 		[]string{"update", "create"},
@@ -465,10 +446,10 @@ func pstr(s string) *string {
 	return &s
 }
 
-// TestComputeTargetClusters works the core of the scheduler logic: matching regions and capabilities between releases and clusters
-// NOTE: the "expected" clusters are due to the particular prefList outcomes,
-// and as such should be expected to break if we change the hash function for the
-// preflist.
+// TestComputeTargetClusters works the core of the scheduler logic: matching
+// regions and capabilities between releases and clusters NOTE: the "expected"
+// clusters are due to the particular prefList outcomes, and as such should be
+// expected to break if we change the hash function for the preflist.
 func TestComputeTargetClusters(t *testing.T) {
 	computeClusterTestCase(t, "error when no regions specified",
 		requirements{
@@ -659,7 +640,8 @@ func TestComputeTargetClusters(t *testing.T) {
 				Scheduler:    shipperV1.ClusterSchedulerSettings{Weight: pint32(900)},
 			},
 		},
-		// this test is identical to "more clusters than needed", and without weight would yield the same result (cluster-1, cluster-2)
+		// This test is identical to "more clusters than needed", and without weight
+		// would yield the same result (cluster-1, cluster-2).
 		expected{"cluster-0", "cluster-3"},
 		passingCase,
 	)
@@ -682,10 +664,10 @@ func TestComputeTargetClusters(t *testing.T) {
 			{Region: "eu-west", Capabilities: []string{"a"}},
 			{Region: "eu-west", Capabilities: []string{"a"}},
 		},
-		// weight doesn't change things unless it is "heavy" enough: it needs
-		// to overcome the natural distribution of hash values. This test is
-		// identical to "more clusters than needed", and has a minimal
-		// (ineffectual) weight applied, so it gives the same result as that test.
+		// Weight doesn't change things unless it is "heavy" enough: it needs to
+		// overcome the natural distribution of hash values. This test is identical to
+		// "more clusters than needed", and has a minimal (ineffectual) weight
+		// applied, so it gives the same result as that test.
 		expected{"cluster-1", "cluster-2"},
 		passingCase,
 	)
@@ -699,8 +681,8 @@ func TestComputeTargetClusters(t *testing.T) {
 			Capabilities: []string{"a"},
 		},
 		clusters{
-			// the "identity" means that cluster-0 computes the hash exactly like
-			// cluster-1, so a minimal bump in weight puts it in front
+			// The "identity" means that cluster-0 computes the hash exactly like
+			// cluster-1, so a minimal bump in weight puts it in front.
 			{
 				Region:       "us-east",
 				Capabilities: []string{"a"},

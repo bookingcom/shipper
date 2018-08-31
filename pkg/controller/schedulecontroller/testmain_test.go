@@ -20,8 +20,7 @@ func TestMain(m *testing.M) {
 
 	result := m.Run()
 
-	// If the test panics for any reason, the test server doesn't
-	// get cleaned up
+	// If the test panics for any reason, the test server doesn't get cleaned up.
 	os.RemoveAll(hh.String())
 	srv.Stop()
 

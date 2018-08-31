@@ -46,11 +46,11 @@ type FakeClusterClientStore struct {
 }
 
 func (*FakeClusterClientStore) AddSubscriptionCallback(clusterclientstore.SubscriptionRegisterFunc) {
-	// No-op
+	// No-op.
 }
 
 func (*FakeClusterClientStore) AddEventHandlerCallback(clusterclientstore.EventHandlerRegisterFunc) {
-	// No-op
+	// No-op.
 }
 
 func (f *FakeClusterClientStore) GetClient(clusterName string) (kubernetes.Interface, error) {

@@ -73,14 +73,14 @@ var apiResourceList = []*metaV1.APIResourceList{
 
 // TestInstaller tests the installation process using a Installer directly.
 func TestInstaller(t *testing.T) {
-	// First install
+	// First install.
 	ImplTestInstaller(t, nil, nil)
 
-	// With existing remote service
+	// With existing remote service.
 	notOwnedService := loadService("no-owners")
 	ImplTestInstaller(t, nil, []runtime.Object{notOwnedService})
 
-	// With existing remote service
+	// With existing remote service.
 	ownedService := loadService("existing-owners")
 	ImplTestInstaller(t, nil, []runtime.Object{ownedService})
 }
@@ -260,11 +260,12 @@ func TestInstallerBrokenChartTarball(t *testing.T) {
 }
 
 // TestInstallerBrokenChartContents tests if the installation process fails when the
-// release contains a valid chart tarball with invalid K8s object templates
+// release contains a valid chart tarball with invalid K8s object templates.
 func TestInstallerBrokenChartContents(t *testing.T) {
 	cluster := buildCluster("minikube-a")
 
-	// there is a reviews-api-invalid-k8s-objects.tgz in testdata which contains invalid deployment and service templates
+	// There is a reviews-api-invalid-k8s-objects.tgz in testdata which contains
+	// invalid deployment and service templates.
 	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
 	release.Environment.Chart.Version = "invalid-k8s-objects"
 

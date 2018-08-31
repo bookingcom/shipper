@@ -5,4 +5,6 @@ const (
 	ClustersNotReady       = "ClustersNotReady"
 )
 
+// TODO(asurikov): change NotFound to be a struct that implements error.
+
 type NotFound error

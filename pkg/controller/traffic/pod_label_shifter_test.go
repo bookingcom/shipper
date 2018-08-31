@@ -27,8 +27,10 @@ type releasePodCounts []int
 type releaseExpectedTrafficPods []int
 type releaseExpectedWeights []uint32
 
-// this is a private func, but other tests make use of it, so it's better tested in isolation
 func TestGetsTraffic(t *testing.T) {
+	// This is a private func, but other tests make use of it, so it's better tested
+	// in isolation
+
 	singleSelector := map[string]string{
 		"test-gets-traffic": "firehose",
 	}
@@ -70,7 +72,7 @@ func getsTrafficTestCase(t *testing.T, name string, shouldGetTraffic bool, selec
 }
 
 func TestSyncCluster(t *testing.T) {
-	// the 'no release' case doesn't work, and also doesn't make sense
+	// The 'no release' case doesn't work, and also doesn't make sense.
 	clusterSyncTestCase(t, "one empty release",
 		releaseWeights{0},
 		releasePodCounts{0},
@@ -212,7 +214,7 @@ func clusterSyncTestCase(
 	expectedWeights releaseExpectedWeights,
 ) {
 	if len(weights) != len(podCounts) || len(weights) != len(expectedTrafficCounts) || len(weights) != len(expectedWeights) {
-		// programmer error
+		// Programmer error.
 		panic(
 			fmt.Sprintf(
 				"len() of weights (%d), podCounts (%d), expectedWeights (%d) and expectedTrafficCounts (%d) must be == in every test case",
@@ -341,7 +343,7 @@ func (f *podLabelShifterFixture) run(expectedWeights map[string]uint32) bool {
 		f.Errorf("failed to sync cluster: %s", err.Error())
 	}
 
-	// no point inspecting anything else
+	// No point inspecting anything else.
 	if len(errs) > 0 {
 		return false
 	}
@@ -361,7 +363,7 @@ func (f *podLabelShifterFixture) run(expectedWeights map[string]uint32) bool {
 		delete(achievedWeights, release)
 	}
 
-	// should be empty now
+	// Should be empty now.
 	for release, achievedWeight := range achievedWeights {
 		f.Errorf("release %q was found in achievedWeights with weight %d, but that map should be empty", release, achievedWeight)
 		keepTesting = false
@@ -378,8 +380,8 @@ func (f *podLabelShifterFixture) checkReleasePodsWithTraffic(release string, exp
 			update, _ := a.(kubetesting.UpdateAction)
 			obj := update.GetObject()
 
-			//NOTE(btyler) I feel like there must be a better way to take
-			// a runtime.Object and decide whether it is a pod
+			// TODO(btyler): I feel like there must be a better way to take a
+			// runtime.Object and decide whether it is a pod.
 			switch p := obj.(type) {
 			case *corev1.Pod:
 				podRelease, ok := p.GetLabels()[shipperv1.ReleaseLabel]
@@ -400,7 +402,7 @@ func (f *podLabelShifterFixture) checkReleasePodsWithTraffic(release string, exp
 func newTrafficTarget(release string, clusterWeights map[string]uint32) *shipperv1.TrafficTarget {
 	tt := &shipperv1.TrafficTarget{
 		ObjectMeta: metav1.ObjectMeta{
-			// NOTE(btyler) using release name for TTs?
+			// NOTE(btyler): using release name for TTs?
 			Name:      release,
 			Namespace: shippertesting.TestNamespace,
 			Labels:    releaseLabels(release),
