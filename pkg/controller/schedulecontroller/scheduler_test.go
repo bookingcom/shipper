@@ -453,6 +453,7 @@ func TestChartBadSyntax(t *testing.T) {
 }
 
 func TestChartBadObjects(t *testing.T) {
+	t.Skip("Depends on !98")
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
 	release.Environment.Chart.RepoURL = "localhost"
