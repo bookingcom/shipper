@@ -30,130 +30,142 @@ func init() {
 }
 
 func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.T) {
-	f := newFixture(t)
+	for _, i := range []uint{1, 10} {
+		f := newFixture(t)
 
-	totalReplicaCount := uint(10)
-	contender := buildContender(totalReplicaCount)
-	incumbent := buildIncumbent(totalReplicaCount)
+		totalReplicaCount := i
+		contender := buildContender(totalReplicaCount)
+		incumbent := buildIncumbent(totalReplicaCount)
 
-	// Strategy specifies that step 0 the contender has a minimum number of pods
-	// (1), no traffic yet.
-	contender.capacityTarget.Spec.Clusters[0].Percent = 1
+		// Strategy specifies that step 0 the contender has a minimum number of pods
+		// (1), no traffic yet.
+		contender.capacityTarget.Spec.Clusters[0].Percent = 1
 
-	f.addObjects(contender, incumbent)
+		f.addObjects(contender, incumbent)
 
-	rel := contender.release.DeepCopy()
-	f.expectReleaseWaitingForCommand(rel, 0)
-	f.run()
+		rel := contender.release.DeepCopy()
+		f.expectReleaseWaitingForCommand(rel, 0)
+		f.run()
+
+	}
 }
 
 func TestContenderDoNothingClusterInstallationNotReady(t *testing.T) {
-	f := newFixture(t)
+	for _, i := range []uint{1, 10} {
+		f := newFixture(t)
 
-	totalReplicaCount := uint(10)
-	contender := buildContender(totalReplicaCount)
-	incumbent := buildIncumbent(totalReplicaCount)
+		totalReplicaCount := i
+		contender := buildContender(totalReplicaCount)
+		incumbent := buildIncumbent(totalReplicaCount)
 
-	addCluster(contender, "broken-installation-cluster")
+		addCluster(contender, "broken-installation-cluster")
 
-	contender.release.Spec.TargetStep = 0
+		contender.release.Spec.TargetStep = 0
 
-	// the fixture creates installation targets in 'installation succeeded' status, so we'll break one
-	contender.installationTarget.Status.Clusters[1].Status = shipperv1.InstallationStatusFailed
+		// the fixture creates installation targets in 'installation succeeded' status,
+		// so we'll break one
+		contender.installationTarget.Status.Clusters[1].Status = shipperv1.InstallationStatusFailed
 
-	f.addObjects(contender, incumbent)
+		f.addObjects(contender, incumbent)
 
-	r := contender.release.DeepCopy()
-	f.expectInstallationNotReady(r, nil, 0, Contender)
-	f.run()
+		r := contender.release.DeepCopy()
+		f.expectInstallationNotReady(r, nil, 0, Contender)
+		f.run()
+	}
 }
 
 func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
-	f := newFixture(t)
+	for _, i := range []uint{1, 10} {
+		f := newFixture(t)
 
-	totalReplicaCount := uint(10)
-	contender := buildContender(totalReplicaCount)
-	incumbent := buildIncumbent(totalReplicaCount)
+		totalReplicaCount := i
+		contender := buildContender(totalReplicaCount)
+		incumbent := buildIncumbent(totalReplicaCount)
 
-	brokenClusterName := "broken-capacity-cluster"
-	addCluster(contender, brokenClusterName)
+		brokenClusterName := "broken-capacity-cluster"
+		addCluster(contender, brokenClusterName)
 
-	// We'll set cluster 0 to be all set, but make cluster 1 broken.
-	contender.release.Spec.TargetStep = 1
-	contender.capacityTarget.Spec.Clusters[0].Percent = 50
-	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
-	contender.trafficTarget.Spec.Clusters[0].Weight = 50
-	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+		// We'll set cluster 0 to be all set, but make cluster 1 broken.
+		contender.release.Spec.TargetStep = 1
+		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.trafficTarget.Spec.Clusters[0].Weight = 50
+		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
-	contender.capacityTarget.Spec.Clusters[1].Percent = 50
-	// No capacity yet.
-	contender.capacityTarget.Status.Clusters[1].AchievedPercent = 0
+		contender.capacityTarget.Spec.Clusters[1].Percent = 50
+		// No capacity yet.
+		contender.capacityTarget.Status.Clusters[1].AchievedPercent = 0
 
-	contender.trafficTarget.Spec.Clusters[1].Weight = 50
-	contender.trafficTarget.Status.Clusters[1].AchievedTraffic = 50
+		contender.trafficTarget.Spec.Clusters[1].Weight = 50
+		contender.trafficTarget.Status.Clusters[1].AchievedTraffic = 50
 
-	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
-	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
-	incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
-	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
+		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+		incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
+		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
 
-	f.addObjects(contender, incumbent)
+		f.addObjects(contender, incumbent)
 
-	r := contender.release.DeepCopy()
-	f.expectCapacityNotReady(r, 1, 0, Contender, brokenClusterName)
-	f.run()
+		r := contender.release.DeepCopy()
+		f.expectCapacityNotReady(r, 1, 0, Contender, brokenClusterName)
+		f.run()
+	}
 }
 
 func TestContenderDoNothingClusterTrafficNotReady(t *testing.T) {
-	f := newFixture(t)
+	for _, i := range []uint{1, 10} {
+		f := newFixture(t)
 
-	totalReplicaCount := uint(10)
-	contender := buildContender(totalReplicaCount)
-	incumbent := buildIncumbent(totalReplicaCount)
+		totalReplicaCount := i
+		contender := buildContender(totalReplicaCount)
+		incumbent := buildIncumbent(totalReplicaCount)
 
-	brokenClusterName := "broken-traffic-cluster"
-	addCluster(contender, brokenClusterName)
-	// We'll set cluster 0 to be all set, but make cluster 1 broken.
-	contender.release.Spec.TargetStep = 1
-	contender.capacityTarget.Spec.Clusters[0].Percent = 50
-	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
-	contender.trafficTarget.Spec.Clusters[0].Weight = 50
-	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+		brokenClusterName := "broken-traffic-cluster"
+		addCluster(contender, brokenClusterName)
+		// We'll set cluster 0 to be all set, but make cluster 1 broken.
+		contender.release.Spec.TargetStep = 1
+		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.trafficTarget.Spec.Clusters[0].Weight = 50
+		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
-	contender.capacityTarget.Spec.Clusters[1].Percent = 50
-	contender.capacityTarget.Status.Clusters[1].AchievedPercent = 50
+		contender.capacityTarget.Spec.Clusters[1].Percent = 50
+		contender.capacityTarget.Status.Clusters[1].AchievedPercent = 50
 
-	contender.trafficTarget.Spec.Clusters[1].Weight = 50
-	// No traffic yet.
-	contender.trafficTarget.Status.Clusters[1].AchievedTraffic = 0
+		contender.trafficTarget.Spec.Clusters[1].Weight = 50
+		// No traffic yet.
+		contender.trafficTarget.Status.Clusters[1].AchievedTraffic = 0
 
-	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
-	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
-	incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
-	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
+		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+		incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
+		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
 
-	f.addObjects(contender, incumbent)
+		f.addObjects(contender, incumbent)
 
-	r := contender.release.DeepCopy()
-	f.expectTrafficNotReady(r, 1, 0, Contender, brokenClusterName)
-	f.run()
+		r := contender.release.DeepCopy()
+		f.expectTrafficNotReady(r, 1, 0, Contender, brokenClusterName)
+		f.run()
+	}
 }
 
 func TestContenderCapacityShouldIncrease(t *testing.T) {
-	f := newFixture(t)
+	for _, i := range []uint{1, 10} {
+		f := newFixture(t)
 
-	totalReplicaCount := uint(10)
-	contender := buildContender(totalReplicaCount)
-	incumbent := buildIncumbent(totalReplicaCount)
+		totalReplicaCount := i
+		contender := buildContender(totalReplicaCount)
+		incumbent := buildIncumbent(totalReplicaCount)
 
-	contender.release.Spec.TargetStep = 1
+		contender.release.Spec.TargetStep = 1
 
-	f.addObjects(contender, incumbent)
+		f.addObjects(contender, incumbent)
 
-	ct := contender.capacityTarget.DeepCopy()
-	r := contender.release.DeepCopy()
-	f.expectCapacityStatusPatch(ct, r, 50, totalReplicaCount, Contender)
-	f.run()
+		ct := contender.capacityTarget.DeepCopy()
+		r := contender.release.DeepCopy()
+		f.expectCapacityStatusPatch(ct, r, 50, totalReplicaCount, Contender)
+		f.run()
+	}
 }
 
 type role int
@@ -164,116 +176,126 @@ const (
 )
 
 func TestContenderTrafficShouldIncrease(t *testing.T) {
-	f := newFixture(t)
+	for _, i := range []uint{1, 10} {
+		f := newFixture(t)
 
-	totalReplicaCount := uint(10)
-	contender := buildContender(totalReplicaCount)
-	incumbent := buildIncumbent(totalReplicaCount)
+		totalReplicaCount := i
+		contender := buildContender(totalReplicaCount)
+		incumbent := buildIncumbent(totalReplicaCount)
 
-	contender.release.Spec.TargetStep = 1
-	contender.capacityTarget.Spec.Clusters[0].Percent = 50
-	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.release.Spec.TargetStep = 1
+		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
 
-	f.addObjects(contender, incumbent)
+		f.addObjects(contender, incumbent)
 
-	tt := contender.trafficTarget.DeepCopy()
-	r := contender.release.DeepCopy()
-	f.expectTrafficStatusPatch(tt, r, 50, Contender)
-	f.run()
+		tt := contender.trafficTarget.DeepCopy()
+		r := contender.release.DeepCopy()
+		f.expectTrafficStatusPatch(tt, r, 50, Contender)
+		f.run()
+	}
 }
 
 func TestIncumbentTrafficShouldDecrease(t *testing.T) {
-	f := newFixture(t)
+	for _, i := range []uint{1, 10} {
+		f := newFixture(t)
 
-	totalReplicaCount := uint(10)
-	contender := buildContender(totalReplicaCount)
-	incumbent := buildIncumbent(totalReplicaCount)
+		totalReplicaCount := i
+		contender := buildContender(totalReplicaCount)
+		incumbent := buildIncumbent(totalReplicaCount)
 
-	contender.release.Spec.TargetStep = 1
-	contender.capacityTarget.Spec.Clusters[0].Percent = 50
-	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
-	contender.trafficTarget.Spec.Clusters[0].Weight = 50
-	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+		contender.release.Spec.TargetStep = 1
+		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.trafficTarget.Spec.Clusters[0].Weight = 50
+		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
-	f.addObjects(contender, incumbent)
+		f.addObjects(contender, incumbent)
 
-	tt := incumbent.trafficTarget.DeepCopy()
-	r := contender.release.DeepCopy()
-	f.expectTrafficStatusPatch(tt, r, 50, Incumbent)
-	f.run()
+		tt := incumbent.trafficTarget.DeepCopy()
+		r := contender.release.DeepCopy()
+		f.expectTrafficStatusPatch(tt, r, 50, Incumbent)
+		f.run()
+	}
 }
 
 func TestIncumbentCapacityShouldDecrease(t *testing.T) {
-	f := newFixture(t)
+	for _, i := range []uint{1, 10} {
+		f := newFixture(t)
 
-	totalReplicaCount := uint(10)
-	contender := buildContender(totalReplicaCount)
-	incumbent := buildIncumbent(totalReplicaCount)
+		totalReplicaCount := i
+		contender := buildContender(totalReplicaCount)
+		incumbent := buildIncumbent(totalReplicaCount)
 
-	contender.release.Spec.TargetStep = 1
-	contender.capacityTarget.Spec.Clusters[0].Percent = 50
-	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
-	contender.trafficTarget.Spec.Clusters[0].Weight = 50
-	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
-	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
-	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+		contender.release.Spec.TargetStep = 1
+		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.trafficTarget.Spec.Clusters[0].Weight = 50
+		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+		incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
+		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
-	f.addObjects(contender, incumbent)
+		f.addObjects(contender, incumbent)
 
-	tt := incumbent.capacityTarget.DeepCopy()
-	r := contender.release.DeepCopy()
-	f.expectCapacityStatusPatch(tt, r, 50, totalReplicaCount, Incumbent)
-	f.run()
+		tt := incumbent.capacityTarget.DeepCopy()
+		r := contender.release.DeepCopy()
+		f.expectCapacityStatusPatch(tt, r, 50, totalReplicaCount, Incumbent)
+		f.run()
+	}
 }
 
 func TestContenderReleasePhaseIsWaitingForCommandForFinalStepState(t *testing.T) {
-	f := newFixture(t)
+	for _, i := range []uint{1, 10} {
+		f := newFixture(t)
 
-	totalReplicaCount := uint(10)
-	contender := buildContender(totalReplicaCount)
-	incumbent := buildIncumbent(totalReplicaCount)
+		totalReplicaCount := i
+		contender := buildContender(totalReplicaCount)
+		incumbent := buildIncumbent(totalReplicaCount)
 
-	contender.release.Spec.TargetStep = 1
-	contender.capacityTarget.Spec.Clusters[0].Percent = 50
-	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
-	contender.trafficTarget.Spec.Clusters[0].Weight = 50
-	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
-	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
-	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
-	incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
-	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.release.Spec.TargetStep = 1
+		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.trafficTarget.Spec.Clusters[0].Weight = 50
+		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+		incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
+		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+		incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
+		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
 
-	f.addObjects(contender, incumbent)
+		f.addObjects(contender, incumbent)
 
-	rel := contender.release.DeepCopy()
-	f.expectReleaseWaitingForCommand(rel, 1)
-	f.run()
+		rel := contender.release.DeepCopy()
+		f.expectReleaseWaitingForCommand(rel, 1)
+		f.run()
+	}
 }
 
 func TestContenderReleaseIsInstalled(t *testing.T) {
-	f := newFixture(t)
+	for _, i := range []uint{1, 10} {
+		f := newFixture(t)
 
-	totalReplicaCount := uint(10)
-	contender := buildContender(totalReplicaCount)
-	incumbent := buildIncumbent(totalReplicaCount)
+		totalReplicaCount := i
+		contender := buildContender(totalReplicaCount)
+		incumbent := buildIncumbent(totalReplicaCount)
 
-	contender.release.Spec.TargetStep = 2
-	contender.capacityTarget.Spec.Clusters[0].Percent = 100
-	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 100
-	contender.trafficTarget.Spec.Clusters[0].Weight = 100
-	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 100
-	releaseutil.SetReleaseCondition(&contender.release.Status, shipperv1.ReleaseCondition{Type: shipperv1.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue, Reason: "", Message: ""})
+		contender.release.Spec.TargetStep = 2
+		contender.capacityTarget.Spec.Clusters[0].Percent = 100
+		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 100
+		contender.trafficTarget.Spec.Clusters[0].Weight = 100
+		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 100
+		releaseutil.SetReleaseCondition(&contender.release.Status, shipperv1.ReleaseCondition{Type: shipperv1.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue, Reason: "", Message: ""})
 
-	incumbent.trafficTarget.Spec.Clusters[0].Weight = 0
-	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 0
-	incumbent.capacityTarget.Spec.Clusters[0].Percent = 0
-	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 0
+		incumbent.trafficTarget.Spec.Clusters[0].Weight = 0
+		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 0
+		incumbent.capacityTarget.Spec.Clusters[0].Percent = 0
+		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 0
 
-	f.addObjects(contender, incumbent)
+		f.addObjects(contender, incumbent)
 
-	f.expectReleaseReleased(contender.release.DeepCopy(), 2)
+		f.expectReleaseReleased(contender.release.DeepCopy(), 2)
 
-	f.run()
+		f.run()
+	}
 }
 
 func workingOnContenderCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
