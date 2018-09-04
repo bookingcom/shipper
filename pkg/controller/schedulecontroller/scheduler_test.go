@@ -21,6 +21,8 @@ import (
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
+var chartFetchFunc = shipperchart.FetchRemoteWithCache("testdata/chart-cache", chart.DefaultCacheLimit)
+
 func init() {
 	releaseutil.ConditionsShouldDiscardTimestamps = true
 }
@@ -46,7 +48,7 @@ func buildRelease() *shipperv1.Release {
 			},
 			Environment: shipperv1.ReleaseEnvironment{
 				Chart: shipperv1.Chart{
-					Name:    "simple",
+					Name:    "reviews-api",
 					Version: "0.0.1",
 					RepoURL: chartRepoURL,
 				},
@@ -99,6 +101,7 @@ func TestSchedule(t *testing.T) {
 	clusterA := buildCluster("minikube-a")
 	clusterB := buildCluster("minikube-b")
 	release := buildRelease()
+	release.Environment.Chart.RepoURL = "localhost"
 	fixtures := []runtime.Object{clusterA, clusterB, release}
 	// Demand two clusters.
 	release.Environment.ClusterRequirements.Regions[0].Replicas = pint32(2)
@@ -125,7 +128,7 @@ func TestSchedule(t *testing.T) {
 			relWithConditions),
 	}
 
-	c, clientset := newScheduler(release, fixtures, shipperchart.FetchRemote())
+	c, clientset := newScheduler(release, fixtures, chartFetchFunc)
 	if err := c.scheduleRelease(); err != nil {
 		t.Fatal(err)
 	}
@@ -144,6 +147,7 @@ func TestScheduleSkipsUnschedulable(t *testing.T) {
 	clusterB := buildCluster("minikube-b")
 	clusterB.Spec.Scheduler.Unschedulable = true
 	release := buildRelease()
+	release.Environment.Chart.RepoURL = "localhost"
 	fixtures := []runtime.Object{clusterA, clusterB, release}
 
 	// The release should have, at the end of the business logic, a list of
@@ -167,7 +171,7 @@ func TestScheduleSkipsUnschedulable(t *testing.T) {
 			relWithConditions),
 	}
 
-	c, clientset := newScheduler(release, fixtures, shipperchart.FetchRemote())
+	c, clientset := newScheduler(release, fixtures, chartFetchFunc)
 	if err := c.scheduleRelease(); err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +217,7 @@ func buildExpectedActions(ns string, release *shipperv1.Release) []kubetesting.A
 				{
 					Name:              "minikube-a",
 					Percent:           0,
-					TotalReplicaCount: 12,
+					TotalReplicaCount: 1,
 				},
 			},
 		},
@@ -266,6 +270,7 @@ func buildExpectedActions(ns string, release *shipperv1.Release) []kubetesting.A
 func TestCreateAssociatedObjects(t *testing.T) {
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
+	release.Environment.Chart.RepoURL = "localhost"
 	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
 	fixtures := []runtime.Object{release, cluster}
 
@@ -279,7 +284,7 @@ func TestCreateAssociatedObjects(t *testing.T) {
 	}
 	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
-	c, clientset := newScheduler(release, fixtures, shipperchart.FetchRemote())
+	c, clientset := newScheduler(release, fixtures, chartFetchFunc)
 	if err := c.scheduleRelease(); err != nil {
 		t.Fatal(err)
 	}
@@ -295,6 +300,7 @@ func TestCreateAssociatedObjects(t *testing.T) {
 func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
+	release.Environment.Chart.RepoURL = "localhost"
 	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
 
 	installationtarget := &shipperv1.InstallationTarget{
@@ -315,7 +321,7 @@ func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 	}
 	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
-	c, clientset := newScheduler(release, fixtures, shipperchart.FetchRemote())
+	c, clientset := newScheduler(release, fixtures, chartFetchFunc)
 	if err := c.scheduleRelease(); err != nil {
 		t.Fatal(err)
 	}
@@ -332,6 +338,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	// Fixtures
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
+	release.Environment.Chart.RepoURL = "localhost"
 	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
 
 	traffictarget := &shipperv1.TrafficTarget{
@@ -352,7 +359,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	}
 	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
-	c, clientset := newScheduler(release, fixtures, shipperchart.FetchRemote())
+	c, clientset := newScheduler(release, fixtures, chartFetchFunc)
 	if err := c.scheduleRelease(); err != nil {
 		t.Fatal(err)
 	}
@@ -369,6 +376,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 	// Fixtures
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
+	release.Environment.Chart.RepoURL = "localhost"
 	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
 
 	capacitytarget := &shipperv1.CapacityTarget{
@@ -389,7 +397,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 	}
 	expectedActions := buildExpectedActions(release.GetNamespace(), expected)
 
-	c, clientset := newScheduler(release, fixtures, shipperchart.FetchRemote())
+	c, clientset := newScheduler(release, fixtures, chartFetchFunc)
 	if err := c.scheduleRelease(); err != nil {
 		t.Fatal(err)
 	}
@@ -400,6 +408,91 @@ func TestCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 		[]string{"releases", "installationtargets", "traffictargets", "capacitytargets"},
 	)
 	shippertesting.CheckActions(expectedActions, actions, t)
+}
+
+func TestChartBadSyntax(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.Name
+	release.Environment.Chart.Version = "0.0.1-broken-k8s-objects"
+	release.Environment.Chart.RepoURL = "localhost"
+
+	fixtures := []runtime.Object{cluster, release}
+
+	expectedRelease := release.DeepCopy()
+	expectedRelease.Status.Conditions = []shipperv1.ReleaseCondition{
+		{Type: shipperv1.ReleaseConditionTypeChart, Status: corev1.ConditionFalse, Reason: releaseutil.BadSyntaxReason, Message: ""},
+		{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionFalse, Reason: "ChartNotReachable", Message: ""},
+	}
+
+	c, clientset := newScheduler(release, fixtures, chartFetchFunc)
+	if err := c.scheduleRelease(); err == nil {
+		t.Fatal(fmt.Errorf(`should return an error here`))
+	} else if !IsBrokenChartError(err) {
+		t.Fatal(fmt.Errorf(`must be a broken chart failure: %v`, err))
+	} else {
+		// Instead of using the release conditions API, stuff the message in
+		// the proper condition.
+		expectedRelease.Status.Conditions[0].Message = err.Error()
+	}
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewUpdateAction(
+			shipperv1.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			expectedRelease),
+	}
+
+	filteredActions := filterActions(
+		clientset.Actions(),
+		[]string{"update"},
+		[]string{"releases"},
+	)
+
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
+}
+
+func TestChartBadObjects(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Environment.Chart.RepoURL = "localhost"
+	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.Name
+	release.Environment.Chart.Version = "0.0.1-missing-labels"
+	release.Environment.Chart.RepoURL = "localhost"
+
+	fixtures := []runtime.Object{cluster, release}
+
+	expectedRelease := release.DeepCopy()
+	expectedRelease.Status.Conditions = []shipperv1.ReleaseCondition{
+		{Type: shipperv1.ReleaseConditionTypeChart, Status: corev1.ConditionFalse, Reason: releaseutil.BadObjectsReason, Message: ""},
+		{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionFalse, Reason: "ChartNotReachable", Message: ""},
+	}
+
+	c, clientset := newScheduler(release, fixtures, chartFetchFunc)
+	if err := c.scheduleRelease(); err == nil {
+		t.Fatal(fmt.Errorf(`should return an error here`))
+	} else if !IsBrokenChartError(err) {
+		t.Fatal(fmt.Errorf(`must be a broken chart failure: %v`, err))
+	} else {
+		// Instead of using the release conditions API, stuff the message in
+		// the proper condition.
+		expectedRelease.Status.Conditions[0].Message = err.Error()
+	}
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewUpdateAction(
+			shipperv1.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			expectedRelease),
+	}
+
+	filteredActions := filterActions(
+		clientset.Actions(),
+		[]string{"update"},
+		[]string{"releases"},
+	)
+
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
 func TestChartNotReachable(t *testing.T) {
