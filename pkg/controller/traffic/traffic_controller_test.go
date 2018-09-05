@@ -56,10 +56,9 @@ func TestSingleCluster(t *testing.T) {
 	updatedTT.Status.Clusters = buildTotalSuccessStatus(updatedTT)
 
 	pod := pods[0].(*corev1.Pod)
-	updatedPod := pod.DeepCopy()
 	gvr := corev1.SchemeGroupVersion.WithResource("pods")
-	updatedPod.GetLabels()[trafficLabel] = trafficValue
-	cluster.Expect(kubetesting.NewUpdateAction(gvr, shippertesting.TestNamespace, updatedPod))
+	patchString := fmt.Sprintf(`[{"op":"replace","path":"/metadata/labels/%s","value":"%s"}]`, shipperv1.PodTrafficStatusLabel, shipperv1.Enabled)
+	cluster.Expect(kubetesting.NewPatchAction(gvr, shippertesting.TestNamespace, pod.Name, []byte(patchString)))
 
 	f.expectTrafficTargetUpdate(updatedTT)
 	f.run()
@@ -303,18 +302,18 @@ func buildService(app string) runtime.Object {
 func buildPods(app, release string, count int, withTraffic bool) []runtime.Object {
 	pods := make([]runtime.Object, 0, count)
 	for i := 0; i < count; i++ {
-		getsTraffic := trafficValue
+		getsTraffic := shipperv1.Enabled
 		if !withTraffic {
-			getsTraffic = "not-a-chance"
+			getsTraffic = shipperv1.Disabled
 		}
 		pods = append(pods, &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      fmt.Sprintf("%s-%d", release, i),
 				Namespace: shippertesting.TestNamespace,
 				Labels: map[string]string{
-					trafficLabel:           getsTraffic,
-					shipperv1.AppLabel:     app,
-					shipperv1.ReleaseLabel: release,
+					shipperv1.PodTrafficStatusLabel: getsTraffic,
+					shipperv1.AppLabel:              app,
+					shipperv1.ReleaseLabel:          release,
 				},
 			},
 		})

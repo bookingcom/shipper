@@ -1,17 +1,17 @@
 package traffic
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
-	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	corev1informer "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/apimachinery/pkg/types"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
@@ -138,15 +138,17 @@ func (p *podLabelShifter) SyncCluster(
 			for i := 0; i < excess; i++ {
 				pod := trafficPods[i].DeepCopy()
 
-				// remove from LB
-				patch := patchPodTrafficStatusLabel(pod, shipperv1.Disabled)
-				_, err := podsClient.Patch(pod.Name, types.JSONPatchType, patch)
-				if err != nil {
-					errors = append(errors,
-						NewTargetClusterTrafficModifyingLabelError(
-							cluster, p.namespace, pod.Name, err))
-					continue
+				if value, ok := pod.Labels[shipperv1.PodTrafficStatusLabel]; !ok || value == shipperv1.Enabled {
+					patch := patchPodTrafficStatusLabel(pod, shipperv1.Disabled)
+					_, err := podsClient.Patch(pod.Name, types.JSONPatchType, patch)
+					if err != nil {
+						errors = append(errors,
+							NewTargetClusterTrafficModifyingLabelError(
+								cluster, p.namespace, pod.Name, err))
+						continue
+					}
 				}
+
 				removedFromLB++
 			}
 			finalTrafficPods := len(trafficPods) - removedFromLB
@@ -167,15 +169,17 @@ func (p *podLabelShifter) SyncCluster(
 			for i := 0; i < missing; i++ {
 				pod := idlePods[i].DeepCopy()
 
-				// add to LB
-				patch := patchPodTrafficStatusLabel(pod, shipperv1.Enabled)
-				_, err := podsClient.Patch(pod.Name, types.JSONPatchType, patch)
-				if err != nil {
-					errors = append(errors,
-						NewTargetClusterTrafficModifyingLabelError(
-							cluster, p.namespace, pod.Name, err))
-					continue
+				if value, ok := pod.Labels[shipperv1.PodTrafficStatusLabel]; !ok || ok && value == shipperv1.Disabled {
+					patch := patchPodTrafficStatusLabel(pod, shipperv1.Enabled)
+					_, err := podsClient.Patch(pod.Name, types.JSONPatchType, patch)
+					if err != nil {
+						errors = append(errors,
+							NewTargetClusterTrafficModifyingLabelError(
+								cluster, p.namespace, pod.Name, err))
+						continue
+					}
 				}
+
 				addedToLB++
 			}
 			finalTrafficPods := len(trafficPods) + addedToLB
