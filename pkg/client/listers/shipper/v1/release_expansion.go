@@ -1,14 +1,14 @@
 package v1
 
 import (
-	"sort"
 	"fmt"
+	"sort"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipperController "github.com/bookingcom/shipper/pkg/controller"
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 )
 
 // ReleaseListerExpansion allows custom methods to be added to
@@ -18,22 +18,22 @@ type ReleaseListerExpansion interface{}
 // ReleaseNamespaceListerExpansion allows custom methods to be added to
 // ReleaseNamespaceLister.
 type ReleaseNamespaceListerExpansion interface {
-	ReleasesForApplication(appName string) ([]*shipperV1.Release, error)
-	ContenderForApplication(appName string) (*shipperV1.Release, error)
-	ReleaseForInstallationTarget(it *shipperV1.InstallationTarget) (*shipperV1.Release, error)
+	ReleasesForApplication(appName string) ([]*shipperv1.Release, error)
+	ContenderForApplication(appName string) (*shipperv1.Release, error)
+	ReleaseForInstallationTarget(it *shipperv1.InstallationTarget) (*shipperv1.Release, error)
 }
 
 // ReleasesForApplication returns Releases related to the given application
 // name ordered by generation.
-func (s releaseNamespaceLister) ReleasesForApplication(appName string) ([]*shipperV1.Release, error) {
-	selector := labels.Set{shipperV1.AppLabel: appName}.AsSelector()
+func (s releaseNamespaceLister) ReleasesForApplication(appName string) ([]*shipperv1.Release, error) {
+	selector := labels.Set{shipperv1.AppLabel: appName}.AsSelector()
 	selectedRels, err := s.List(selector)
 	if err != nil {
 		return nil, err
 	}
 
 	type releaseAndGeneration struct {
-		release    *shipperV1.Release
+		release    *shipperv1.Release
 		generation int
 	}
 
@@ -42,7 +42,7 @@ func (s releaseNamespaceLister) ReleasesForApplication(appName string) ([]*shipp
 		if rel.DeletionTimestamp != nil {
 			continue
 		}
-		g, err := shipperController.GetReleaseGeneration(rel)
+		g, err := shippercontroller.GetReleaseGeneration(rel)
 		if err != nil {
 			return nil, fmt.Errorf(`incomplete Release "%s/%s": %s`, rel.Namespace, rel.Name, err)
 		}
@@ -53,7 +53,7 @@ func (s releaseNamespaceLister) ReleasesForApplication(appName string) ([]*shipp
 		return filteredRels[i].generation < filteredRels[j].generation
 	})
 
-	relsToReturn := make([]*shipperV1.Release, 0, len(filteredRels))
+	relsToReturn := make([]*shipperv1.Release, 0, len(filteredRels))
 	for _, e := range filteredRels {
 		relsToReturn = append(relsToReturn, e.release)
 	}
@@ -62,7 +62,7 @@ func (s releaseNamespaceLister) ReleasesForApplication(appName string) ([]*shipp
 }
 
 // ContenderForApplication returns the contender Release for the given application name.
-func (s releaseNamespaceLister) ContenderForApplication(appName string) (*shipperV1.Release, error) {
+func (s releaseNamespaceLister) ContenderForApplication(appName string) (*shipperv1.Release, error) {
 	rels, err := s.ReleasesForApplication(appName)
 	if err != nil {
 		return nil, err
@@ -76,7 +76,7 @@ func (s releaseNamespaceLister) ContenderForApplication(appName string) (*shippe
 // ReleaseForInstallationTarget returns the Release associated with given
 // InstallationTarget. The relationship is established through owner
 // references.
-func (s releaseNamespaceLister) ReleaseForInstallationTarget(it *shipperV1.InstallationTarget) (*shipperV1.Release, error) {
+func (s releaseNamespaceLister) ReleaseForInstallationTarget(it *shipperv1.InstallationTarget) (*shipperv1.Release, error) {
 	owner, err := extractOwnerReference(it.ObjectMeta)
 	if err != nil {
 		return nil, err
@@ -88,7 +88,7 @@ func (s releaseNamespaceLister) ReleaseForInstallationTarget(it *shipperV1.Insta
 	}
 
 	if rel.UID != owner.UID {
-		return nil, shipperController.NewWrongOwnerReferenceError(it.Name, it.UID, rel.UID)
+		return nil, shippercontroller.NewWrongOwnerReferenceError(it.Name, it.UID, rel.UID)
 	}
 
 	return rel, nil
@@ -96,9 +96,9 @@ func (s releaseNamespaceLister) ReleaseForInstallationTarget(it *shipperV1.Insta
 
 // extractOwnerReference returns an owner reference for the given object meta,
 // or an error in the case there are multiple or no owner references.
-func extractOwnerReference(it metaV1.ObjectMeta) (*metaV1.OwnerReference, error) {
+func extractOwnerReference(it metav1.ObjectMeta) (*metav1.OwnerReference, error) {
 	if n := len(it.OwnerReferences); n != 1 {
-		return nil, shipperController.NewMultipleOwnerReferencesError(it.Name, n)
+		return nil, shippercontroller.NewMultipleOwnerReferencesError(it.Name, n)
 	}
 	return &it.OwnerReferences[0], nil
 }

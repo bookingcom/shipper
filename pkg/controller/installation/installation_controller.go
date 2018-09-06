@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -17,15 +16,15 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipperChart "github.com/bookingcom/shipper/pkg/chart"
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperchart "github.com/bookingcom/shipper/pkg/chart"
 	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	shipperInformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	shipperListers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	clientcache "github.com/bookingcom/shipper/pkg/clusterclientstore/cache"
 	"github.com/bookingcom/shipper/pkg/conditions"
-	shipperController "github.com/bookingcom/shipper/pkg/controller"
+	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 )
 
 const (
@@ -46,26 +45,26 @@ type Controller struct {
 
 	workqueue workqueue.RateLimitingInterface
 
-	appLister                 shipperListers.ApplicationLister
+	appLister                 shipperlisters.ApplicationLister
 	appSynced                 cache.InformerSynced
-	installationTargetsLister shipperListers.InstallationTargetLister
+	installationTargetsLister shipperlisters.InstallationTargetLister
 	installationTargetsSynced cache.InformerSynced
-	clusterLister             shipperListers.ClusterLister
+	clusterLister             shipperlisters.ClusterLister
 	clusterSynced             cache.InformerSynced
-	releaseLister             shipperListers.ReleaseLister
+	releaseLister             shipperlisters.ReleaseLister
 	releaseSynced             cache.InformerSynced
 	dynamicClientBuilderFunc  DynamicClientBuilderFunc
-	chartFetchFunc            shipperChart.FetchFunc
+	chartFetchFunc            shipperchart.FetchFunc
 	recorder                  record.EventRecorder
 }
 
 // NewController returns a new Installation controller.
 func NewController(
 	shipperclientset shipper.Interface,
-	shipperInformerFactory shipperInformers.SharedInformerFactory,
+	shipperInformerFactory shipperinformers.SharedInformerFactory,
 	store clusterclientstore.ClientProvider,
 	dynamicClientBuilderFunc DynamicClientBuilderFunc,
-	chartFetchFunc shipperChart.FetchFunc,
+	chartFetchFunc shipperchart.FetchFunc,
 	recorder record.EventRecorder,
 ) *Controller {
 
@@ -186,8 +185,8 @@ func (c *Controller) syncOne(key string) bool {
 	}
 
 	if err := c.processInstallation(it.DeepCopy()); err != nil {
-		shouldRetry := !shipperController.IsMultipleOwnerReferencesError(err) &&
-			!shipperController.IsWrongOwnerReferenceError(err) &&
+		shouldRetry := !shippercontroller.IsMultipleOwnerReferencesError(err) &&
+			!shippercontroller.IsWrongOwnerReferenceError(err) &&
 			!IsIncompleteReleaseError(err)
 
 		if shouldRetry {
@@ -212,7 +211,8 @@ func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 	c.workqueue.Add(key)
 }
 
-func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error {
+// processInstallation attempts to install the related release on all target clusters.
+func (c *Controller) processInstallation(it *shipperv1.InstallationTarget) error {
 	relNamespaceLister := c.releaseLister.Releases(it.Namespace)
 
 	release, err := relNamespaceLister.ReleaseForInstallationTarget(it)
@@ -220,9 +220,9 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 		return err
 	}
 
-	appName, ok := release.GetLabels()[shipperV1.AppLabel]
+	appName, ok := release.GetLabels()[shipperv1.AppLabel]
 	if !ok {
-		return NewIncompleteReleaseError(`couldn't find label %q in release %q`, shipperV1.AppLabel, release.Name)
+		return NewIncompleteReleaseError(`couldn't find label %q in release %q`, shipperv1.AppLabel, release.Name)
 	}
 
 	contenderRel, err := relNamespaceLister.ContenderForApplication(appName)
@@ -236,9 +236,9 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 		return nil
 	}
 
-	if appLabelValue, ok := release.GetLabels()[shipperV1.AppLabel]; !ok {
-		// TODO(isutton): transform this into a real error.
-		return fmt.Errorf("couldn't find label %q in release %q", shipperV1.AppLabel, release.GetName())
+	if appLabelValue, ok := release.GetLabels()[shipperv1.AppLabel]; !ok {
+		// TODO(isutton): Transform this into a real error
+		return fmt.Errorf("couldn't find label %q in release %q", shipperv1.AppLabel, release.GetName())
 	} else if app, appListerErr := c.appLister.Applications(release.GetNamespace()).Get(appLabelValue); appListerErr != nil {
 		// TODO(isutton): wrap this error.
 		return appListerErr
@@ -251,7 +251,7 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	handler := NewInstaller(c.chartFetchFunc, release, it)
 
 	// Build .status over based on the current .spec.clusters.
-	newClusterStatuses := make([]*shipperV1.ClusterInstallationStatus, 0, len(it.Spec.Clusters))
+	newClusterStatuses := make([]*shipperv1.ClusterInstallationStatus, 0, len(it.Spec.Clusters))
 
 	// Collect the existing conditions for clusters present in .spec.clusters in a
 	// map.
@@ -264,24 +264,24 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	// reason.
 	for _, name := range it.Spec.Clusters {
 
-		// IMPORTANT: Since we keep existing conditions from previous syncing points
-		// (as in existingConditionsPerCluster[name]), one needs to adjust all the
-		// dependent conditions. For example, whenever we transition "Operational" to
-		// "False", "Ready" *MUST* be transitioned to "Unknown" since we can't verify
-		// if it is actually "Ready".
-		status := &shipperV1.ClusterInstallationStatus{
+		// IMPORTANT: Since we keep existing conditions from previous syncing
+		// points (as in existingConditionsPerCluster[name]), one needs to
+		// adjust all the dependent conditions. For example, whenever we
+		// transition "Operational" to "False", "Ready" *MUST* be transitioned
+		// to "Unknown" since we can't verify if it is actually "Ready".
+		status := &shipperv1.ClusterInstallationStatus{
 			Name:       name,
 			Conditions: existingConditionsPerCluster[name],
 		}
 		newClusterStatuses = append(newClusterStatuses, status)
 
-		var cluster *shipperV1.Cluster
+		var cluster *shipperv1.Cluster
 		if cluster, err = c.clusterLister.Get(name); err != nil {
-			status.Status = shipperV1.InstallationStatusFailed
+			status.Status = shipperv1.InstallationStatusFailed
 			status.Message = err.Error()
-			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperV1.ClusterConditionTypeOperational, corev1.ConditionFalse, reasonForOperationalCondition(err), err.Error())
-			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperV1.ClusterConditionTypeReady, corev1.ConditionUnknown, reasonForReadyCondition(err), err.Error())
-			glog.Warningf("Get Cluster %q for InstallationTarget %q: %s", name, shipperController.MetaKey(it), err)
+			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperv1.ClusterConditionTypeOperational, corev1.ConditionFalse, reasonForOperationalCondition(err), err.Error())
+			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperv1.ClusterConditionTypeReady, corev1.ConditionUnknown, reasonForReadyCondition(err), err.Error())
+			glog.Warningf("Get Cluster %q for InstallationTarget %q: %s", name, shippercontroller.MetaKey(it), err)
 			continue
 		}
 
@@ -289,29 +289,29 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 		var restConfig *rest.Config
 		client, restConfig, err = c.GetClusterAndConfig(name)
 		if err != nil {
-			status.Status = shipperV1.InstallationStatusFailed
+			status.Status = shipperv1.InstallationStatusFailed
 			status.Message = err.Error()
-			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperV1.ClusterConditionTypeOperational, corev1.ConditionFalse, reasonForOperationalCondition(err), err.Error())
-			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperV1.ClusterConditionTypeReady, corev1.ConditionUnknown, reasonForReadyCondition(err), err.Error())
-			glog.Warningf("Get config for Cluster %q for InstallationTarget %q: %s", name, shipperController.MetaKey(it), err)
+			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperv1.ClusterConditionTypeOperational, corev1.ConditionFalse, reasonForOperationalCondition(err), err.Error())
+			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperv1.ClusterConditionTypeReady, corev1.ConditionUnknown, reasonForReadyCondition(err), err.Error())
+			glog.Warningf("Get config for Cluster %q for InstallationTarget %q: %s", name, shippercontroller.MetaKey(it), err)
 			continue
 		}
 
 		// At this point, we got a hold in a connection to the target cluster,
 		// so we assume it's operational until some other signal saying
 		// otherwise arrives.
-		status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperV1.ClusterConditionTypeOperational, corev1.ConditionTrue, "", "")
+		status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperv1.ClusterConditionTypeOperational, corev1.ConditionTrue, "", "")
 
 		if err = handler.installRelease(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
-			status.Status = shipperV1.InstallationStatusFailed
+			status.Status = shipperv1.InstallationStatusFailed
 			status.Message = err.Error()
-			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperV1.ClusterConditionTypeReady, corev1.ConditionFalse, reasonForReadyCondition(err), err.Error())
-			glog.Warningf("Install InstallationTarget %q for Cluster %q: %s", shipperController.MetaKey(it), name, err)
+			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperv1.ClusterConditionTypeReady, corev1.ConditionFalse, reasonForReadyCondition(err), err.Error())
+			glog.Warningf("Install InstallationTarget %q for Cluster %q: %s", shippercontroller.MetaKey(it), name, err)
 			continue
 		}
 
-		status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperV1.ClusterConditionTypeReady, corev1.ConditionTrue, "", "")
-		status.Status = shipperV1.InstallationStatusInstalled
+		status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperv1.ClusterConditionTypeReady, corev1.ConditionTrue, "", "")
+		status.Status = shipperv1.InstallationStatusInstalled
 	}
 
 	sort.Sort(byClusterName(newClusterStatuses))
@@ -324,7 +324,7 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 			corev1.EventTypeNormal,
 			"InstallationStatusChanged",
 			"Set %q status to %v",
-			shipperController.MetaKey(it),
+			shippercontroller.MetaKey(it),
 			newClusterStatuses,
 		)
 	} else {
@@ -339,10 +339,9 @@ func (c *Controller) processInstallation(it *shipperV1.InstallationTarget) error
 	return err
 }
 
-// extractExistingConditionsPerCluster builds a map with values being a list of
-// conditions.
-func extractExistingConditionsPerCluster(it *shipperV1.InstallationTarget) map[string][]shipperV1.ClusterInstallationCondition {
-	existingConditionsPerCluster := map[string][]shipperV1.ClusterInstallationCondition{}
+// extractExistingConditionsPerCluster builds a map with values being a list of conditions.
+func extractExistingConditionsPerCluster(it *shipperv1.InstallationTarget) map[string][]shipperv1.ClusterInstallationCondition {
+	existingConditionsPerCluster := map[string][]shipperv1.ClusterInstallationCondition{}
 	for _, name := range it.Spec.Clusters {
 		for _, s := range it.Status.Clusters {
 			if s.Name == name {

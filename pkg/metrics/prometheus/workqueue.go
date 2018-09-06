@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"sync"
 
-	"k8s.io/client-go/util/workqueue"
-
 	prom "github.com/prometheus/client_golang/prometheus"
+	"k8s.io/client-go/util/workqueue"
 )
 
 type PrometheusWorkqueueProvider struct {

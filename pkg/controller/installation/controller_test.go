@@ -12,7 +12,7 @@ import (
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
@@ -107,16 +107,16 @@ func TestInstallOneCluster(t *testing.T) {
 	// Now we need to check if the installation target process was properly
 	// patched.
 	it := installationTarget.DeepCopy()
-	it.Status.Clusters = []*shipperV1.ClusterInstallationStatus{
+	it.Status.Clusters = []*shipperv1.ClusterInstallationStatus{
 		{
-			Name: "minikube-a", Status: shipperV1.InstallationStatusInstalled,
-			Conditions: []shipperV1.ClusterInstallationCondition{
+			Name: "minikube-a", Status: shipperv1.InstallationStatusInstalled,
+			Conditions: []shipperv1.ClusterInstallationCondition{
 				{
-					Type:   shipperV1.ClusterConditionTypeOperational,
+					Type:   shipperv1.ClusterConditionTypeOperational,
 					Status: corev1.ConditionTrue,
 				},
 				{
-					Type:   shipperV1.ClusterConditionTypeReady,
+					Type:   shipperv1.ClusterConditionTypeReady,
 					Status: corev1.ConditionTrue,
 				},
 			},
@@ -188,31 +188,31 @@ func TestInstallMultipleClusters(t *testing.T) {
 	// Now we need to check if the installation target process was properly patched
 	// and the clusters are listed in alphabetical order.
 	it := installationTarget.DeepCopy()
-	it.Status.Clusters = []*shipperV1.ClusterInstallationStatus{
+	it.Status.Clusters = []*shipperv1.ClusterInstallationStatus{
 		{
 			Name:   "minikube-a",
-			Status: shipperV1.InstallationStatusInstalled,
-			Conditions: []shipperV1.ClusterInstallationCondition{
+			Status: shipperv1.InstallationStatusInstalled,
+			Conditions: []shipperv1.ClusterInstallationCondition{
 				{
-					Type:   shipperV1.ClusterConditionTypeOperational,
+					Type:   shipperv1.ClusterConditionTypeOperational,
 					Status: corev1.ConditionTrue,
 				},
 				{
-					Type:   shipperV1.ClusterConditionTypeReady,
+					Type:   shipperv1.ClusterConditionTypeReady,
 					Status: corev1.ConditionTrue,
 				},
 			},
 		},
 		{
 			Name:   "minikube-b",
-			Status: shipperV1.InstallationStatusInstalled,
-			Conditions: []shipperV1.ClusterInstallationCondition{
+			Status: shipperv1.InstallationStatusInstalled,
+			Conditions: []shipperv1.ClusterInstallationCondition{
 				{
-					Type:   shipperV1.ClusterConditionTypeOperational,
+					Type:   shipperv1.ClusterConditionTypeOperational,
 					Status: corev1.ConditionTrue,
 				},
 				{
-					Type:   shipperV1.ClusterConditionTypeReady,
+					Type:   shipperv1.ClusterConditionTypeReady,
 					Status: corev1.ConditionTrue,
 				},
 			},
@@ -314,20 +314,20 @@ func TestClientError(t *testing.T) {
 	}
 
 	it := installationTarget.DeepCopy()
-	it.Status.Clusters = []*shipperV1.ClusterInstallationStatus{
+	it.Status.Clusters = []*shipperv1.ClusterInstallationStatus{
 		{
 			Name:    "minikube-a",
-			Status:  shipperV1.InstallationStatusFailed,
+			Status:  shipperv1.InstallationStatusFailed,
 			Message: "client error",
-			Conditions: []shipperV1.ClusterInstallationCondition{
+			Conditions: []shipperv1.ClusterInstallationCondition{
 				{
-					Type:    shipperV1.ClusterConditionTypeOperational,
+					Type:    shipperv1.ClusterConditionTypeOperational,
 					Status:  corev1.ConditionFalse,
 					Reason:  conditions.ServerError,
 					Message: "client error",
 				},
 				{
-					Type:    shipperV1.ClusterConditionTypeReady,
+					Type:    shipperv1.ClusterConditionTypeReady,
 					Status:  corev1.ConditionUnknown,
 					Reason:  conditions.ServerError,
 					Message: "client error",
@@ -393,18 +393,18 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 	}
 
 	it := installationTarget.DeepCopy()
-	it.Status.Clusters = []*shipperV1.ClusterInstallationStatus{
+	it.Status.Clusters = []*shipperv1.ClusterInstallationStatus{
 		{
 			Name:    "minikube-a",
-			Status:  shipperV1.InstallationStatusFailed,
+			Status:  shipperv1.InstallationStatusFailed,
 			Message: `error building resource client: GroupVersion "v1" not found`,
-			Conditions: []shipperV1.ClusterInstallationCondition{
+			Conditions: []shipperv1.ClusterInstallationCondition{
 				{
-					Type:   shipperV1.ClusterConditionTypeOperational,
+					Type:   shipperv1.ClusterConditionTypeOperational,
 					Status: corev1.ConditionTrue,
 				},
 				{
-					Type:    shipperV1.ClusterConditionTypeReady,
+					Type:    shipperv1.ClusterConditionTypeReady,
 					Status:  corev1.ConditionFalse,
 					Reason:  conditions.ServerError,
 					Message: `error building resource client: GroupVersion "v1" not found`,
@@ -469,20 +469,20 @@ func TestManagementServerMissesCluster(t *testing.T) {
 	}
 
 	it := installationTarget.DeepCopy()
-	it.Status.Clusters = []*shipperV1.ClusterInstallationStatus{
+	it.Status.Clusters = []*shipperv1.ClusterInstallationStatus{
 		{
 			Name:    "minikube-a",
-			Status:  shipperV1.InstallationStatusFailed,
+			Status:  shipperv1.InstallationStatusFailed,
 			Message: `cluster.shipper.booking.com "minikube-a" not found`,
-			Conditions: []shipperV1.ClusterInstallationCondition{
+			Conditions: []shipperv1.ClusterInstallationCondition{
 				{
-					Type:    shipperV1.ClusterConditionTypeOperational,
+					Type:    shipperv1.ClusterConditionTypeOperational,
 					Status:  corev1.ConditionFalse,
 					Reason:  conditions.ServerError,
 					Message: `cluster.shipper.booking.com "minikube-a" not found`,
 				},
 				{
-					Type:    shipperV1.ClusterConditionTypeReady,
+					Type:    shipperv1.ClusterConditionTypeReady,
 					Status:  corev1.ConditionUnknown,
 					Reason:  conditions.ServerError,
 					Message: `cluster.shipper.booking.com "minikube-a" not found`,

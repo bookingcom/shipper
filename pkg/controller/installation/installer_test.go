@@ -4,29 +4,29 @@ import (
 	"reflect"
 	"testing"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	"github.com/bookingcom/shipper/pkg/controller/janitor"
-	shippertesting "github.com/bookingcom/shipper/pkg/testing"
-	"k8s.io/apimachinery/pkg/util/diff"
-
-	appsV1 "k8s.io/api/apps/v1"
-	coreV1 "k8s.io/api/core/v1"
-	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/diff"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
+
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/controller/janitor"
+	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
 // apiResourceList contains a list of APIResources containing some of v1 and
 // extensions/v1beta1 resources from Kubernetes, since fake clients by default
 // don't contain any reference which resources it can handle.
-var apiResourceList = []*metaV1.APIResourceList{
+var apiResourceList = []*metav1.APIResourceList{
 	{
 		GroupVersion: "v1",
-		APIResources: []metaV1.APIResource{
+		APIResources: []metav1.APIResource{
 			{
 				Kind:       "Namespace",
 				Namespaced: false,
@@ -49,7 +49,7 @@ var apiResourceList = []*metaV1.APIResourceList{
 	},
 	{
 		GroupVersion: "extensions/v1beta1",
-		APIResources: []metaV1.APIResource{
+		APIResources: []metav1.APIResource{
 
 			{
 				Kind:       "Deployment",
@@ -60,7 +60,7 @@ var apiResourceList = []*metaV1.APIResourceList{
 	},
 	{
 		GroupVersion: "apps/v1",
-		APIResources: []metaV1.APIResource{
+		APIResources: []metav1.APIResource{
 
 			{
 				Kind:       "Deployment",
@@ -150,7 +150,7 @@ func validateAction(t *testing.T, a kubetesting.Action, k string) runtime.Object
 	return nil
 }
 
-func validateServiceCreateAction(t *testing.T, existingService *coreV1.Service, obj runtime.Object) {
+func validateServiceCreateAction(t *testing.T, existingService *corev1.Service, obj runtime.Object) {
 	scheme := kubescheme.Scheme
 
 	unstructuredObj, unstructuredContent := extractUnstructuredContent(scheme, obj)
@@ -158,8 +158,8 @@ func validateServiceCreateAction(t *testing.T, existingService *coreV1.Service, 
 	// First we test the data that is expected to be in the created service
 	// object, since we delete keys on the underlying unstructured object
 	// later on, when comparing spec and metadata.
-	if _, ok := unstructuredObj.GetLabels()[shipperV1.ReleaseLabel]; !ok {
-		t.Fatalf("could not find %q in Deployment .metadata.labels", shipperV1.ReleaseLabel)
+	if _, ok := unstructuredObj.GetLabels()[shipperv1.ReleaseLabel]; !ok {
+		t.Fatalf("could not find %q in Deployment .metadata.labels", shipperv1.ReleaseLabel)
 	}
 
 	_, expectedUnstructuredServiceContent := extractUnstructuredContent(scheme, existingService)
@@ -192,20 +192,20 @@ func validateDeploymentCreateAction(t *testing.T, obj runtime.Object) {
 	if err != nil {
 		panic(err)
 	}
-	if _, ok := u.GetLabels()[shipperV1.ReleaseLabel]; !ok {
-		t.Fatalf("could not find %q in Deployment .metadata.labels", shipperV1.ReleaseLabel)
+	if _, ok := u.GetLabels()[shipperv1.ReleaseLabel]; !ok {
+		t.Fatalf("could not find %q in Deployment .metadata.labels", shipperv1.ReleaseLabel)
 	}
 
-	deployment := &appsV1.Deployment{}
+	deployment := &appsv1.Deployment{}
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, deployment); err != nil {
 		t.Fatalf("could not decode deployment from unstructured: %s", err)
 	}
 
-	if _, ok := deployment.Spec.Selector.MatchLabels[shipperV1.ReleaseLabel]; !ok {
+	if _, ok := deployment.Spec.Selector.MatchLabels[shipperv1.ReleaseLabel]; !ok {
 		t.Fatal("deployment .spec.selector.matchLabels doesn't contain shipperV1.ReleaseLabel")
 	}
 
-	if _, ok := deployment.Spec.Template.Labels[shipperV1.ReleaseLabel]; !ok {
+	if _, ok := deployment.Spec.Template.Labels[shipperv1.ReleaseLabel]; !ok {
 		t.Fatal("deployment .spec.template.labels doesn't contain shipperV1.ReleaseLabel")
 	}
 

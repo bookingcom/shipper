@@ -6,28 +6,28 @@ import (
 	"path/filepath"
 	"time"
 
-	coreV1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/dynamic"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
+	fakedynamic "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/chart"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 var chartFetchFunc = chart.FetchRemoteWithCache("testdata/chart-cache", chart.DefaultCacheLimit)
@@ -57,8 +57,8 @@ func (f *FakeClientProvider) GetConfig(clusterName string) (*rest.Config, error)
 	}
 }
 
-func loadService(variant string) *coreV1.Service {
-	service := &coreV1.Service{}
+func loadService(variant string) *corev1.Service {
+	service := &corev1.Service{}
 	serviceYamlPath := filepath.Join("testdata", fmt.Sprintf("service-%s.yaml", variant))
 
 	if serviceRaw, err := ioutil.ReadFile(serviceYamlPath); err != nil {
@@ -70,59 +70,59 @@ func loadService(variant string) *coreV1.Service {
 	return service
 }
 
-func buildApplication(appName, ns string) *shipperV1.Application {
-	return &shipperV1.Application{
+func buildApplication(appName, ns string) *shipperv1.Application {
+	return &shipperv1.Application{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      appName,
 			Namespace: ns,
 		},
-		Status: shipperV1.ApplicationStatus{
+		Status: shipperv1.ApplicationStatus{
 			History: []string{"0.0.1"},
 		},
-		Spec: shipperV1.ApplicationSpec{
-			Template: shipperV1.ReleaseEnvironment{
-				ClusterRequirements: shipperV1.ClusterRequirements{
-					Regions: []shipperV1.RegionRequirement{{Name: shippertesting.TestRegion}},
+		Spec: shipperv1.ApplicationSpec{
+			Template: shipperv1.ReleaseEnvironment{
+				ClusterRequirements: shipperv1.ClusterRequirements{
+					Regions: []shipperv1.RegionRequirement{{Name: shippertesting.TestRegion}},
 				},
-				Chart: shipperV1.Chart{
+				Chart: shipperv1.Chart{
 					Name:    "nginx",
 					Version: "0.1.0",
 					RepoURL: "https://chartmuseum.local/charts",
 				},
-				Values: &shipperV1.ChartValues{
+				Values: &shipperv1.ChartValues{
 					"replicaCount": "10",
 				},
-				Strategy: &shipperV1.RolloutStrategy{
-					Steps: []shipperV1.RolloutStrategyStep{
+				Strategy: &shipperv1.RolloutStrategy{
+					Steps: []shipperv1.RolloutStrategyStep{
 						{
 							Name: "staging",
-							Capacity: shipperV1.RolloutStrategyStepValue{
+							Capacity: shipperv1.RolloutStrategyStepValue{
 								Contender: 1,
 								Incumbent: 100,
 							},
-							Traffic: shipperV1.RolloutStrategyStepValue{
+							Traffic: shipperv1.RolloutStrategyStepValue{
 								Contender: 0,
 								Incumbent: 100,
 							},
 						},
 						{
 							Name: "50/50",
-							Capacity: shipperV1.RolloutStrategyStepValue{
+							Capacity: shipperv1.RolloutStrategyStepValue{
 								Contender: 50,
 								Incumbent: 50,
 							},
-							Traffic: shipperV1.RolloutStrategyStepValue{
+							Traffic: shipperv1.RolloutStrategyStepValue{
 								Contender: 50,
 								Incumbent: 50,
 							},
 						},
 						{
 							Name: "full on",
-							Capacity: shipperV1.RolloutStrategyStepValue{
+							Capacity: shipperv1.RolloutStrategyStepValue{
 								Contender: 100,
 								Incumbent: 0,
 							},
-							Traffic: shipperV1.RolloutStrategyStepValue{
+							Traffic: shipperv1.RolloutStrategyStepValue{
 								Contender: 100,
 								Incumbent: 0,
 							},
@@ -135,12 +135,12 @@ func buildApplication(appName, ns string) *shipperV1.Application {
 }
 
 // buildCluster returns a cluster.
-func buildCluster(name string) *shipperV1.Cluster {
-	return &shipperV1.Cluster{
+func buildCluster(name string) *shipperv1.Cluster {
+	return &shipperv1.Cluster{
 		ObjectMeta: v1.ObjectMeta{
 			Name: name,
 		},
-		Status: shipperV1.ClusterStatus{
+		Status: shipperv1.ClusterStatus{
 			InService: true,
 		},
 	}
@@ -155,7 +155,7 @@ func populateFakeDiscovery(discovery discovery.DiscoveryInterface, apiResourceLi
 type objectsPerClusterMap map[string][]runtime.Object
 type fakePair struct {
 	fakeClient        kubernetes.Interface
-	fakeDynamicClient *dynamicfake.FakeClient
+	fakeDynamicClient *fakedynamic.FakeClient
 }
 type clientsPerClusterMap map[string]fakePair
 
@@ -172,13 +172,13 @@ func initializeClients(apiResourceList []*v1.APIResourceList, shipperObjects []r
 	for clusterName, objs := range kubeObjectsPerCluster {
 		fakeClient := kubefake.NewSimpleClientset(objs...)
 		populateFakeDiscovery(fakeClient.Discovery(), apiResourceList)
-		fakeDynamicClient := &dynamicfake.FakeClient{
+		fakeDynamicClient := &fakedynamic.FakeClient{
 			Fake: &fakeClient.Fake,
 		}
 		clientsPerCluster[clusterName] = fakePair{fakeClient: fakeClient, fakeDynamicClient: fakeDynamicClient}
 	}
 
-	fakeDynamicClientBuilder := func(kind *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipperV1.Cluster) dynamic.Interface {
+	fakeDynamicClientBuilder := func(kind *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipperv1.Cluster) dynamic.Interface {
 		if fdc, ok := clientsPerCluster[cluster.Name]; ok {
 			fdc.fakeDynamicClient.GroupVersion = kind.GroupVersion()
 			return fdc.fakeDynamicClient
@@ -222,27 +222,27 @@ func newController(
 	return c
 }
 
-func newInstaller(release *shipperV1.Release, it *shipperV1.InstallationTarget) *Installer {
+func newInstaller(release *shipperv1.Release, it *shipperv1.InstallationTarget) *Installer {
 	return NewInstaller(chartFetchFunc, release, it)
 }
 
-func buildRelease(name, namespace, generation, uid, appName string) *shipperV1.Release {
-	return &shipperV1.Release{
-		ReleaseMeta: shipperV1.ReleaseMeta{
+func buildRelease(name, namespace, generation, uid, appName string) *shipperv1.Release {
+	return &shipperv1.Release{
+		ReleaseMeta: shipperv1.ReleaseMeta{
 			ObjectMeta: v1.ObjectMeta{
 				Name:      name,
 				Namespace: namespace,
 				UID:       types.UID(uid),
 				Labels: map[string]string{
-					shipperV1.AppLabel:     appName,
-					shipperV1.ReleaseLabel: name,
+					shipperv1.AppLabel:     appName,
+					shipperv1.ReleaseLabel: name,
 				},
 				Annotations: map[string]string{
-					shipperV1.ReleaseGenerationAnnotation: generation,
+					shipperv1.ReleaseGenerationAnnotation: generation,
 				},
 			},
-			Environment: shipperV1.ReleaseEnvironment{
-				Chart: shipperV1.Chart{
+			Environment: shipperv1.ReleaseEnvironment{
+				Chart: shipperv1.Chart{
 					Name:    "reviews-api",
 					Version: "0.0.1",
 					RepoURL: "localhost",
@@ -252,8 +252,8 @@ func buildRelease(name, namespace, generation, uid, appName string) *shipperV1.R
 	}
 }
 
-func buildInstallationTargetWithOwner(ownerName, ownerUID, namespace, appName string, clusters []string) *shipperV1.InstallationTarget {
-	return &shipperV1.InstallationTarget{
+func buildInstallationTargetWithOwner(ownerName, ownerUID, namespace, appName string, clusters []string) *shipperv1.InstallationTarget {
+	return &shipperv1.InstallationTarget{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      ownerName,
 			Namespace: namespace,
@@ -266,16 +266,16 @@ func buildInstallationTargetWithOwner(ownerName, ownerUID, namespace, appName st
 				},
 			},
 			Labels: map[string]string{
-				shipperV1.AppLabel:     appName,
-				shipperV1.ReleaseLabel: ownerName,
+				shipperv1.AppLabel:     appName,
+				shipperv1.ReleaseLabel: ownerName,
 			},
 		},
-		Spec: shipperV1.InstallationTargetSpec{
+		Spec: shipperv1.InstallationTargetSpec{
 			Clusters: clusters,
 		},
 	}
 }
 
-func buildInstallationTarget(owner *shipperV1.Release, namespace, appName string, clusters []string) *shipperV1.InstallationTarget {
+func buildInstallationTarget(owner *shipperv1.Release, namespace, appName string, clusters []string) *shipperv1.InstallationTarget {
 	return buildInstallationTargetWithOwner(owner.Name, string(owner.UID), namespace, appName, clusters)
 }

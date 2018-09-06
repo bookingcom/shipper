@@ -2,16 +2,14 @@ package testing
 
 import (
 	"fmt"
-
 	"reflect"
 	"testing"
 	"time"
 
-	"k8s.io/apimachinery/pkg/util/diff"
-	kubetesting "k8s.io/client-go/testing"
-
 	"github.com/ghodss/yaml"
 	"github.com/pmezard/go-difflib/difflib"
+	"k8s.io/apimachinery/pkg/util/diff"
+	kubetesting "k8s.io/client-go/testing"
 )
 
 const (

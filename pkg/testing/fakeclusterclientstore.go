@@ -1,10 +1,11 @@
 package testing
 
 import (
-	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+
+	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 )
 
 func NewFakeClusterClientStore(

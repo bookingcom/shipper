@@ -4,20 +4,21 @@ import (
 	"sort"
 	"time"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	coreV1 "k8s.io/api/core/v1"
-	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 )
 
 var CapacityConditionsShouldDiscardTimestamps = false
 
 func SetCapacityCondition(
-	conditions []shipperV1.ClusterCapacityCondition,
-	typ shipperV1.ClusterConditionType,
-	status coreV1.ConditionStatus,
+	conditions []shipperv1.ClusterCapacityCondition,
+	typ shipperv1.ClusterConditionType,
+	status corev1.ConditionStatus,
 	reason string,
 	message string,
-) []shipperV1.ClusterCapacityCondition {
+) []shipperv1.ClusterCapacityCondition {
 
 	conditionIndex := -1
 	for i := range conditions {
@@ -28,11 +29,11 @@ func SetCapacityCondition(
 	}
 
 	if conditionIndex == -1 {
-		lastTransitionTime := metaV1.Time{}
+		lastTransitionTime := metav1.Time{}
 		if !CapacityConditionsShouldDiscardTimestamps {
-			lastTransitionTime = metaV1.NewTime(time.Now())
+			lastTransitionTime = metav1.NewTime(time.Now())
 		}
-		aCondition := shipperV1.ClusterCapacityCondition{
+		aCondition := shipperv1.ClusterCapacityCondition{
 			Type:               typ,
 			Status:             status,
 			LastTransitionTime: lastTransitionTime,
@@ -47,9 +48,9 @@ func SetCapacityCondition(
 		aCondition := &conditions[conditionIndex]
 		if aCondition.Status != status {
 			if CapacityConditionsShouldDiscardTimestamps {
-				aCondition.LastTransitionTime = metaV1.Time{}
+				aCondition.LastTransitionTime = metav1.Time{}
 			} else {
-				aCondition.LastTransitionTime = metaV1.NewTime(time.Now())
+				aCondition.LastTransitionTime = metav1.NewTime(time.Now())
 			}
 		}
 		aCondition.Status = status
