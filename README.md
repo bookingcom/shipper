@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/bookingcom/shipper.svg?branch=master)](https://travis-ci.org/bookingcom/shipper)
+
 # Shipper: Kubernetes native multi-cluster canary or blue-green rollouts
 
 Shipper is a set of controllers for orchestrating rollouts to multiple
