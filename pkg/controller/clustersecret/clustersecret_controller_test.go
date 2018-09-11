@@ -23,7 +23,10 @@ import (
 	"github.com/bookingcom/shipper/pkg/tls"
 )
 
-var tlsPair = tls.Pair{"../../tls/testdata/tls.crt", "../../tls/testdata/tls.key"}
+var tlsPair = tls.Pair{
+	CrtPath: "../../tls/testdata/tls.crt",
+	KeyPath: "../../tls/testdata/tls.key",
+}
 
 func TestNewCluster(t *testing.T) {
 	f := newFixture(t)

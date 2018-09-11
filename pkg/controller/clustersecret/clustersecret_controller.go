@@ -63,7 +63,7 @@ func NewController(
 		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "clustersecret_controller_secrets"),
 		recorder:  recorder,
 
-		tls:          tls.Pair{certPath, keyPath},
+		tls:          tls.Pair{CrtPath: certPath, KeyPath: keyPath},
 		ownNamespace: ownNamespace,
 	}
 
