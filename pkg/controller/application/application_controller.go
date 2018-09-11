@@ -19,9 +19,9 @@ import (
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/conditions"
-	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
-	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	"github.com/bookingcom/shipper/pkg/errors"
+	apputil "github.com/bookingcom/shipper/pkg/util/application"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 const (
