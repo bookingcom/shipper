@@ -463,9 +463,7 @@ func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerF
 	const syncPeriod time.Duration = 0
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(f.client, syncPeriod)
 
-	f.clientPool = &fakedynamic.FakeClientPool{
-		Fake: f.client.Fake,
-	}
+	f.clientPool = &fakedynamic.FakeClientPool{}
 
 	f.recorder = record.NewFakeRecorder(42)
 
