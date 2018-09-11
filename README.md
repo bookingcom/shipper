@@ -13,7 +13,7 @@ object definitions have changed a little bit since then, but this is still
 a good way to get a general idea of what problem Shipper is solving and how it
 looks in action.
 
-<iframe width="640" height="400" src="https://www.youtube.com/embed/5BLD0d_VzNU?start=93" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+[![shipper sig-apps demo](https://img.youtube.com/vi/5BLD0d_VzNU/0.jpg)](https://youtu.be/5BLD0d_VzNU?t=96)
 
 ## WIP
 
