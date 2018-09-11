@@ -21,7 +21,7 @@ import (
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
-var chartFetchFunc = shipperchart.FetchRemoteWithCache("testdata/chart-cache", chart.DefaultCacheLimit)
+var chartFetchFunc = shipperchart.FetchRemoteWithCache("testdata/chart-cache", shipperchart.DefaultCacheLimit)
 
 func init() {
 	releaseutil.ConditionsShouldDiscardTimestamps = true
