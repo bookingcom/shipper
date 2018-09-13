@@ -82,6 +82,9 @@ func extractGVR(path string) string {
 
 	if prefix == "apis" {
 		switch len(pieces) {
+		case 2:
+			// shipper.booking.com/v1
+			gvr = pieces[0] + "/" + pieces[1] // not a GVR but still useful to see
 		case 3:
 			// shipper.booking.com/v1/traffictargets
 			gvr = pieces[0] + "/" + pieces[1] + "/" + pieces[2]
