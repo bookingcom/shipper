@@ -2,9 +2,11 @@
 
 # Shipper: Kubernetes native multi-cluster canary or blue-green rollouts
 
-Shipper is a set of controllers for orchestrating rollouts to multiple
+Shipper is a set of controllers for orchestrating rollouts to one or many
 Kubernetes clusters. It uses Helm charts and CRDs to specify what should be
-deployed, and how it should be rolled out.
+deployed, and how it should be rolled out. It provides functionality on top of
+core Kubernetes Deployment objects by automating blue/green or canary rollout
+patterns, including traffic shifting between versions.
 
 ## What does it do?
 
