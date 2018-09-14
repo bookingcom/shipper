@@ -2,6 +2,11 @@ language: go
 go:
 - "1.10"
 
+sudo: required
+
+services:
+- docker
+
 env:
 - RESYNC_PERIOD=30s
 
@@ -20,8 +25,4 @@ before_script:
 - git clone --depth=1 https://github.com/kubernetes/kubernetes.git $GOPATH/src/k8s.io/kubernetes
 
 script:
-- dep status -v
-- ./hack/verify-codegen.sh
-- gometalinter --vendor --skip=pkg/apis/shipper/v1 --skip=pkg/client --disable-all --enable=vet --enable=ineffassign --enable=deadcode --enable=goconst --enable=megacheck ./...
-- go test -v $(go list ./... | grep -v /vendor/)
-- ./ci/e2e.sh "$RESYNC_PERIOD"
+- ./ci/test.sh && ./ci/build.sh && ./ci/package.sh
