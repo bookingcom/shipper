@@ -1,4 +1,5 @@
-FROM alpine:3.8
+ARG BASE_IMAGE=alpine:3.8
+FROM ${BASE_IMAGE}
 LABEL authors="Parham Doustdar <parham.doustdar@booking.com>, Alexey Surikov <alexey.surikov@booking.com>, Igor Sutton <igor.sutton@booking.com>, Ben Tyler <benjamin.tyler@booking.com>"
 ADD shipper-state-metrics /bin/shipper-state-metrics
 ENTRYPOINT ["shipper-state-metrics", "-v", "2"]
