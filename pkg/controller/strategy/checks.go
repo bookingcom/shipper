@@ -1,6 +1,9 @@
 package strategy
 
-import shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+import (
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	replicasutil "github.com/bookingcom/shipper/pkg/util/replicas"
+)
 
 func checkInstallation(contenderRelease *releaseInfo) (bool, []string) {
 	clustersFromStatus := contenderRelease.installationTarget.Status.Clusters
@@ -45,10 +48,11 @@ func checkInstallation(contenderRelease *releaseInfo) (bool, []string) {
 }
 
 type capacityState struct {
-	achievedCapacity  uint
-	desiredCapacity   uint
-	stepCapacity      uint
-	totalReplicaCount int32
+	achievedCapacity    uint
+	desiredCapacity     uint
+	stepCapacity        uint
+	totalReplicaCount   int32
+	currentReplicaCount int32
 }
 
 // outdated     -> false, newSpec, nil
@@ -58,7 +62,6 @@ type capacityState struct {
 func checkCapacity(
 	capacityTarget *shipperv1.CapacityTarget,
 	stepCapacity uint,
-	compFn func(achieved, desired, total uint) bool,
 ) (
 	bool,
 	*shipperv1.CapacityTargetSpec,
@@ -92,6 +95,7 @@ func checkCapacity(
 			return false, nil, nil
 		}
 		cd.achievedCapacity = uint(status.AchievedPercent)
+		cd.currentReplicaCount = status.AvailableReplicas
 		clusterCapacityData[status.Name] = cd
 	}
 
@@ -109,7 +113,7 @@ func checkCapacity(
 			newSpec.Clusters = append(newSpec.Clusters, r)
 			canProceed = false
 			clustersNotReady = append(clustersNotReady, clusterName)
-		} else if !compFn(v.achievedCapacity, v.desiredCapacity, uint(v.totalReplicaCount)) {
+		} else if !replicasutil.AchievedDesiredReplicaPercentage(uint(v.totalReplicaCount), uint(v.currentReplicaCount), v.desiredCapacity) {
 			canProceed = false
 			clustersNotReady = append(clustersNotReady, clusterName)
 		}

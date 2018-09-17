@@ -22,6 +22,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
+	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 
 func init() {
@@ -40,6 +41,9 @@ func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.
 		// Strategy specifies that step 0 the contender has a minimum number of pods
 		// (1), no traffic yet.
 		contender.capacityTarget.Spec.Clusters[0].Percent = 1
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = 1
+		incumbent.capacityTarget.Spec.Clusters[0].Percent = 100
+		incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(totalReplicaCount)
 
 		f.addObjects(contender, incumbent)
 
@@ -88,21 +92,26 @@ func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
 		// We'll set cluster 0 to be all set, but make cluster 1 broken.
 		contender.release.Spec.TargetStep = 1
 		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
 		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, 50))
 		contender.trafficTarget.Spec.Clusters[0].Weight = 50
 		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
-		contender.capacityTarget.Spec.Clusters[1].Percent = 50
 		// No capacity yet.
+		contender.capacityTarget.Spec.Clusters[1].Percent = 50
+		contender.capacityTarget.Spec.Clusters[1].TotalReplicaCount = int32(totalReplicaCount)
 		contender.capacityTarget.Status.Clusters[1].AchievedPercent = 0
-
+		contender.capacityTarget.Status.Clusters[1].AvailableReplicas = 0
 		contender.trafficTarget.Spec.Clusters[1].Weight = 50
 		contender.trafficTarget.Status.Clusters[1].AchievedTraffic = 50
 
 		incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
 		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 		incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
+		incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
 		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, 50))
 
 		f.addObjects(contender, incumbent)
 
@@ -122,15 +131,20 @@ func TestContenderDoNothingClusterTrafficNotReady(t *testing.T) {
 
 		brokenClusterName := "broken-traffic-cluster"
 		addCluster(contender, brokenClusterName)
+
 		// We'll set cluster 0 to be all set, but make cluster 1 broken.
 		contender.release.Spec.TargetStep = 1
 		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
 		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, 50))
 		contender.trafficTarget.Spec.Clusters[0].Weight = 50
 		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
 		contender.capacityTarget.Spec.Clusters[1].Percent = 50
+		contender.capacityTarget.Spec.Clusters[1].TotalReplicaCount = int32(totalReplicaCount)
 		contender.capacityTarget.Status.Clusters[1].AchievedPercent = 50
+		contender.capacityTarget.Status.Clusters[1].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, 50))
 
 		contender.trafficTarget.Spec.Clusters[1].Weight = 50
 		// No traffic yet.
@@ -139,7 +153,9 @@ func TestContenderDoNothingClusterTrafficNotReady(t *testing.T) {
 		incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
 		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 		incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
+		incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
 		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, 50))
 
 		f.addObjects(contender, incumbent)
 
@@ -185,7 +201,9 @@ func TestContenderTrafficShouldIncrease(t *testing.T) {
 
 		contender.release.Spec.TargetStep = 1
 		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
 		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, 50))
 
 		f.addObjects(contender, incumbent)
 
@@ -206,7 +224,9 @@ func TestIncumbentTrafficShouldDecrease(t *testing.T) {
 
 		contender.release.Spec.TargetStep = 1
 		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
 		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, 50))
 		contender.trafficTarget.Spec.Clusters[0].Weight = 50
 		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
@@ -229,9 +249,12 @@ func TestIncumbentCapacityShouldDecrease(t *testing.T) {
 
 		contender.release.Spec.TargetStep = 1
 		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
 		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, 50))
 		contender.trafficTarget.Spec.Clusters[0].Weight = 50
 		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+
 		incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
 		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
@@ -254,13 +277,17 @@ func TestContenderReleasePhaseIsWaitingForCommandForFinalStepState(t *testing.T)
 
 		contender.release.Spec.TargetStep = 1
 		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
 		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, 50))
 		contender.trafficTarget.Spec.Clusters[0].Weight = 50
 		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 		incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
 		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 		incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
+		incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
 		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, 50))
 
 		f.addObjects(contender, incumbent)
 
@@ -280,7 +307,9 @@ func TestContenderReleaseIsInstalled(t *testing.T) {
 
 		contender.release.Spec.TargetStep = 2
 		contender.capacityTarget.Spec.Clusters[0].Percent = 100
+		contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
 		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 100
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(totalReplicaCount)
 		contender.trafficTarget.Spec.Clusters[0].Weight = 100
 		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 100
 		releaseutil.SetReleaseCondition(&contender.release.Status, shipperv1.ReleaseCondition{Type: shipperv1.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue, Reason: "", Message: ""})
@@ -289,6 +318,7 @@ func TestContenderReleaseIsInstalled(t *testing.T) {
 		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 0
 		incumbent.capacityTarget.Spec.Clusters[0].Percent = 0
 		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 0
+		incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = 0
 
 		f.addObjects(contender, incumbent)
 
@@ -309,9 +339,13 @@ func workingOnContenderCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
 
 	contender.release.Spec.TargetStep = 1
 
+	achievedCapacityPercentage := 100 - int32(percent)
+
 	// Working on contender capacity.
 	contender.capacityTarget.Spec.Clusters[0].Percent = 50
-	contender.capacityTarget.Status.Clusters[0].AchievedPercent = int32(percent)
+	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
+	contender.capacityTarget.Status.Clusters[0].AchievedPercent = achievedCapacityPercentage
+	contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, uint(achievedCapacityPercentage)))
 
 	f.addObjects(contender, incumbent)
 
@@ -333,7 +367,9 @@ func workingOnContenderTraffic(percent int, wg *sync.WaitGroup, t *testing.T) {
 
 	// Desired contender capacity achieved.
 	contender.capacityTarget.Spec.Clusters[0].Percent = 50
+	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
 	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+	contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, 50))
 
 	// Working on contender traffic.
 	contender.trafficTarget.Spec.Clusters[0].Weight = 50
@@ -360,7 +396,9 @@ func workingOnIncumbentTraffic(percent int, wg *sync.WaitGroup, t *testing.T) {
 
 	// Desired contender capacity achieved.
 	contender.capacityTarget.Spec.Clusters[0].Percent = 50
+	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
 	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+	contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, 50))
 
 	// Desired contender traffic achieved.
 	contender.trafficTarget.Spec.Clusters[0].Weight = 50
@@ -390,7 +428,9 @@ func workingOnIncumbentCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
 
 	// Desired contender capacity achieved.
 	contender.capacityTarget.Spec.Clusters[0].Percent = 50
+	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
 	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+	contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, 50))
 
 	// Desired contender traffic achieved.
 	contender.trafficTarget.Spec.Clusters[0].Weight = 50
@@ -401,8 +441,11 @@ func workingOnIncumbentCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
 	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
 	// Working on incumbent capacity.
+	incumbentAchievedCapacityPercentage := 100 - int32(percent)
 	incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
-	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 100 - int32(percent)
+	incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
+	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = incumbentAchievedCapacityPercentage
+	incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, uint(incumbentAchievedCapacityPercentage)))
 
 	f.addObjects(contender, incumbent)
 

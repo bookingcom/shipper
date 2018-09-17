@@ -131,7 +131,7 @@ func (s *Executor) execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 		//
 		capacityWeight := strategyStep.Capacity.Contender
 
-		if achieved, newSpec, clustersNotReady := checkCapacity(s.contender.capacityTarget, uint(capacityWeight), contenderCapacityComparison); !achieved {
+		if achieved, newSpec, clustersNotReady := checkCapacity(s.contender.capacityTarget, uint(capacityWeight)); !achieved {
 			s.info("contender %q hasn't achieved capacity yet", s.contender.release.Name)
 
 			var patches []ExecutorResult
@@ -257,7 +257,7 @@ func (s *Executor) execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 		//
 		capacityWeight := strategyStep.Capacity.Incumbent
 
-		if achieved, newSpec, clustersNotReady := checkCapacity(s.incumbent.capacityTarget, uint(capacityWeight), incumbentCapacityComparison); !achieved {
+		if achieved, newSpec, clustersNotReady := checkCapacity(s.incumbent.capacityTarget, uint(capacityWeight)); !achieved {
 			s.info("incumbent %q hasn't achieved capacity yet", s.incumbent.release.Name)
 
 			var patches []ExecutorResult
