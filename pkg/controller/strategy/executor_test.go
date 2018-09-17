@@ -11,6 +11,7 @@ import (
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
+	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 
 const (
@@ -60,9 +61,10 @@ var vanguard = shipperv1.RolloutStrategy{
 // incumbent and contender releases, checking if the generated patches were
 // the expected for the strategy at a given moment.
 func TestCompleteStrategyNoController(t *testing.T) {
+	totalReplicaCount := uint(10)
 	executor := &Executor{
-		contender: buildContender(10),
-		incumbent: buildIncumbent(10),
+		contender: buildContender(totalReplicaCount),
+		incumbent: buildIncumbent(totalReplicaCount),
 		recorder:  record.NewFakeRecorder(42),
 		strategy:  vanguard,
 	}
@@ -81,6 +83,7 @@ func TestCompleteStrategyNoController(t *testing.T) {
 	// .status.clusters.*.achievedPercent.
 	for i := range executor.contender.capacityTarget.Status.Clusters {
 		executor.contender.capacityTarget.Status.Clusters[i].AchievedPercent = 50
+		executor.contender.capacityTarget.Status.Clusters[i].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, 50))
 	}
 
 	// Execute second part of strategy's first step.
@@ -120,6 +123,7 @@ func TestCompleteStrategyNoController(t *testing.T) {
 	// .status.clusters.*.achievedPercent.
 	for i := range executor.incumbent.capacityTarget.Status.Clusters {
 		executor.incumbent.capacityTarget.Status.Clusters[i].AchievedPercent = 50
+		executor.incumbent.capacityTarget.Status.Clusters[i].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, 50))
 	}
 
 	// Execute fifth part of strategy's first step.
@@ -143,6 +147,7 @@ func TestCompleteStrategyNoController(t *testing.T) {
 	// .status.clusters.*.achievedPercent.
 	for i := range executor.contender.capacityTarget.Status.Clusters {
 		executor.contender.capacityTarget.Status.Clusters[i].AchievedPercent = 100
+		executor.contender.capacityTarget.Status.Clusters[i].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, 100))
 	}
 
 	// Execute second part of strategy's second step.
@@ -182,6 +187,7 @@ func TestCompleteStrategyNoController(t *testing.T) {
 	// .status.clusters.*.achievedPercent.
 	for i := range executor.incumbent.capacityTarget.Status.Clusters {
 		executor.incumbent.capacityTarget.Status.Clusters[i].AchievedPercent = 0
+		executor.incumbent.capacityTarget.Status.Clusters[i].AvailableReplicas = 0
 	}
 
 	// Execute fifth part of strategy's second step, which is the last one.
