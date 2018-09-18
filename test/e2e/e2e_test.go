@@ -267,14 +267,23 @@ func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
 	}
 }
 
+// TestNewApplicationVanguardMultipleReplicas tests the creation of a new
+// application with multiple replicas, marching through the specified vanguard
+// strategy until it hopefully converges on the final desired state.
 func TestNewApplicationVanguardMultipleReplicas(t *testing.T) {
-	testNewApplicationVanguard(4, t)
+	testNewApplicationVanguard(3, t)
 }
 
+// TestNewApplicationVanguardOneReplica tests the creation of a new
+// application with one replica, marching through the specified vanguard
+// strategy until it hopefully converges on the final desired state.
 func TestNewApplicationVanguardOneReplica(t *testing.T) {
 	testNewApplicationVanguard(1, t)
 }
 
+// testRolloutVanguard tests the creation of a new application with the
+// specified number of replicas, marching through the specified vanguard
+// strategy until it hopefully converges on the final desired state.
 func testRolloutVanguard(targetReplicas int, t *testing.T) {
 	if !*runEndToEnd {
 		t.Skip("skipping end-to-end tests: --e2e is false")
