@@ -3,7 +3,6 @@ package e2e
 import (
 	"flag"
 	"fmt"
-	"math"
 	"os"
 	"testing"
 	"time"
@@ -25,6 +24,7 @@ import (
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
+	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 
 const (
@@ -261,7 +261,7 @@ func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
 			f.waitForCommand(relName, i)
 		}
 
-		expectedCapacity := capacityInPods(step.Capacity.Contender, targetReplicas)
+		expectedCapacity := int(replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas)))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
 		f.checkPods(relName, expectedCapacity)
 	}
@@ -347,16 +347,16 @@ func testRolloutVanguard(targetReplicas int, t *testing.T) {
 			f.waitForCommand(contenderName, i)
 		}
 
-		expectedContenderCapacity := capacityInPods(step.Capacity.Contender, targetReplicas)
-		expectedIncumbentCapacity := capacityInPods(step.Capacity.Incumbent, targetReplicas)
+		expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
+		expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
 
 		t.Logf(
 			"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step %d -- %d/%d)",
 			incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, i, step.Capacity.Incumbent, step.Capacity.Contender,
 		)
 
-		f.checkPods(contenderName, expectedContenderCapacity)
-		f.checkPods(incumbentName, expectedIncumbentCapacity)
+		f.checkPods(contenderName, int(expectedContenderCapacity))
+		f.checkPods(incumbentName, int(expectedIncumbentCapacity))
 	}
 }
 
@@ -674,10 +674,4 @@ func newApplication(namespace, name string, strategy *shipperv1.RolloutStrategy)
 			},
 		},
 	}
-}
-
-func capacityInPods(percentage int32, targetReplicas int) int {
-	mult := float64(percentage) / 100
-	// Round up to nearest whole pod.
-	return int(math.Ceil(mult * float64(targetReplicas)))
 }
