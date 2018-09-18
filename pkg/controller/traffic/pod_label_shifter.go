@@ -12,6 +12,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 
 type podLabelShifter struct {
@@ -217,13 +218,15 @@ func calculateReleasePodTarget(releasePods int, releaseWeight uint32, totalPods 
 	if totalWeight == 0 {
 		targetPercent = 0
 	} else {
-		targetPercent = float64(releaseWeight) / float64(totalWeight)
+		targetPercent = float64(releaseWeight) / float64(totalWeight) * 100
 	}
 	// Round up to the nearest pod, clamped to the number of pods this release has.
-	targetPods := int(
+	targetPods := int(replicas.CalculateDesiredReplicaCount(uint(totalPods), float64(targetPercent)))
+
+	targetPods = int(
 		math.Min(
 			float64(releasePods),
-			math.Ceil(targetPercent*float64(totalPods)),
+			float64(targetPods),
 		),
 	)
 	return targetPods
