@@ -350,7 +350,7 @@ func workingOnContenderCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
 	contender.capacityTarget.Spec.Clusters[0].Percent = 50
 	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
 	contender.capacityTarget.Status.Clusters[0].AchievedPercent = achievedCapacityPercentage
-	contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, uint(achievedCapacityPercentage)))
+	contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, float64(achievedCapacityPercentage)))
 
 	f.addObjects(contender, incumbent)
 
@@ -450,7 +450,7 @@ func workingOnIncumbentCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
 	incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
 	incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
 	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = incumbentAchievedCapacityPercentage
-	incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, uint(incumbentAchievedCapacityPercentage)))
+	incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(totalReplicaCount, float64(incumbentAchievedCapacityPercentage)))
 
 	f.addObjects(contender, incumbent)
 

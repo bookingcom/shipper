@@ -113,7 +113,7 @@ func checkCapacity(
 			newSpec.Clusters = append(newSpec.Clusters, r)
 			canProceed = false
 			clustersNotReady = append(clustersNotReady, clusterName)
-		} else if !replicasutil.AchievedDesiredReplicaPercentage(uint(v.totalReplicaCount), uint(v.currentReplicaCount), v.desiredCapacity) {
+		} else if !replicasutil.AchievedDesiredReplicaPercentage(uint(v.totalReplicaCount), uint(v.currentReplicaCount), float64(v.desiredCapacity)) {
 			canProceed = false
 			clustersNotReady = append(clustersNotReady, clusterName)
 		}
