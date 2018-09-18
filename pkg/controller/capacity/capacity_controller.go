@@ -2,7 +2,6 @@ package capacity
 
 import (
 	"fmt"
-	"math"
 	"sort"
 	"time"
 
@@ -27,6 +26,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
+	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 
 const (
@@ -215,7 +215,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 
 		// Get the requested percentage of replicas from the capacity object. This is
 		// only set by the scheduler.
-		replicaCount := c.calculateReplicaCountFromPercentage(clusterSpec.TotalReplicaCount, clusterSpec.Percent)
+		replicaCount := int32(replicas.CalculateDesiredReplicaCount(uint(clusterSpec.TotalReplicaCount), float64(clusterSpec.Percent)))
 
 		// Patch the deployment if it doesn't match the cluster spec.
 		if targetDeployment.Spec.Replicas == nil || replicaCount != *targetDeployment.Spec.Replicas {
@@ -282,12 +282,6 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 	}
 
 	c.capacityTargetWorkqueue.Add(key)
-}
-
-func (c Controller) calculateReplicaCountFromPercentage(total, percentage int32) int32 {
-	result := float64(percentage) / 100 * float64(total)
-
-	return int32(math.Ceil(result))
 }
 
 func (c *Controller) registerEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
