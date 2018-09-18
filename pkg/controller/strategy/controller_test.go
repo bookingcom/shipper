@@ -30,8 +30,13 @@ func init() {
 	conditions.StrategyConditionsShouldDiscardTimestamps = true
 }
 
+// interestingReplicaCounts represents number of replicas that we've seen
+// Shipper misbehave because of wrong replica counts based on the percentages
+// the strategy specifies.
+var interestingReplicaCounts = []uint{1, 3, 10}
+
 func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.T) {
-	for _, i := range []uint{1, 10} {
+	for _, i := range interestingReplicaCounts {
 		f := newFixture(t)
 
 		totalReplicaCount := i
@@ -55,7 +60,7 @@ func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.
 }
 
 func TestContenderDoNothingClusterInstallationNotReady(t *testing.T) {
-	for _, i := range []uint{1, 10} {
+	for _, i := range interestingReplicaCounts {
 		f := newFixture(t)
 
 		totalReplicaCount := i
@@ -79,7 +84,7 @@ func TestContenderDoNothingClusterInstallationNotReady(t *testing.T) {
 }
 
 func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
-	for _, i := range []uint{1, 10} {
+	for _, i := range interestingReplicaCounts {
 		f := newFixture(t)
 
 		totalReplicaCount := i
@@ -122,7 +127,7 @@ func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
 }
 
 func TestContenderDoNothingClusterTrafficNotReady(t *testing.T) {
-	for _, i := range []uint{1, 10} {
+	for _, i := range interestingReplicaCounts {
 		f := newFixture(t)
 
 		totalReplicaCount := i
@@ -166,7 +171,7 @@ func TestContenderDoNothingClusterTrafficNotReady(t *testing.T) {
 }
 
 func TestContenderCapacityShouldIncrease(t *testing.T) {
-	for _, i := range []uint{1, 10} {
+	for _, i := range interestingReplicaCounts {
 		f := newFixture(t)
 
 		totalReplicaCount := i
@@ -192,7 +197,7 @@ const (
 )
 
 func TestContenderTrafficShouldIncrease(t *testing.T) {
-	for _, i := range []uint{1, 10} {
+	for _, i := range interestingReplicaCounts {
 		f := newFixture(t)
 
 		totalReplicaCount := i
@@ -215,7 +220,7 @@ func TestContenderTrafficShouldIncrease(t *testing.T) {
 }
 
 func TestIncumbentTrafficShouldDecrease(t *testing.T) {
-	for _, i := range []uint{1, 10} {
+	for _, i := range interestingReplicaCounts {
 		f := newFixture(t)
 
 		totalReplicaCount := i
@@ -240,7 +245,7 @@ func TestIncumbentTrafficShouldDecrease(t *testing.T) {
 }
 
 func TestIncumbentCapacityShouldDecrease(t *testing.T) {
-	for _, i := range []uint{1, 10} {
+	for _, i := range interestingReplicaCounts {
 		f := newFixture(t)
 
 		totalReplicaCount := i
@@ -268,7 +273,7 @@ func TestIncumbentCapacityShouldDecrease(t *testing.T) {
 }
 
 func TestContenderReleasePhaseIsWaitingForCommandForFinalStepState(t *testing.T) {
-	for _, i := range []uint{1, 10} {
+	for _, i := range interestingReplicaCounts {
 		f := newFixture(t)
 
 		totalReplicaCount := i
@@ -298,7 +303,7 @@ func TestContenderReleasePhaseIsWaitingForCommandForFinalStepState(t *testing.T)
 }
 
 func TestContenderReleaseIsInstalled(t *testing.T) {
-	for _, i := range []uint{1, 10} {
+	for _, i := range interestingReplicaCounts {
 		f := newFixture(t)
 
 		totalReplicaCount := i
