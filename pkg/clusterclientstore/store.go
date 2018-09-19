@@ -341,12 +341,12 @@ func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration)
 		config.KeyData = key
 	}
 
-	if encodedInsecureSkipTlsVerify, ok := secret.Labels["tls.insecure-skip-tls-verify"]; ok {
+	if encodedInsecureSkipTlsVerify, ok := secret.Annotations[shipperv1.SecretClusterSkipTlsVerifyAnnotation]; ok {
 		if insecureSkipTlsVerify, err := strconv.ParseBool(encodedInsecureSkipTlsVerify); err == nil {
-			glog.Infof("found 'tls.insecure-skip-tls-verify' label with value %q for host %q", encodedInsecureSkipTlsVerify, host)
+			glog.Infof("found %q annotation with value %q for host %q", shipperv1.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify, host)
 			config.Insecure = insecureSkipTlsVerify
 		} else {
-			glog.Infof("found 'tls.insecure-skip-tls-verify' label with value %q for host %q but failed to decode a bool from it, ignoring it", encodedInsecureSkipTlsVerify, host)
+			glog.Infof("found %q annotation with value %q for host %q but failed to decode a bool from it, ignoring it", shipperv1.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify, host)
 		}
 	}
 

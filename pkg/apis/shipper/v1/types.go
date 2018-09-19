@@ -36,8 +36,9 @@ const (
 	ReleaseTemplateIterationAnnotation = "shipper.booking.com/release.template.iteration"
 	ReleaseClustersAnnotation          = "shipper.booking.com/release.clusters"
 
-	SecretChecksumAnnotation    = "shipper.booking.com/cluster-secret.checksum"
-	SecretClusterNameAnnotation = "shipper.booking.com/cluster-secret.clusterName"
+	SecretChecksumAnnotation             = "shipper.booking.com/cluster-secret.checksum"
+	SecretClusterNameAnnotation          = "shipper.booking.com/cluster-secret.clusterName"
+	SecretClusterSkipTlsVerifyAnnotation = "shipper.booking.com/cluster-secret.insecure-tls-skip-verify"
 
 	LBLabel         = "shipper-lb"
 	LBForProduction = "production"

@@ -64,15 +64,20 @@ func main() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: *clusterName,
 					Annotations: map[string]string{
-						shipperv1.SecretChecksumAnnotation: "some-checksum",
-					},
-					Labels: map[string]string{
-						"tls.insecure-skip-tls-verify": strconv.FormatBool(restCfg.Insecure),
+						shipperv1.SecretChecksumAnnotation:             "some-checksum",
+						shipperv1.SecretClusterSkipTlsVerifyAnnotation: strconv.FormatBool(restCfg.Insecure),
 					},
 				},
 				Type: corev1.SecretTypeOpaque,
 				Data: secretData,
 			}
+
+			// Only add shipperv1.SecretClusterSkipTlsVerifyAnnotation if the
+			// configuration specifies an insecure connection.
+			if restCfg.Insecure == true {
+				clusterSecret.Annotations[shipperv1.SecretClusterSkipTlsVerifyAnnotation] = strconv.FormatBool(restCfg.Insecure)
+			}
+
 			if _, err := kubeClient.CoreV1().Secrets(*shipperNamespace).Create(clusterSecret); err != nil {
 				glog.Fatal(err)
 			}
@@ -82,10 +87,18 @@ func main() {
 		}
 	} else if *replaceSecret {
 		existingSecret.Data = secretData
-		if existingSecret.Labels == nil {
-			existingSecret.Labels = map[string]string{}
+		if existingSecret.Annotations == nil {
+			existingSecret.Annotations = map[string]string{}
 		}
-		existingSecret.Labels["tls.insecure-skip-tls-verify"] = strconv.FormatBool(restCfg.Insecure)
+
+		// Delete the shipperv1.SecretClusterSkipTlsVerifyAnnotation if
+		// configuration specifies a secure connection, add the annotation
+		// it otherwise.
+		if restCfg.Insecure == false {
+			delete(existingSecret.Annotations, shipperv1.SecretClusterSkipTlsVerifyAnnotation)
+		} else {
+			existingSecret.Annotations[shipperv1.SecretClusterSkipTlsVerifyAnnotation] = strconv.FormatBool(restCfg.Insecure)
+		}
 
 		if _, err := nsSecrets.Update(existingSecret); err != nil {
 			glog.Fatal(err)

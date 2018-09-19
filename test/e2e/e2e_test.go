@@ -648,12 +648,12 @@ func buildTargetClient(clusterName string) kubernetes.Interface {
 	config.CertData = secret.Data["tls.crt"]
 	config.KeyData = secret.Data["tls.key"]
 
-	if encodedInsecureSkipTlsVerify, ok := secret.Labels["tls.insecure-skip-tls-verify"]; ok {
+	if encodedInsecureSkipTlsVerify, ok := secret.Annotations[shipperv1.SecretClusterSkipTlsVerifyAnnotation]; ok {
 		if insecureSkipTlsVerify, err := strconv.ParseBool(encodedInsecureSkipTlsVerify); err == nil {
-			glog.Infof("found 'tls.insecure-skip-tls-verify' label with value %q", encodedInsecureSkipTlsVerify)
+			glog.Infof("found %q annotation with value %q", shipperv1.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
 			config.Insecure = insecureSkipTlsVerify
 		} else {
-			glog.Infof("found 'tls.insecure-skip-tls-verify' label with value %q, failed to decode a bool from it, ignoring it", encodedInsecureSkipTlsVerify)
+			glog.Infof("found %q annotation with value %q, failed to decode a bool from it, ignoring it", shipperv1.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
 		}
 	}
 
