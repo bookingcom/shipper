@@ -74,9 +74,23 @@ When Shipper is executing a load balancing back-end that uses 'v1.Service' objec
 
 A nice property of this approach is that any load balancing back-end implementation might be added and registered when building Shipper, and be further enabled through Shipper command line options at runtime without requiring additional modifications.
 
-== TODO
+== Implementation
 
-- Specification of `loadBalancer`
-  * One key per known back-end implementation
-- Specification of `loadBalancer.kubernetes`
-- Implementation
+The implementation described on this section is the second presented, "Generic and open load balancing configuration". This choice was made by the writer because:
+
+- It is simple. A root object is offered with the type `map[string]interface{}`, so back-end implementers are free to choose the most appropriate layout for their configuration from that point on.
+- Is future proof. As long as keys don't overlap, their meaning can be changed without much effort if GVKs are proven problematic.
+
+=== Task list
+
+NOTE: Types names and definitions are subject to discussion, just presented like this to have a head start.
+
+- Add a new field in `v1.ReleaseEnvironment` called `LoadBalancer` of type `[]LoadBalancer`
+- Add a new type `v1.LoadBalancer`, defined as:
++
+[source,go]
+----
+type LoadBalancer map[string]interface{}
+----
+- Modify Installation Controller to patch the service before installation on application clusters. The `selector` field can be either `null`, meaning that no operation will be carried regarding the service's selector, or be a dictionary of type `map[string]string` which will be used to replace the service's `selector` field. (*Note:* do we need to perform any check or patching in the deployment as well?)
+- Modify Traffic Controller business logic to use the configuration to find the service that should be used to perform traffic shifting. The `name` field should contain the service name in the application's namespace.
