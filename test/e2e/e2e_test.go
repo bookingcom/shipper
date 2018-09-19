@@ -1,9 +1,11 @@
 package e2e
 
 import (
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -646,6 +648,14 @@ func buildTargetClient(clusterName string) kubernetes.Interface {
 
 	config.CertData = secret.Data["tls.crt"]
 	config.KeyData = secret.Data["tls.key"]
+
+	if insecureSkipTlsVerify, ok := secret.Data["tls.insecure-skip-tls-verify"]; ok {
+		if decoded, err := base64.StdEncoding.DecodeString(string(insecureSkipTlsVerify)); err != nil {
+		} else if insecure, err := strconv.ParseBool(string(decoded)); err != nil {
+		} else {
+			config.Insecure = insecure
+		}
+	}
 
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
