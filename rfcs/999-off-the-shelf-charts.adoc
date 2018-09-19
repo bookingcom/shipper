@@ -1,0 +1,42 @@
+
+== Abstract
+
+In the integration design of Helm packages in Shipper, we've opted to have a tight contract for production, load balance Kubernetes Service manifests. This designed proved to be sub-optimal; it requires that special Helm packages *must* be created in order to be compatible with Shipper.
+
+This RFC proposes formally specifying a compatibility layer in Shipper to make it possible to use publicly available charts with it.
+
+== Rationale
+
+Shipper's contract with Helm charts specify that a chart needs to contain *one and only one* deployment manifest and *one and only one* load balancing service manifest. Having multiple Kubernetes service is useful for, for example, enable access to pods belonging only to the new version of an image *before* starting a release process.
+
+To identify this load balancing service manifest, once it is installed on a Kubernetes cluster, a label on the specific load balancing service is used (`shipper-lb: production` more specifically). This choice made any existing chart on the wild incompatible with Shipper.
+
+== Specification
+
+To overcome that limitation, we want to introduce the field `.spec.template.loadBalancer` field in the Application CRD; this field will be used to propagate relevant load balancing configuration to Shipper.
+
+The following listing shows an Application manifest with the `.spec.template.loadBalancer`:
+
+..spec.template.loadBalancer example
+[source,yaml]
+----
+spec:
+  loadBalancer:     # <1>
+    kubernetes:     # <2>
+      name: my-app  # <3>
+      selector: {}  # <4>
+    istio:
+      ...
+----
+
+<1> `.spec.loadBalancer` represents the load balancer configuration for the application, one field per known implementation.
+<2> `.spec.loadBalancer.kubernetes` holds the configuration for vanilla Kubernetes traffic shifting implementation.
+<3> Name of the Kubernetes service manifest that should be used as load balancing service.
+<4> Selectors that should be used to overwrite the load balancing service selector.
+
+== TODO
+
+- Specification of `loadBalancer`
+  * One key per known back-end implementation
+- Specification of `loadBalancer.kubernetes`
+- Implementation
