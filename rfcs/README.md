@@ -1,6 +1,8 @@
 
 # Roadmap to Open Source Release
 
+This document contains the outline of our Roadmap brainstorm session. The idea is to transform this outline into different RFCs and discuss them as separate Pull Requests.
+
 ## Communication Channels
 
 ### Web Presence
@@ -18,8 +20,14 @@
             - How do I drain a cordoned cluster?
     - User manual
         - Where do I look for problems
+
+### Support and announcements
+
 - Slack
 - Announcement mailing list
+
+### Marketing
+
 - Blog posts
 - Meetups
 - Kubernetes community engagement strategy
