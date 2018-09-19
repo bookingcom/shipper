@@ -43,8 +43,8 @@ spec:
         ...       # Relevant Istio configuration here
 ----
 
-<1> `.spec.loadBalancer` represents the load balancer configuration for the application, one field per known implementation.
-<2> `.spec.loadBalancer.kubernetes` holds the configuration for vanilla Kubernetes traffic shifting implementation.
+<1> `.spec.template.loadBalancer` represents the load balancer configuration for the application, one field per known implementation.
+<2> `.spec.template.loadBalancer.kubernetes` holds the configuration for vanilla Kubernetes traffic shifting implementation.
 <3> Name of the Kubernetes service manifest that should be used as load balancing service.
 <4> Selectors that should be used to overwrite the load balancing service selector.
 
