@@ -75,17 +75,18 @@ Since initial implementation of the Scheduler Controller, the team acknowledged 
 
 Streamlining the activities the Schedule Controller performs has the benefit of narrowing its scope: select clusters according to the Release's cluster requirements and annotate the Release with the results.
 
-Although the Schedule Controller performs other actions, perhaps not relevant to its role, this RFC will focus on *moving chart interactions from the Schedule Controller to the Application Controller*.
+Although the Schedule Controller performs other actions, perhaps not relevant to its role, this RFC will solely focus on *moving chart interactions from the Schedule Controller to the Application Controller*.
 
-=== Fetching the chart
+=== Fetching, rendering and decoding the chart
 
-* Download chart
-* Cache chart
+The Application Controller will be responsible for all _chart assessment processes_. It means that, in the case of an non-existing or defect chart (syntax errors in templates, or Shipper contract broken), the Application object will be updated with the proper condition (as explained in the <<charthealthy-condition-table>>).
 
-=== Rendering the chart
+=== Propagating information downwards
 
-=== Decoding the chart
+Some controllers require no interaction whatsoever with the chart, but depend on some pieces of information only accessible after processing it. In order to avoid re-processing charts on every sync operation, the Application Controller will propagate those pieces of information downwards through annotations on the Release object, similar to what the Schedule Controller already does.
 
-* Annotate replica count in Release's `shipper.booking.com/capacity.replica-count`.
+For this RFC, the annotation `shipper.booking.com/capacity.replica-count` will be added to the Release object, which the Capacity Controller requires the number of replicas that Kubernetes should spawn for this application after it renders deployment manifest and explicitly search for the number of replicas in the decoded deployment object.
 
 === Updating the Application's *ChartHealthy* condition
+
+The Application Controller should, at the fetch/render/decode process, update the *ChartHealthy* condition according to the <<charthealthy-condition-table>>.
