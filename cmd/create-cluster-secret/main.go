@@ -1,19 +1,20 @@
 package main
 
 import (
-	"encoding/base64"
 	"flag"
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	"github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	"os/user"
+	"path"
+	"strconv"
+
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"os/user"
-	"path"
-	"strconv"
+
+	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 )
 
 var (
@@ -51,7 +52,6 @@ func main() {
 	kubeClient := kubernetes.NewForConfigOrDie(restCfg)
 
 	secretData := make(map[string][]byte)
-	secretData["tls.insecure-skip-tls-verify"] = []byte(base64.StdEncoding.EncodeToString([]byte(strconv.FormatBool(restCfg.Insecure))))
 	secretData["tls.ca"] = restCfg.CAData
 	secretData["tls.crt"] = restCfg.CertData
 	secretData["tls.key"] = restCfg.KeyData
@@ -66,6 +66,9 @@ func main() {
 					Annotations: map[string]string{
 						shipperv1.SecretChecksumAnnotation: "some-checksum",
 					},
+					Labels: map[string]string{
+						"tls.insecure-skip-tls-verify": strconv.FormatBool(restCfg.Insecure),
+					},
 				},
 				Type: corev1.SecretTypeOpaque,
 				Data: secretData,
@@ -79,6 +82,11 @@ func main() {
 		}
 	} else if *replaceSecret {
 		existingSecret.Data = secretData
+		if existingSecret.Labels == nil {
+			existingSecret.Labels = map[string]string{}
+		}
+		existingSecret.Labels["tls.insecure-skip-tls-verify"] = strconv.FormatBool(restCfg.Insecure)
+
 		if _, err := nsSecrets.Update(existingSecret); err != nil {
 			glog.Fatal(err)
 		}

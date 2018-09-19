@@ -2,6 +2,7 @@ package clusterclientstore
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/golang/glog"
@@ -19,7 +20,6 @@ import (
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperv1informer "github.com/bookingcom/shipper/pkg/client/informers/externalversions/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore/cache"
-	"github.com/bookingcom/shipper/pkg/clusterclientstore/util"
 )
 
 // This enables tests to inject an appropriate fake client, which allows us to
@@ -341,10 +341,13 @@ func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration)
 		config.KeyData = key
 	}
 
-	if insecureSkipTlsVerify, err := util.GetBool(secret, "tls.insecure-skip-tls-verify"); err != nil && util.IsDecodeError(err) {
-		return nil, err
-	} else {
-		config.Insecure = insecureSkipTlsVerify
+	if encodedInsecureSkipTlsVerify, ok := secret.Labels["tls.insecure-skip-tls-verify"]; ok {
+		if insecureSkipTlsVerify, err := strconv.ParseBool(encodedInsecureSkipTlsVerify); err == nil {
+			glog.Infof("found 'tls.insecure-skip-tls-verify' label with value %q for host %q", encodedInsecureSkipTlsVerify, host)
+			config.Insecure = insecureSkipTlsVerify
+		} else {
+			glog.Infof("found 'tls.insecure-skip-tls-verify' label with value %q for host %q but failed to decode a bool from it, ignoring it", encodedInsecureSkipTlsVerify, host)
+		}
 	}
 
 	return config, nil

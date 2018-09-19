@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -22,7 +23,6 @@ import (
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	"github.com/bookingcom/shipper/pkg/clusterclientstore/util"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
@@ -648,11 +648,13 @@ func buildTargetClient(clusterName string) kubernetes.Interface {
 	config.CertData = secret.Data["tls.crt"]
 	config.KeyData = secret.Data["tls.key"]
 
-	// It is fine if the key doesn't exist (KeyNotFoundError), but if the key exists but couldn't be decoded we stop the process.
-	if insecureSkipTlsVerify, err := util.GetBool(secret, "tls.insecure-skip-tls-verify"); err != nil && util.IsDecodeError(err) {
-		glog.Fatalf("error: %s", err.Error())
-	} else {
-		config.Insecure = insecureSkipTlsVerify
+	if encodedInsecureSkipTlsVerify, ok := secret.Labels["tls.insecure-skip-tls-verify"]; ok {
+		if insecureSkipTlsVerify, err := strconv.ParseBool(encodedInsecureSkipTlsVerify); err == nil {
+			glog.Infof("found 'tls.insecure-skip-tls-verify' label with value %q", encodedInsecureSkipTlsVerify)
+			config.Insecure = insecureSkipTlsVerify
+		} else {
+			glog.Infof("found 'tls.insecure-skip-tls-verify' label with value %q, failed to decode a bool from it, ignoring it", encodedInsecureSkipTlsVerify)
+		}
 	}
 
 	client, err := kubernetes.NewForConfig(config)
