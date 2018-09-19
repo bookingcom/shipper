@@ -5,10 +5,10 @@ import (
 	"sort"
 	"strconv"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
-func SortReleasesByGeneration(releases []*shipperv1.Release) ([]*shipperv1.Release, error) {
+func SortReleasesByGeneration(releases []*shipper.Release) ([]*shipper.Release, error) {
 	if len(releases) == 0 {
 		return releases, nil
 	}
@@ -36,8 +36,8 @@ func SortReleasesByGeneration(releases []*shipperv1.Release) ([]*shipperv1.Relea
 	return sortCopy, nil
 }
 
-func GetReleaseGeneration(release *shipperv1.Release) (int, error) {
-	rawGen, ok := release.GetAnnotations()[shipperv1.ReleaseGenerationAnnotation]
+func GetReleaseGeneration(release *shipper.Release) (int, error) {
+	rawGen, ok := release.GetAnnotations()[shipper.ReleaseGenerationAnnotation]
 	if !ok {
 		return 0, fmt.Errorf("release %q missing generation annotation", release.GetName())
 	}

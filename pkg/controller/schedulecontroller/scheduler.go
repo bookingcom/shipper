@@ -12,17 +12,17 @@ import (
 	"k8s.io/client-go/tools/record"
 	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 
-	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/controller"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 // Scheduler is an object that knows how to schedule releases.
 type Scheduler struct {
-	Release          *v1.Release
+	Release          *shipper.Release
 	shipperclientset clientset.Interface
 	clustersLister   listers.ClusterLister
 	fetchChart       shipperchart.FetchFunc
@@ -33,7 +33,7 @@ type Scheduler struct {
 // NewScheduler returns a new Scheduler instance that knows how to
 // schedule a particular Release.
 func NewScheduler(
-	release *v1.Release,
+	release *shipper.Release,
 	shipperclientset clientset.Interface,
 	clusterLister listers.ClusterLister,
 	chartFetchFunc shipperchart.FetchFunc,
@@ -101,7 +101,7 @@ func (c *Scheduler) scheduleRelease() error {
 	// If we get to this point, it means that the clusters have already been
 	// selected and persisted in the Release, and all the associated Releases have
 	// already been created.
-	condition := releaseutil.NewReleaseCondition(v1.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 	releaseutil.SetReleaseCondition(&c.Release.Status, *condition)
 
 	if len(c.Release.Status.Conditions) == 0 {
@@ -115,11 +115,11 @@ func (c *Scheduler) scheduleRelease() error {
 }
 
 func (c *Scheduler) HasClusters() bool {
-	return len(c.Release.Annotations[v1.ReleaseClustersAnnotation]) > 0
+	return len(c.Release.Annotations[shipper.ReleaseClustersAnnotation]) > 0
 }
 
 func (c *Scheduler) Clusters() []string {
-	clusters := strings.Split(c.Release.Annotations[v1.ReleaseClustersAnnotation], ",")
+	clusters := strings.Split(c.Release.Annotations[shipper.ReleaseClustersAnnotation], ",")
 	if len(clusters) == 1 && clusters[0] == "" {
 		clusters = []string{}
 	}
@@ -129,11 +129,11 @@ func (c *Scheduler) Clusters() []string {
 
 func (c *Scheduler) SetClusters(clusters []string) {
 	sort.Strings(clusters)
-	c.Release.Annotations[v1.ReleaseClustersAnnotation] = strings.Join(clusters, ",")
+	c.Release.Annotations[shipper.ReleaseClustersAnnotation] = strings.Join(clusters, ",")
 }
 
-func (c *Scheduler) UpdateRelease() (*v1.Release, error) {
-	return c.shipperclientset.ShipperV1().Releases(c.Release.Namespace).Update(c.Release)
+func (c *Scheduler) UpdateRelease() (*shipper.Release, error) {
+	return c.shipperclientset.ShipperV1alpha1().Releases(c.Release.Namespace).Update(c.Release)
 }
 
 func (c *Scheduler) fetchChartAndExtractReplicaCount() (int32, error) {
@@ -199,7 +199,7 @@ func (c *Scheduler) extractReplicasFromChart(chart *helmchart.Chart) (int32, err
 // Scheduler's Release property. Returns an error if the object couldn't
 // be created, except in cases where the object already exists.
 func (c *Scheduler) CreateInstallationTarget() error {
-	installationTarget := &v1.InstallationTarget{
+	installationTarget := &shipper.InstallationTarget{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      c.Release.Name,
 			Namespace: c.Release.Namespace,
@@ -208,10 +208,10 @@ func (c *Scheduler) CreateInstallationTarget() error {
 				createOwnerRefFromRelease(c.Release),
 			},
 		},
-		Spec: v1.InstallationTargetSpec{Clusters: c.Clusters()},
+		Spec: shipper.InstallationTargetSpec{Clusters: c.Clusters()},
 	}
 
-	_, err := c.shipperclientset.ShipperV1().InstallationTargets(c.Release.Namespace).Create(installationTarget)
+	_, err := c.shipperclientset.ShipperV1alpha1().InstallationTargets(c.Release.Namespace).Create(installationTarget)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
 			glog.Infof("InstallationTarget %q already exists, moving on", controller.MetaKey(c.Release))
@@ -236,11 +236,11 @@ func (c *Scheduler) CreateInstallationTarget() error {
 // in cases where the object already exists.
 func (c *Scheduler) CreateCapacityTarget(totalReplicaCount int32) error {
 	count := len(c.Clusters())
-	targets := make([]v1.ClusterCapacityTarget, count)
+	targets := make([]shipper.ClusterCapacityTarget, count)
 	for i, v := range c.Clusters() {
-		targets[i] = v1.ClusterCapacityTarget{Name: v, Percent: 0, TotalReplicaCount: totalReplicaCount}
+		targets[i] = shipper.ClusterCapacityTarget{Name: v, Percent: 0, TotalReplicaCount: totalReplicaCount}
 	}
-	capacityTarget := &v1.CapacityTarget{
+	capacityTarget := &shipper.CapacityTarget{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      c.Release.Name,
 			Namespace: c.Release.Namespace,
@@ -249,12 +249,12 @@ func (c *Scheduler) CreateCapacityTarget(totalReplicaCount int32) error {
 				createOwnerRefFromRelease(c.Release),
 			},
 		},
-		Spec: v1.CapacityTargetSpec{
+		Spec: shipper.CapacityTargetSpec{
 			Clusters: targets,
 		},
 	}
 
-	_, err := c.shipperclientset.ShipperV1().CapacityTargets(c.Release.Namespace).Create(capacityTarget)
+	_, err := c.shipperclientset.ShipperV1alpha1().CapacityTargets(c.Release.Namespace).Create(capacityTarget)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
 			glog.Infof("CapacityTarget %q already exists, moving on", controller.MetaKey(capacityTarget))
@@ -279,12 +279,12 @@ func (c *Scheduler) CreateCapacityTarget(totalReplicaCount int32) error {
 // in cases where the object already exists.
 func (c *Scheduler) CreateTrafficTarget() error {
 	count := len(c.Clusters())
-	trafficTargets := make([]v1.ClusterTrafficTarget, count)
+	trafficTargets := make([]shipper.ClusterTrafficTarget, count)
 	for i, v := range c.Clusters() {
-		trafficTargets[i] = v1.ClusterTrafficTarget{Name: v, Weight: 0}
+		trafficTargets[i] = shipper.ClusterTrafficTarget{Name: v, Weight: 0}
 	}
 
-	trafficTarget := &v1.TrafficTarget{
+	trafficTarget := &shipper.TrafficTarget{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      c.Release.Name,
 			Namespace: c.Release.Namespace,
@@ -293,10 +293,10 @@ func (c *Scheduler) CreateTrafficTarget() error {
 				createOwnerRefFromRelease(c.Release),
 			},
 		},
-		Spec: v1.TrafficTargetSpec{Clusters: trafficTargets},
+		Spec: shipper.TrafficTargetSpec{Clusters: trafficTargets},
 	}
 
-	_, err := c.shipperclientset.ShipperV1().TrafficTargets(c.Release.Namespace).Create(trafficTarget)
+	_, err := c.shipperclientset.ShipperV1alpha1().TrafficTargets(c.Release.Namespace).Create(trafficTarget)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
 			glog.V(4).Infof("TrafficTarget %q already exists, moving on", controller.MetaKey(trafficTarget))
@@ -318,10 +318,10 @@ func (c *Scheduler) CreateTrafficTarget() error {
 
 // computeTargetClusters picks out the clusters from the given list which match
 // the release's clusterRequirements.
-func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]string, error) {
+func computeTargetClusters(release *shipper.Release, clusterList []*shipper.Cluster) ([]string, error) {
 	regionSpecs := release.Environment.ClusterRequirements.Regions
 	requiredCapabilities := release.Environment.ClusterRequirements.Capabilities
-	capableClustersByRegion := map[string][]*v1.Cluster{}
+	capableClustersByRegion := map[string][]*shipper.Cluster{}
 	regionReplicas := map[string]int{}
 
 	if len(regionSpecs) == 0 {
@@ -343,7 +343,7 @@ func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]st
 	// but these data sets are so tiny (1-20 items) that it'd only be useful for
 	// readability.
 	for _, region := range regionSpecs {
-		capableClustersByRegion[region.Name] = []*v1.Cluster{}
+		capableClustersByRegion[region.Name] = []*shipper.Cluster{}
 		if region.Replicas == nil {
 			regionReplicas[region.Name] = 1
 		} else {
@@ -405,7 +405,7 @@ func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]st
 	return clusterNames, nil
 }
 
-func validateClusterRequirements(requirements v1.ClusterRequirements) error {
+func validateClusterRequirements(requirements shipper.ClusterRequirements) error {
 	// Ensure capability uniqueness. Erroring instead of de-duping in order to
 	// avoid second-guessing by operators about how Shipper might treat repeated
 	// listings of the same capability.
@@ -427,9 +427,9 @@ func validateClusterRequirements(requirements v1.ClusterRequirements) error {
 // https://github.com/kubernetes/client-go/issues/60#issuecomment-281533822 and
 // https://github.com/kubernetes/client-go/issues/60#issuecomment-281747911 give
 // some potential context.
-func createOwnerRefFromRelease(r *v1.Release) metav1.OwnerReference {
+func createOwnerRefFromRelease(r *shipper.Release) metav1.OwnerReference {
 	return metav1.OwnerReference{
-		APIVersion: "shipper.booking.com/v1",
+		APIVersion: "shipper.booking.com/v1alpha1",
 		Kind:       "Release",
 		Name:       r.GetName(),
 		UID:        r.GetUID(),

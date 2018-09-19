@@ -18,8 +18,8 @@ package fake
 
 import (
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	shipperv1 "github.com/bookingcom/shipper/pkg/client/clientset/versioned/typed/shipper/v1"
-	fakeshipperv1 "github.com/bookingcom/shipper/pkg/client/clientset/versioned/typed/shipper/v1/fake"
+	shipperv1alpha1 "github.com/bookingcom/shipper/pkg/client/clientset/versioned/typed/shipper/v1alpha1"
+	fakeshipperv1alpha1 "github.com/bookingcom/shipper/pkg/client/clientset/versioned/typed/shipper/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
@@ -60,12 +60,12 @@ func (c *Clientset) Discovery() discovery.DiscoveryInterface {
 
 var _ clientset.Interface = &Clientset{}
 
-// ShipperV1 retrieves the ShipperV1Client
-func (c *Clientset) ShipperV1() shipperv1.ShipperV1Interface {
-	return &fakeshipperv1.FakeShipperV1{Fake: &c.Fake}
+// ShipperV1alpha1 retrieves the ShipperV1alpha1Client
+func (c *Clientset) ShipperV1alpha1() shipperv1alpha1.ShipperV1alpha1Interface {
+	return &fakeshipperv1alpha1.FakeShipperV1alpha1{Fake: &c.Fake}
 }
 
-// Shipper retrieves the ShipperV1Client
-func (c *Clientset) Shipper() shipperv1.ShipperV1Interface {
-	return &fakeshipperv1.FakeShipperV1{Fake: &c.Fake}
+// Shipper retrieves the ShipperV1alpha1Client
+func (c *Clientset) Shipper() shipperv1alpha1.ShipperV1alpha1Interface {
+	return &fakeshipperv1alpha1.FakeShipperV1alpha1{Fake: &c.Fake}
 }

@@ -17,7 +17,7 @@ limitations under the License.
 package versioned
 
 import (
-	shipperv1 "github.com/bookingcom/shipper/pkg/client/clientset/versioned/typed/shipper/v1"
+	shipperv1alpha1 "github.com/bookingcom/shipper/pkg/client/clientset/versioned/typed/shipper/v1alpha1"
 	glog "github.com/golang/glog"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
@@ -26,27 +26,27 @@ import (
 
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
-	ShipperV1() shipperv1.ShipperV1Interface
+	ShipperV1alpha1() shipperv1alpha1.ShipperV1alpha1Interface
 	// Deprecated: please explicitly pick a version if possible.
-	Shipper() shipperv1.ShipperV1Interface
+	Shipper() shipperv1alpha1.ShipperV1alpha1Interface
 }
 
 // Clientset contains the clients for groups. Each group has exactly one
 // version included in a Clientset.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	shipperV1 *shipperv1.ShipperV1Client
+	shipperV1alpha1 *shipperv1alpha1.ShipperV1alpha1Client
 }
 
-// ShipperV1 retrieves the ShipperV1Client
-func (c *Clientset) ShipperV1() shipperv1.ShipperV1Interface {
-	return c.shipperV1
+// ShipperV1alpha1 retrieves the ShipperV1alpha1Client
+func (c *Clientset) ShipperV1alpha1() shipperv1alpha1.ShipperV1alpha1Interface {
+	return c.shipperV1alpha1
 }
 
 // Deprecated: Shipper retrieves the default version of ShipperClient.
 // Please explicitly pick a version.
-func (c *Clientset) Shipper() shipperv1.ShipperV1Interface {
-	return c.shipperV1
+func (c *Clientset) Shipper() shipperv1alpha1.ShipperV1alpha1Interface {
+	return c.shipperV1alpha1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -65,7 +65,7 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 	}
 	var cs Clientset
 	var err error
-	cs.shipperV1, err = shipperv1.NewForConfig(&configShallowCopy)
+	cs.shipperV1alpha1, err = shipperv1alpha1.NewForConfig(&configShallowCopy)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 // panics if there is an error in the config.
 func NewForConfigOrDie(c *rest.Config) *Clientset {
 	var cs Clientset
-	cs.shipperV1 = shipperv1.NewForConfigOrDie(c)
+	cs.shipperV1alpha1 = shipperv1alpha1.NewForConfigOrDie(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClientForConfigOrDie(c)
 	return &cs
@@ -91,7 +91,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 // New creates a new Clientset for the given RESTClient.
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
-	cs.shipperV1 = shipperv1.New(c)
+	cs.shipperV1alpha1 = shipperv1alpha1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs

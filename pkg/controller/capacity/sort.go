@@ -1,10 +1,10 @@
 package capacity
 
 import (
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
-type byClusterName []shipperv1.ClusterCapacityStatus
+type byClusterName []shipper.ClusterCapacityStatus
 
 func (c byClusterName) Len() int {
 	return len(c)

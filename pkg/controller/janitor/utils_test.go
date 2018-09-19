@@ -15,7 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
@@ -104,19 +104,19 @@ func newController(
 }
 
 // loadCluster returns a cluster.
-func loadCluster(name string) *shipperv1.Cluster {
-	return &shipperv1.Cluster{
+func loadCluster(name string) *shipper.Cluster {
+	return &shipper.Cluster{
 		ObjectMeta: v1.ObjectMeta{
 			Name: name,
 		},
-		Status: shipperv1.ClusterStatus{
+		Status: shipper.ClusterStatus{
 			InService: true,
 		},
 	}
 }
 
-func loadInstallationTarget() *shipperv1.InstallationTarget {
-	installationTarget := &shipperv1.InstallationTarget{}
+func loadInstallationTarget() *shipper.InstallationTarget {
+	installationTarget := &shipper.InstallationTarget{}
 	yamlPath := filepath.Join("testdata", "installationtarget.yaml")
 
 	if bytes, err := ioutil.ReadFile(yamlPath); err != nil {

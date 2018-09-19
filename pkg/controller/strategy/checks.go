@@ -1,6 +1,6 @@
 package strategy
 
-import shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+import shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 
 func checkInstallation(contenderRelease *releaseInfo) (bool, []string) {
 	clustersFromStatus := contenderRelease.installationTarget.Status.Clusters
@@ -29,7 +29,7 @@ func checkInstallation(contenderRelease *releaseInfo) (bool, []string) {
 	}
 
 	for _, clusterStatus := range clusterStatuses {
-		if clusterStatus.Status != shipperv1.ReleasePhaseInstalled {
+		if clusterStatus.Status != shipper.ReleasePhaseInstalled {
 			clustersNotReady[clusterStatus.Name] = struct{}{}
 		}
 	}
@@ -56,12 +56,12 @@ type capacityState struct {
 // capacity met -> true, nil, nil
 // error        -> nil, err
 func checkCapacity(
-	capacityTarget *shipperv1.CapacityTarget,
+	capacityTarget *shipper.CapacityTarget,
 	stepCapacity uint,
 	compFn func(achieved uint, desired uint) bool,
 ) (
 	bool,
-	*shipperv1.CapacityTargetSpec,
+	*shipper.CapacityTargetSpec,
 	[]string,
 ) {
 
@@ -97,7 +97,7 @@ func checkCapacity(
 
 	clustersNotReady := make([]string, 0)
 	canProceed := true
-	newSpec := &shipperv1.CapacityTargetSpec{}
+	newSpec := &shipper.CapacityTargetSpec{}
 
 	for clusterName, v := range clusterCapacityData {
 		// Now we can check whether or not the desired target step replicas have
@@ -105,7 +105,7 @@ func checkCapacity(
 		// this cluster's desired capacity.
 		if v.desiredCapacity != v.stepCapacity {
 			// Patch capacityTarget .spec to attempt to achieve the desired state.
-			r := shipperv1.ClusterCapacityTarget{Name: clusterName, Percent: int32(v.stepCapacity), TotalReplicaCount: v.totalReplicaCount}
+			r := shipper.ClusterCapacityTarget{Name: clusterName, Percent: int32(v.stepCapacity), TotalReplicaCount: v.totalReplicaCount}
 			newSpec.Clusters = append(newSpec.Clusters, r)
 			canProceed = false
 			clustersNotReady = append(clustersNotReady, clusterName)
@@ -129,12 +129,12 @@ type trafficState struct {
 }
 
 func checkTraffic(
-	trafficTarget *shipperv1.TrafficTarget,
+	trafficTarget *shipper.TrafficTarget,
 	stepTrafficWeight uint32,
 	compFn func(achieved uint32, desired uint32) bool,
 ) (
 	bool,
-	*shipperv1.TrafficTargetSpec,
+	*shipper.TrafficTargetSpec,
 	[]string,
 ) {
 
@@ -168,11 +168,11 @@ func checkTraffic(
 
 	clustersNotReady := make([]string, 0)
 	canProceed := true
-	newSpec := &shipperv1.TrafficTargetSpec{}
+	newSpec := &shipper.TrafficTargetSpec{}
 
 	for clusterName, trafficData := range clusterTrafficData {
 		if trafficData.desiredTrafficWeight != trafficData.stepTrafficWeight {
-			t := shipperv1.ClusterTrafficTarget{Name: clusterName, Weight: trafficData.stepTrafficWeight}
+			t := shipper.ClusterTrafficTarget{Name: clusterName, Weight: trafficData.stepTrafficWeight}
 			newSpec.Clusters = append(newSpec.Clusters, t)
 			canProceed = false
 			clustersNotReady = append(clustersNotReady, clusterName)

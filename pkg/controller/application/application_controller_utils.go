@@ -10,11 +10,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/controller"
 )
 
-func (c *Controller) createReleaseForApplication(app *shipperv1.Application, generation int) error {
+func (c *Controller) createReleaseForApplication(app *shipper.Application, generation int) error {
 	// Label releases with their hash; select by that label and increment if needed
 	// appname-hash-of-template-iteration.
 	releaseName, iteration, err := c.releaseNameForApplication(app)
@@ -29,20 +29,20 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application, gen
 		labels[k] = v
 	}
 
-	labels[shipperv1.ReleaseLabel] = releaseName
-	labels[shipperv1.AppLabel] = app.GetName()
-	labels[shipperv1.ReleaseEnvironmentHashLabel] = hashReleaseEnvironment(app.Spec.Template)
+	labels[shipper.ReleaseLabel] = releaseName
+	labels[shipper.AppLabel] = app.GetName()
+	labels[shipper.ReleaseEnvironmentHashLabel] = hashReleaseEnvironment(app.Spec.Template)
 
 	annotations := map[string]string{
-		shipperv1.ReleaseTemplateIterationAnnotation: strconv.Itoa(iteration),
-		shipperv1.ReleaseGenerationAnnotation:        strconv.Itoa(generation),
+		shipper.ReleaseTemplateIterationAnnotation: strconv.Itoa(iteration),
+		shipper.ReleaseGenerationAnnotation:        strconv.Itoa(generation),
 	}
 
 	glog.V(4).Infof("Release %q labels: %v", controller.MetaKey(app), labels)
 	glog.V(4).Infof("Release %q annotations: %v", controller.MetaKey(app), annotations)
 
-	new := &shipperv1.Release{
-		ReleaseMeta: shipperv1.ReleaseMeta{
+	new := &shipper.Release{
+		ReleaseMeta: shipper.ReleaseMeta{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        releaseName,
 				Namespace:   releaseNs,
@@ -54,18 +54,18 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application, gen
 			},
 			Environment: *(app.Spec.Template.DeepCopy()),
 		},
-		Spec:   shipperv1.ReleaseSpec{},
-		Status: shipperv1.ReleaseStatus{},
+		Spec:   shipper.ReleaseSpec{},
+		Status: shipper.ReleaseStatus{},
 	}
 
-	_, err = c.shipperClientset.ShipperV1().Releases(releaseNs).Create(new)
+	_, err = c.shipperClientset.ShipperV1alpha1().Releases(releaseNs).Create(new)
 	if err != nil {
 		return fmt.Errorf("create Release for Application %q: %s", controller.MetaKey(app), err)
 	}
 	return nil
 }
 
-func (c *Controller) getLatestReleaseForApp(app *shipperv1.Application) (*shipperv1.Release, error) {
+func (c *Controller) getLatestReleaseForApp(app *shipper.Application) (*shipper.Release, error) {
 	sortedReleases, err := c.getSortedAppReleases(app)
 	if err != nil {
 		return nil, err
@@ -78,7 +78,7 @@ func (c *Controller) getLatestReleaseForApp(app *shipperv1.Application) (*shippe
 	return sortedReleases[len(sortedReleases)-1], nil
 }
 
-func (c *Controller) getAppHistory(app *shipperv1.Application) ([]string, error) {
+func (c *Controller) getAppHistory(app *shipper.Application) ([]string, error) {
 	releases, err := c.getSortedAppReleases(app)
 	if err != nil {
 		return nil, err
@@ -90,9 +90,9 @@ func (c *Controller) getAppHistory(app *shipperv1.Application) ([]string, error)
 	return names, nil
 }
 
-func (c *Controller) getSortedAppReleases(app *shipperv1.Application) ([]*shipperv1.Release, error) {
+func (c *Controller) getSortedAppReleases(app *shipper.Application) ([]*shipper.Release, error) {
 	selector := labels.Set{
-		shipperv1.AppLabel: app.GetName(),
+		shipper.AppLabel: app.GetName(),
 	}.AsSelector()
 
 	releases, err := c.relLister.Releases(app.GetNamespace()).List(selector)
@@ -107,12 +107,12 @@ func (c *Controller) getSortedAppReleases(app *shipperv1.Application) ([]*shippe
 	return sorted, nil
 }
 
-func (c *Controller) releaseNameForApplication(app *shipperv1.Application) (string, int, error) {
+func (c *Controller) releaseNameForApplication(app *shipper.Application) (string, int, error) {
 	hash := hashReleaseEnvironment(app.Spec.Template)
 	// TODO(asurikov): move the hash to annotations.
 	selector := labels.Set{
-		shipperv1.AppLabel:                    app.GetName(),
-		shipperv1.ReleaseEnvironmentHashLabel: hash,
+		shipper.AppLabel:                    app.GetName(),
+		shipper.ReleaseEnvironmentHashLabel: hash,
 	}.AsSelector()
 
 	releases, err := c.relLister.Releases(app.GetNamespace()).List(selector)
@@ -127,7 +127,7 @@ func (c *Controller) releaseNameForApplication(app *shipperv1.Application) (stri
 
 	highestObserved := 0
 	for _, rel := range releases {
-		iterationStr, ok := rel.GetAnnotations()[shipperv1.ReleaseTemplateIterationAnnotation]
+		iterationStr, ok := rel.GetAnnotations()[shipper.ReleaseTemplateIterationAnnotation]
 		if !ok {
 			return "", 0, fmt.Errorf("generate name for Release %q: no iteration annotation",
 				controller.MetaKey(rel))
@@ -148,8 +148,8 @@ func (c *Controller) releaseNameForApplication(app *shipperv1.Application) (stri
 	return fmt.Sprintf("%s-%s-%d", app.GetName(), hash, newIteration), newIteration, nil
 }
 
-func (c *Controller) computeState(app *shipperv1.Application) (shipperv1.ApplicationState, error) {
-	state := shipperv1.ApplicationState{}
+func (c *Controller) computeState(app *shipper.Application) (shipper.ApplicationState, error) {
+	state := shipper.ApplicationState{}
 
 	latestRelease, err := c.getLatestReleaseForApp(app)
 	if err != nil {
@@ -166,7 +166,7 @@ func (c *Controller) computeState(app *shipperv1.Application) (shipperv1.Applica
 	return state, nil
 }
 
-func isRollingOut(rel *shipperv1.Release) (*int32, bool) {
+func isRollingOut(rel *shipper.Release) (*int32, bool) {
 	lastStep := int32(len(rel.Environment.Strategy.Steps) - 1)
 
 	achieved := rel.Status.AchievedStep
@@ -182,8 +182,8 @@ func isRollingOut(rel *shipperv1.Release) (*int32, bool) {
 		achievedStep != lastStep
 }
 
-func getAppHighestObservedGeneration(app *shipperv1.Application) (int, error) {
-	rawObserved, ok := app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation]
+func getAppHighestObservedGeneration(app *shipper.Application) (int, error) {
+	rawObserved, ok := app.Annotations[shipper.AppHighestObservedGenerationAnnotation]
 	if !ok {
 		return 0, nil
 	}
@@ -196,7 +196,7 @@ func getAppHighestObservedGeneration(app *shipperv1.Application) (int, error) {
 	return generation, nil
 }
 
-func identicalEnvironments(envs ...shipperv1.ReleaseEnvironment) bool {
+func identicalEnvironments(envs ...shipper.ReleaseEnvironment) bool {
 	if len(envs) == 0 {
 		return true
 	}
@@ -213,7 +213,7 @@ func identicalEnvironments(envs ...shipperv1.ReleaseEnvironment) bool {
 	return true
 }
 
-func hashReleaseEnvironment(env shipperv1.ReleaseEnvironment) string {
+func hashReleaseEnvironment(env shipper.ReleaseEnvironment) string {
 	copy := env.DeepCopy()
 	b, err := json.Marshal(copy)
 	if err != nil {
@@ -226,13 +226,13 @@ func hashReleaseEnvironment(env shipperv1.ReleaseEnvironment) string {
 	return fmt.Sprintf("%x", hash.Sum32())
 }
 
-func createOwnerRefFromApplication(app *shipperv1.Application) metav1.OwnerReference {
+func createOwnerRefFromApplication(app *shipper.Application) metav1.OwnerReference {
 	// App's TypeMeta can be empty so can't use it to set APIVersion and Kind. See
 	// https://github.com/kubernetes/client-go/issues/60#issuecomment-281533822 and
 	// https://github.com/kubernetes/client-go/issues/60#issuecomment-281747911 for
 	// context.
 	return metav1.OwnerReference{
-		APIVersion: "shipper.booking.com/v1",
+		APIVersion: "shipper.booking.com/v1alpha1",
 		Kind:       "Application",
 		Name:       app.GetName(),
 		UID:        app.GetUID(),

@@ -5,7 +5,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 type ExecutorResult interface {
@@ -14,36 +14,36 @@ type ExecutorResult interface {
 
 type CapacityTargetOutdatedResult struct {
 	Name    string
-	NewSpec *v1.CapacityTargetSpec
+	NewSpec *shipper.CapacityTargetSpec
 }
 
 type TrafficTargetOutdatedResult struct {
 	Name    string
-	NewSpec *v1.TrafficTargetSpec
+	NewSpec *shipper.TrafficTargetSpec
 }
 
 type ReleaseUpdateResult struct {
 	Name      string
-	NewStatus *v1.ReleaseStatus
+	NewStatus *shipper.ReleaseStatus
 }
 
 func (c *CapacityTargetOutdatedResult) PatchSpec() (string, schema.GroupVersionKind, []byte) {
 	patch := make(map[string]interface{})
 	patch["spec"] = c.NewSpec
 	b, _ := json.Marshal(patch)
-	return c.Name, schema.GroupVersionKind{Group: "shipper.booking.com", Version: "v1", Kind: "CapacityTarget"}, b
+	return c.Name, schema.GroupVersionKind{Group: "shipper.booking.com", Version: "v1alpha1", Kind: "CapacityTarget"}, b
 }
 
 func (c *TrafficTargetOutdatedResult) PatchSpec() (string, schema.GroupVersionKind, []byte) {
 	patch := make(map[string]interface{})
 	patch["spec"] = c.NewSpec
 	b, _ := json.Marshal(patch)
-	return c.Name, schema.GroupVersionKind{Group: "shipper.booking.com", Version: "v1", Kind: "TrafficTarget"}, b
+	return c.Name, schema.GroupVersionKind{Group: "shipper.booking.com", Version: "v1alpha1", Kind: "TrafficTarget"}, b
 }
 
 func (r *ReleaseUpdateResult) PatchSpec() (string, schema.GroupVersionKind, []byte) {
 	patch := make(map[string]interface{})
 	patch["status"] = r.NewStatus
 	b, _ := json.Marshal(patch)
-	return r.Name, schema.GroupVersionKind{Group: "shipper.booking.com", Version: "v1", Kind: "Release"}, b
+	return r.Name, schema.GroupVersionKind{Group: "shipper.booking.com", Version: "v1alpha1", Kind: "Release"}, b
 }

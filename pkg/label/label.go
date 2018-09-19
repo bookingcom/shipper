@@ -1,7 +1,7 @@
 package label
 
 import (
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 // FilterRelease makes a copy of the given set of labels without the 'release'
@@ -12,7 +12,7 @@ func FilterRelease(source map[string]string) map[string]string {
 	for k, v := range source {
 		// Skip 'release' because we expect svcs to have a lifetime that spans
 		// releases.
-		if k == shipperv1.ReleaseLabel || k == shipperv1.ReleaseEnvironmentHashLabel {
+		if k == shipper.ReleaseLabel || k == shipper.ReleaseEnvironmentHashLabel {
 			continue
 		}
 		copy[k] = v

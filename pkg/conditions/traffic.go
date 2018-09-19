@@ -7,18 +7,18 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 var TrafficConditionsShouldDiscardTimestamps = false
 
 func SetTrafficCondition(
-	conditions []shipperv1.ClusterTrafficCondition,
-	typ shipperv1.ClusterConditionType,
+	conditions []shipper.ClusterTrafficCondition,
+	typ shipper.ClusterConditionType,
 	status corev1.ConditionStatus,
 	reason string,
 	message string,
-) []shipperv1.ClusterTrafficCondition {
+) []shipper.ClusterTrafficCondition {
 
 	conditionIndex := -1
 	for i, e := range conditions {
@@ -33,7 +33,7 @@ func SetTrafficCondition(
 		if !TrafficConditionsShouldDiscardTimestamps {
 			lastTransitionTime = metav1.NewTime(time.Now())
 		}
-		aCondition := shipperv1.ClusterTrafficCondition{
+		aCondition := shipper.ClusterTrafficCondition{
 			Type:               typ,
 			Status:             status,
 			LastTransitionTime: lastTransitionTime,

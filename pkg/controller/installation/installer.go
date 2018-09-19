@@ -18,27 +18,27 @@ import (
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
 	"github.com/bookingcom/shipper/pkg/controller/janitor"
 )
 
-type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipperv1.Cluster) dynamic.Interface
+type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipper.Cluster) dynamic.Interface
 
 // Installer is an object that knows how to install Helm charts directly into
 // Kubernetes clusters.
 type Installer struct {
 	fetchChart shipperchart.FetchFunc
 
-	Release            *shipperv1.Release
-	InstallationTarget *shipperv1.InstallationTarget
+	Release            *shipper.Release
+	InstallationTarget *shipper.InstallationTarget
 	Scheme             *runtime.Scheme
 }
 
 // NewInstaller returns a new Installer.
 func NewInstaller(chartFetchFunc shipperchart.FetchFunc,
-	release *shipperv1.Release,
-	it *shipperv1.InstallationTarget,
+	release *shipper.Release,
+	it *shipper.InstallationTarget,
 ) *Installer {
 	return &Installer{
 		fetchChart:         chartFetchFunc,
@@ -50,7 +50,7 @@ func NewInstaller(chartFetchFunc shipperchart.FetchFunc,
 
 // renderManifests returns a list of rendered manifests for the given release and
 // cluster, or an error.
-func (i *Installer) renderManifests(_ *shipperv1.Cluster) ([]string, error) {
+func (i *Installer) renderManifests(_ *shipper.Cluster) ([]string, error) {
 	rel := i.Release
 	chart, err := i.fetchChart(rel.Environment.Chart)
 	if err != nil {
@@ -78,7 +78,7 @@ func (i *Installer) renderManifests(_ *shipperv1.Cluster) ([]string, error) {
 // buildResourceClient returns a ResourceClient suitable to manipulate the kind
 // of resource represented by the given GroupVersionKind at the given Cluster.
 func (i *Installer) buildResourceClient(
-	cluster *shipperv1.Cluster,
+	cluster *shipper.Cluster,
 	client kubernetes.Interface,
 	restConfig *rest.Config,
 	dynamicClientBuilder DynamicClientBuilderFunc,
@@ -207,7 +207,7 @@ func (i *Installer) patchObject(
 
 // installManifests attempts to install the manifests on the specified cluster.
 func (i *Installer) installManifests(
-	cluster *shipperv1.Cluster,
+	cluster *shipper.Cluster,
 	client kubernetes.Interface,
 	restConfig *rest.Config,
 	dynamicClientBuilderFunc DynamicClientBuilderFunc,
@@ -253,7 +253,7 @@ func (i *Installer) installManifests(
 		// We label final objects with Release labels so that we can find/filter them
 		// later in Capacity and Installation controllers.
 		// This may overwrite some of the pre-existing labels. It's not ideal but with
-		// current implementation we require that shipperv1.ReleaseLabel is propagated
+		// current implementation we require that shipper.ReleaseLabel is propagated
 		// correctly. This may be subject to change.
 		labelsToInject := i.Release.Labels
 		decodedObj = i.patchObject(decodedObj, labelsToInject, &ownerReference)
@@ -307,10 +307,10 @@ func (i *Installer) installManifests(
 
 		// If the existing object was stamped with the driving release,
 		// continue to the next manifest.
-		if releaseLabelValue, ok := existingObj.GetLabels()[shipperv1.ReleaseLabel]; ok && releaseLabelValue == i.Release.Name {
+		if releaseLabelValue, ok := existingObj.GetLabels()[shipper.ReleaseLabel]; ok && releaseLabelValue == i.Release.Name {
 			continue
 		} else if !ok {
-			return NewIncompleteReleaseError(`Release "%s/%s" misses the required label %q`, existingObj.GetNamespace(), existingObj.GetName(), shipperv1.ReleaseLabel)
+			return NewIncompleteReleaseError(`Release "%s/%s" misses the required label %q`, existingObj.GetNamespace(), existingObj.GetName(), shipper.ReleaseLabel)
 		}
 
 		ownerReferenceFound := false
@@ -351,7 +351,7 @@ func (i *Installer) installManifests(
 
 // installRelease attempts to install the given release on the given cluster.
 func (i *Installer) installRelease(
-	cluster *shipperv1.Cluster,
+	cluster *shipper.Cluster,
 	client kubernetes.Interface,
 	restConfig *rest.Config,
 	dynamicClientBuilder DynamicClientBuilderFunc,

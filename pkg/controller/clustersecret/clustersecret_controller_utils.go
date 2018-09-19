@@ -9,10 +9,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
-func (c *Controller) processCluster(cluster *shipperv1.Cluster) error {
+func (c *Controller) processCluster(cluster *shipper.Cluster) error {
 	// This controller must not modify the Cluster resource: `cluster` is not a
 	// copy here!
 
@@ -43,7 +43,7 @@ func (c *Controller) processCluster(cluster *shipperv1.Cluster) error {
 
 	clusterName := cluster.GetName()
 
-	got, ok := secret.GetAnnotations()[shipperv1.SecretChecksumAnnotation]
+	got, ok := secret.GetAnnotations()[shipper.SecretChecksumAnnotation]
 	if !ok {
 		// We got a Secret that's controlled by us (because we must've passed the
 		// owner ref check to get here) but it does not have the right annotation,
@@ -63,7 +63,7 @@ func (c *Controller) processCluster(cluster *shipperv1.Cluster) error {
 	return nil
 }
 
-func (c *Controller) createSecretForCluster(cluster *shipperv1.Cluster, crt, key, csum []byte) error {
+func (c *Controller) createSecretForCluster(cluster *shipper.Cluster, crt, key, csum []byte) error {
 	clusterName := cluster.GetName()
 	secretName := secretNameForCluster(cluster)
 
@@ -72,15 +72,15 @@ func (c *Controller) createSecretForCluster(cluster *shipperv1.Cluster, crt, key
 			Name:      secretName,
 			Namespace: c.ownNamespace,
 			Annotations: map[string]string{
-				shipperv1.SecretChecksumAnnotation: hex.EncodeToString(csum),
+				shipper.SecretChecksumAnnotation: hex.EncodeToString(csum),
 				// The convention is that Secrets should be named after their respective
 				// target Clusters but I don't want this to be a hard dependency so I'm
 				// putting the cluster name separately in the annotations, just in case.
-				shipperv1.SecretClusterNameAnnotation: clusterName,
+				shipper.SecretClusterNameAnnotation: clusterName,
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
-					APIVersion: "shipper.booking.com/v1",
+					APIVersion: "shipper.booking.com/v1alpha1",
 					Kind:       "Cluster",
 					Name:       cluster.GetName(),
 					UID:        cluster.GetUID(),
@@ -120,8 +120,8 @@ func (c *Controller) updateClusterSecret(secret *corev1.Secret, clusterName stri
 	if secret.Annotations == nil {
 		secret.Annotations = make(map[string]string)
 	}
-	secret.Annotations[shipperv1.SecretChecksumAnnotation] = hex.EncodeToString(csum)
-	secret.Annotations[shipperv1.SecretClusterNameAnnotation] = clusterName
+	secret.Annotations[shipper.SecretChecksumAnnotation] = hex.EncodeToString(csum)
+	secret.Annotations[shipper.SecretClusterNameAnnotation] = clusterName
 
 	secret.Data[corev1.TLSCertKey] = crt
 	secret.Data[corev1.TLSPrivateKeyKey] = key
@@ -144,6 +144,6 @@ func (c *Controller) updateClusterSecret(secret *corev1.Secret, clusterName stri
 	return nil
 }
 
-func secretNameForCluster(cluster *shipperv1.Cluster) string {
+func secretNameForCluster(cluster *shipper.Cluster) string {
 	return cluster.GetName()
 }

@@ -1,11 +1,11 @@
-apiVersion: shipper.booking.com/v1
+apiVersion: shipper.booking.com/v1alpha1
 kind: InstallationTarget
 metadata:
   name: "0.0.1"
   namespace: "reviews-api"
   uid: installation-target-uid
   ownerReferences:
-  - apiVersion: shipper.booking.com/v1
+  - apiVersion: shipper.booking.com/v1alpha1
     kind: Release
     name: "0.0.1"
     uid: release-uid
