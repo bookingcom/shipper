@@ -313,7 +313,10 @@ func (i *Installer) installManifests(
 	// Shipper requires a Chart with exactly one v1.Service manifest containing
 	// the expected lb label.
 	if seenLBForProduction != 1 {
-		return controller.NewInvalidChartError("chart misses production service")
+		return controller.NewInvalidChartError(
+			fmt.Sprintf(
+				"one and only one v1.Service object with label %q is required, but found %d object(s) instead",
+				shipperv1.LBLabel, seenLBForProduction))
 	}
 
 	// The second loop is meant to install all the decoded and transformed
