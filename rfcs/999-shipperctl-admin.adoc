@@ -1,0 +1,167 @@
+= 999 Introduce _shipperctl_ command line utility
+
+== Abstract
+
+Now that we're working to simplify setup, administration, and scripting, I think it makes sense to re-open the discussion around a _shipperctl_ CLI for Shipper. The most valuable functionality we can get out of such a tool now is *simplify Shipper's setup and administration processes*, so this RFC will focus only on the `shipperctl admin` command.
+
+== Rationale
+
+The current process of configuring a Shipper installation for production is quite complicated and error prone: Shipper CRDs must be created in the Management Cluster, service accounts, role bindings, cluster secrets must be created, only to name a few of the actions required to properly set it up.
+
+Having a complicated process also complicates other parts of our project, specifically Shipper documentation and quick-start guides. In addition to documentation and guides, it also makes it very difficult for third parties interested in Shipper to properly evaluate it. The team strongly believe that having a simple administration tool that performs the majority of those error prone and complicated procedures will increase the chances of such third parties to consider and use Shipper in their environments.
+
+== Implementation
+
+As stated previously, this RFC focuses mainly in describing the implementation of the `shipperctl admin` command. The implementation will be described in further sections, one for each command specified. Each section includes a description of what actions are available for each command or sub-command, as well as a description of its options.
+
+=== The _admin_ command
+
+The _admin_ command contain a series of sub-commands and actions to modify a Shipper cluster state.
+
+==== The _init_ action
+
+Create YAML manifests for `shipper`, `shipper-state-metrics` and Shipper CRDs. These would include:
+
+- Deployment objects for each pinned version of Shipper
+- Service account for Shipper with appropriate Role and Rolebinding
+
+.Init arguments
+|===
+| Option| Description
+
+| `-n/--namespace`
+| Namespace to run Shipper in, defaults to `shipper-system`
+
+| `-i/--install`
+| Apply the manifests immediately to the cluster
+
+| `--kubeconfig`
+| Same as _kubectl_
+|===
+
+=== The _cluster_ subcommand
+
+==== _register_ action
+
+Create YAML manifest for a new Application cluster object.
+
+.*register* arguments
+|===
+| Option | Description
+
+| `-n/--namespace`
+| Shipper system namespace
+
+| `-i/--install`
+| Apply the manifests directly instead of spitting out to disk
+
+|`--kube-config`
+| Same as _kubectl_
+
+| `--region`
+| Region name for the new cluster
+
+|===
+
+==== _prepare_ action
+
+Create YAML manifests for the given application cluster:
+- Shipper namespace
+- service account
+- role / rolebinding
+
+.*prepare* arguments
+|===
+| Option| Description
+
+| `-n/--namespace`
+| Shipper system namespace in both clusters
+
+| `-i/--install`
+| Apply the manifests directly instead of spitting out to disk
+
+| `--kubeconfig`
+| Same as _kubectl_
+
+| `--region`
+| Region name for the new cluster
+|===
+
+==== _join_ action
+
+Combine 'register' and 'prepare --install' into a single command. This will create the namespace, service account, and role/role binding on the application cluster. Then:
+
+Create YAML manifests for:
+
+- Shipper Cluster object
+- Shipper-formatted service account Secret object for this cluster (type: Opaque, etc.)
+
+.*join* arguments
+|===
+|Option|Description
+
+|`-n/--namespace`
+| Shipper system namespace in both clusters
+
+| `-i/--install`
+| Apply the manifests directly instead of spitting out to disk
+
+| `--kubeconfig`
+| Same as kubectl
+
+| `--region`
+| Region name for the new cluster
+
+| `--insecure`
+| Whether to set --insecureTLSVerify (and thus enable Kubernetes by Docker for Desktop)
+|===
+
+==== _join-clusters_ action
+
+Perform a bulk operation setting up all clusters contained in a Shipper cluster configuration file. This file contains all clusters to be configured for Shipper operation, for both Management and Application clusters.
+
+.Cluster configuration file example
+[source,yaml]
+----
+managementClusters:
+- name:    eu-management     # <1>
+- name:    us-management
+  context: gke-us-management # <2>
+
+applicationClusters:
+- name:   eu-application     # <1>
+  region: eu-west1
+  zone:   a
+  capabilities:
+    gdpr:       active
+    ipv6:       active
+    kubernetes: "1.12"
+- name:    us-application
+  context: gke-us-application # <2>
+  region:  us-west1
+  zone:    a
+  capabilities:
+    ipv4:           active
+    ssd-local-disk: available
+----
+<1> Without the `context` field present, `name` is considered a valid and existing _kubectl_ context, and will be used both to gather connection details to perform relevant operations on the cluster to set up Shipper and to name cluster specific manifests in the Management Cluster.
+<2> With the `context` field present, the `name` value is used only to name cluster specific manifests in the Management Cluster. Connection details are gathered using the specified `context` value.
+
+.*join-clusters* arguments
+|===
+|Option|Description
+
+|`-f`
+| Shipper cluster configuration file to be applied
+
+|`--dry-run`
+| Print out what actions it would do, according to the given cluster configuration file
+
+|`-n/--namespace`
+| Shipper system namespace to be created in all clusters
+
+|`--kubeconfig`
+| Same as _kubectl_
+
+|===
+
