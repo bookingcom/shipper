@@ -1,0 +1,126 @@
+= 999 Introduce Release Controller
+Igor Sutton <igor.sutton@booking.com>
+1970-01-01
+:RFC-Number: 9999
+:RFC-Status: Draft
+:RFC-Type: Standards Track
+
+Merge the _Schedule_ and _Strategy_ controllers to form the _Release
+Controller_, which primary responsibility is to handle all Release operations in
+Shipper.
+
+== Motivation
+
+The intent of this RFC is to simplify the workflow that observes and converges
+the desired state encoded in a Release object by merging the _Schedule_ and
+_Strategy_ controllers, composing the _Release Controller_.
+
+This re-organization aims to:
+
+* Reduce the number of write calls to the API server to mutate Release objects
+(reducing probability of deadlocks and race conditions);
+* Have better defined semantics for Releases that should be processed at the
+edges--for example, do not process Release any status only updates from the
+lister, since the _Release Controller_ is be the only source of such
+mutations;
+* Enable internal re-enqueuing to force processing of status only
+changes--allowing, for example, idioms like "update status and re-process
+Release" without involving the lister;
+* Have well defined and composable finite state machine to handle act and
+"observe" operations; and probably more.
+
+== Guide level explanation
+
+From Shipper users' point of view, nothing should change.
+
+== Reference level explanation
+
+The current _Schedule Controller_ implementation can be used as the initial
+_Release Controller_ implementation. The _Schedule Controller_ currently
+performs the following tasks on Release objects:
+
+* Fetches and cache the Release's chart;
+* Renders the chart into manifests, and renders those manifests to extract
+relevant information to be annotated in the Release;
+* Creates the Installation, Capacity and Traffic target objects for the Release;
+and
+* Informs other actors the Release has been scheduled by encoding this
+information in the _Scheduled_ condition.
+
+It is expected that those tasks are still performed after the
+implementation of this RFC.
+
+The pipeline composed by the aforementioned tasks should be encoded into
+symmetric *act* and *observe and report* processes.
+
+[[independent-processes]]
+==== Independent *act* and *observe and report* processes
+
+Act processes should _ideally_ not change the Release status, and observe and
+report operations should _ideally_ not solely rely on information present only
+in-memory, uncommitted representation of the Release object.
+
+In other words, act operations should be as independent as possible from their
+observation and reporting counterpart, although we understand that some
+exceptions might exist for this, in the case no other solution is possible.
+
+For example, to perform cluster selection the developer might encode the results
+of this selection as an annotation in the Release in the act operation, and
+read from the lister whether the Release object has the expected annotation
+present and report through the _Scheduled_ condition in the "observe" operation.
+
+Another example is that assessing the Release chart might not necessarily change
+anything in the world, so execution information (the chart is healthy) could be
+encoded directly in the Release conditions right after acting.
+
+==== Composable act operations
+
+The Web Services Middlewares approach can function as a simplified finite state
+machine, where at any point in the execution the processing can be interrupted
+by skipping the next state returning immediately to the caller (this is also
+called link:https://fsharpforfunandprofit.com/rop[Railway Oriented Programming]
+(here is a link:https://github.com/dc0d/rop[Go implementation of ROP] for
+reference).
+
+==== Observe and report operations
+
+Observe and report operations will have an opportunity to observe and report
+progress made by its act counterpart *after* all act operations have applied
+their best efforts to change the environment to reflect the state devised by the
+Release object.
+
+Different than act operations, where it is assumed that the pipeline might not
+be fully executed, all observe and report operations should be executed. This is
+required to ensure that a decent overview of the world from the perspective of a
+Release is propagated to a place the user will be watching.
+
+Observe and report operations should manipulate each own condition where
+appropriate. Those operations should be executed in the order they have been
+specified, and any internal ordering should be explicitly specified (for
+example, in the case a condition is derived from two others, the latter should
+be evaluated before the former).
+
+=== Merge _Strategy Controller_ onto _Release Controller_
+
+Once act and observe and report operations are implemented in the Release
+Controller, merging the Strategy Controller onto the Release Controller actually
+means create another set _act_ and _observe and report_ tasks, where the act
+process will be added at the end of the pipeline to be executed only in the case
+clusters have been properly selected for the release.
+
+Similarly, the observe and report task should look at the state of the world and
+update any applicable strategy conditions.
+
+== Rationale and alternatives
+
+Shipper currently performs different actions on a given Release object by two
+distinct controllers: the _Schedule Controller_, which is responsible for
+matching the _cluster requirements_ for a Release; and the _Strategy
+Controller_, which is responsible to adjust the installation, capacity and
+traffic state in a Shipper system.
+
+* Move chart assessment to Application Controller and Release target objects to Strategy Controller.
+
+== Unresolved questions
+
+* None so far.
