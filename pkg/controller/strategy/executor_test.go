@@ -8,7 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
@@ -24,33 +24,33 @@ func init() {
 	conditions.StrategyConditionsShouldDiscardTimestamps = true
 }
 
-var app = &shipperv1.Application{
+var app = &shipper.Application{
 	ObjectMeta: metav1.ObjectMeta{
 		Name:      "test-app",
 		Namespace: namespace,
 		UID:       "foobarbaz",
 	},
-	Status: shipperv1.ApplicationStatus{
+	Status: shipper.ApplicationStatus{
 		History: []string{incumbentName, contenderName},
 	},
 }
 
-var vanguard = shipperv1.RolloutStrategy{
-	Steps: []shipperv1.RolloutStrategyStep{
+var vanguard = shipper.RolloutStrategy{
+	Steps: []shipper.RolloutStrategyStep{
 		{
 			Name:     "staging",
-			Capacity: shipperv1.RolloutStrategyStepValue{Incumbent: 100, Contender: 1},
-			Traffic:  shipperv1.RolloutStrategyStepValue{Incumbent: 100, Contender: 0},
+			Capacity: shipper.RolloutStrategyStepValue{Incumbent: 100, Contender: 1},
+			Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 100, Contender: 0},
 		},
 		{
 			Name:     "50/50",
-			Capacity: shipperv1.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
-			Traffic:  shipperv1.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
+			Capacity: shipper.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
+			Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
 		},
 		{
 			Name:     "full on",
-			Capacity: shipperv1.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
-			Traffic:  shipperv1.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+			Capacity: shipper.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+			Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
 		},
 	},
 }
@@ -194,103 +194,103 @@ func TestCompleteStrategyNoController(t *testing.T) {
 // associated objects.
 func buildIncumbent() *releaseInfo {
 
-	rel := &shipperv1.Release{
+	rel := &shipper.Release{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1",
+			APIVersion: "shipper.booking.com/v1alpha1",
 			Kind:       "Release",
 		},
-		ReleaseMeta: shipperv1.ReleaseMeta{
+		ReleaseMeta: shipper.ReleaseMeta{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      incumbentName,
 				Namespace: namespace,
 				OwnerReferences: []metav1.OwnerReference{
 					metav1.OwnerReference{
-						APIVersion: "shipper.booking.com/v1",
+						APIVersion: "shipper.booking.com/v1alpha1",
 						Kind:       "Application",
 						Name:       app.GetName(),
 						UID:        app.GetUID(),
 					},
 				},
 				Labels: map[string]string{
-					shipperv1.ReleaseLabel: incumbentName,
-					shipperv1.AppLabel:     app.GetName(),
+					shipper.ReleaseLabel: incumbentName,
+					shipper.AppLabel:     app.GetName(),
 				},
 				Annotations: map[string]string{
-					shipperv1.ReleaseGenerationAnnotation: "0",
+					shipper.ReleaseGenerationAnnotation: "0",
 				},
 			},
-			Environment: shipperv1.ReleaseEnvironment{
+			Environment: shipper.ReleaseEnvironment{
 				Strategy: &vanguard,
 			},
 		},
-		Status: shipperv1.ReleaseStatus{
-			AchievedStep: &shipperv1.AchievedStep{
+		Status: shipper.ReleaseStatus{
+			AchievedStep: &shipper.AchievedStep{
 				Step: 2,
 				Name: "full on",
 			},
-			Conditions: []shipperv1.ReleaseCondition{
-				{Type: shipperv1.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
-				{Type: shipperv1.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
+			Conditions: []shipper.ReleaseCondition{
+				{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
+				{Type: shipper.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
 			},
 		},
-		Spec: shipperv1.ReleaseSpec{
+		Spec: shipper.ReleaseSpec{
 			TargetStep: 2,
 		},
 	}
 
-	installationTarget := &shipperv1.InstallationTarget{
+	installationTarget := &shipper.InstallationTarget{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1",
+			APIVersion: "shipper.booking.com/v1alpha1",
 			Kind:       "InstallationTarget",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      incumbentName,
 			Namespace: namespace,
 			OwnerReferences: []metav1.OwnerReference{metav1.OwnerReference{
-				APIVersion: "shipper.booking.com/v1",
+				APIVersion: "shipper.booking.com/v1alpha1",
 				Name:       rel.Name,
 				Kind:       "Release",
 				UID:        rel.UID,
 			}},
 		},
-		Status: shipperv1.InstallationTargetStatus{
-			Clusters: []*shipperv1.ClusterInstallationStatus{
+		Status: shipper.InstallationTargetStatus{
+			Clusters: []*shipper.ClusterInstallationStatus{
 				{
 					Name:   clusterName,
-					Status: shipperv1.InstallationStatusInstalled,
+					Status: shipper.InstallationStatusInstalled,
 				},
 			},
 		},
-		Spec: shipperv1.InstallationTargetSpec{
+		Spec: shipper.InstallationTargetSpec{
 			Clusters: []string{clusterName},
 		},
 	}
 
-	capacityTarget := &shipperv1.CapacityTarget{
+	capacityTarget := &shipper.CapacityTarget{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1",
+			APIVersion: "shipper.booking.com/v1alpha1",
 			Kind:       "CapacityTarget",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      incumbentName,
 			OwnerReferences: []metav1.OwnerReference{metav1.OwnerReference{
-				APIVersion: "shipper.booking.com/v1",
+				APIVersion: "shipper.booking.com/v1alpha1",
 				Name:       rel.Name,
 				Kind:       "Release",
 				UID:        rel.UID,
 			}},
 		},
-		Status: shipperv1.CapacityTargetStatus{
-			Clusters: []shipperv1.ClusterCapacityStatus{
+		Status: shipper.CapacityTargetStatus{
+			Clusters: []shipper.ClusterCapacityStatus{
 				{
 					Name:            clusterName,
 					AchievedPercent: 100,
 				},
 			},
 		},
-		Spec: shipperv1.CapacityTargetSpec{
-			Clusters: []shipperv1.ClusterCapacityTarget{
+		Spec: shipper.CapacityTargetSpec{
+			Clusters: []shipper.ClusterCapacityTarget{
 				{
 					Name:    clusterName,
 					Percent: 100,
@@ -299,31 +299,31 @@ func buildIncumbent() *releaseInfo {
 		},
 	}
 
-	trafficTarget := &shipperv1.TrafficTarget{
+	trafficTarget := &shipper.TrafficTarget{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1",
+			APIVersion: "shipper.booking.com/v1alpha1",
 			Kind:       "TrafficTarget",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      incumbentName,
 			OwnerReferences: []metav1.OwnerReference{metav1.OwnerReference{
-				APIVersion: "shipper.booking.com/v1",
+				APIVersion: "shipper.booking.com/v1alpha1",
 				Name:       rel.Name,
 				Kind:       "Release",
 				UID:        rel.UID,
 			}},
 		},
-		Status: shipperv1.TrafficTargetStatus{
-			Clusters: []*shipperv1.ClusterTrafficStatus{
+		Status: shipper.TrafficTargetStatus{
+			Clusters: []*shipper.ClusterTrafficStatus{
 				{
 					Name:            clusterName,
 					AchievedTraffic: 100,
 				},
 			},
 		},
-		Spec: shipperv1.TrafficTargetSpec{
-			Clusters: []shipperv1.ClusterTrafficTarget{
+		Spec: shipper.TrafficTargetSpec{
+			Clusters: []shipper.ClusterTrafficTarget{
 				{
 					Name:   clusterName,
 					Weight: 100,
@@ -343,99 +343,99 @@ func buildIncumbent() *releaseInfo {
 // buildContender returns a releaseInfo with a contender release and
 // associated objects.
 func buildContender() *releaseInfo {
-	rel := &shipperv1.Release{
+	rel := &shipper.Release{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1",
+			APIVersion: "shipper.booking.com/v1alpha1",
 			Kind:       "Release",
 		},
-		ReleaseMeta: shipperv1.ReleaseMeta{
+		ReleaseMeta: shipper.ReleaseMeta{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      contenderName,
 				Namespace: namespace,
 				OwnerReferences: []metav1.OwnerReference{
 					metav1.OwnerReference{
-						APIVersion: "shipper.booking.com/v1",
+						APIVersion: "shipper.booking.com/v1alpha1",
 						Kind:       "Application",
 						Name:       app.GetName(),
 						UID:        app.GetUID(),
 					},
 				},
 				Labels: map[string]string{
-					shipperv1.ReleaseLabel: contenderName,
-					shipperv1.AppLabel:     app.GetName(),
+					shipper.ReleaseLabel: contenderName,
+					shipper.AppLabel:     app.GetName(),
 				},
 				Annotations: map[string]string{
-					shipperv1.ReleaseGenerationAnnotation: "1",
+					shipper.ReleaseGenerationAnnotation: "1",
 				},
 			},
 
-			Environment: shipperv1.ReleaseEnvironment{
+			Environment: shipper.ReleaseEnvironment{
 				Strategy: &vanguard,
 			},
 		},
-		Status: shipperv1.ReleaseStatus{
-			Conditions: []shipperv1.ReleaseCondition{
-				{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+		Status: shipper.ReleaseStatus{
+			Conditions: []shipper.ReleaseCondition{
+				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 			},
 		},
-		Spec: shipperv1.ReleaseSpec{
+		Spec: shipper.ReleaseSpec{
 			TargetStep: 0,
 		},
 	}
 
-	installationTarget := &shipperv1.InstallationTarget{
+	installationTarget := &shipper.InstallationTarget{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1",
+			APIVersion: "shipper.booking.com/v1alpha1",
 			Kind:       "InstallationTarget",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      contenderName,
 			OwnerReferences: []metav1.OwnerReference{metav1.OwnerReference{
-				APIVersion: "shipper.booking.com/v1",
+				APIVersion: "shipper.booking.com/v1alpha1",
 				Name:       rel.Name,
 				Kind:       "Release",
 				UID:        rel.UID,
 			}},
 		},
-		Status: shipperv1.InstallationTargetStatus{
-			Clusters: []*shipperv1.ClusterInstallationStatus{
+		Status: shipper.InstallationTargetStatus{
+			Clusters: []*shipper.ClusterInstallationStatus{
 				{
 					Name:   clusterName,
-					Status: shipperv1.InstallationStatusInstalled,
+					Status: shipper.InstallationStatusInstalled,
 				},
 			},
 		},
-		Spec: shipperv1.InstallationTargetSpec{
+		Spec: shipper.InstallationTargetSpec{
 			Clusters: []string{clusterName},
 		},
 	}
 
-	capacityTarget := &shipperv1.CapacityTarget{
+	capacityTarget := &shipper.CapacityTarget{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1",
+			APIVersion: "shipper.booking.com/v1alpha1",
 			Kind:       "CapacityTarget",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      contenderName,
 			OwnerReferences: []metav1.OwnerReference{metav1.OwnerReference{
-				APIVersion: "shipper.booking.com/v1",
+				APIVersion: "shipper.booking.com/v1alpha1",
 				Name:       rel.Name,
 				Kind:       "Release",
 				UID:        rel.UID,
 			}},
 		},
-		Status: shipperv1.CapacityTargetStatus{
-			Clusters: []shipperv1.ClusterCapacityStatus{
+		Status: shipper.CapacityTargetStatus{
+			Clusters: []shipper.ClusterCapacityStatus{
 				{
 					Name:            clusterName,
 					AchievedPercent: 100,
 				},
 			},
 		},
-		Spec: shipperv1.CapacityTargetSpec{
-			Clusters: []shipperv1.ClusterCapacityTarget{
+		Spec: shipper.CapacityTargetSpec{
+			Clusters: []shipper.ClusterCapacityTarget{
 				{
 					Name:    clusterName,
 					Percent: 0,
@@ -444,31 +444,31 @@ func buildContender() *releaseInfo {
 		},
 	}
 
-	trafficTarget := &shipperv1.TrafficTarget{
+	trafficTarget := &shipper.TrafficTarget{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1",
+			APIVersion: "shipper.booking.com/v1alpha1",
 			Kind:       "TrafficTarget",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      contenderName,
 			OwnerReferences: []metav1.OwnerReference{metav1.OwnerReference{
-				APIVersion: "shipper.booking.com/v1",
+				APIVersion: "shipper.booking.com/v1alpha1",
 				Name:       rel.Name,
 				Kind:       "Release",
 				UID:        rel.UID,
 			}},
 		},
-		Status: shipperv1.TrafficTargetStatus{
-			Clusters: []*shipperv1.ClusterTrafficStatus{
+		Status: shipper.TrafficTargetStatus{
+			Clusters: []*shipper.ClusterTrafficStatus{
 				{
 					Name:            clusterName,
 					AchievedTraffic: 100,
 				},
 			},
 		},
-		Spec: shipperv1.TrafficTargetSpec{
-			Clusters: []shipperv1.ClusterTrafficTarget{
+		Spec: shipper.TrafficTargetSpec{
+			Clusters: []shipper.ClusterTrafficTarget{
 				{
 					Name:   clusterName,
 					Weight: 0,
@@ -488,22 +488,22 @@ func buildContender() *releaseInfo {
 func addCluster(ri *releaseInfo, name string) {
 	ri.installationTarget.Spec.Clusters = append(ri.installationTarget.Spec.Clusters, name)
 	ri.installationTarget.Status.Clusters = append(ri.installationTarget.Status.Clusters,
-		&shipperv1.ClusterInstallationStatus{Name: name, Status: shipperv1.InstallationStatusInstalled},
+		&shipper.ClusterInstallationStatus{Name: name, Status: shipper.InstallationStatusInstalled},
 	)
 
 	ri.capacityTarget.Status.Clusters = append(ri.capacityTarget.Status.Clusters,
-		shipperv1.ClusterCapacityStatus{Name: name, AchievedPercent: 100},
+		shipper.ClusterCapacityStatus{Name: name, AchievedPercent: 100},
 	)
 
 	ri.capacityTarget.Spec.Clusters = append(ri.capacityTarget.Spec.Clusters,
-		shipperv1.ClusterCapacityTarget{Name: name, Percent: 0},
+		shipper.ClusterCapacityTarget{Name: name, Percent: 0},
 	)
 
 	ri.trafficTarget.Spec.Clusters = append(ri.trafficTarget.Spec.Clusters,
-		shipperv1.ClusterTrafficTarget{Name: name, Weight: 0},
+		shipper.ClusterTrafficTarget{Name: name, Weight: 0},
 	)
 	ri.trafficTarget.Status.Clusters = append(ri.trafficTarget.Status.Clusters,
-		&shipperv1.ClusterTrafficStatus{Name: name, AchievedTraffic: 100},
+		&shipper.ClusterTrafficStatus{Name: name, AchievedTraffic: 100},
 	)
 }
 
@@ -511,16 +511,16 @@ func addCluster(ri *releaseInfo, name string) {
 // patch it produced, if any. Returns an error if the number of patches is
 // wrong, the patch doesn't implement the CapacityTargetOutdatedResult
 // interface or the name is different than the given expectedName.
-func ensureCapacityPatch(e *Executor, expectedName string, role role) (*shipperv1.CapacityTargetSpec, error) {
+func ensureCapacityPatch(e *Executor, expectedName string, role role) (*shipper.CapacityTargetSpec, error) {
 	if patches, _, err := e.execute(); err != nil {
 		return nil, err
 	} else {
 
-		aType := shipperv1.StrategyConditionContenderAchievedCapacity
+		aType := shipper.StrategyConditionContenderAchievedCapacity
 		releaseRole := "contender"
 
 		if role == Incumbent {
-			aType = shipperv1.StrategyConditionIncumbentAchievedCapacity
+			aType = shipper.StrategyConditionIncumbentAchievedCapacity
 			releaseRole = "incumbent"
 		}
 
@@ -554,16 +554,16 @@ func ensureCapacityPatch(e *Executor, expectedName string, role role) (*shipperv
 // patch it produced, if any. Returns an error if the number of patches is
 // wrong, the patch doesn't implement the TrafficTargetOutdatedResult
 // interface or the name is different than the given expectedName.
-func ensureTrafficPatch(e *Executor, expectedName string, role role) (*shipperv1.TrafficTargetSpec, error) {
+func ensureTrafficPatch(e *Executor, expectedName string, role role) (*shipper.TrafficTargetSpec, error) {
 	if patches, _, err := e.execute(); err != nil {
 		return nil, err
 	} else {
 
-		aType := shipperv1.StrategyConditionContenderAchievedTraffic
+		aType := shipper.StrategyConditionContenderAchievedTraffic
 		releaseRole := "contender"
 
 		if role == Incumbent {
-			aType = shipperv1.StrategyConditionIncumbentAchievedTraffic
+			aType = shipper.StrategyConditionIncumbentAchievedTraffic
 			releaseRole = "incumbent"
 		}
 
@@ -593,7 +593,7 @@ func ensureTrafficPatch(e *Executor, expectedName string, role role) (*shipperv1
 // patch it produced, if any. Returns an error if the number of patches is
 // wrong, the patch doesn't implement the ReleaseUpdateResult interface or
 // the name is different than the given expectedName.
-func ensureReleasePatch(e *Executor, expectedName string) (*shipperv1.ReleaseStatus, error) {
+func ensureReleasePatch(e *Executor, expectedName string) (*shipper.ReleaseStatus, error) {
 	if patches, _, err := e.execute(); err != nil {
 		return nil, err
 	} else {
@@ -642,7 +642,7 @@ func ensureFinalReleasePatches(e *Executor) error {
 					return fmt.Errorf("expected a ReleaseUpdateResult, got something else")
 				} else {
 					if p.Name == contenderName {
-						installedCond := releaseutil.GetReleaseCondition(*p.NewStatus, shipperv1.ReleaseConditionTypeInstalled)
+						installedCond := releaseutil.GetReleaseCondition(*p.NewStatus, shipper.ReleaseConditionTypeInstalled)
 						if installedCond != nil && installedCond.Status == corev1.ConditionTrue {
 							return fmt.Errorf("expected contender to be installed")
 						}

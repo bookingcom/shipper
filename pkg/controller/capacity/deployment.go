@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 type deploymentWorkqueueItem struct {
@@ -89,7 +89,7 @@ func (c Controller) NewDeploymentResourceEventHandler(clusterName string) cache.
 				return false
 			}
 
-			_, ok = deploy.GetLabels()[shipperv1.ReleaseLabel]
+			_, ok = deploy.GetLabels()[shipper.ReleaseLabel]
 
 			return ok
 		},
@@ -123,7 +123,7 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 	// Also not using ObjectReference here because it would go over cluster
 	// boundaries. While technically it's probably ok, I feel like it'd be abusing
 	// the feature.
-	release := targetDeployment.GetLabels()[shipperv1.ReleaseLabel]
+	release := targetDeployment.GetLabels()[shipper.ReleaseLabel]
 	capacityTarget, err := c.getCapacityTargetForReleaseAndNamespace(release, namespace)
 	if err != nil {
 		return err
@@ -134,8 +134,8 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 	return nil
 }
 
-func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace string) (*shipperv1.CapacityTarget, error) {
-	selector := labels.Set{shipperv1.ReleaseLabel: release}.AsSelector()
+func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace string) (*shipper.CapacityTarget, error) {
+	selector := labels.Set{shipper.ReleaseLabel: release}.AsSelector()
 	capacityTargets, err := c.capacityTargetsLister.CapacityTargets(namespace).List(selector)
 	if err != nil {
 		return nil, err
@@ -148,8 +148,8 @@ func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace s
 	return capacityTargets[0], nil
 }
 
-func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployment, clusterName string) (numberOfPods, numberOfSadPods int, sadPodConditions []shipperv1.PodStatus, err error) {
-	var sadPods []shipperv1.PodStatus
+func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployment, clusterName string) (numberOfPods, numberOfSadPods int, sadPodConditions []shipper.PodStatus, err error) {
+	var sadPods []shipper.PodStatus
 
 	informer, err := c.clusterClientStore.GetInformerFactory(clusterName)
 	if err != nil {
@@ -172,7 +172,7 @@ func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployme
 		}
 
 		if condition, ok := c.getFalsePodCondition(pod); ok {
-			sadPod := shipperv1.PodStatus{
+			sadPod := shipper.PodStatus{
 				Name:           pod.Name,
 				Condition:      *condition,
 				InitContainers: pod.Status.InitContainerStatuses,

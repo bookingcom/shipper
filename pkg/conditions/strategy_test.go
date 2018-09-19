@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/diff"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 // - Serialization: AsReleaseStrategyConditions, AsReleaseStrategyState
@@ -17,7 +17,7 @@ import (
 
 func TestNonExistingToTrue(t *testing.T) {
 
-	ct := shipperv1.StrategyConditionContenderAchievedInstallation
+	ct := shipper.StrategyConditionContenderAchievedInstallation
 
 	now := time.Now()
 
@@ -34,7 +34,7 @@ func TestNonExistingToTrue(t *testing.T) {
 
 func TestNonExistingToFalse(t *testing.T) {
 
-	ct := shipperv1.StrategyConditionContenderAchievedInstallation
+	ct := shipper.StrategyConditionContenderAchievedInstallation
 
 	now := time.Now()
 
@@ -50,7 +50,7 @@ func TestNonExistingToFalse(t *testing.T) {
 
 func TestNonExistingToUnknown(t *testing.T) {
 
-	ct := shipperv1.StrategyConditionContenderAchievedInstallation
+	ct := shipper.StrategyConditionContenderAchievedInstallation
 
 	now := time.Now()
 
@@ -65,13 +65,13 @@ func TestNonExistingToUnknown(t *testing.T) {
 }
 
 func TestTrueToTrue(t *testing.T) {
-	ct := shipperv1.StrategyConditionContenderAchievedInstallation
+	ct := shipper.StrategyConditionContenderAchievedInstallation
 
 	createTime := time.Now()
 	updateTime := createTime.Add(time.Second * 2)
 
 	sc := NewStrategyConditions(
-		shipperv1.ReleaseStrategyCondition{
+		shipper.ReleaseStrategyCondition{
 			Type:               ct,
 			Status:             corev1.ConditionTrue,
 			LastTransitionTime: metav1.NewTime(createTime),
@@ -87,13 +87,13 @@ func TestTrueToTrue(t *testing.T) {
 }
 
 func TestFalseToFalse(t *testing.T) {
-	ct := shipperv1.StrategyConditionContenderAchievedInstallation
+	ct := shipper.StrategyConditionContenderAchievedInstallation
 
 	createTime := time.Now()
 	updateTime := createTime.Add(time.Second * 2)
 
 	sc := NewStrategyConditions(
-		shipperv1.ReleaseStrategyCondition{
+		shipper.ReleaseStrategyCondition{
 			Type:               ct,
 			Status:             corev1.ConditionFalse,
 			LastTransitionTime: metav1.NewTime(createTime),
@@ -110,13 +110,13 @@ func TestFalseToFalse(t *testing.T) {
 }
 
 func TestUnknownToUnknown(t *testing.T) {
-	ct := shipperv1.StrategyConditionContenderAchievedInstallation
+	ct := shipper.StrategyConditionContenderAchievedInstallation
 
 	createTime := time.Now()
 	updateTime := createTime.Add(time.Second * 2)
 
 	sc := NewStrategyConditions(
-		shipperv1.ReleaseStrategyCondition{
+		shipper.ReleaseStrategyCondition{
 			Type:               ct,
 			Status:             corev1.ConditionUnknown,
 			LastTransitionTime: metav1.NewTime(createTime),
@@ -132,7 +132,7 @@ func TestUnknownToUnknown(t *testing.T) {
 }
 
 func TestUnknownToTrue(t *testing.T) {
-	ct := shipperv1.StrategyConditionContenderAchievedInstallation
+	ct := shipper.StrategyConditionContenderAchievedInstallation
 
 	now := time.Now()
 
@@ -142,7 +142,7 @@ func TestUnknownToTrue(t *testing.T) {
 	step0 := int32(0)
 
 	sc := NewStrategyConditions(
-		shipperv1.ReleaseStrategyCondition{
+		shipper.ReleaseStrategyCondition{
 			Type:               ct,
 			Status:             corev1.ConditionUnknown,
 			LastTransitionTime: metav1.NewTime(now),
@@ -164,7 +164,7 @@ func TestUnknownToTrue(t *testing.T) {
 
 func TestUnknownToFalse(t *testing.T) {
 
-	ct := shipperv1.StrategyConditionContenderAchievedInstallation
+	ct := shipper.StrategyConditionContenderAchievedInstallation
 
 	now := time.Now()
 
@@ -172,7 +172,7 @@ func TestUnknownToFalse(t *testing.T) {
 	updateTime := now.Add(time.Second * 2)
 
 	sc := NewStrategyConditions(
-		shipperv1.ReleaseStrategyCondition{
+		shipper.ReleaseStrategyCondition{
 			Type:   ct,
 			Status: corev1.ConditionUnknown,
 		},
@@ -201,39 +201,39 @@ func TestContenderStateWaitingForCapacity(t *testing.T) {
 	step0 := int32(0)
 	step1 := int32(1)
 	sc := NewStrategyConditions(
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedInstallation,
 			Status: corev1.ConditionTrue,
 			Step:   step1,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedCapacity,
 			Status: corev1.ConditionFalse,
 			Reason: ClustersNotReady,
 			Step:   step1,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedTraffic,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedTraffic,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionIncumbentAchievedCapacity,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionIncumbentAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionIncumbentAchievedCapacity,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionIncumbentAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 	)
 
-	expected := shipperv1.ReleaseStrategyState{
-		WaitingForCapacity:     shipperv1.StrategyStateTrue,
-		WaitingForInstallation: shipperv1.StrategyStateFalse,
-		WaitingForTraffic:      shipperv1.StrategyStateFalse,
-		WaitingForCommand:      shipperv1.StrategyStateFalse,
+	expected := shipper.ReleaseStrategyState{
+		WaitingForCapacity:     shipper.StrategyStateTrue,
+		WaitingForInstallation: shipper.StrategyStateFalse,
+		WaitingForTraffic:      shipper.StrategyStateFalse,
+		WaitingForCommand:      shipper.StrategyStateFalse,
 	}
 
 	releaseStrategyState := sc.AsReleaseStrategyState(step1, true, false)
@@ -248,39 +248,39 @@ func TestContenderStateWaitingForTraffic(t *testing.T) {
 	step0 := int32(0)
 	step1 := int32(1)
 	sc := NewStrategyConditions(
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedInstallation,
 			Status: corev1.ConditionTrue,
 			Step:   step1,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Reason: ClustersNotReady,
 			Step:   step1,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedTraffic,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedTraffic,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionIncumbentAchievedCapacity,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionIncumbentAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionIncumbentAchievedCapacity,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionIncumbentAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 	)
 
-	expected := shipperv1.ReleaseStrategyState{
-		WaitingForCapacity:     shipperv1.StrategyStateFalse,
-		WaitingForInstallation: shipperv1.StrategyStateFalse,
-		WaitingForTraffic:      shipperv1.StrategyStateTrue,
-		WaitingForCommand:      shipperv1.StrategyStateFalse,
+	expected := shipper.ReleaseStrategyState{
+		WaitingForCapacity:     shipper.StrategyStateFalse,
+		WaitingForInstallation: shipper.StrategyStateFalse,
+		WaitingForTraffic:      shipper.StrategyStateTrue,
+		WaitingForCommand:      shipper.StrategyStateFalse,
 	}
 
 	releaseStrategyState := sc.AsReleaseStrategyState(step1, true, false)
@@ -295,38 +295,38 @@ func TestIncumbentStateWaitingForTraffic(t *testing.T) {
 	step0 := int32(0)
 	step1 := int32(1)
 	sc := NewStrategyConditions(
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedInstallation,
 			Status: corev1.ConditionTrue,
 			Step:   step1,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step1,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedTraffic,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedTraffic,
 			Status: corev1.ConditionTrue,
 			Step:   step1,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionIncumbentAchievedCapacity,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionIncumbentAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionIncumbentAchievedTraffic,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionIncumbentAchievedTraffic,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 	)
 
-	expected := shipperv1.ReleaseStrategyState{
-		WaitingForCapacity:     shipperv1.StrategyStateFalse,
-		WaitingForInstallation: shipperv1.StrategyStateFalse,
-		WaitingForTraffic:      shipperv1.StrategyStateTrue,
-		WaitingForCommand:      shipperv1.StrategyStateFalse,
+	expected := shipper.ReleaseStrategyState{
+		WaitingForCapacity:     shipper.StrategyStateFalse,
+		WaitingForInstallation: shipper.StrategyStateFalse,
+		WaitingForTraffic:      shipper.StrategyStateTrue,
+		WaitingForCommand:      shipper.StrategyStateFalse,
 	}
 
 	releaseStrategyState := sc.AsReleaseStrategyState(step1, true, false)
@@ -341,38 +341,38 @@ func TestIncumbentStateWaitingForCapacity(t *testing.T) {
 	step0 := int32(0)
 	step1 := int32(1)
 	sc := NewStrategyConditions(
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedInstallation,
 			Status: corev1.ConditionTrue,
 			Step:   step1,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step1,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedTraffic,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedTraffic,
 			Status: corev1.ConditionTrue,
 			Step:   step1,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionIncumbentAchievedCapacity,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionIncumbentAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionIncumbentAchievedTraffic,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionIncumbentAchievedTraffic,
 			Status: corev1.ConditionTrue,
 			Step:   step1,
 		},
 	)
 
-	expected := shipperv1.ReleaseStrategyState{
-		WaitingForCapacity:     shipperv1.StrategyStateTrue,
-		WaitingForInstallation: shipperv1.StrategyStateFalse,
-		WaitingForTraffic:      shipperv1.StrategyStateFalse,
-		WaitingForCommand:      shipperv1.StrategyStateFalse,
+	expected := shipper.ReleaseStrategyState{
+		WaitingForCapacity:     shipper.StrategyStateTrue,
+		WaitingForInstallation: shipper.StrategyStateFalse,
+		WaitingForTraffic:      shipper.StrategyStateFalse,
+		WaitingForCommand:      shipper.StrategyStateFalse,
 	}
 
 	releaseStrategyState := sc.AsReleaseStrategyState(step1, true, false)
@@ -386,38 +386,38 @@ func TestIncumbentStateWaitingForCapacity(t *testing.T) {
 func TestStateWaitingForCommand(t *testing.T) {
 	step1 := int32(1)
 	sc := NewStrategyConditions(
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedInstallation,
 			Status: corev1.ConditionTrue,
 			Step:   step1,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step1,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedTraffic,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedTraffic,
 			Status: corev1.ConditionTrue,
 			Step:   step1,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionIncumbentAchievedCapacity,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionIncumbentAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step1,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionIncumbentAchievedTraffic,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionIncumbentAchievedTraffic,
 			Status: corev1.ConditionTrue,
 			Step:   step1,
 		},
 	)
 
-	expected := shipperv1.ReleaseStrategyState{
-		WaitingForCapacity:     shipperv1.StrategyStateFalse,
-		WaitingForInstallation: shipperv1.StrategyStateFalse,
-		WaitingForTraffic:      shipperv1.StrategyStateFalse,
-		WaitingForCommand:      shipperv1.StrategyStateTrue,
+	expected := shipper.ReleaseStrategyState{
+		WaitingForCapacity:     shipper.StrategyStateFalse,
+		WaitingForInstallation: shipper.StrategyStateFalse,
+		WaitingForTraffic:      shipper.StrategyStateFalse,
+		WaitingForCommand:      shipper.StrategyStateTrue,
 	}
 
 	releaseStrategyState := sc.AsReleaseStrategyState(step1, true, false)
@@ -433,14 +433,14 @@ func TestContenderAchievedInstallationCondition(t *testing.T) {
 
 	step0 := int32(0)
 	sc.SetTrue(
-		shipperv1.StrategyConditionContenderAchievedInstallation,
+		shipper.StrategyConditionContenderAchievedInstallation,
 		StrategyConditionsUpdate{
 			Step: step0,
 		},
 	)
-	expected := []shipperv1.ReleaseStrategyCondition{
+	expected := []shipper.ReleaseStrategyCondition{
 		{
-			Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+			Type:   shipper.StrategyConditionContenderAchievedInstallation,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
@@ -458,37 +458,37 @@ func TestContenderAchievedTrafficCondition(t *testing.T) {
 	step0 := int32(0)
 
 	sc := NewStrategyConditions(
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedInstallation,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 	)
 
 	sc.SetTrue(
-		shipperv1.StrategyConditionContenderAchievedTraffic,
+		shipper.StrategyConditionContenderAchievedTraffic,
 		StrategyConditionsUpdate{
 			Step: step0,
 		},
 	)
-	expected := []shipperv1.ReleaseStrategyCondition{
+	expected := []shipper.ReleaseStrategyCondition{
 		{
-			Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+			Type:   shipper.StrategyConditionContenderAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 		{
-			Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+			Type:   shipper.StrategyConditionContenderAchievedInstallation,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 		{
-			Type:   shipperv1.StrategyConditionContenderAchievedTraffic,
+			Type:   shipper.StrategyConditionContenderAchievedTraffic,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
@@ -506,27 +506,27 @@ func TestContenderAchievedCapacityCondition(t *testing.T) {
 	step0 := int32(0)
 
 	sc := NewStrategyConditions(
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedInstallation,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 	)
 
 	sc.SetTrue(
-		shipperv1.StrategyConditionContenderAchievedCapacity,
+		shipper.StrategyConditionContenderAchievedCapacity,
 		StrategyConditionsUpdate{
 			Step: step0,
 		},
 	)
-	expected := []shipperv1.ReleaseStrategyCondition{
+	expected := []shipper.ReleaseStrategyCondition{
 		{
-			Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+			Type:   shipper.StrategyConditionContenderAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 		{
-			Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+			Type:   shipper.StrategyConditionContenderAchievedInstallation,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
@@ -544,47 +544,47 @@ func TestIncumbentAchievedTrafficCondition(t *testing.T) {
 	step0 := int32(0)
 
 	sc := NewStrategyConditions(
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedInstallation,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedTraffic,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedTraffic,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 	)
 
 	sc.SetTrue(
-		shipperv1.StrategyConditionIncumbentAchievedTraffic,
+		shipper.StrategyConditionIncumbentAchievedTraffic,
 		StrategyConditionsUpdate{
 			Step: step0,
 		},
 	)
-	expected := []shipperv1.ReleaseStrategyCondition{
+	expected := []shipper.ReleaseStrategyCondition{
 		{
-			Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+			Type:   shipper.StrategyConditionContenderAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 		{
-			Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+			Type:   shipper.StrategyConditionContenderAchievedInstallation,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 		{
-			Type:   shipperv1.StrategyConditionContenderAchievedTraffic,
+			Type:   shipper.StrategyConditionContenderAchievedTraffic,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 		{
-			Type:   shipperv1.StrategyConditionIncumbentAchievedTraffic,
+			Type:   shipper.StrategyConditionIncumbentAchievedTraffic,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
@@ -602,57 +602,57 @@ func TestIncumbentAchievedCapacityCondition(t *testing.T) {
 	step0 := int32(0)
 
 	sc := NewStrategyConditions(
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedInstallation,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionContenderAchievedTraffic,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionContenderAchievedTraffic,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
-		shipperv1.ReleaseStrategyCondition{
-			Type:   shipperv1.StrategyConditionIncumbentAchievedTraffic,
+		shipper.ReleaseStrategyCondition{
+			Type:   shipper.StrategyConditionIncumbentAchievedTraffic,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 	)
 
 	sc.SetTrue(
-		shipperv1.StrategyConditionIncumbentAchievedCapacity,
+		shipper.StrategyConditionIncumbentAchievedCapacity,
 		StrategyConditionsUpdate{
 			Step: step0,
 		},
 	)
-	expected := []shipperv1.ReleaseStrategyCondition{
+	expected := []shipper.ReleaseStrategyCondition{
 		{
-			Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+			Type:   shipper.StrategyConditionContenderAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 		{
-			Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+			Type:   shipper.StrategyConditionContenderAchievedInstallation,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 		{
-			Type:   shipperv1.StrategyConditionContenderAchievedTraffic,
+			Type:   shipper.StrategyConditionContenderAchievedTraffic,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 		{
-			Type:   shipperv1.StrategyConditionIncumbentAchievedCapacity,
+			Type:   shipper.StrategyConditionIncumbentAchievedCapacity,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
 		{
-			Type:   shipperv1.StrategyConditionIncumbentAchievedTraffic,
+			Type:   shipper.StrategyConditionIncumbentAchievedTraffic,
 			Status: corev1.ConditionTrue,
 			Step:   step0,
 		},
@@ -668,20 +668,20 @@ func TestIncumbentAchievedCapacityCondition(t *testing.T) {
 
 func TestStrategyConditions_AsList(t *testing.T) {
 
-	contenderAchievedInstallation := shipperv1.StrategyConditionContenderAchievedInstallation
-	contenderAchievedCapacity := shipperv1.StrategyConditionContenderAchievedCapacity
-	contenderAchievedTraffic := shipperv1.StrategyConditionContenderAchievedTraffic
+	contenderAchievedInstallation := shipper.StrategyConditionContenderAchievedInstallation
+	contenderAchievedCapacity := shipper.StrategyConditionContenderAchievedCapacity
+	contenderAchievedTraffic := shipper.StrategyConditionContenderAchievedTraffic
 
 	c := NewStrategyConditions(
-		shipperv1.ReleaseStrategyCondition{
+		shipper.ReleaseStrategyCondition{
 			Type:   contenderAchievedInstallation,
 			Status: corev1.ConditionUnknown,
 		},
-		shipperv1.ReleaseStrategyCondition{
+		shipper.ReleaseStrategyCondition{
 			Type:   contenderAchievedCapacity,
 			Status: corev1.ConditionUnknown,
 		},
-		shipperv1.ReleaseStrategyCondition{
+		shipper.ReleaseStrategyCondition{
 			Type:   contenderAchievedTraffic,
 			Status: corev1.ConditionUnknown,
 		},
@@ -707,7 +707,7 @@ func TestStrategyConditions_AsList(t *testing.T) {
 func testTransitionAndUpdateTimes(
 	t *testing.T,
 	sc StrategyConditionsMap,
-	ct shipperv1.StrategyConditionType,
+	ct shipper.StrategyConditionType,
 	transitionTime time.Time,
 	updateTime time.Time,
 ) {

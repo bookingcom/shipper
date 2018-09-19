@@ -10,7 +10,7 @@ import (
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
@@ -46,7 +46,7 @@ func ClusterClientStore(
 	store := clusterclientstore.NewStore(
 		clientBuilderFunc,
 		kubeInformerFactory.Core().V1().Secrets(),
-		shipperInformerFactory.Shipper().V1().Clusters(),
+		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
 		TestNamespace,
 		nil,
 	)
@@ -76,16 +76,16 @@ func CheckClusterClientActions(
 	}
 }
 
-func buildCluster(name, hostname string) *shipperv1.Cluster {
-	return &shipperv1.Cluster{
+func buildCluster(name, hostname string) *shipper.Cluster {
+	return &shipper.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
-		Spec: shipperv1.ClusterSpec{
+		Spec: shipper.ClusterSpec{
 			Capabilities: []string{},
 			Region:       TestRegion,
 			APIMaster:    hostname,
-			Scheduler: shipperv1.ClusterSchedulerSettings{
+			Scheduler: shipper.ClusterSchedulerSettings{
 				Unschedulable: false,
 			},
 		},
@@ -98,7 +98,7 @@ func buildClusterSecret(name string) *corev1.Secret {
 			Name:      name,
 			Namespace: TestNamespace,
 			Annotations: map[string]string{
-				shipperv1.SecretChecksumAnnotation: "checksum",
+				shipper.SecretChecksumAnnotation: "checksum",
 			},
 		},
 		Data: map[string][]byte{

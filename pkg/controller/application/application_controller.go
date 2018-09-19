@@ -15,10 +15,10 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	"github.com/bookingcom/shipper/pkg/controller"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
@@ -58,8 +58,8 @@ func NewController(
 	shipperInformerFactory informers.SharedInformerFactory,
 	recorder record.EventRecorder,
 ) *Controller {
-	appInformer := shipperInformerFactory.Shipper().V1().Applications()
-	relInformer := shipperInformerFactory.Shipper().V1().Releases()
+	appInformer := shipperInformerFactory.Shipper().V1alpha1().Applications()
+	relInformer := shipperInformerFactory.Shipper().V1alpha1().Releases()
 
 	c := &Controller{
 		shipperClientset: shipperClientset,
@@ -85,8 +85,8 @@ func NewController(
 	relInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: c.enqueueRel,
 		UpdateFunc: func(old, new interface{}) {
-			oldRel, oldOk := old.(*shipperv1.Release)
-			newRel, newOk := new.(*shipperv1.Release)
+			oldRel, oldOk := old.(*shipper.Release)
+			newRel, newOk := new.(*shipper.Release)
 			if oldOk && newOk && oldRel.ResourceVersion == newRel.ResourceVersion {
 				glog.V(4).Info("Received Release re-sync Update")
 				return
@@ -175,9 +175,9 @@ func (c *Controller) enqueueRel(obj interface{}) {
 		return
 	}
 
-	rel, ok := obj.(*shipperv1.Release)
+	rel, ok := obj.(*shipper.Release)
 	if !ok {
-		runtime.HandleError(fmt.Errorf("not a shipperv1.Release: %#v", obj))
+		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", obj))
 		return
 	}
 
@@ -242,7 +242,7 @@ func (c *Controller) syncApplication(key string) bool {
 		runtime.HandleError(fmt.Errorf("error computing state for Application %q (will retry): %s", key, err))
 	}
 
-	_, err = c.shipperClientset.ShipperV1().Applications(app.Namespace).Update(app)
+	_, err = c.shipperClientset.ShipperV1alpha1().Applications(app.Namespace).Update(app)
 	if err != nil {
 		shouldRetry = true
 		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
@@ -258,7 +258,7 @@ func (c *Controller) syncApplication(key string) bool {
 *   If same, do nothing.
 *   If different, create new release (highest generation # + 1).
  */
-func (c *Controller) processApplication(app *shipperv1.Application) error {
+func (c *Controller) processApplication(app *shipper.Application) error {
 	if app.Annotations == nil {
 		app.Annotations = map[string]string{}
 	}
@@ -287,7 +287,7 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	if err != nil {
 		app.Status.Conditions = conditions.SetApplicationCondition(
 			app.Status.Conditions,
-			shipperv1.ApplicationConditionTypeValidHistory,
+			shipper.ApplicationConditionTypeValidHistory,
 			corev1.ConditionFalse,
 			conditions.FetchReleaseFailed,
 			fmt.Sprintf("could not fetch the latest release: %q", err),
@@ -300,7 +300,7 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		if err != nil {
 			app.Status.Conditions = conditions.SetApplicationCondition(
 				app.Status.Conditions,
-				shipperv1.ApplicationConditionTypeReleaseSynced,
+				shipper.ApplicationConditionTypeReleaseSynced,
 				corev1.ConditionFalse,
 				conditions.CreateReleaseFailed,
 				fmt.Sprintf("could not create a new release: %q", err),
@@ -308,10 +308,10 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 
 			return err
 		}
-		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
+		app.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "0"
 		app.Status.Conditions = conditions.SetApplicationCondition(
 			app.Status.Conditions,
-			shipperv1.ApplicationConditionTypeReleaseSynced,
+			shipper.ApplicationConditionTypeReleaseSynced,
 			corev1.ConditionTrue,
 			"", "",
 		)
@@ -322,7 +322,7 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	if err != nil {
 		app.Status.Conditions = conditions.SetApplicationCondition(
 			app.Status.Conditions,
-			shipperv1.ApplicationConditionTypeValidHistory,
+			shipper.ApplicationConditionTypeValidHistory,
 			corev1.ConditionFalse,
 			conditions.BrokenReleaseGeneration,
 			fmt.Sprintf("could not get the generation annotation from release %q: %q", latestRelease.GetName(), err),
@@ -335,7 +335,7 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	if err != nil {
 		app.Status.Conditions = conditions.SetApplicationCondition(
 			app.Status.Conditions,
-			shipperv1.ApplicationConditionTypeValidHistory,
+			shipper.ApplicationConditionTypeValidHistory,
 			corev1.ConditionFalse,
 			conditions.BrokenApplicationObservedGeneration,
 			fmt.Sprintf("could not get the generation annotation: %q", err),
@@ -347,10 +347,10 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	// Rollback: reset app template & reset latest observed.
 	if generation < highestObserved {
 		app.Spec.Template = *(latestRelease.Environment.DeepCopy())
-		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
+		app.Annotations[shipper.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
 		app.Status.Conditions = conditions.SetApplicationCondition(
 			app.Status.Conditions,
-			shipperv1.ApplicationConditionTypeAborting,
+			shipper.ApplicationConditionTypeAborting,
 			corev1.ConditionTrue,
 			"",
 			fmt.Sprintf("abort in progress, returning state to release %q", latestRelease.GetName()),
@@ -361,7 +361,7 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 
 	app.Status.Conditions = conditions.SetApplicationCondition(
 		app.Status.Conditions,
-		shipperv1.ApplicationConditionTypeAborting,
+		shipper.ApplicationConditionTypeAborting,
 		corev1.ConditionFalse,
 		"", "",
 	)
@@ -369,7 +369,7 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	// Assume history is ok...
 	app.Status.Conditions = conditions.SetApplicationCondition(
 		app.Status.Conditions,
-		shipperv1.ApplicationConditionTypeValidHistory,
+		shipper.ApplicationConditionTypeValidHistory,
 		corev1.ConditionTrue, "", "",
 	)
 
@@ -382,11 +382,11 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	// proceed as normal.
 	if generation > highestObserved {
 		highestObserved = generation
-		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
+		app.Annotations[shipper.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
 
 		app.Status.Conditions = conditions.SetApplicationCondition(
 			app.Status.Conditions,
-			shipperv1.ApplicationConditionTypeValidHistory,
+			shipper.ApplicationConditionTypeValidHistory,
 			corev1.ConditionFalse,
 			conditions.BrokenReleaseGeneration,
 			fmt.Sprintf("the generation on release %q (%d) is higher than the highest observed by this application (%d). syncing application's highest observed generation to match. this should self-heal.", latestRelease.GetName(), generation, highestObserved),
@@ -395,7 +395,7 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 
 	app.Status.Conditions = conditions.SetApplicationCondition(
 		app.Status.Conditions,
-		shipperv1.ApplicationConditionTypeValidHistory,
+		shipper.ApplicationConditionTypeValidHistory,
 		corev1.ConditionTrue,
 		"", "",
 	)
@@ -404,10 +404,10 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	// identical.
 	if identicalEnvironments(app.Spec.Template, latestRelease.Environment) {
 		// explicitly setting the annotation here helps recover from a broken 0 case
-		app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
+		app.Annotations[shipper.AppHighestObservedGenerationAnnotation] = strconv.Itoa(generation)
 		app.Status.Conditions = conditions.SetApplicationCondition(
 			app.Status.Conditions,
-			shipperv1.ApplicationConditionTypeReleaseSynced,
+			shipper.ApplicationConditionTypeReleaseSynced,
 			corev1.ConditionTrue,
 			"", "",
 		)
@@ -421,7 +421,7 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	if err != nil {
 		app.Status.Conditions = conditions.SetApplicationCondition(
 			app.Status.Conditions,
-			shipperv1.ApplicationConditionTypeReleaseSynced,
+			shipper.ApplicationConditionTypeReleaseSynced,
 			corev1.ConditionFalse,
 			conditions.CreateReleaseFailed,
 			fmt.Sprintf("could not create a new release: %q", err),
@@ -429,10 +429,10 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		return err
 	}
 
-	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = strconv.Itoa(newGen)
+	app.Annotations[shipper.AppHighestObservedGenerationAnnotation] = strconv.Itoa(newGen)
 	app.Status.Conditions = conditions.SetApplicationCondition(
 		app.Status.Conditions,
-		shipperv1.ApplicationConditionTypeReleaseSynced,
+		shipper.ApplicationConditionTypeReleaseSynced,
 		corev1.ConditionTrue,
 		"", "",
 	)
@@ -440,8 +440,8 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 	return nil
 }
 
-func (c *Controller) cleanUpReleasesForApplication(app *shipperv1.Application) {
-	installedReleases := []*shipperv1.Release{}
+func (c *Controller) cleanUpReleasesForApplication(app *shipper.Application) {
+	installedReleases := []*shipper.Release{}
 
 	releases, err := c.getSortedAppReleases(app)
 	if err != nil {
@@ -459,7 +459,7 @@ func (c *Controller) cleanUpReleasesForApplication(app *shipperv1.Application) {
 			continue
 		}
 
-		err = c.shipperClientset.ShipperV1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})
+		err = c.shipperClientset.ShipperV1alpha1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})
 		if err != nil {
 			if kerrors.IsNotFound(err) {
 				// Skip this release: it's already deleted.
@@ -478,7 +478,7 @@ func (c *Controller) cleanUpReleasesForApplication(app *shipperv1.Application) {
 	overhead := len(installedReleases) - int(*app.Spec.RevisionHistoryLimit)
 	for i := 0; i < overhead; i++ {
 		rel := installedReleases[i]
-		err = c.shipperClientset.ShipperV1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})
+		err = c.shipperClientset.ShipperV1alpha1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})
 		if err != nil {
 			runtime.HandleError(err)
 			return

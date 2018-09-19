@@ -10,8 +10,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	kubelisters "k8s.io/client-go/listers/core/v1"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 )
 
 var (
@@ -141,7 +141,7 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 			appName = "unknown"
 		}
 
-		clusters := strings.Split(rel.Annotations[shipperv1.ReleaseClustersAnnotation], ",")
+		clusters := strings.Split(rel.Annotations[shipper.ReleaseClustersAnnotation], ",")
 		if len(clusters) == 0 || len(clusters) == 1 && clusters[0] == "" {
 			clusters = []string{"unknown"}
 		}
@@ -294,7 +294,7 @@ func getNamespaces(lister kubelisters.NamespaceLister) ([]*corev1.Namespace, err
 		return nil, err
 	}
 
-	nsBlacklist := []string{"kube-system", "kube-public", "kube-dns", shipperv1.ShipperNamespace}
+	nsBlacklist := []string{"kube-system", "kube-public", "kube-dns", shipper.ShipperNamespace}
 
 	filtered := make([]*corev1.Namespace, 0, len(nss))
 NS:

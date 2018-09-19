@@ -13,11 +13,11 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/chart"
-	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
@@ -33,7 +33,7 @@ const (
 
 // Controller is a Kubernetes controller that knows how to schedule Releases.
 type Controller struct {
-	shipperclientset shipper.Interface
+	shipperclientset shipperclient.Interface
 
 	releasesLister shipperlisters.ReleaseLister
 	releasesSynced cache.InformerSynced
@@ -48,14 +48,14 @@ type Controller struct {
 
 // NewController returns a new Schedule controller.
 func NewController(
-	shipperclientset shipper.Interface,
+	shipperclientset shipperclient.Interface,
 	shipperInformerFactory shipperinformers.SharedInformerFactory,
 	chartFetchFunc chart.FetchFunc,
 	recorder record.EventRecorder,
 ) *Controller {
 
-	releaseInformer := shipperInformerFactory.Shipper().V1().Releases()
-	clusterInformer := shipperInformerFactory.Shipper().V1().Clusters()
+	releaseInformer := shipperInformerFactory.Shipper().V1alpha1().Releases()
+	clusterInformer := shipperInformerFactory.Shipper().V1alpha1().Clusters()
 
 	controller := &Controller{
 		shipperclientset: shipperclientset,
@@ -189,7 +189,7 @@ func (c *Controller) syncOne(key string) bool {
 
 		reason, shouldRetry := classifyError(err)
 		condition := releaseutil.NewReleaseCondition(
-			shipperv1.ReleaseConditionTypeScheduled,
+			shipper.ReleaseConditionTypeScheduled,
 			corev1.ConditionFalse,
 			reason,
 			err.Error(),
@@ -197,7 +197,7 @@ func (c *Controller) syncOne(key string) bool {
 
 		releaseutil.SetReleaseCondition(&release.Status, *condition)
 
-		if _, err := c.shipperclientset.ShipperV1().Releases(namespace).Update(release); err != nil {
+		if _, err := c.shipperclientset.ShipperV1alpha1().Releases(namespace).Update(release); err != nil {
 			runtime.HandleError(fmt.Errorf("error updating Release %q with condition (will retry): %s", key, err))
 			// always retry failing to write the error out to the Release: we need to communicate this to the user
 			return true

@@ -12,7 +12,7 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	kubetesting "k8s.io/client-go/testing"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
@@ -187,8 +187,8 @@ func TestWeightCalculatedForJustOneApplication(t *testing.T) {
 	}
 
 	foreignAppLabels := map[string]string{
-		shipperv1.ReleaseLabel: "blorg",
-		shipperv1.AppLabel:     "someOtherApp",
+		shipper.ReleaseLabel: "blorg",
+		shipper.AppLabel:     "someOtherApp",
 	}
 	// add a pod for an unrelated application
 	pod := &corev1.Pod{
@@ -262,7 +262,7 @@ type podLabelShifterFixture struct {
 	client           *kubefake.Clientset
 	objects          []runtime.Object
 	pods             []*corev1.Pod
-	trafficTargets   []*shipperv1.TrafficTarget
+	trafficTargets   []*shipper.TrafficTarget
 }
 
 func newPodLabelShifterFixture(t *testing.T, name string) *podLabelShifterFixture {
@@ -294,8 +294,8 @@ func (f *podLabelShifterFixture) addPods(releaseName string, count int) {
 
 func (f *podLabelShifterFixture) addService() {
 	labels := map[string]string{
-		shipperv1.AppLabel: testApplicationName,
-		shipperv1.LBLabel:  shipperv1.LBForProduction,
+		shipper.AppLabel: testApplicationName,
+		shipper.LBLabel:  shipper.LBForProduction,
 	}
 
 	svc := &corev1.Service{
@@ -384,7 +384,7 @@ func (f *podLabelShifterFixture) checkReleasePodsWithTraffic(release string, exp
 			// runtime.Object and decide whether it is a pod.
 			switch p := obj.(type) {
 			case *corev1.Pod:
-				podRelease, ok := p.GetLabels()[shipperv1.ReleaseLabel]
+				podRelease, ok := p.GetLabels()[shipper.ReleaseLabel]
 				if !ok || podRelease != release {
 					break
 				}
@@ -399,21 +399,21 @@ func (f *podLabelShifterFixture) checkReleasePodsWithTraffic(release string, exp
 	}
 }
 
-func newTrafficTarget(release string, clusterWeights map[string]uint32) *shipperv1.TrafficTarget {
-	tt := &shipperv1.TrafficTarget{
+func newTrafficTarget(release string, clusterWeights map[string]uint32) *shipper.TrafficTarget {
+	tt := &shipper.TrafficTarget{
 		ObjectMeta: metav1.ObjectMeta{
 			// NOTE(btyler): using release name for TTs?
 			Name:      release,
 			Namespace: shippertesting.TestNamespace,
 			Labels:    releaseLabels(release),
 		},
-		Spec: shipperv1.TrafficTargetSpec{
-			Clusters: []shipperv1.ClusterTrafficTarget{},
+		Spec: shipper.TrafficTargetSpec{
+			Clusters: []shipper.ClusterTrafficTarget{},
 		},
 	}
 
 	for cluster, weight := range clusterWeights {
-		tt.Spec.Clusters = append(tt.Spec.Clusters, shipperv1.ClusterTrafficTarget{
+		tt.Spec.Clusters = append(tt.Spec.Clusters, shipper.ClusterTrafficTarget{
 			Name:   cluster,
 			Weight: weight,
 		})
@@ -437,8 +437,8 @@ func newReleasePods(release string, count int) []*corev1.Pod {
 
 func releaseLabels(releaseName string) map[string]string {
 	labels := map[string]string{
-		shipperv1.AppLabel:     testApplicationName,
-		shipperv1.ReleaseLabel: releaseName,
+		shipper.AppLabel:     testApplicationName,
+		shipper.ReleaseLabel: releaseName,
 	}
 	return labels
 }

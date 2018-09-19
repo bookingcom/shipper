@@ -12,7 +12,7 @@ import (
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
@@ -107,23 +107,23 @@ func TestInstallOneCluster(t *testing.T) {
 	// Now we need to check if the installation target process was properly
 	// patched.
 	it := installationTarget.DeepCopy()
-	it.Status.Clusters = []*shipperv1.ClusterInstallationStatus{
+	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
-			Name: "minikube-a", Status: shipperv1.InstallationStatusInstalled,
-			Conditions: []shipperv1.ClusterInstallationCondition{
+			Name: "minikube-a", Status: shipper.InstallationStatusInstalled,
+			Conditions: []shipper.ClusterInstallationCondition{
 				{
-					Type:   shipperv1.ClusterConditionTypeOperational,
+					Type:   shipper.ClusterConditionTypeOperational,
 					Status: corev1.ConditionTrue,
 				},
 				{
-					Type:   shipperv1.ClusterConditionTypeReady,
+					Type:   shipper.ClusterConditionTypeReady,
 					Status: corev1.ConditionTrue,
 				},
 			},
 		},
 	}
 	expectedActions = []kubetesting.Action{
-		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
+		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1alpha1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
 	}
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
@@ -188,38 +188,38 @@ func TestInstallMultipleClusters(t *testing.T) {
 	// Now we need to check if the installation target process was properly patched
 	// and the clusters are listed in alphabetical order.
 	it := installationTarget.DeepCopy()
-	it.Status.Clusters = []*shipperv1.ClusterInstallationStatus{
+	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
 			Name:   "minikube-a",
-			Status: shipperv1.InstallationStatusInstalled,
-			Conditions: []shipperv1.ClusterInstallationCondition{
+			Status: shipper.InstallationStatusInstalled,
+			Conditions: []shipper.ClusterInstallationCondition{
 				{
-					Type:   shipperv1.ClusterConditionTypeOperational,
+					Type:   shipper.ClusterConditionTypeOperational,
 					Status: corev1.ConditionTrue,
 				},
 				{
-					Type:   shipperv1.ClusterConditionTypeReady,
+					Type:   shipper.ClusterConditionTypeReady,
 					Status: corev1.ConditionTrue,
 				},
 			},
 		},
 		{
 			Name:   "minikube-b",
-			Status: shipperv1.InstallationStatusInstalled,
-			Conditions: []shipperv1.ClusterInstallationCondition{
+			Status: shipper.InstallationStatusInstalled,
+			Conditions: []shipper.ClusterInstallationCondition{
 				{
-					Type:   shipperv1.ClusterConditionTypeOperational,
+					Type:   shipper.ClusterConditionTypeOperational,
 					Status: corev1.ConditionTrue,
 				},
 				{
-					Type:   shipperv1.ClusterConditionTypeReady,
+					Type:   shipper.ClusterConditionTypeReady,
 					Status: corev1.ConditionTrue,
 				},
 			},
 		},
 	}
 	expectedActions = []kubetesting.Action{
-		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
+		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1alpha1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
 	}
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
@@ -314,20 +314,20 @@ func TestClientError(t *testing.T) {
 	}
 
 	it := installationTarget.DeepCopy()
-	it.Status.Clusters = []*shipperv1.ClusterInstallationStatus{
+	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
 			Name:    "minikube-a",
-			Status:  shipperv1.InstallationStatusFailed,
+			Status:  shipper.InstallationStatusFailed,
 			Message: "client error",
-			Conditions: []shipperv1.ClusterInstallationCondition{
+			Conditions: []shipper.ClusterInstallationCondition{
 				{
-					Type:    shipperv1.ClusterConditionTypeOperational,
+					Type:    shipper.ClusterConditionTypeOperational,
 					Status:  corev1.ConditionFalse,
 					Reason:  conditions.ServerError,
 					Message: "client error",
 				},
 				{
-					Type:    shipperv1.ClusterConditionTypeReady,
+					Type:    shipper.ClusterConditionTypeReady,
 					Status:  corev1.ConditionUnknown,
 					Reason:  conditions.ServerError,
 					Message: "client error",
@@ -336,7 +336,7 @@ func TestClientError(t *testing.T) {
 		},
 	}
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
+		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1alpha1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
 	}
 	var filteredActions []kubetesting.Action
 	for _, a := range shipperclientset.Actions() {
@@ -393,18 +393,18 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 	}
 
 	it := installationTarget.DeepCopy()
-	it.Status.Clusters = []*shipperv1.ClusterInstallationStatus{
+	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
 			Name:    "minikube-a",
-			Status:  shipperv1.InstallationStatusFailed,
+			Status:  shipper.InstallationStatusFailed,
 			Message: `error building resource client: GroupVersion "v1" not found`,
-			Conditions: []shipperv1.ClusterInstallationCondition{
+			Conditions: []shipper.ClusterInstallationCondition{
 				{
-					Type:   shipperv1.ClusterConditionTypeOperational,
+					Type:   shipper.ClusterConditionTypeOperational,
 					Status: corev1.ConditionTrue,
 				},
 				{
-					Type:    shipperv1.ClusterConditionTypeReady,
+					Type:    shipper.ClusterConditionTypeReady,
 					Status:  corev1.ConditionFalse,
 					Reason:  conditions.ServerError,
 					Message: `error building resource client: GroupVersion "v1" not found`,
@@ -413,7 +413,7 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 		},
 	}
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
+		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1alpha1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
 	}
 	var filteredActions []kubetesting.Action
 	for _, a := range shipperclientset.Actions() {
@@ -469,20 +469,20 @@ func TestManagementServerMissesCluster(t *testing.T) {
 	}
 
 	it := installationTarget.DeepCopy()
-	it.Status.Clusters = []*shipperv1.ClusterInstallationStatus{
+	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
 			Name:    "minikube-a",
-			Status:  shipperv1.InstallationStatusFailed,
+			Status:  shipper.InstallationStatusFailed,
 			Message: `cluster.shipper.booking.com "minikube-a" not found`,
-			Conditions: []shipperv1.ClusterInstallationCondition{
+			Conditions: []shipper.ClusterInstallationCondition{
 				{
-					Type:    shipperv1.ClusterConditionTypeOperational,
+					Type:    shipper.ClusterConditionTypeOperational,
 					Status:  corev1.ConditionFalse,
 					Reason:  conditions.ServerError,
 					Message: `cluster.shipper.booking.com "minikube-a" not found`,
 				},
 				{
-					Type:    shipperv1.ClusterConditionTypeReady,
+					Type:    shipper.ClusterConditionTypeReady,
 					Status:  corev1.ConditionUnknown,
 					Reason:  conditions.ServerError,
 					Message: `cluster.shipper.booking.com "minikube-a" not found`,
@@ -491,7 +491,7 @@ func TestManagementServerMissesCluster(t *testing.T) {
 		},
 	}
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
+		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1alpha1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
 	}
 	var filteredActions []kubetesting.Action
 	for _, a := range shipperclientset.Actions() {

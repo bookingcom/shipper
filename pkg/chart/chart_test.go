@@ -7,7 +7,7 @@ import (
 
 	"k8s.io/helm/pkg/chartutil"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 func TestRender(t *testing.T) {
@@ -23,7 +23,7 @@ func TestRender(t *testing.T) {
 	}
 
 	expectedReplicas := 42
-	vals := &shipperv1.ChartValues{
+	vals := &shipper.ChartValues{
 		"replicaCount": expectedReplicas,
 	}
 
@@ -78,7 +78,7 @@ func TestRenderZeroByteTemplates(t *testing.T) {
 			}
 		}
 
-		rendered, err := Render(chart, "my-complex-app", "my-complex-app", &shipperv1.ChartValues{})
+		rendered, err := Render(chart, "my-complex-app", "my-complex-app", &shipper.ChartValues{})
 		if err != nil {
 			t.Fatalf("failed to render test case %q: %s", testCase, err)
 		}

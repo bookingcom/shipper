@@ -11,12 +11,12 @@ import (
 	"k8s.io/helm/pkg/chartutil"
 	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	chartcache "github.com/bookingcom/shipper/pkg/chart/cache"
 	"github.com/bookingcom/shipper/pkg/metrics/instrumentedclient"
 )
 
-type FetchFunc func(shipperv1.Chart) (*helmchart.Chart, error)
+type FetchFunc func(shipper.Chart) (*helmchart.Chart, error)
 
 // 5mb limit per chart family (all versions of a given chart).
 // A large chart with many objects (but no big bundled files) is 20kb -> 256
@@ -26,7 +26,7 @@ const DefaultCacheLimit = 5 * 1024 * 1024
 
 func FetchRemoteWithCache(dir string, perChartFamilyByteLimit int) FetchFunc {
 	cache := chartcache.NewFilesystemCache(dir, perChartFamilyByteLimit)
-	return func(chart shipperv1.Chart) (*helmchart.Chart, error) {
+	return func(chart shipper.Chart) (*helmchart.Chart, error) {
 		cachedChart, err := cache.Fetch(chart.RepoURL, chart.Name, chart.Version)
 		if err != nil {
 			// There's a good case to make that it would be better to log and download.
@@ -64,7 +64,7 @@ func FetchRemoteWithCache(dir string, perChartFamilyByteLimit int) FetchFunc {
 }
 
 func FetchRemote() FetchFunc {
-	return func(chart shipperv1.Chart) (*helmchart.Chart, error) {
+	return func(chart shipper.Chart) (*helmchart.Chart, error) {
 		data, err := downloadChart(chart.RepoURL, chart.Name, chart.Version)
 		if err != nil {
 			return nil, err

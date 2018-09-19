@@ -7,18 +7,18 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 var ApplicationConditionsShouldDiscardTimestamps = false
 
 func SetApplicationCondition(
-	conditions []shipperv1.ApplicationCondition,
-	typ shipperv1.ApplicationConditionType,
+	conditions []shipper.ApplicationCondition,
+	typ shipper.ApplicationConditionType,
 	status corev1.ConditionStatus,
 	reason string,
 	message string,
-) []shipperv1.ApplicationCondition {
+) []shipper.ApplicationCondition {
 
 	conditionIndex := -1
 	for i, e := range conditions {
@@ -33,7 +33,7 @@ func SetApplicationCondition(
 		if !ApplicationConditionsShouldDiscardTimestamps {
 			lastTransitionTime = metav1.NewTime(time.Now())
 		}
-		aCondition := shipperv1.ApplicationCondition{
+		aCondition := shipper.ApplicationCondition{
 			Type:               typ,
 			Status:             status,
 			LastTransitionTime: lastTransitionTime,

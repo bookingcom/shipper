@@ -16,7 +16,7 @@ import (
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
@@ -222,57 +222,57 @@ func (f *fixture) run() {
 	shippertesting.CheckClusterClientActions(store, f.clusters, f.t)
 }
 
-func (f *fixture) addTrafficTarget(tt *shipperv1.TrafficTarget) {
+func (f *fixture) addTrafficTarget(tt *shipper.TrafficTarget) {
 	f.trafficTargetCount++
 	f.objects = append(f.objects, tt)
 }
 
-func (f *fixture) expectTrafficTargetUpdate(tt *shipperv1.TrafficTarget) {
-	gvr := shipperv1.SchemeGroupVersion.WithResource("traffictargets")
+func (f *fixture) expectTrafficTargetUpdate(tt *shipper.TrafficTarget) {
+	gvr := shipper.SchemeGroupVersion.WithResource("traffictargets")
 	action := kubetesting.NewUpdateAction(gvr, tt.GetNamespace(), tt)
 	f.actions = append(f.actions, action)
 }
 
-func buildTrafficTarget(app, release string, clusterWeights map[string]uint32) *shipperv1.TrafficTarget {
-	clusters := make([]shipperv1.ClusterTrafficTarget, 0, len(clusterWeights))
+func buildTrafficTarget(app, release string, clusterWeights map[string]uint32) *shipper.TrafficTarget {
+	clusters := make([]shipper.ClusterTrafficTarget, 0, len(clusterWeights))
 
 	for cluster, weight := range clusterWeights {
-		clusters = append(clusters, shipperv1.ClusterTrafficTarget{
+		clusters = append(clusters, shipper.ClusterTrafficTarget{
 			Name:   cluster,
 			Weight: weight,
 		})
 	}
 
-	return &shipperv1.TrafficTarget{
+	return &shipper.TrafficTarget{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      release,
 			Namespace: shippertesting.TestNamespace,
 			Labels: map[string]string{
-				shipperv1.AppLabel:     app,
-				shipperv1.ReleaseLabel: release,
+				shipper.AppLabel:     app,
+				shipper.ReleaseLabel: release,
 			},
 		},
-		Spec: shipperv1.TrafficTargetSpec{
+		Spec: shipper.TrafficTargetSpec{
 			Clusters: clusters,
 		},
 	}
 }
 
-func buildTotalSuccessStatus(tt *shipperv1.TrafficTarget) []*shipperv1.ClusterTrafficStatus {
-	clusterStatuses := make([]*shipperv1.ClusterTrafficStatus, 0, len(tt.Spec.Clusters))
+func buildTotalSuccessStatus(tt *shipper.TrafficTarget) []*shipper.ClusterTrafficStatus {
+	clusterStatuses := make([]*shipper.ClusterTrafficStatus, 0, len(tt.Spec.Clusters))
 
 	for _, cluster := range tt.Spec.Clusters {
-		clusterStatuses = append(clusterStatuses, &shipperv1.ClusterTrafficStatus{
+		clusterStatuses = append(clusterStatuses, &shipper.ClusterTrafficStatus{
 			Name:            cluster.Name,
 			AchievedTraffic: cluster.Weight,
 			Status:          "Synced",
-			Conditions: []shipperv1.ClusterTrafficCondition{
-				shipperv1.ClusterTrafficCondition{
-					Type:   shipperv1.ClusterConditionTypeOperational,
+			Conditions: []shipper.ClusterTrafficCondition{
+				shipper.ClusterTrafficCondition{
+					Type:   shipper.ClusterConditionTypeOperational,
 					Status: corev1.ConditionTrue,
 				},
-				shipperv1.ClusterTrafficCondition{
-					Type:   shipperv1.ClusterConditionTypeReady,
+				shipper.ClusterTrafficCondition{
+					Type:   shipper.ClusterConditionTypeReady,
 					Status: corev1.ConditionTrue,
 				},
 			},
@@ -288,8 +288,8 @@ func buildService(app string) runtime.Object {
 			Name:      fmt.Sprintf("%s-prod", app),
 			Namespace: shippertesting.TestNamespace,
 			Labels: map[string]string{
-				shipperv1.LBLabel:  shipperv1.LBForProduction,
-				shipperv1.AppLabel: app,
+				shipper.LBLabel:  shipper.LBForProduction,
+				shipper.AppLabel: app,
 			},
 		},
 		Spec: corev1.ServiceSpec{
@@ -313,8 +313,8 @@ func buildPods(app, release string, count int, withTraffic bool) []runtime.Objec
 				Namespace: shippertesting.TestNamespace,
 				Labels: map[string]string{
 					trafficLabel:           getsTraffic,
-					shipperv1.AppLabel:     app,
-					shipperv1.ReleaseLabel: release,
+					shipper.AppLabel:     app,
+					shipper.ReleaseLabel: release,
 				},
 			},
 		})
