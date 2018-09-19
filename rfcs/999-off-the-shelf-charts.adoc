@@ -59,8 +59,8 @@ The following listing exemplifies the second approach:
 ----
 spec:
   template:
-    loadBalancer: <1>
-      v1.Service: <2>
+    loadBalancer:   <1>
+      "v1.Service": <2>
         name: my-app
         selector: {}
       "networking.istio.io/v1alpha3.VirtualService":
@@ -68,7 +68,7 @@ spec:
 ----
 
 <1> `.spec.template.loadBalancer` is backed by a `map[string]interface{}`.
-<2> The format is `apiVersion.Kind`. In the case of Kubernetes core resource definitions, `apiVersion` is only `v1`, thus `v1.Service`.
+<2> The key format is `apiVersion.Kind`. In the case of Kubernetes core resource definitions, `apiVersion` is only `v1`, thus `v1.Service`. It is important to mention the `loadBalancer` field must be *explicitly encoded* as a string; for example `v1.Service` is different than `"v1.Service"` due the fact of `v1.Service` as a key is a shortcut for adding sub-objects when composing YAML documents.
 
 When Shipper is executing a load balancing back-end that uses 'v1.Service' objects to perform traffic shifting, the given configuration will be available to the implementation.
 
