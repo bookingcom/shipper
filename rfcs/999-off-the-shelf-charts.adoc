@@ -50,7 +50,7 @@ spec:
 
 === Generic and open load balancing configuration
 
-The second approach loses the type safety but doesn't require any changes to the backing type: the configuration would be a list of objects containing the `gvk` and `options` fields. This means that load balancing back-end implementations would use the configuration related to the GVK they're interested; for example, the current implementation uses Kubernetes' services as load balancing interfaces, so it'd contain a configuration for the `v1.Service` gvk.
+The second approach loses the type safety but doesn't require any changes to the backing type: the configuration would be a map of type `map[string]interface{}`, where the string key is a representation of a Kubernetes object's GVK. This means that load balancing back-end implementations would use the configuration related to the GVK they're interested; for example, the current implementation uses Kubernetes' services as load balancing interfaces, so it'd contain a configuration for the `v1.Service` GVK representation.
 
 The following listing exemplifies the second approach:
 
