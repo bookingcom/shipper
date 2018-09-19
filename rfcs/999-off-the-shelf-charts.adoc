@@ -28,12 +28,13 @@ The following listing shows an example of the first approach:
 [source,yaml]
 ----
 spec:
-  loadBalancer:     # <1>
-    kubernetes:     # <2>
-      name: my-app  # <3>
-      selector: {}  # <4>
-    istio:
-      ...       # Relevant Istio configuration here
+  template:
+    loadBalancer:     # <1>
+      kubernetes:     # <2>
+        name: my-app  # <3>
+        selector: {}  # <4>
+      istio:
+        ...       # Relevant Istio configuration here
 ----
 
 <1> `.spec.loadBalancer` represents the load balancer configuration for the application, one field per known implementation.
@@ -45,17 +46,21 @@ The second approach loses the type safety but doesn't require any changes to the
 
 The following listing exemplifies the second approach:
 
-.Second approach
+.Specifying per GVK configuration
 [source,yaml]
 ----
 spec:
-  loadBalancer:
-    v1.Service:
-      name: my-app
-      selector: {}
-    "networking.istio.io/v1alpha3.VirtualService":
-      ...       # Relevant Istio configuration here
+  template:
+    loadBalancer: <1>
+      v1.Service: <2>
+        name: my-app
+        selector: {}
+      "networking.istio.io/v1alpha3.VirtualService":
+        ...       # Relevant Istio configuration here
 ----
+
+<1> `.spec.template.loadBalancer` is backed by a `map[string]interface{}`.
+<2> The format is `apiVersion.Kind`. In the case of Kubernetes core resource definitions, `apiVersion` is only `v1`, thus `v1.Service`.
 
 When Shipper is executing a load balancing back-end that uses 'v1.Service' objects to perform traffic shifting, the given configuration will be available to the implementation.
 
