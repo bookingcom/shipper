@@ -1,7 +1,7 @@
 
 == Abstract
 
-In the integration design of Helm packages in Shipper, we've opted to have a tight contract for production, load balance Kubernetes Service manifests. This designed proved to be sub-optimal; it requires that special Helm packages *must* be created in order to be compatible with Shipper.
+When defining the integration of Helm packages in Shipper, we've opted to have a very simple and constrained design, established by the following rules: *one and only one* deployment present in the chart, and *one and only one service* with a specific label. This design has served us well until now, but it has a clear drawback: it requires that special Helm packages *must* be created in order to be compatible with Shipper.
 
 This RFC proposes formally specifying a compatibility layer in Shipper to make it possible to use publicly available charts with it.
 
