@@ -341,7 +341,7 @@ func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration)
 		config.KeyData = key
 	}
 
-	if insecureSkipTlsVerify, err := util.GetBool(secret, "tls.insecure-skip-tls-verify"); err != nil {
+	if insecureSkipTlsVerify, err := util.GetBool(secret, "tls.insecure-skip-tls-verify"); err != nil && util.IsDecodeError(err) {
 		return nil, err
 	} else {
 		config.Insecure = insecureSkipTlsVerify
