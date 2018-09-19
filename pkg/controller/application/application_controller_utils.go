@@ -19,9 +19,6 @@ import (
 func (c *Controller) createReleaseForApplication(app *shipperv1.Application, releaseName string, iteration, generation int) (*shipperv1.Release, error) {
 	// Label releases with their hash; select by that label and increment if needed
 	// appname-hash-of-template-iteration.
-	var (
-		err error
-	)
 
 	glog.V(4).Infof("Generated Release name for Application %q: %q", controller.MetaKey(app), releaseName)
 
