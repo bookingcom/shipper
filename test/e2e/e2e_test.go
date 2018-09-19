@@ -1,11 +1,9 @@
 package e2e
 
 import (
-	"encoding/base64"
 	"flag"
 	"fmt"
 	"os"
-	"strconv"
 	"testing"
 	"time"
 
@@ -24,6 +22,7 @@ import (
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	"github.com/bookingcom/shipper/pkg/clusterclientstore/util"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
@@ -649,12 +648,11 @@ func buildTargetClient(clusterName string) kubernetes.Interface {
 	config.CertData = secret.Data["tls.crt"]
 	config.KeyData = secret.Data["tls.key"]
 
-	if insecureSkipTlsVerify, ok := secret.Data["tls.insecure-skip-tls-verify"]; ok {
-		if decoded, err := base64.StdEncoding.DecodeString(string(insecureSkipTlsVerify)); err != nil {
-		} else if insecure, err := strconv.ParseBool(string(decoded)); err != nil {
-		} else {
-			config.Insecure = insecure
-		}
+	// It is fine if the key doesn't exist (KeyNotFoundError), but if the key exists but couldn't be decoded we stop the process.
+	if insecureSkipTlsVerify, err := util.GetBool(secret, "tls.insecure-skip-tls-verify"); err != nil && util.IsDecodeError(err) {
+		glog.Fatalf("error: %s", err.Error())
+	} else {
+		config.Insecure = insecureSkipTlsVerify
 	}
 
 	client, err := kubernetes.NewForConfig(config)

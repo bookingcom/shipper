@@ -1,9 +1,7 @@
 package clusterclientstore
 
 import (
-	"encoding/base64"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/golang/glog"
@@ -21,6 +19,7 @@ import (
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperv1informer "github.com/bookingcom/shipper/pkg/client/informers/externalversions/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore/cache"
+	"github.com/bookingcom/shipper/pkg/clusterclientstore/util"
 )
 
 // This enables tests to inject an appropriate fake client, which allows us to
@@ -342,14 +341,10 @@ func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration)
 		config.KeyData = key
 	}
 
-	if insecureSkipTlsVerify, ok := secret.Data["tls.insecure-skip-tls-verify"]; ok {
-		if decoded, err := base64.StdEncoding.DecodeString(string(insecureSkipTlsVerify)); err != nil {
-			return nil, fmt.Errorf("could not decode base64 data from 'tls.insecure-skip-tls-verify': %s", err)
-		} else if insecure, err := strconv.ParseBool(string(decoded)); err != nil {
-			return nil, fmt.Errorf("could not decode bool value from 'tls.insecure-skip-tls-verify': %s", err)
-		} else {
-			config.Insecure = insecure
-		}
+	if insecureSkipTlsVerify, err := util.GetBool(secret, "tls.insecure-skip-tls-verify"); err != nil {
+		return nil, err
+	} else {
+		config.Insecure = insecureSkipTlsVerify
 	}
 
 	return config, nil
