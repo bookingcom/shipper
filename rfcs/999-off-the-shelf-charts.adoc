@@ -1,15 +1,20 @@
 
 == Abstract
 
-When defining the integration of Helm packages in Shipper, we've opted to have a very simple and constrained design, established by the following rules: *one and only one* deployment present in the chart, and *one and only one service* with a specific label. This design has served us well until now, but it has a clear drawback: it requires that special Helm packages *must* be created in order to be compatible with Shipper.
+When defining the integration of Helm packages in Shipper, we've opted to have a very simple and constrained design, established by the following rules: *one and only one* deployment present in the chart, and *one and only one service* with a stable name and a specific label to act as load balancing service. This design has served us well until now, but it has a clear drawback: it requires that special Helm packages *must* be created in order to be compatible with Shipper.
 
 This RFC proposes formally specifying a compatibility layer in Shipper to make it possible to use publicly available charts with it.
 
 == Rationale
 
-Shipper's contract with Helm charts specify that a chart needs to contain *one and only one* deployment manifest and *one and only one* load balancing service manifest. Having multiple Kubernetes service is useful for, for example, enable access to pods belonging only to the new version of an image *before* starting a release process.
+Shipper's contract with Helm charts specify that a chart needs to contain *one and only one* deployment manifest and *one and only one* load balancing service manifest. Having multiple Kubernetes services is useful for, for example, enable access to pods belonging only to the new version of an image *before* starting a release process.
 
-To identify this load balancing service manifest, once it is installed on a Kubernetes cluster, a label on the specific load balancing service is used (`shipper-lb: production` more specifically). This choice made any existing chart on the wild incompatible with Shipper.
+To identify this load balancing service manifest, once it is installed on a Kubernetes cluster, a label on the specific load balancing service is used (`shipper-lb: production` more specifically). This choice made any existing chart on the wild incompatible with Shipper; this has a very important and awkward side-effect: it is very inconvenient to even try Shipper out without having an entire environment set prior testing it (such as a Helm repository and a chart crafted specially to work with Shipper).
+
+Being able to easily use off-the-shelf charts can bring the following benefits:
+
+- Less documentation to be written regarding setting a whole environment to just try Shipper on a Minikube or Docker for Desktop Kubernetes installation.
+- Shipper becomes much more attractive to a much wider audience, increasing the changes of adoption by the ecosystem.
 
 == Specification
 
@@ -78,19 +83,41 @@ A nice property of this approach is that any load balancing back-end implementat
 
 The implementation described on this section is the second presented, "Generic and open load balancing configuration". This choice was made by the writer because:
 
-- It is simple. A root object is offered with the type `map[string]interface{}`, so back-end implementers are free to choose the most appropriate layout for their configuration from that point on.
+- It is simple. A root object is offered with the type `map[string]interface{}`, so back-end implementers are free to choose the most appropriate layout for their configuration from that point on. Additionally, there's no reason for back-end implementers to not try to coerce from this liberal map to another data-structure of their choice when consuming it.
 - Is future proof. As long as keys don't overlap, their meaning can be changed without much effort if GVKs are proven problematic.
 
-=== Task list
+=== High level activities to be performed
 
 NOTE: Types names and definitions are subject to discussion, just presented like this to have a head start.
 
 - Add a new field in `v1.ReleaseEnvironment` called `LoadBalancer` of type `[]LoadBalancer`
++
+[source,go]
+----
+type ReleaseEnvironment struct {
+        // ...
+        LoadBalancer []LoadBalancer `json:"loadBalancer,omitempty" <1>
+}
+----
++
+<1> The absence of the `loadBalancer` key might be useful during migration to indicate that the original behavior (searching and ensuring that a valid service with the appropriate label exists) is the intended behavior.
 - Add a new type `v1.LoadBalancer`, defined as:
 +
 [source,go]
 ----
 type LoadBalancer map[string]interface{}
 ----
-- Modify Installation Controller to patch the service before installation on application clusters. The `selector` field can be either `null`, meaning that no operation will be carried regarding the service's selector, or be a dictionary of type `map[string]string` which will be used to replace the service's `selector` field. (*Note:* do we need to perform any check or patching in the deployment as well?)
++
+This allows the following configuration to be stored and later on consumed by the Installation and Traffic Controllers:
++
+[source,yaml]
+----
+spec:
+  template:
+    loadBalancer:
+      "v1.Service":
+        name: my-app
+        selector: {}
+----
+- Modify Installation Controller to conditionally patch the service before installation on application clusters. The `selector` field can be either `nil`, meaning that no operation will be carried regarding the service's selector, or be a dictionary of type `map[string]string` which will be used to replace the service's `selector` field. (*Note:* do we need to perform any check or patching in the deployment as well?)
 - Modify Traffic Controller business logic to use the configuration to find the service that should be used to perform traffic shifting. The `name` field should contain the service name in the application's namespace.
