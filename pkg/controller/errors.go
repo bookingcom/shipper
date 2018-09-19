@@ -2,7 +2,6 @@ package controller
 
 import (
 	"fmt"
-
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -37,6 +36,11 @@ func NewWrongOwnerReferenceError(name string, expectedUID, gotUID types.UID) Wro
 
 type InvalidChartError struct {
 	message string
+}
+
+func IsInvalidChartError(err error) bool {
+	_, ok := err.(InvalidChartError)
+	return ok
 }
 
 func NewInvalidChartError(m string) InvalidChartError {
