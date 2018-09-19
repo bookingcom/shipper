@@ -15,9 +15,16 @@ To identify this load balancing service manifest, once it is installed on a Kube
 
 To overcome that limitation, we want to introduce the field `.spec.template.loadBalancer` field in the Application CRD; this field will be used to propagate relevant load balancing configuration to Shipper.
 
-The following listing shows an Application manifest with the `.spec.template.loadBalancer`:
+There are at least two ways of approaching this problem:
 
-..spec.template.loadBalancer example
+- Introduce specific keys under `.spec.template.loadBalancer`; or
+- Make `.spec.template.loadBalancer` contain generic, open ended load balancing back-end configurations based on GVKs.
+
+The first option is a very explicit and type safe approach, on the expense of modifying the type backing this field every time a new load balancing back-end implementation is created. This also poses a challenge on designing support and integration with any kind of proprietary Service Mesh control plane implementation, specially when building Shipper. Another point is that any extension on the aforementioned type will be a backwards incompatible change, requiring a new resource definition version and a migration process.
+
+The following listing shows an example of the first approach:
+
+.Configuration example
 [source,yaml]
 ----
 spec:
@@ -26,13 +33,33 @@ spec:
       name: my-app  # <3>
       selector: {}  # <4>
     istio:
-      ...
+      ...       # Relevant Istio configuration here
 ----
 
 <1> `.spec.loadBalancer` represents the load balancer configuration for the application, one field per known implementation.
 <2> `.spec.loadBalancer.kubernetes` holds the configuration for vanilla Kubernetes traffic shifting implementation.
 <3> Name of the Kubernetes service manifest that should be used as load balancing service.
 <4> Selectors that should be used to overwrite the load balancing service selector.
+
+The second approach loses the type safety but doesn't require any changes to the backing type: the configuration would be a list of objects containing the `gvk` and `options` fields. This means that load balancing back-end implementations would use the configuration related to the GVK they're interested; for example, the current implementation uses Kubernetes' services as load balancing interfaces, so it'd contain a configuration for the `v1.Service` gvk.
+
+The following listing exemplifies the second approach:
+
+.Second approach
+[source,yaml]
+----
+spec:
+  loadBalancer:
+    v1.Service:
+      name: my-app
+      selector: {}
+    "networking.istio.io/v1alpha3.VirtualService":
+      ...       # Relevant Istio configuration here
+----
+
+When Shipper is executing a load balancing back-end that uses 'v1.Service' objects to perform traffic shifting, the given configuration will be available to the implementation.
+
+A nice property of this approach is that any load balancing back-end implementation might be added and registered when building Shipper, and be further enabled through Shipper command line options at runtime without requiring additional modifications.
 
 == TODO
 
