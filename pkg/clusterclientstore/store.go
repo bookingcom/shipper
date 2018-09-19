@@ -1,7 +1,9 @@
 package clusterclientstore
 
 import (
+	"encoding/base64"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/golang/glog"
@@ -11,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
 	corev1informer "k8s.io/client-go/informers/core/v1"
-	kubernetes "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	kubecache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -253,7 +255,11 @@ func (s *Store) create(cluster *shipperv1.Cluster, secret *corev1.Secret) error 
 		panic(fmt.Sprintf("Secret %q doesn't have a checksum annotation. this should be checked before calling 'create'", secret.Name))
 	}
 
-	config := buildConfig(cluster.Spec.APIMaster, secret, s.restTimeout)
+	config, err := buildConfig(cluster.Spec.APIMaster, secret, s.restTimeout)
+	if err != nil {
+		return fmt.Errorf("create client configuration for Cluster %q: %s", cluster.Name, err)
+	}
+
 	client, err := s.buildClient(cluster.Name, config)
 	if err != nil {
 		return fmt.Errorf("create client for Cluster %q: %s", cluster.Name, err)
@@ -262,7 +268,11 @@ func (s *Store) create(cluster *shipperv1.Cluster, secret *corev1.Secret) error 
 	// These are only used in shared informers. Setting HTTP timeout here would
 	// affect watches which is undesirable. Instead, we leave it to client-go (see
 	// k8s.io/client-go/tools/cache) to govern watch durations.
-	informerConfig := buildConfig(cluster.Spec.APIMaster, secret, nil)
+	informerConfig, err := buildConfig(cluster.Spec.APIMaster, secret, nil)
+	if err != nil {
+		return fmt.Errorf("build informer client configuration for Cluster %q: %s", cluster.Name, err)
+	}
+
 	informerClient, err := s.buildClient(cluster.Name, informerConfig)
 	if err != nil {
 		return fmt.Errorf("create informer client for Cluster %q: %s", cluster.Name, err)
@@ -292,7 +302,7 @@ func (s *Store) create(cluster *shipperv1.Cluster, secret *corev1.Secret) error 
 
 // TODO(btyler): error here or let any invalid data get picked up by errors from
 // kube.NewForConfig or auth problems at connection time?
-func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration) *rest.Config {
+func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration) (*rest.Config, error) {
 	config := &rest.Config{
 		Host: host,
 	}
@@ -310,7 +320,7 @@ func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration)
 
 		token := secret.Data["token"]
 		config.BearerToken = string(token)
-		return config
+		return config, nil
 	}
 
 	// Let's figure it's either a TLS secret or an opaque thing formatted like a
@@ -332,5 +342,15 @@ func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration)
 		config.KeyData = key
 	}
 
-	return config
+	if insecureSkipTlsVerify, ok := secret.Data["tls.insecure-skip-tls-verify"]; ok {
+		if decoded, err := base64.StdEncoding.DecodeString(string(insecureSkipTlsVerify)); err != nil {
+			return nil, fmt.Errorf("could not decode base64 data from 'tls.insecure-skip-tls-verify': %s", err)
+		} else if insecure, err := strconv.ParseBool(string(decoded)); err != nil {
+			return nil, fmt.Errorf("could not decode bool value from 'tls.insecure-skip-tls-verify': %s", err)
+		} else {
+			config.Insecure = insecure
+		}
+	}
+
+	return config, nil
 }
