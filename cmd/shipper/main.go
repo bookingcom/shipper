@@ -157,13 +157,17 @@ func main() {
 		func(clusterName string, config *rest.Config) (kubernetes.Interface, error) {
 			glog.V(8).Infof("Building a client for Cluster %q", clusterName)
 
-			// Ooookaaayyy. This is temporary. I promise. No, really. This is to buy us
-			// time to think how the clusterclientstore API needs to change to make it
-			// nice and easy keeping distinct clients per controller per cluster.
-			// The number 3 is the number of controllers that share clients in the
-			// current implementation.
+			// NOTE(btyler/asurikov) Ooookaaayyy. This is temporary. I promise.
+			// No, really. This is to buy us time to think how the
+			// clusterclientstore API needs to change to make it nice and easy
+			// keeping distinct clients per controller per cluster. The number
+			// 30 is 10x the default for each controller that shares a client
+			// in the current implementation. This is deliberately high so that
+			// we can track optimization efforts with precision; we're
+			// reasonably confident that the API server can tolerate it.
 			shallowCopy := *config
-			shallowCopy.QPS = shallowCopy.QPS * 3
+			shallowCopy.QPS = rest.DefaultQPS * 30
+			shallowCopy.Burst = rest.DefaultBurst * 30
 
 			return kubernetes.NewForConfig(&shallowCopy)
 		},
@@ -558,6 +562,16 @@ func buildShipperClient(restCfg *rest.Config, ua string, timeout *time.Duration)
 		shallowCopy.Timeout = *timeout
 	}
 
+	// NOTE(btyler): These are deliberately high: we're reasonably certain the
+	// API servers can handle a much larger number of requests, and we want to
+	// have better sensitivity to any shifts in API call efficiency (as well as
+	// give users a better experience by reducing queue latency). I plan to
+	// turn this back down once we've got some metrics on where our current ratio
+	// of shipper objects to API calls is and we start working towards optimizing
+	// that ratio.
+	shallowCopy.QPS = rest.DefaultQPS * 10
+	shallowCopy.Burst = rest.DefaultBurst * 10
+
 	return shipperclientset.NewForConfigOrDie(&shallowCopy)
 }
 
@@ -569,6 +583,12 @@ func buildKubeClient(restCfg *rest.Config, ua string, timeout *time.Duration) *k
 	if timeout != nil {
 		shallowCopy.Timeout = *timeout
 	}
+	// NOTE(btyler): Like with the Shipper client, these are deliberately high.
+	// The vast majority of API calls here are Events, so optimization in
+	// this case will be examining utility of the various events we emit.
+
+	shallowCopy.QPS = rest.DefaultQPS * 10
+	shallowCopy.Burst = rest.DefaultBurst * 10
 
 	return kubernetes.NewForConfigOrDie(&shallowCopy)
 }
