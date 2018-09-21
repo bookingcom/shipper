@@ -11,8 +11,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubetesting "k8s.io/client-go/testing"
-	"k8s.io/helm/pkg/repo/repotest"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/helm/pkg/repo/repotest"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
@@ -231,7 +231,6 @@ func TestRevisionHistoryLimit(t *testing.T) {
 	}
 
 	f.expectReleaseDelete(releaseFoo)
-	f.expectReleaseDelete(releaseBar)
 	f.expectApplicationUpdate(expectedApp)
 	f.run()
 }

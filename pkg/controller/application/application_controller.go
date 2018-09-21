@@ -2,6 +2,7 @@ package application
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/golang/glog"
@@ -453,7 +454,8 @@ func (c *Controller) cleanUpReleasesForApplication(app *shipperv1.Application, r
 	// maintain the invariant that we always delete oldest first (rather than
 	// failing to delete A and successfully deleting B and C in an 'A B C'
 	// history).
-	overhead := len(installedReleases) - int(*app.Spec.RevisionHistoryLimit) + 1
+	revisionHistoryLimit := math.Max(float64(*app.Spec.RevisionHistoryLimit), 1)
+	overhead := len(installedReleases) - int(revisionHistoryLimit)
 	for i := 0; i < overhead; i++ {
 		rel := installedReleases[i]
 		err := c.shipperClientset.ShipperV1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})
