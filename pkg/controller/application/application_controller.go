@@ -262,6 +262,15 @@ func (c *Controller) syncApplication(key string) bool {
 	return shouldRetry
 }
 
+// wrapUpApplicationConditions fills conditions into the given shipperv1.Application
+// object. It is meant to be called by processApplication() after a successful
+// execution when other conditions have not been populated since no errors have
+// happened.
+//
+// Its main responsibility is to fill the RollingOut condition based on the
+// given Release slice, whether it is the first release being rolled out, a
+// transition between two releases or, if stable and a release process is not
+// ongoing, inform which Release is currently active.
 func (c *Controller) wrapUpApplicationConditions(app *shipperv1.Application, rels []*shipperv1.Release) error {
 	var (
 		contenderRel *shipperv1.Release
