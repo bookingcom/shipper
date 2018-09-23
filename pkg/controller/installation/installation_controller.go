@@ -262,6 +262,7 @@ func (c *Controller) processInstallation(it *shipperv1.InstallationTarget) error
 	// about an application cluster status, so it just report that a cluster might
 	// not be operational if operations on the application cluster fail for any
 	// reason.
+	errors := shippererrors.NewGroup()
 	for _, name := range it.Spec.Clusters {
 
 		// IMPORTANT: Since we keep existing conditions from previous syncing
@@ -277,11 +278,37 @@ func (c *Controller) processInstallation(it *shipperv1.InstallationTarget) error
 
 		var cluster *shipperv1.Cluster
 		if cluster, err = c.clusterLister.Get(name); err != nil {
+			var swerr shippererrors.SelfAwareError
+			if kerrors.IsNotFound(err) {
+				swerr = shippererrors.NewClusterNotInStore(name)
+			} else {
+				// As far as I can client-go never returns an error other than
+				// 'not found' for a lister Get: it calls 'GetByKey' on the
+				// indexer, and none of the indexers return an error. As
+				// a result, I don't think we can be a lot more specific here than
+				// just "dunno, something is weird with the lister"
+				swerr = shippererrors.NewUnknown(fmt.Errorf("unexpected cluster lister failure: %s", err))
+			}
+
 			status.Status = shipperv1.InstallationStatusFailed
 			status.Message = err.Error()
-			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperv1.ClusterConditionTypeOperational, corev1.ConditionFalse, reasonForOperationalCondition(err), err.Error())
-			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperv1.ClusterConditionTypeReady, corev1.ConditionUnknown, reasonForReadyCondition(err), err.Error())
-			glog.Warningf("Get Cluster %q for InstallationTarget %q: %s", name, shippercontroller.MetaKey(it), err)
+			status.Conditions = conditions.SetInstallationCondition(
+				status.Conditions,
+				shipperv1.ClusterConditionTypeOperational,
+				corev1.ConditionFalse,
+				reasonForOperationalCondition(swerr),
+				swerr.Error(),
+			)
+
+			status.Conditions = conditions.SetInstallationCondition(
+				status.Conditions,
+				shipperv1.ClusterConditionTypeReady,
+				corev1.ConditionUnknown,
+				reasonForReadyCondition(swerr),
+				swerr.Error(),
+			)
+			glog.Warningf("Get Cluster %q for InstallationTarget %q: %s", name, shippercontroller.MetaKey(it), swerr.Error())
+			errors.Collect(swerr)
 			continue
 		}
 
@@ -289,11 +316,25 @@ func (c *Controller) processInstallation(it *shipperv1.InstallationTarget) error
 		var restConfig *rest.Config
 		client, restConfig, err = c.GetClusterAndConfig(name)
 		if err != nil {
+			selfAwareError := shippererrors.Classify(err)
 			status.Status = shipperv1.InstallationStatusFailed
 			status.Message = err.Error()
-			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperv1.ClusterConditionTypeOperational, corev1.ConditionFalse, reasonForOperationalCondition(err), err.Error())
-			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperv1.ClusterConditionTypeReady, corev1.ConditionUnknown, reasonForReadyCondition(err), err.Error())
-			glog.Warningf("Get config for Cluster %q for InstallationTarget %q: %s", name, shippercontroller.MetaKey(it), err)
+			status.Conditions = conditions.SetInstallationCondition(
+				status.Conditions,
+				shipperv1.ClusterConditionTypeOperational,
+				corev1.ConditionFalse,
+				reasonForOperationalCondition(selfAwareError),
+				selfAwareError.Error(),
+			)
+			status.Conditions = conditions.SetInstallationCondition(
+				status.Conditions,
+				shipperv1.ClusterConditionTypeReady,
+				corev1.ConditionUnknown,
+				reasonForReadyCondition(selfAwareError),
+				selfAwareError.Error(),
+			)
+			glog.Warningf("Get config for Cluster %q for InstallationTarget %q: %s", name, shippercontroller.MetaKey(it), selfAwareError)
+			errors.Collect(selfAwareError)
 			continue
 		}
 
@@ -303,10 +344,18 @@ func (c *Controller) processInstallation(it *shipperv1.InstallationTarget) error
 		status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperv1.ClusterConditionTypeOperational, corev1.ConditionTrue, "", "")
 
 		if err = handler.installRelease(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
+			selfAwareError := shippererrors.Classify(err)
 			status.Status = shipperv1.InstallationStatusFailed
 			status.Message = err.Error()
-			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipperv1.ClusterConditionTypeReady, corev1.ConditionFalse, reasonForReadyCondition(err), err.Error())
-			glog.Warningf("Install InstallationTarget %q for Cluster %q: %s", shippercontroller.MetaKey(it), name, err)
+			status.Conditions = conditions.SetInstallationCondition(
+				status.Conditions,
+				shipperv1.ClusterConditionTypeReady,
+				corev1.ConditionFalse,
+				reasonForReadyCondition(selfAwareError),
+				selfAwareError.Error(),
+			)
+			glog.Warningf("Install InstallationTarget %q for Cluster %q: %s", shippercontroller.MetaKey(it), name, selfAwareError)
+			errors.Collect(selfAwareError)
 			continue
 		}
 
@@ -380,16 +429,17 @@ func reasonForOperationalCondition(err error) string {
 }
 
 func reasonForReadyCondition(err error) string {
-	if IsCreateResourceError(err) || IsGetResourceError(err) {
+	if shippererrors.IsFailedCRUD(err) ||
+		shippererrors.IsFailedAPICall(err) ||
+		shippererrors.IsCannotBuildResourceClient(err) {
 		return conditions.ServerError
 	}
 
-	if IsDecodeManifestError(err) || IsConvertUnstructuredError(err) || shippercontroller.IsInvalidChartError(err) {
+	if shippererrors.IsUnreadableManifest(err) ||
+		shippererrors.IsCannotConvertUnstructured(err) ||
+		shippererrors.IsChartFetchFailure(err) ||
+		shippererrors.IsBrokenChart(err) {
 		return conditions.ChartError
-	}
-
-	if IsResourceClientError(err) {
-		return conditions.ClientError
 	}
 
 	return conditions.UnknownError

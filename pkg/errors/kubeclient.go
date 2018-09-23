@@ -89,3 +89,24 @@ func NewFailedCRUD(verb string, object kubeObject, err error) FailedCRUD {
 		ns:  object.GetNamespace(),
 	}
 }
+
+type UnknownResource struct {
+	gvk schema.GroupVersionKind
+}
+
+func IsUnknownResource(err error) bool {
+	_, ok := err.(UnknownResource)
+	return ok
+}
+
+func (e UnknownResource) Error() string {
+	return fmt.Sprintf(
+		"Cluster does not know about resource %s", printGVK(e.gvk),
+	)
+}
+
+func NewUnknownResource(gvk schema.GroupVersionKind) UnknownResource {
+	return UnknownResource{
+		gvk: gvk,
+	}
+}

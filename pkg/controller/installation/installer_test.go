@@ -90,10 +90,8 @@ func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObject
 	cluster := buildCluster("minikube-a")
 	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
 	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
-	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
-	if err != nil {
-		panic(err)
-	}
+	configMapAnchor := janitor.BuildConfigMapAnchor(it)
+
 	installer := newInstaller(release, it)
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))

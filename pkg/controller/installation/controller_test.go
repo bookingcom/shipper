@@ -397,7 +397,7 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 		{
 			Name:    "minikube-a",
 			Status:  shipperv1.InstallationStatusFailed,
-			Message: `error building resource client: GroupVersion "v1" not found`,
+			Message: `Cannot build client for /v1/Service: Failed API call: DISCOVER v1: "GroupVersion \"v1\" not found"`,
 			Conditions: []shipperv1.ClusterInstallationCondition{
 				{
 					Type:   shipperv1.ClusterConditionTypeOperational,
@@ -407,7 +407,7 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 					Type:    shipperv1.ClusterConditionTypeReady,
 					Status:  corev1.ConditionFalse,
 					Reason:  conditions.ServerError,
-					Message: `error building resource client: GroupVersion "v1" not found`,
+					Message: `Cannot build client for /v1/Service: Failed API call: DISCOVER v1: "GroupVersion \"v1\" not found"`,
 				},
 			},
 		},

@@ -19,11 +19,8 @@ func ConfigMapAnchorToOwnerReference(configMap *corev1.ConfigMap) metav1.OwnerRe
 	return ownerReference
 }
 
-func CreateConfigMapAnchor(it *shipperv1.InstallationTarget) (*corev1.ConfigMap, error) {
-	anchorName, err := CreateAnchorName(it)
-	if err != nil {
-		return nil, err
-	}
+func BuildConfigMapAnchor(it *shipperv1.InstallationTarget) *corev1.ConfigMap {
+	anchorName := buildAnchorName(it)
 	anchor := &corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
@@ -38,9 +35,9 @@ func CreateConfigMapAnchor(it *shipperv1.InstallationTarget) (*corev1.ConfigMap,
 			InstallationTargetUID: string(it.UID),
 		},
 	}
-	return anchor, nil
+	return anchor
 }
 
-func CreateAnchorName(it *shipperv1.InstallationTarget) (string, error) {
-	return fmt.Sprintf("%s%s", it.Name, AnchorSuffix), nil
+func buildAnchorName(it *shipperv1.InstallationTarget) string {
+	return fmt.Sprintf("%s%s", it.Name, AnchorSuffix)
 }
