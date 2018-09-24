@@ -1,14 +1,16 @@
 package testing
 
 import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubetesting "k8s.io/client-go/testing"
 )
 
 type ClusterFixture struct {
-	Name    string
-	objects []runtime.Object
-	actions []kubetesting.Action
+	Name      string
+	objects   []runtime.Object
+	actions   []kubetesting.Action
+	resources []*metav1.APIResourceList
 }
 
 func NewClusterFixture(name string) *ClusterFixture {
@@ -30,6 +32,10 @@ func (c *ClusterFixture) AddMany(objects []runtime.Object) {
 
 func (c *ClusterFixture) Expect(actions ...kubetesting.Action) {
 	c.actions = append(c.actions, actions...)
+}
+
+func (c *ClusterFixture) SetResources(resources ...*metav1.APIResourceList) {
+	c.resources = resources
 }
 
 func (c *ClusterFixture) Objects() []runtime.Object {
