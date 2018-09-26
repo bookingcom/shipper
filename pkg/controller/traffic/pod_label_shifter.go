@@ -1,6 +1,7 @@
 package traffic
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -8,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	corev1informer "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 
@@ -137,15 +139,17 @@ func (p *podLabelShifter) SyncCluster(
 			for i := 0; i < excess; i++ {
 				pod := trafficPods[i].DeepCopy()
 
-				removeFromLB(pod, trafficSelector)
-
-				_, err := podsClient.Update(pod)
-				if err != nil {
-					errors = append(errors,
-						NewTargetClusterTrafficModifyingLabelError(
-							cluster, p.namespace, pod.Name, err))
-					continue
+				if value, ok := pod.Labels[shipperv1.PodTrafficStatusLabel]; !ok || value == shipperv1.Enabled {
+					patch := patchPodTrafficStatusLabel(pod, shipperv1.Disabled)
+					_, err := podsClient.Patch(pod.Name, types.JSONPatchType, patch)
+					if err != nil {
+						errors = append(errors,
+							NewTargetClusterTrafficModifyingLabelError(
+								cluster, p.namespace, pod.Name, err))
+						continue
+					}
 				}
+
 				removedFromLB++
 			}
 			finalTrafficPods := len(trafficPods) - removedFromLB
@@ -166,15 +170,17 @@ func (p *podLabelShifter) SyncCluster(
 			for i := 0; i < missing; i++ {
 				pod := idlePods[i].DeepCopy()
 
-				addToLB(pod, trafficSelector)
-
-				_, err := podsClient.Update(pod)
-				if err != nil {
-					errors = append(errors,
-						NewTargetClusterTrafficModifyingLabelError(
-							cluster, p.namespace, pod.Name, err))
-					continue
+				if value, ok := pod.Labels[shipperv1.PodTrafficStatusLabel]; !ok || ok && value == shipperv1.Disabled {
+					patch := patchPodTrafficStatusLabel(pod, shipperv1.Enabled)
+					_, err := podsClient.Patch(pod.Name, types.JSONPatchType, patch)
+					if err != nil {
+						errors = append(errors,
+							NewTargetClusterTrafficModifyingLabelError(
+								cluster, p.namespace, pod.Name, err))
+						continue
+					}
 				}
+
 				addedToLB++
 			}
 			finalTrafficPods := len(trafficPods) + addedToLB
@@ -196,19 +202,40 @@ func getsTraffic(pod *corev1.Pod, trafficSelectors map[string]string) bool {
 	return true
 }
 
-func addToLB(pod *corev1.Pod, trafficSelector map[string]string) {
-	for key, trafficValue := range trafficSelector {
-		pod.Labels[key] = trafficValue
-	}
+// PatchOperation represents a JSON PatchOperation in a very specific way.
+// Using jsonpatch's types could be a possiblity, but there's no need to be
+// generic in here.
+type PatchOperation struct {
+	Op    string `json:"op"`
+	Path  string `json:"path"`
+	Value string `json:"value"`
 }
 
-// NOTE(btyler): there's probably a case to make about not deleting the label
-// entirely, but just changing it. However, without a known alternate value to
-// change to I think deletion is the only reasonable approach.
-func removeFromLB(pod *corev1.Pod, trafficSelector map[string]string) {
-	for key, _ := range trafficSelector {
-		delete(pod.Labels, key)
+// patchPodTrafficStatusLabel returns a JSON Patch that modifies the
+// PodTrafficStatusLabel value of a given Pod.
+func patchPodTrafficStatusLabel(pod *corev1.Pod, value string) []byte {
+	var op string
+
+	if _, ok := pod.Labels[shipperv1.PodTrafficStatusLabel]; ok {
+		op = "replace"
+	} else {
+		op = "add"
 	}
+
+	patchList := []PatchOperation{
+		{
+			Op:    op,
+			Path:  fmt.Sprintf("/metadata/labels/%s", shipperv1.PodTrafficStatusLabel),
+			Value: value,
+		},
+	}
+
+	// Don't know what to do in here. From my perspective it is quite
+	// unlikely that the json.Marshal operation above would fail since its
+	// input should be a valid serializable value.
+	patchBytes, _ := json.Marshal(patchList)
+
+	return patchBytes
 }
 
 func calculateReleasePodTarget(releasePods int, releaseWeight uint32, totalPods int, totalWeight uint32) int {

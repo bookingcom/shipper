@@ -15,6 +15,7 @@ const (
 	ReleaseLabel                = "shipper-release"
 	AppLabel                    = "shipper-app"
 	ReleaseEnvironmentHashLabel = "shipper-release-hash"
+	PodTrafficStatusLabel       = "shipper-traffic-status"
 
 	ReleaseRecordWaitingForObject = "WaitingForObject"
 	ReleaseRecordObjectCreated    = "ReleaseCreated"
@@ -40,6 +41,9 @@ const (
 
 	LBLabel         = "shipper-lb"
 	LBForProduction = "production"
+
+	Enabled  = "enabled"
+	Disabled = "disabled"
 )
 
 // +genclient

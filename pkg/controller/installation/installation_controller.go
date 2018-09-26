@@ -384,7 +384,7 @@ func reasonForReadyCondition(err error) string {
 		return conditions.ServerError
 	}
 
-	if IsDecodeManifestError(err) || IsConvertUnstructuredError(err) {
+	if IsDecodeManifestError(err) || IsConvertUnstructuredError(err) || shippercontroller.IsInvalidChartError(err) {
 		return conditions.ChartError
 	}
 

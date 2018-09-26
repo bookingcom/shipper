@@ -259,6 +259,28 @@ func TestInstallerBrokenChartTarball(t *testing.T) {
 	}
 }
 
+// TestInstallerBrokenChartTarball tests if the installation process fails when the
+// release contains an invalid serialized chart.
+func TestInstallerChartTarballBrokenService(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+
+	// there is a reviews-api-invalid-tarball.tgz in testdata which contains invalid deployment and service templates
+	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+	release.Environment.Chart.Version = "0.0.1-broken-service"
+
+	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
+	installer := newInstaller(release, it)
+
+	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: []runtime.Object{}})
+
+	fakePair := clientsPerCluster[cluster.Name]
+
+	restConfig := &rest.Config{}
+	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
+		t.Fatal("installRelease should fail, invalid tarball")
+	}
+}
+
 // TestInstallerBrokenChartContents tests if the installation process fails when the
 // release contains a valid chart tarball with invalid K8s object templates.
 func TestInstallerBrokenChartContents(t *testing.T) {

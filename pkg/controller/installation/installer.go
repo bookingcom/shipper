@@ -20,6 +20,7 @@ import (
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
+	"github.com/bookingcom/shipper/pkg/controller"
 	"github.com/bookingcom/shipper/pkg/controller/janitor"
 )
 
@@ -161,8 +162,22 @@ func (i *Installer) patchService(
 	labelsToInject map[string]string,
 	ownerReference *metav1.OwnerReference,
 ) runtime.Object {
-	s.SetOwnerReferences([]metav1.OwnerReference{*ownerReference})
-	s.SetLabels(mergeLabels(s.GetLabels(), labelsToInject))
+	appName, ok := labelsToInject[shipperv1.AppLabel]
+	if !ok {
+		// If we reach this point, it is fine to panic() since there's nothing
+		// much to do if we don't have the application label.
+		panic(fmt.Sprintf("Programmer error, label %q should always be present", shipperv1.AppLabel))
+	}
+
+	// Those are modified regardless.
+	s.OwnerReferences = []metav1.OwnerReference{*ownerReference}
+	s.Labels = mergeLabels(s.Labels, labelsToInject)
+	s.Spec.Selector[shipperv1.AppLabel] = appName
+
+	// We are interested only in patching Services properly identified by our specific label
+	if lbValue, ok := s.Labels[shipperv1.LBLabel]; ok && lbValue == shipperv1.LBForProduction {
+		s.Spec.Selector[shipperv1.PodTrafficStatusLabel] = shipperv1.Enabled
+	}
 	return s
 }
 
@@ -236,12 +251,26 @@ func (i *Installer) installManifests(
 	// Create the OwnerReference for the manifest objects.
 	ownerReference := janitor.ConfigMapAnchorToOwnerReference(createdConfigMap)
 
+	// Keep decoded and unstructured objects around until we are ready to
+	// process them.
+	var renderedObjects []struct {
+		unstructured *unstructured.Unstructured
+		decoded      runtime.Object
+	}
+
+	// Counter for v1.Service objects that have lb label set to production.
+	var seenLBForProduction int32
+
 	// Try to install all the rendered objects in the target cluster. We should
 	// fail in the first error to report that this cluster has an issue. Since the
 	// InstallationTarget.Status represent a per cluster status with a scalar
 	// value, we don't try to install other objects for now.
+	//
+	// We'll do this in two parts: the first for loop will decode the manifest
+	// and convert it to unstructured in addition of keep tabs of the number of
+	// v1.Service manifests that have the lb label set to production.
 	for _, manifest := range manifests {
-		decodedObj, gvk, err :=
+		decodedObj, _, err :=
 			kubescheme.Codecs.
 				UniversalDeserializer().
 				Decode([]byte(manifest), nil, nil)
@@ -266,10 +295,41 @@ func (i *Installer) installManifests(
 			return NewConvertUnstructuredError("error converting object to unstructured: %s", err)
 		}
 
+		// Here we keep a counter of Services that have the lb label. This will
+		// be used later on to determine whether or not an invalid error should
+		// be returned to the caller.
+		if svc, ok := decodedObj.(*corev1.Service); ok {
+			if lbValue, ok := svc.Labels[shipperv1.LBLabel]; ok && lbValue == shipperv1.LBForProduction {
+				seenLBForProduction++
+			}
+		}
+
+		renderedObjects = append(renderedObjects, struct {
+			unstructured *unstructured.Unstructured
+			decoded      runtime.Object
+		}{unstructured: obj, decoded: decodedObj})
+	}
+
+	// Shipper requires a Chart with exactly one v1.Service manifest containing
+	// the expected lb label.
+	if seenLBForProduction != 1 {
+		return controller.NewInvalidChartError(
+			fmt.Sprintf(
+				"one and only one v1.Service object with label %q is required, but found %d object(s) instead",
+				shipperv1.LBLabel, seenLBForProduction))
+	}
+
+	// The second loop is meant to install all the decoded and transformed
+	// manifests once we assume it the Chart is in good shape.
+	for _, r := range renderedObjects {
+		obj := r.unstructured
+		decodedObj := r.decoded
+		gvk := obj.GroupVersionKind()
+
 		// Once we've gathered enough information about the document we want to
 		// install, we're able to build a resource client to interact with the target
 		// cluster.
-		resourceClient, err := i.buildResourceClient(cluster, client, restConfig, dynamicClientBuilderFunc, gvk)
+		resourceClient, err := i.buildResourceClient(cluster, client, restConfig, dynamicClientBuilderFunc, &gvk)
 		if err != nil {
 			return NewResourceClientError("error building resource client: %s", err)
 		}
