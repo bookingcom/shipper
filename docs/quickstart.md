@@ -117,7 +117,7 @@ $ perl hack/create-minikube-cluster-secret.pl
 What this script does is the following:
 
 - It creates a Secret object named _minikube_. This should be named
-  the same as the _Cluster- object.
+  the same as the _Cluster_ object.
 - It creates a Cluster object called _minikube_, pointing to your
   minikube instance.
 
@@ -156,22 +156,79 @@ configuration to connect to the Minikube cluster. The `--disable` is
 to disable the `ClusterSecret` controller, which is not needed for
 this manual.
 
-# Fetching and Modifying an Existing Chart
+# Starting a Helm Server
 
-For Shipper to interact correctly with your application, your
-kubernetes chart should meet some requirements.
+Shipper needs to fetch your chart from a Helm chart repository. In
+production, you will have something like [ChartMuseum][]. However, for
+development, you can just install [Helm][]. After doing that, `cd` to
+where you have cloned Shipper and run the following:
 
-- You must use _Deployments_ `apps/v1`
-- You must have only one deployment per chart. Shipper uses the
-  `replicaCount` on your deployment to adjust capacity, and it can
-  only work with one deployment
-- You must have only one service with a label of `shipper-lb:
-  production`. This is the service that Shipper manipulates to give or
-  take away traffic from a release
+```
+helm serve --repo-path test/e2e/testdata &
+```
+
+This runs an instance of the Helm repository server, using the
+contents of the `testdata` directory as its repository of charts.
 
 # Creating the Application
 
-TBD
+We introduced the Application object [earlier in this
+manual](#application-objects) -- now it's time to create the
+Application object for the `helloworld` application!
+
+Copy and paste the following block into a file named
+`application.yaml`:
+
+```
+apiVersion: shipper.booking.com/v1
+kind: Application
+metadata:
+  name: helloworld
+spec:
+  template:
+    clusterRequirements:
+      regions:
+      - name: eu-west
+      capabilities: []
+    chart:
+      name: nginx
+      version: 0.1.0
+      repoUrl: https://127.0.0.1:8879/charts
+    values:
+      replicaCount: 5
+    strategy:
+      steps:
+      - name: staging
+        capacity:
+          incumbent: 100
+          contender: 1
+        traffic:
+          incumbent: 100
+          contender: 0
+      - name: 50/50
+        capacity:
+          incumbent: 50
+          contender: 50
+        traffic:
+          incumbent: 50
+          contender: 50
+      - name: full on
+        capacity:
+          incumbent: 0
+          contender: 100
+        traffic:
+          incumbent: 0
+          contender: 100
+```
+
+After creating this file, you can create it using `kubectl`:
+
+```sh
+$ kubectl create -f application.yaml
+```
+
+If everything goes well, you should see a message saying that an Application object has been created.
+
 
 # What's Next?
 
@@ -197,6 +254,7 @@ things are the way they are, continue on to the [core concepts][].
 [deployment]: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
 [passing a values.yaml to helm]: https://docs.helm.sh/chart_template_guide/#values-files
 [go here]: https://kubernetes.io/docs/tasks/tools/install-minikube/
+[ChartMuseum]: https://github.com/helm/chartmuseum
 [cookbook]: cookbook.md
 [core concepts]: core_concepts.md
 [troubleshooting guide]: troubleshooting.md
