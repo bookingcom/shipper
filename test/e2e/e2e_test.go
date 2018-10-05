@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -646,6 +647,15 @@ func buildTargetClient(clusterName string) kubernetes.Interface {
 
 	config.CertData = secret.Data["tls.crt"]
 	config.KeyData = secret.Data["tls.key"]
+
+	if encodedInsecureSkipTlsVerify, ok := secret.Annotations[shipperv1.SecretClusterSkipTlsVerifyAnnotation]; ok {
+		if insecureSkipTlsVerify, err := strconv.ParseBool(encodedInsecureSkipTlsVerify); err == nil {
+			glog.Infof("found %q annotation with value %q", shipperv1.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
+			config.Insecure = insecureSkipTlsVerify
+		} else {
+			glog.Infof("found %q annotation with value %q, failed to decode a bool from it, ignoring it", shipperv1.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
+		}
+	}
 
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
