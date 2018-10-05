@@ -19,7 +19,8 @@ This document contains the outline of our Roadmap brainstorm session. The idea i
             - How do I cordon a cluster?
             - How do I drain a cordoned cluster?
     - User manual
-        - Where do I look for problems
+        - How do I use Shipper?
+        - Knowledge base of problems, solutions and possible and workarounds
 
 ### Support and announcements
 
