@@ -1,5 +1,5 @@
 
-# Roadmap to Open Source Release
+# Roadmap
 
 This document contains the outline of our Roadmap brainstorm session. The idea is to transform this outline into different RFCs and discuss them as separate Pull Requests.
 
