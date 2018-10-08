@@ -77,14 +77,8 @@ type ApplicationSpec struct {
 }
 
 type ApplicationStatus struct {
-	State      ApplicationState       `json:"state"`
 	Conditions []ApplicationCondition `json:"conditions,omitempty"`
 	History    []string               `json:"history,omitempty"`
-}
-
-type ApplicationState struct {
-	RollingOut  bool   `json:"rollingOut"`
-	RolloutStep *int32 `json:"rolloutStep,omitempty"`
 }
 
 type ApplicationConditionType string
@@ -93,6 +87,7 @@ const (
 	ApplicationConditionTypeValidHistory  ApplicationConditionType = "ValidHistory"
 	ApplicationConditionTypeReleaseSynced ApplicationConditionType = "ReleaseSynced"
 	ApplicationConditionTypeAborting      ApplicationConditionType = "Aborting"
+	ApplicationConditionTypeRollingOut    ApplicationConditionType = "RollingOut"
 )
 
 type ApplicationCondition struct {

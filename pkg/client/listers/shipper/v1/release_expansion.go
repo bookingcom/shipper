@@ -1,7 +1,6 @@
 package v1
 
 import (
-	"fmt"
 	"sort"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -9,6 +8,8 @@ import (
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
+	apputil "github.com/bookingcom/shipper/pkg/util/application"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 // ReleaseListerExpansion allows custom methods to be added to
@@ -18,64 +19,57 @@ type ReleaseListerExpansion interface{}
 // ReleaseNamespaceListerExpansion allows custom methods to be added to
 // ReleaseNamespaceLister.
 type ReleaseNamespaceListerExpansion interface {
+	// ReleasesForApplication returns Releases related to the given application
+	// name ordered by generation.
 	ReleasesForApplication(appName string) ([]*shipperv1.Release, error)
+
+	// ContenderForApplication returns the contender Release for the given
+	// application name.
 	ContenderForApplication(appName string) (*shipperv1.Release, error)
+
+	// IncumbentForApplication returns the incumbent Release for the given
+	// application name.
+	IncumbentForApplication(appName string) (*shipperv1.Release, error)
+
+	// ReleaseForInstallationTarget returns the Release associated with given
+	// InstallationTarget. The relationship is established through owner
+	// references.
 	ReleaseForInstallationTarget(it *shipperv1.InstallationTarget) (*shipperv1.Release, error)
 }
 
-// ReleasesForApplication returns Releases related to the given application
-// name ordered by generation.
 func (s releaseNamespaceLister) ReleasesForApplication(appName string) ([]*shipperv1.Release, error) {
 	selector := labels.Set{shipperv1.AppLabel: appName}.AsSelector()
 	selectedRels, err := s.List(selector)
 	if err != nil {
 		return nil, err
 	}
-
-	type releaseAndGeneration struct {
-		release    *shipperv1.Release
-		generation int
-	}
-
-	filteredRels := make([]releaseAndGeneration, 0, len(selectedRels))
-	for _, rel := range selectedRels {
-		if rel.DeletionTimestamp != nil {
-			continue
-		}
-		g, err := shippercontroller.GetReleaseGeneration(rel)
+	for _, e := range selectedRels {
+		_, err := releaseutil.GetGeneration(e)
 		if err != nil {
-			return nil, fmt.Errorf(`incomplete Release "%s/%s": %s`, rel.Namespace, rel.Name, err)
+			return nil, err
 		}
-		filteredRels = append(filteredRels, releaseAndGeneration{rel, g})
 	}
-
-	sort.Slice(filteredRels, func(i, j int) bool {
-		return filteredRels[i].generation < filteredRels[j].generation
-	})
-
-	relsToReturn := make([]*shipperv1.Release, 0, len(filteredRels))
-	for _, e := range filteredRels {
-		relsToReturn = append(relsToReturn, e.release)
-	}
-
-	return relsToReturn, nil
+	return selectedRels, nil
 }
 
-// ContenderForApplication returns the contender Release for the given application name.
 func (s releaseNamespaceLister) ContenderForApplication(appName string) (*shipperv1.Release, error) {
 	rels, err := s.ReleasesForApplication(appName)
 	if err != nil {
 		return nil, err
 	}
-	if len(rels) == 0 {
-		return nil, fmt.Errorf("no contender found for application %q", appName)
-	}
-	return rels[len(rels)-1], nil
+	sort.Sort(releaseutil.ByGenerationDescending(rels))
+	return apputil.GetContender(appName, rels)
 }
 
-// ReleaseForInstallationTarget returns the Release associated with given
-// InstallationTarget. The relationship is established through owner
-// references.
+func (s releaseNamespaceLister) IncumbentForApplication(appName string) (*shipperv1.Release, error) {
+	rels, err := s.ReleasesForApplication(appName)
+	if err != nil {
+		return nil, err
+	}
+	sort.Sort(releaseutil.ByGenerationDescending(rels))
+	return apputil.GetIncumbent(appName, rels)
+}
+
 func (s releaseNamespaceLister) ReleaseForInstallationTarget(it *shipperv1.InstallationTarget) (*shipperv1.Release, error) {
 	owner, err := extractOwnerReference(it.ObjectMeta)
 	if err != nil {

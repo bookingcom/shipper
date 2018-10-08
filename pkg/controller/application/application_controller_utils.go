@@ -7,47 +7,35 @@ import (
 	"strconv"
 
 	"github.com/golang/glog"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
 	"github.com/bookingcom/shipper/pkg/controller"
+	"github.com/bookingcom/shipper/pkg/errors"
 )
 
-func (c *Controller) createReleaseForApplication(app *shipperv1.Application, generation int) error {
+func (c *Controller) createReleaseForApplication(app *shipperv1.Application, releaseName string, iteration, generation int) (*shipperv1.Release, error) {
 	// Label releases with their hash; select by that label and increment if needed
 	// appname-hash-of-template-iteration.
-	releaseName, iteration, err := c.releaseNameForApplication(app)
-	if err != nil {
-		return err
-	}
-	releaseNs := app.GetNamespace()
+
 	glog.V(4).Infof("Generated Release name for Application %q: %q", controller.MetaKey(app), releaseName)
 
-	labels := make(map[string]string)
-	for k, v := range app.GetLabels() {
-		labels[k] = v
-	}
-
-	labels[shipperv1.ReleaseLabel] = releaseName
-	labels[shipperv1.AppLabel] = app.GetName()
-	labels[shipperv1.ReleaseEnvironmentHashLabel] = hashReleaseEnvironment(app.Spec.Template)
-
-	annotations := map[string]string{
-		shipperv1.ReleaseTemplateIterationAnnotation: strconv.Itoa(iteration),
-		shipperv1.ReleaseGenerationAnnotation:        strconv.Itoa(generation),
-	}
-
-	glog.V(4).Infof("Release %q labels: %v", controller.MetaKey(app), labels)
-	glog.V(4).Infof("Release %q annotations: %v", controller.MetaKey(app), annotations)
-
-	new := &shipperv1.Release{
+	newRelease := &shipperv1.Release{
 		ReleaseMeta: shipperv1.ReleaseMeta{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:        releaseName,
-				Namespace:   releaseNs,
-				Labels:      labels,
-				Annotations: annotations,
+				Name:      releaseName,
+				Namespace: app.Namespace,
+				Labels: map[string]string{
+					shipperv1.ReleaseLabel:                releaseName,
+					shipperv1.AppLabel:                    app.Name,
+					shipperv1.ReleaseEnvironmentHashLabel: hashReleaseEnvironment(app.Spec.Template),
+				},
+				Annotations: map[string]string{
+					shipperv1.ReleaseTemplateIterationAnnotation: strconv.Itoa(iteration),
+					shipperv1.ReleaseGenerationAnnotation:        strconv.Itoa(generation),
+				},
 				OwnerReferences: []metav1.OwnerReference{
 					createOwnerRefFromApplication(app),
 				},
@@ -58,53 +46,18 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application, gen
 		Status: shipperv1.ReleaseStatus{},
 	}
 
-	_, err = c.shipperClientset.ShipperV1().Releases(releaseNs).Create(new)
+	for k, v := range app.GetLabels() {
+		newRelease.Labels[k] = v
+	}
+
+	glog.V(4).Infof("Release %q labels: %v", controller.MetaKey(app), newRelease.Labels)
+	glog.V(4).Infof("Release %q annotations: %v", controller.MetaKey(app), newRelease.Annotations)
+
+	rel, err := c.shipperClientset.ShipperV1().Releases(app.Namespace).Create(newRelease)
 	if err != nil {
-		return fmt.Errorf("create Release for Application %q: %s", controller.MetaKey(app), err)
+		return nil, fmt.Errorf("create Release for Application %q: %s", controller.MetaKey(app), err)
 	}
-	return nil
-}
-
-func (c *Controller) getLatestReleaseForApp(app *shipperv1.Application) (*shipperv1.Release, error) {
-	sortedReleases, err := c.getSortedAppReleases(app)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(sortedReleases) == 0 {
-		return nil, nil
-	}
-
-	return sortedReleases[len(sortedReleases)-1], nil
-}
-
-func (c *Controller) getAppHistory(app *shipperv1.Application) ([]string, error) {
-	releases, err := c.getSortedAppReleases(app)
-	if err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(releases))
-	for _, rel := range releases {
-		names = append(names, rel.GetName())
-	}
-	return names, nil
-}
-
-func (c *Controller) getSortedAppReleases(app *shipperv1.Application) ([]*shipperv1.Release, error) {
-	selector := labels.Set{
-		shipperv1.AppLabel: app.GetName(),
-	}.AsSelector()
-
-	releases, err := c.relLister.Releases(app.GetNamespace()).List(selector)
-	if err != nil {
-		return nil, err
-	}
-	sorted, err := controller.SortReleasesByGeneration(releases)
-	if err != nil {
-		return nil, err
-	}
-
-	return sorted, nil
+	return rel, nil
 }
 
 func (c *Controller) releaseNameForApplication(app *shipperv1.Application) (string, int, error) {
@@ -129,8 +82,7 @@ func (c *Controller) releaseNameForApplication(app *shipperv1.Application) (stri
 	for _, rel := range releases {
 		iterationStr, ok := rel.GetAnnotations()[shipperv1.ReleaseTemplateIterationAnnotation]
 		if !ok {
-			return "", 0, fmt.Errorf("generate name for Release %q: no iteration annotation",
-				controller.MetaKey(rel))
+			return "", 0, errors.NewMissingGenerationAnnotationError(controller.MetaKey(rel))
 		}
 
 		iteration, err := strconv.Atoi(iterationStr)
@@ -146,54 +98,6 @@ func (c *Controller) releaseNameForApplication(app *shipperv1.Application) (stri
 
 	newIteration := highestObserved + 1
 	return fmt.Sprintf("%s-%s-%d", app.GetName(), hash, newIteration), newIteration, nil
-}
-
-func (c *Controller) computeState(app *shipperv1.Application) (shipperv1.ApplicationState, error) {
-	state := shipperv1.ApplicationState{}
-
-	latestRelease, err := c.getLatestReleaseForApp(app)
-	if err != nil {
-		return state, err
-	}
-
-	// If there's no history, it means we are about to rollout app but we haven't
-	// started yet.
-	if latestRelease == nil {
-		return state, nil
-	}
-
-	state.RolloutStep, state.RollingOut = isRollingOut(latestRelease)
-	return state, nil
-}
-
-func isRollingOut(rel *shipperv1.Release) (*int32, bool) {
-	lastStep := int32(len(rel.Environment.Strategy.Steps) - 1)
-
-	achieved := rel.Status.AchievedStep
-	if achieved == nil {
-		return nil, true
-	}
-
-	achievedStep := achieved.Step
-
-	targetStep := rel.Spec.TargetStep
-
-	return &achievedStep, achievedStep != targetStep ||
-		achievedStep != lastStep
-}
-
-func getAppHighestObservedGeneration(app *shipperv1.Application) (int, error) {
-	rawObserved, ok := app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation]
-	if !ok {
-		return 0, nil
-	}
-
-	generation, err := strconv.Atoi(rawObserved)
-	if err != nil {
-		return 0, err
-	}
-
-	return generation, nil
 }
 
 func identicalEnvironments(envs ...shipperv1.ReleaseEnvironment) bool {
