@@ -368,6 +368,130 @@ func TestRolloutVanguardOneReplica(t *testing.T) {
 	testRolloutVanguard(1, t)
 }
 
+func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+
+	t.Parallel()
+	targetReplicas := 4
+	ns, err := setupNamespace(t.Name())
+	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(ns.GetName())
+	}()
+
+	app := newApplication(ns.GetName(), appName, &vanguard)
+	app.Spec.Template.Values = &shipperv1.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Chart.Name = "test-nginx"
+	app.Spec.Template.Chart.Version = "0.0.1"
+
+	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Create(app)
+	if err != nil {
+		t.Fatalf("could not create application %q: %q", appName, err)
+	}
+
+	t.Logf("waiting for a new release for new application %q", appName)
+	rel := f.waitForRelease(appName, 0)
+	relName := rel.GetName()
+
+	for _, i := range []int{0, 1, 0} {
+		step := vanguard.Steps[i]
+		t.Logf("setting release %q targetStep to %d", relName, i)
+		f.targetStep(i, relName)
+
+		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
+		f.waitForCommand(relName, i)
+
+		expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas)) //capacityInPods(step.Capacity.Contender, targetReplicas)
+		// expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
+		// expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
+		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
+		f.checkPods(relName, int(expectedCapacity))
+	}
+}
+
+func TestRolloutMovingStrategyBackwards(t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+
+	t.Parallel()
+	targetReplicas := 4
+	ns, err := setupNamespace(t.Name())
+	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(ns.GetName())
+	}()
+
+	// start with allIn to jump through the first release
+	app := newApplication(ns.GetName(), appName, &allIn)
+	app.Spec.Template.Values = &shipperv1.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Chart.Name = "test-nginx"
+	app.Spec.Template.Chart.Version = "0.0.1"
+
+	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Create(app)
+	if err != nil {
+		t.Fatalf("could not create application %q: %q", appName, err)
+	}
+
+	incumbent := f.waitForRelease(appName, 0)
+	incumbentName := incumbent.GetName()
+	f.waitForComplete(incumbentName)
+	f.checkPods(incumbentName, targetReplicas)
+
+	// Refetch so that the update has a fresh version to work with.
+	app, err = shipperClient.ShipperV1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("could not refetch app: %q", err)
+	}
+
+	app.Spec.Template.Strategy = &vanguard
+	app.Spec.Template.Chart.Version = "0.0.2"
+	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Update(app)
+	if err != nil {
+		t.Fatalf("could not update application %q: %q", appName, err)
+	}
+
+	t.Logf("waiting for contender release to appear after editing app %q", app.GetName())
+	contender := f.waitForRelease(appName, 1)
+	contenderName := contender.GetName()
+
+	// The strategy emulates deployment all way down to 50/50 and then revert
+	// to the previous step (staging).
+	for _, i := range []int{0, 1, 0} {
+		step := vanguard.Steps[i]
+		t.Logf("setting release %q targetStep to %d", contenderName, i)
+		f.targetStep(i, contenderName)
+
+		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
+		f.waitForCommand(contenderName, i)
+
+		expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
+		expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
+
+		t.Logf(
+			"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step %d -- %d/%d)",
+			incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, i, step.Capacity.Incumbent, step.Capacity.Contender,
+		)
+
+		f.checkPods(contenderName, int(expectedContenderCapacity))
+		f.checkPods(incumbentName, int(expectedIncumbentCapacity))
+	}
+}
+
 // TODO(btyler): cover a variety of broken chart cases as soon as we report
 // those outcomes somewhere other than stderr.
 
