@@ -409,9 +409,7 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
 		f.waitForCommand(relName, i)
 
-		expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas)) //capacityInPods(step.Capacity.Contender, targetReplicas)
-		// expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
-		// expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
+		expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
 		f.checkPods(relName, int(expectedCapacity))
 	}
