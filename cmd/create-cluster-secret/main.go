@@ -74,7 +74,7 @@ func main() {
 
 			// Only add shipperv1.SecretClusterSkipTlsVerifyAnnotation if the
 			// configuration specifies an insecure connection.
-			if restCfg.Insecure == true {
+			if restCfg.Insecure {
 				clusterSecret.Annotations[shipperv1.SecretClusterSkipTlsVerifyAnnotation] = strconv.FormatBool(restCfg.Insecure)
 			}
 
@@ -94,7 +94,7 @@ func main() {
 		// Delete the shipperv1.SecretClusterSkipTlsVerifyAnnotation if
 		// configuration specifies a secure connection, add the annotation
 		// it otherwise.
-		if restCfg.Insecure == false {
+		if !restCfg.Insecure {
 			delete(existingSecret.Annotations, shipperv1.SecretClusterSkipTlsVerifyAnnotation)
 		} else {
 			existingSecret.Annotations[shipperv1.SecretClusterSkipTlsVerifyAnnotation] = strconv.FormatBool(restCfg.Insecure)
