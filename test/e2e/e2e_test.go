@@ -259,7 +259,7 @@ func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
 			f.waitForComplete(relName)
 		} else {
 			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
-			f.waitForCommand(relName, i)
+			f.waitForReleaseStrategyState("command", relName, i)
 		}
 
 		expectedCapacity := int(replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas)))
@@ -345,7 +345,7 @@ func testRolloutVanguard(targetReplicas int, t *testing.T) {
 			f.waitForComplete(contenderName)
 		} else {
 			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
-			f.waitForCommand(contenderName, i)
+			f.waitForReleaseStrategyState("command", contenderName, i)
 		}
 
 		expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
@@ -408,7 +408,7 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 		f.targetStep(i, relName)
 
 		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
-		f.waitForCommand(relName, i)
+		f.waitForReleaseStrategyState("command", relName, i)
 
 		expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
@@ -476,7 +476,7 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 		f.targetStep(i, contenderName)
 
 		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
-		f.waitForCommand(contenderName, i)
+		f.waitForReleaseStrategyState("command", contenderName, i)
 
 		expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
 		expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
@@ -489,6 +489,169 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 		f.checkPods(contenderName, int(expectedContenderCapacity))
 		f.checkPods(incumbentName, int(expectedIncumbentCapacity))
 	}
+}
+
+// TestNewApplicationAbort emulates a brand new application rolout.
+// The rollout strategy includes a few steps, we are creating a new release,
+// Next, we are moving 1 step forward (50% of the capacity and 50% of the
+// traffic) and delete the release. The expected behavior is:
+// * shipper recreates the release object as this is the only release available.
+// * the application is being scaled back to step 0.
+// * the release is waiting for a command.
+func TestNewApplicationAbort(t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+
+	t.Parallel()
+	targetReplicas := 4
+	ns, err := setupNamespace(t.Name())
+	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(ns.GetName())
+	}()
+
+	app := newApplication(ns.GetName(), appName, &vanguard)
+	app.Spec.Template.Values = &shipperv1.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Chart.Name = "test-nginx"
+	app.Spec.Template.Chart.Version = "0.0.1"
+
+	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Create(app)
+	if err != nil {
+		t.Fatalf("could not create application %q: %q", appName, err)
+	}
+
+	t.Logf("waiting for a new release for new application %q", appName)
+	rel := f.waitForRelease(appName, 0)
+	relName := rel.GetName()
+
+	for _, i := range []int{0, 1} {
+		step := vanguard.Steps[i]
+		t.Logf("setting release %q targetStep to %d", relName, i)
+		f.targetStep(i, relName)
+
+		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
+		f.waitForReleaseStrategyState("command", relName, i)
+
+		expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
+		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
+		f.checkPods(relName, int(expectedCapacity))
+	}
+
+	t.Logf("Preparing to remove the release %q", relName)
+
+	err = shipperClient.ShipperV1().Releases(ns.GetName()).Delete(relName, &metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("failed to delete release %q", relName)
+	}
+
+	// Now the release should be waiting for a command
+	f.waitForReleaseStrategyState("command", relName, 0)
+
+	// It's back to step 0, let's check the number of pods
+	expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(vanguard.Steps[0].Capacity.Contender), float64(targetReplicas))
+	f.checkPods(relName, int(expectedCapacity))
+}
+
+func TestRolloutAbort(t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+
+	t.Parallel()
+	targetReplicas := 4
+	ns, err := setupNamespace(t.Name())
+	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(ns.GetName())
+	}()
+
+	// start with allIn to jump through the first release
+	app := newApplication(ns.GetName(), appName, &allIn)
+	app.Spec.Template.Values = &shipperv1.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Chart.Name = "test-nginx"
+	app.Spec.Template.Chart.Version = "0.0.1"
+
+	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Create(app)
+	if err != nil {
+		t.Fatalf("could not create application %q: %q", appName, err)
+	}
+
+	incumbent := f.waitForRelease(appName, 0)
+	incumbentName := incumbent.GetName()
+	f.waitForComplete(incumbentName)
+	f.checkPods(incumbentName, targetReplicas)
+
+	// Refetch so that the update has a fresh version to work with.
+	app, err = shipperClient.ShipperV1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("could not refetch app: %q", err)
+	}
+
+	app.Spec.Template.Strategy = &vanguard
+	app.Spec.Template.Chart.Version = "0.0.2"
+	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Update(app)
+	if err != nil {
+		t.Fatalf("could not update application %q: %q", appName, err)
+	}
+
+	t.Logf("waiting for contender release to appear after editing app %q", app.GetName())
+	contender := f.waitForRelease(appName, 1)
+	contenderName := contender.GetName()
+
+	// The strategy emulates deployment all way down to 50/50 (steps 0 and 1)
+	for _, i := range []int{0, 1} {
+		step := vanguard.Steps[i]
+		t.Logf("setting release %q targetStep to %d", contenderName, i)
+		f.targetStep(i, contenderName)
+
+		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
+		f.waitForReleaseStrategyState("command", contenderName, i)
+
+		expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
+		expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
+
+		t.Logf(
+			"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step %d -- %d/%d)",
+			incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, i, step.Capacity.Incumbent, step.Capacity.Contender,
+		)
+
+		f.checkPods(contenderName, int(expectedContenderCapacity))
+		f.checkPods(incumbentName, int(expectedIncumbentCapacity))
+	}
+
+	err = shipperClient.ShipperV1().Releases(ns.GetName()).Delete(contenderName, &metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("failed to remove the old release %q: %q", contenderName, err)
+	}
+
+	// The test emulates an interruption in the middle of the rollout, which
+	// means the incumbant becomes a new contender and it will stay in 50%
+	// capacity state (step 1 according to the vanguard definition) for a bit
+	// until shipper detects the need for capacity and spins up the missing
+	// pods
+	f.waitForReleaseStrategyState("capacity", incumbentName, 0)
+
+	// Once the need for capacity triggers, the test waits for all-clear state
+	// (all 4 strategy states indicate no demand).
+	f.waitForReleaseStrategyState("none", incumbentName, 0)
+
+	// By this moment shipper is expected to have recovered the missing capacity
+	// and get all pods up and running
+	expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(allIn.Steps[0].Capacity.Contender), float64(targetReplicas))
+	f.checkPods(incumbentName, int(expectedCapacity))
 }
 
 // TODO(btyler): cover a variety of broken chart cases as soon as we report
@@ -582,31 +745,60 @@ func (f *fixture) waitForRelease(appName string, historyIndex int) *shipperv1.Re
 	return newRelease
 }
 
-func (f *fixture) waitForCommand(releaseName string, step int) {
-	var state string
+func (f *fixture) waitForReleaseStrategyState(waitingFor string, releaseName string, step int) {
+	var state, newState string
 	start := time.Now()
 	err := poll(globalTimeout, func() (bool, error) {
+		defer func() {
+			if state != newState {
+				f.t.Logf("release strategy state transition: %q -> %q", state, newState)
+				state = newState
+			}
+		}()
 		rel, err := shipperClient.ShipperV1().Releases(f.namespace).Get(releaseName, metav1.GetOptions{})
 		if err != nil {
-			f.t.Fatalf("failed to fetch release: %q", releaseName)
+			f.t.Fatalf("failed to fetch release: %q: %q", releaseName, err)
 		}
 
 		if rel.Status.Strategy == nil {
-			state = fmt.Sprintf("release %q has no strategy status reported yet", releaseName)
+			newState = fmt.Sprintf("release %q has no strategy status reported yet", releaseName)
 			return false, nil
 		}
 
 		if rel.Status.AchievedStep == nil {
-			state = fmt.Sprintf("release %q has no achievedStep reported yet", releaseName)
+			newState = fmt.Sprintf("release %q has no achievedStep reported yet", releaseName)
 			return false, nil
 		}
 
-		if rel.Status.Strategy.State.WaitingForCommand == shipperv1.StrategyStateTrue &&
-			rel.Status.AchievedStep.Step == int32(step) {
+		condAchieved := false
+		switch waitingFor {
+		case "installation":
+			condAchieved = rel.Status.Strategy.State.WaitingForInstallation == shipperv1.StrategyStateTrue
+		case "capacity":
+			condAchieved = rel.Status.Strategy.State.WaitingForCapacity == shipperv1.StrategyStateTrue
+		case "traffic":
+			condAchieved = rel.Status.Strategy.State.WaitingForTraffic == shipperv1.StrategyStateTrue
+		case "command":
+			condAchieved = rel.Status.Strategy.State.WaitingForCommand == shipperv1.StrategyStateTrue
+		case "none":
+			condAchieved = rel.Status.Strategy.State.WaitingForInstallation == shipperv1.StrategyStateFalse &&
+				rel.Status.Strategy.State.WaitingForCapacity == shipperv1.StrategyStateFalse &&
+				rel.Status.Strategy.State.WaitingForTraffic == shipperv1.StrategyStateFalse &&
+				rel.Status.Strategy.State.WaitingForCommand == shipperv1.StrategyStateFalse
+
+		}
+
+		newState = fmt.Sprintf("{installation: %s, capacity: %s, traffic: %s, command: %s}",
+			rel.Status.Strategy.State.WaitingForInstallation,
+			rel.Status.Strategy.State.WaitingForCapacity,
+			rel.Status.Strategy.State.WaitingForTraffic,
+			rel.Status.Strategy.State.WaitingForCommand,
+		)
+
+		if condAchieved && rel.Status.AchievedStep.Step == int32(step) {
 			return true, nil
 		}
 
-		state = fmt.Sprintf("release %q status strategy state WaitingForCommand is false", releaseName)
 		return false, nil
 	})
 
