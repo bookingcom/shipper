@@ -197,7 +197,7 @@ func (c *Scheduler) extractReplicasFromChart(chart *helmchart.Chart) (int32, err
 
 // CreateInstallationTarget creates a new InstallationTarget object for
 // Scheduler's Release property. Returns an error if the object couldn't
-// be created, except in cases where the object already exists.
+// be created.
 func (c *Scheduler) CreateInstallationTarget() error {
 	installationTarget := &v1.InstallationTarget{
 		ObjectMeta: metav1.ObjectMeta{
@@ -214,8 +214,8 @@ func (c *Scheduler) CreateInstallationTarget() error {
 	_, err := c.shipperclientset.ShipperV1().InstallationTargets(c.Release.Namespace).Create(installationTarget)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			glog.Infof("InstallationTarget %q already exists, moving on", controller.MetaKey(c.Release))
-			return nil
+			glog.Warningf("InstallationTarget %q already exists, bailing out", controller.MetaKey(c.Release))
+			return err
 		}
 		return NewFailedAPICallError("CreateInstallationTarget", err)
 	}
@@ -232,8 +232,7 @@ func (c *Scheduler) CreateInstallationTarget() error {
 }
 
 // CreateCapacityTarget creates a new CapacityTarget object for Scheduler's
-// Release property. Returns an error if the object couldn't be created, except
-// in cases where the object already exists.
+// Release property. Returns an error if the object couldn't be created.
 func (c *Scheduler) CreateCapacityTarget(totalReplicaCount int32) error {
 	count := len(c.Clusters())
 	targets := make([]v1.ClusterCapacityTarget, count)
@@ -257,8 +256,8 @@ func (c *Scheduler) CreateCapacityTarget(totalReplicaCount int32) error {
 	_, err := c.shipperclientset.ShipperV1().CapacityTargets(c.Release.Namespace).Create(capacityTarget)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			glog.Infof("CapacityTarget %q already exists, moving on", controller.MetaKey(capacityTarget))
-			return nil
+			glog.Warningf("CapacityTarget %q already exists, bailing out", controller.MetaKey(capacityTarget))
+			return err
 		}
 		return NewFailedAPICallError("CreateCapacityTarget", err)
 	}
@@ -275,8 +274,7 @@ func (c *Scheduler) CreateCapacityTarget(totalReplicaCount int32) error {
 }
 
 // CreateTrafficTarget creates a new TrafficTarget object for Scheduler's
-// Release property. Returns an error if the object couldn't be created, except
-// in cases where the object already exists.
+// Release property. Returns an error if the object couldn't be created.
 func (c *Scheduler) CreateTrafficTarget() error {
 	count := len(c.Clusters())
 	trafficTargets := make([]v1.ClusterTrafficTarget, count)
@@ -299,8 +297,8 @@ func (c *Scheduler) CreateTrafficTarget() error {
 	_, err := c.shipperclientset.ShipperV1().TrafficTargets(c.Release.Namespace).Create(trafficTarget)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			glog.V(4).Infof("TrafficTarget %q already exists, moving on", controller.MetaKey(trafficTarget))
-			return nil
+			glog.Warningf("TrafficTarget %q already exists, bailing out", controller.MetaKey(trafficTarget))
+			return err
 		}
 		return NewFailedAPICallError("CreateTrafficTarget", err)
 	}
