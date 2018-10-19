@@ -29,3 +29,14 @@ required = ["k8s.io/code-generator/cmd/client-gen"]
 [[constraint]]
   name = "github.com/prometheus/client_golang"
   version = "0.9.0-pre1"
+
+# By default, github.com/spf13/cobra depends on version 1.0.0 of
+# pflag, which causes an error. Pinning it here just to make things
+# work.
+[[override]]
+  name = "github.com/spf13/pflag"
+  version = "1.0.3"
+
+[[constraint]]
+  version = "kubernetes-1.11.4"
+  name = "k8s.io/apiextensions-apiserver"
