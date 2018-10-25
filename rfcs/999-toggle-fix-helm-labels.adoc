@@ -1,4 +1,4 @@
-= Implement a Workaround For Labels Injected By Helm Into Charts, and Make `shipper-lb` Optional
+= Implement a Workaround For Labels Injected By Helm Into Charts, and Make `+shipper-lb+` Optional
 Parham Doustdar <parham.doustdar@booking.com>
 2018-10-25
 :RFC-Number: 999
