@@ -1,0 +1,58 @@
+= Implement a Workaround For Labels Injected By Helm Into Charts, and Make `shipper-lb` Optional
+Parham Doustdar <parham.doustdar@booking.com>
+2018-10-25
+:RFC-Number: 999
+:RFC-Status: Draft
+
+This RFC suggests the smallest changes we can possibly make to allow users to use a wide variety of Helm charts with Shipper.
+
+== Motivation
+
+Currently, to be able to use a chart, you have to fetch it, modify it, package it, and serve it on a local Helm server, so that Shipper could download and render it.
+
+If we can make it easier for users to use charts from the Helm repository with Shipper, it would help us grately when it comes to user adoption. Plus, it will make it easier for internal users to write their own charts -- when it works with Helm, it works with Shipper, too.
+
+Also, doing this means that we can remove a large chunk of our quick start documentation, and don't get into the guts of fetching, modifying, packaging, and serving charts.
+
+== Reference level explanation
+
+To serve the aim of this RFC, there are two concrete actions we must take:
+
+* Start using the `+shipper-lb+` label only as a reason for disambiguation. In other words, when there is only *one* service, that label is not required.
+* Remove the `+release+` label from the service if it is detected. To make users aware that we are doing this, implement a way for users to toggle this functionality.
+
+=== Disambiguation Using `+shipper-lb+`
+
+Right now, we require a label called `+shipper-lb+` with a value of `+production+` to be present on at least one of the services in a chart. Since this is an arbitrary label required by Shipper, this makes all the charts outside of our control unusable.
+
+This RFC proposes that we require the `+shipper-lb+` label only when there is more than one service in the chart. In other terms:
+
+* If there is only one service, the `+shipper-lb+` label is not required. We will inject it ourselves before installing it on the Kubernetes cluster if it doesn't exist.
+* If there is more than one service, the `+shipper-lb+` label must be specified by the user. This lets us know which service we should touch. If none of the services have the label, we provide an error and bail out.
+
+This still means that charts which have more than one service don't work with Shipper out of the box, and this is a limitation we will have to address in the future.
+
+=== Removing the `+release+` Label
+
+In our default, native traffic shifter, we shift traffic by modifying the service that the user has specified. We append another requirement to the selector: `+shipper-receives-traffic: true+`. This adds a requirement to the service to add pods with this label to its associated endpoints. To know more about how this works, check out the https://kubernetes.io/docs/concepts/services-networking/service/[Kubernetes Services documentation].
+
+As the traffic shifter goes through the process of taking traffic from the incumbent and sending it to the contender, it starts removing this label from the incumbent and adding it to the contender.
+
+On the other hand, when Helm renders a chart, in injects a label called `+release+` set to the name of the release into every object.
+
+When users use Helm to scaffold a new chart, the chart that is generated contains a selector that makes it point to the pods in the new release by adding a selector like `+release: <new-release-name>+` to the selectors of the service.
+
+This selector breaks how Shipper works, because it causes the endpoints of the service to be filled only with the pods of the new release, and not a mix of both of them. This means that our traffic shifting logic stops working.
+
+To fix this, this rFC suggests that we remove this label from the selectors of the service before installing it.
+
+Since this behavior could be **magical**, the default behavior should be to throw an error and bail out. If the user wants us to remove the `+release+` selector, they should annotate their application object with `+enable-helm-release-workaround+`. Here is how it would look like in practice:
+
+* If any of the services in the rendered chart have a label called `+release+` with the value being the name of the release, we bail out with an error saying that using this chart will break traffic shifting, and if the user needs us to remove the release selector, they should annotate their application object.
+* If any of the services in the rendered chart have the `+release+` selector set to the name of the release, and the annotation is found on the application object, we remove the `+release+` selector from the selectors of the service before installing it.
+
+== Rationale
+
+Other solutions that we discussed would require us to define a language to specify load balancer rules. At this stage, we don't feel comfortable enough to do this.
+
+That's why this RFC focuses on the least amount of work we need to do to make it easier for users to start using Shipper with Helm charts.
