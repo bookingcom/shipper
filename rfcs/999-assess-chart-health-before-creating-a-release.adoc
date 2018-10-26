@@ -1,0 +1,91 @@
+= Assess Chart Health Before Creating a Release
+:source-highlighter: highlightjs
+The Application Controller should assess the chart health before creating a Release, so relevant information can be properly propagated to the right objects the user will be observing during a release process.
+
+== Motivation
+
+Real world observation showed us that issues with charts happen not so frequently, but in the rare occasions it happens, debugging the issue can be quite frustrating both for the user trying to create a Release with the new chart, and operators supporting this user.
+
+Shipper users, when modifying their Application object, start observing almost immediately the newly created Release, waiting for updates as soon Shipper has processed the Release.
+
+The problem: this never happens; nowhere in Shipper we propagate the information about the Release's chart health.
+
+== Guide level explanation
+
+When a user modifies an Application object, an assessment of the chart specified in `.spec.template.chart` field should be performed. The results of this assessment will be encoded in the *ChartHealthy* Application condition.
+
+The following example shows the excerpt of an Application object with the _ChartHealthy_ condition set. Please refer to the <<charthealthy-condition-table>> to interpret its contents.
+
+.*ChartHealthy* condition encoded in the "my-app" Application
+[source,yaml]
+----
+metadata:
+  name: my-app
+  namespace: my-namespace
+spec: ...
+status:
+  conditions:
+  - lastTransitionTime: ...
+    message: Could not retrieve chart 'https://charts.local/charts/my-app.0.0.1.tgz': 404 # <3>
+    reason: Unreachable # <2>
+    status: "False" # <1>
+    type: ChartHealthy
+----
+<1> The example chart is not healthy.
+<2> The example chart seems to not be reachable.
+<3> The example chart seems to not exist in the chart repository.
+
+[[charthealthy-condition-table]]
+.*ChartHealthy* condition table
+|===
+|Status |Reason |Message example |Description
+
+|*True*
+|Empty
+|Empty
+|The specified chart is healthy.
+
+|*False*
+|*Unreachable*
+|"Could not retrieve chart 'https://charts.local/charts/my-chart-0.0.1.tgz': 404"
+|Should cover any sort of communication issues, ranging from network time outs to any resulting response code different than `200`.
+
+|*False*
+|*SyntaxError*
+|"Chart could not be rendered due to syntax errors; please verify the chart contents"
+|Chart could be downloaded, could be unpacked but its templates *could not* be rendered due to syntax errors.
+
+|*False*
+|*DecodeError*
+|"Manifest 'service.yaml' could not be decoded: ..."
+|Chart could be rendered but at least one rendered manifest couldn't be decoded into valid Kubernetes manifests.
+
+|*False*
+|*ContractError*
+|"Shipper requires a chart with only one deployment, but found 2: dep1 and dep2"
+|Chart could be decoded but doesn't fulfill Shipper's contract, for example having rendered more than one Deployment manifest, or missing a required Service manifest.
+|===
+
+
+== Reference level explanation
+
+In Shipper's current implementation, the _Schedule Controller_ is currently responsible for fetching the chart and extracting relevant information from it, in addition of selecting target clusters matching the Release's `.metadata.environment.clusterRequirements` field and creating any missing Target objects related to a given Release.
+
+Since initial implementation of the Scheduler Controller, the team acknowledged that it wasn't the place to fetch and render the defined chart, but it stayed in there for lack of better options at the time.
+
+Streamlining the activities the Schedule Controller performs has the benefit of narrowing its scope: select clusters according to the Release's cluster requirements and annotate the Release with the results.
+
+Although the Schedule Controller performs other actions, perhaps not relevant to its role, this RFC will focus on *moving chart interactions from the Schedule Controller to the Application Controller*.
+
+=== Fetching the chart
+
+* Download chart
+* Cache chart
+
+=== Rendering the chart
+
+=== Decoding the chart
+
+* Annotate replica count in Release's `shipper.booking.com/capacity.replica-count`.
+
+=== Updating the Application's *ChartHealthy* condition
