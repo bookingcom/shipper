@@ -491,7 +491,7 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 	}
 }
 
-// TestNewApplicationAbort emulates a brand new application rolout.
+// TestNewApplicationAbort emulates a brand new application rollout.
 // The rollout strategy includes a few steps, we are creating a new release,
 // Next, we are moving 1 step forward (50% of the capacity and 50% of the
 // traffic) and delete the release. The expected behavior is:
