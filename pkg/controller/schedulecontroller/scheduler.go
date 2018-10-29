@@ -214,7 +214,24 @@ func (c *Scheduler) CreateInstallationTarget() error {
 	_, err := c.shipperclientset.ShipperV1().InstallationTargets(c.Release.Namespace).Create(installationTarget)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			glog.Warningf("InstallationTarget %q already exists, bailing out", controller.MetaKey(c.Release))
+			installationTarget, getErr := c.shipperclientset.ShipperV1().InstallationTargets(c.Release.Namespace).Get(c.Release.Name, metav1.GetOptions{})
+			if getErr != nil {
+				glog.Errorf("Failed to fetch installation target: %s", getErr)
+				return getErr
+			}
+
+			for _, ownerRef := range installationTarget.GetOwnerReferences() {
+				if ownerRef.UID == c.Release.UID {
+					glog.Infof("InstallationTarget %q already exists but"+
+						" it belongs to current release, proceeding normally",
+						controller.MetaKey(c.Release))
+					return nil
+				}
+			}
+
+			glog.Errorf("InstallationTarget %q already exists and it does not"+
+				" belong to the current release, bailing out", controller.MetaKey(installationTarget))
+
 			return err
 		}
 		return NewFailedAPICallError("CreateInstallationTarget", err)
@@ -256,7 +273,22 @@ func (c *Scheduler) CreateCapacityTarget(totalReplicaCount int32) error {
 	_, err := c.shipperclientset.ShipperV1().CapacityTargets(c.Release.Namespace).Create(capacityTarget)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			glog.Warningf("CapacityTarget %q already exists, bailing out", controller.MetaKey(capacityTarget))
+			capacityTarget, getErr := c.shipperclientset.ShipperV1().CapacityTargets(c.Release.Namespace).Get(c.Release.Name, metav1.GetOptions{})
+			if getErr != nil {
+				glog.Errorf("Failed to fetch capacity target: %s", getErr)
+				return getErr
+			}
+			for _, ownerRef := range capacityTarget.GetOwnerReferences() {
+				if ownerRef.UID == c.Release.UID {
+					glog.Infof("CapacityTarget %q already exists but"+
+						" it belongs to current release, proceeding normally",
+						controller.MetaKey(c.Release))
+					return nil
+				}
+			}
+			glog.Errorf("CapacityTarget %q already exists and it does not"+
+				" belong to the current release, bailing out", controller.MetaKey(capacityTarget))
+
 			return err
 		}
 		return NewFailedAPICallError("CreateCapacityTarget", err)
@@ -297,7 +329,23 @@ func (c *Scheduler) CreateTrafficTarget() error {
 	_, err := c.shipperclientset.ShipperV1().TrafficTargets(c.Release.Namespace).Create(trafficTarget)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			glog.Warningf("TrafficTarget %q already exists, bailing out", controller.MetaKey(trafficTarget))
+
+			trafficTarget, getErr := c.shipperclientset.ShipperV1().TrafficTargets(c.Release.Namespace).Get(c.Release.Name, metav1.GetOptions{})
+			if getErr != nil {
+				glog.Errorf("Failed to fetch traffic target: %s", getErr)
+				return getErr
+			}
+			for _, ownerRef := range trafficTarget.GetOwnerReferences() {
+				if ownerRef.UID == c.Release.UID {
+					glog.Infof("TrafficTarget %q already exists but"+
+						" it belongs to current release, proceeding normally",
+						controller.MetaKey(c.Release))
+					return nil
+				}
+			}
+			glog.Errorf("TrafficTarget %q already exists and it does not"+
+				" belong to the current release, bailing out", controller.MetaKey(trafficTarget))
+
 			return err
 		}
 		return NewFailedAPICallError("CreateTrafficTarget", err)
