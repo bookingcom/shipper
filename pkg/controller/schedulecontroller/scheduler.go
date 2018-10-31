@@ -22,12 +22,17 @@ import (
 
 // Scheduler is an object that knows how to schedule releases.
 type Scheduler struct {
-	Release          *v1.Release
-	shipperclientset clientset.Interface
-	clustersLister   listers.ClusterLister
-	fetchChart       shipperchart.FetchFunc
+	Release *v1.Release
 
-	recorder record.EventRecorder
+	shipperclientset clientset.Interface
+
+	clustersLister           listers.ClusterLister
+	trafficTargetLister      listers.TrafficTargetLister
+	installationTargetLister listers.InstallationTargetLister
+	capacityTargetLister     listers.CapacityTargetLister
+
+	fetchChart shipperchart.FetchFunc
+	recorder   record.EventRecorder
 }
 
 // NewScheduler returns a new Scheduler instance that knows how to
@@ -36,15 +41,24 @@ func NewScheduler(
 	release *v1.Release,
 	shipperclientset clientset.Interface,
 	clusterLister listers.ClusterLister,
+	installationTargetLister listers.InstallationTargetLister,
+	capacityTargetLister listers.CapacityTargetLister,
+	trafficTargetLister listers.TrafficTargetLister,
 	chartFetchFunc shipperchart.FetchFunc,
 	recorder record.EventRecorder,
 ) *Scheduler {
 	return &Scheduler{
-		Release:          release.DeepCopy(),
+		Release: release.DeepCopy(),
+
 		shipperclientset: shipperclientset,
-		clustersLister:   clusterLister,
-		fetchChart:       chartFetchFunc,
-		recorder:         recorder,
+
+		clustersLister:           clusterLister,
+		installationTargetLister: installationTargetLister,
+		capacityTargetLister:     capacityTargetLister,
+		trafficTargetLister:      trafficTargetLister,
+
+		fetchChart: chartFetchFunc,
+		recorder:   recorder,
 	}
 }
 
@@ -214,10 +228,10 @@ func (c *Scheduler) CreateInstallationTarget() error {
 	_, err := c.shipperclientset.ShipperV1().InstallationTargets(c.Release.Namespace).Create(installationTarget)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			installationTarget, getErr := c.shipperclientset.ShipperV1().InstallationTargets(c.Release.Namespace).Get(c.Release.Name, metav1.GetOptions{})
-			if getErr != nil {
-				glog.Errorf("Failed to fetch installation target: %s", getErr)
-				return getErr
+			installationTarget, listerErr := c.installationTargetLister.InstallationTargets(c.Release.Namespace).Get(c.Release.Name)
+			if listerErr != nil {
+				glog.Errorf("Failed to fetch installation target: %s", listerErr)
+				return listerErr
 			}
 
 			for _, ownerRef := range installationTarget.GetOwnerReferences() {
@@ -273,10 +287,10 @@ func (c *Scheduler) CreateCapacityTarget(totalReplicaCount int32) error {
 	_, err := c.shipperclientset.ShipperV1().CapacityTargets(c.Release.Namespace).Create(capacityTarget)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			capacityTarget, getErr := c.shipperclientset.ShipperV1().CapacityTargets(c.Release.Namespace).Get(c.Release.Name, metav1.GetOptions{})
-			if getErr != nil {
-				glog.Errorf("Failed to fetch capacity target: %s", getErr)
-				return getErr
+			capacityTarget, listerErr := c.capacityTargetLister.CapacityTargets(c.Release.Namespace).Get(c.Release.Name)
+			if listerErr != nil {
+				glog.Errorf("Failed to fetch capacity target: %s", listerErr)
+				return listerErr
 			}
 			for _, ownerRef := range capacityTarget.GetOwnerReferences() {
 				if ownerRef.UID == c.Release.UID {
@@ -330,10 +344,10 @@ func (c *Scheduler) CreateTrafficTarget() error {
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
 
-			trafficTarget, getErr := c.shipperclientset.ShipperV1().TrafficTargets(c.Release.Namespace).Get(c.Release.Name, metav1.GetOptions{})
-			if getErr != nil {
-				glog.Errorf("Failed to fetch traffic target: %s", getErr)
-				return getErr
+			trafficTarget, listerErr := c.trafficTargetLister.TrafficTargets(c.Release.Namespace).Get(c.Release.Name)
+			if listerErr != nil {
+				glog.Errorf("Failed to fetch traffic target: %s", listerErr)
+				return listerErr
 			}
 			for _, ownerRef := range trafficTarget.GetOwnerReferences() {
 				if ownerRef.UID == c.Release.UID {

@@ -77,9 +77,21 @@ func newScheduler(
 ) (*Scheduler, *shipperfake.Clientset) {
 	clientset := shipperfake.NewSimpleClientset(fixtures...)
 	informerFactory := shipperinformers.NewSharedInformerFactory(clientset, time.Millisecond*0)
-	clustersLister := informerFactory.Shipper().V1().Clusters().Lister()
 
-	c := NewScheduler(release, clientset, clustersLister, shipperchart.FetchRemote(), record.NewFakeRecorder(42))
+	clustersLister := informerFactory.Shipper().V1().Clusters().Lister()
+	installationTargetLister := informerFactory.Shipper().V1().InstallationTargets().Lister()
+	capacityTargetLister := informerFactory.Shipper().V1().CapacityTargets().Lister()
+	trafficTargetLister := informerFactory.Shipper().V1().TrafficTargets().Lister()
+
+	c := NewScheduler(
+		release,
+		clientset,
+		clustersLister,
+		installationTargetLister,
+		capacityTargetLister,
+		trafficTargetLister,
+		shipperchart.FetchRemote(),
+		record.NewFakeRecorder(42))
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
