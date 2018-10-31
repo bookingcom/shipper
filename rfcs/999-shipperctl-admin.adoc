@@ -56,7 +56,7 @@ applicationClusters:
 |`-n, --namespace`
 | Shipper system namespace to be created in all clusters
 
-|`-k, --kubeconfig`
+|`--kubeconfig`
 | Same as _kubectl_
 
 |===
@@ -91,4 +91,5 @@ This command should do the following steps for each cluster:
 ** The `namespace` is the Shipper namespace passed as the `shipperctl clusters apply` argument
 ** The Secret type is `opaque`
 ** Create a checksum and store it in an annotation on the Secret called `shipper.booking.com/cluster-secret.checksum`
+** The rest of the fields should be copied from the service account secret in the application cluster, typically called `shipper-token-<hash>`.
 * Create a Cluster named the `name` in the configuration on the management cluster, and copy the rest of the cluster fields verbatim into it
