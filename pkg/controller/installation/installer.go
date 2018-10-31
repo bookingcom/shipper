@@ -261,6 +261,11 @@ func (i *Installer) installManifests(
 	// Counter for v1.Service objects that have lb label set to production.
 	var seenLBForProduction int32
 
+	var (
+		lastSeenServiceObjIx int32
+		totalSeenServiceObjs int32
+	)
+
 	// Try to install all the rendered objects in the target cluster. We should
 	// fail in the first error to report that this cluster has an issue. Since the
 	// InstallationTarget.Status represent a per cluster status with a scalar
@@ -269,7 +274,8 @@ func (i *Installer) installManifests(
 	// We'll do this in two parts: the first for loop will decode the manifest
 	// and convert it to unstructured in addition of keep tabs of the number of
 	// v1.Service manifests that have the lb label set to production.
-	for _, manifest := range manifests {
+	for ix, manifest := range manifests {
+
 		decodedObj, _, err :=
 			kubescheme.Codecs.
 				UniversalDeserializer().
@@ -287,21 +293,47 @@ func (i *Installer) installManifests(
 		labelsToInject := i.Release.Labels
 		decodedObj = i.patchObject(decodedObj, labelsToInject, &ownerReference)
 
+		// Here we keep a counter of Services that have the lb label. This will
+		// be used later on to determine whether or not an invalid error should
+		// be returned to the caller.
+		if svc, ok := decodedObj.(*corev1.Service); ok {
+			if relName, ok := svc.Labels["release"]; ok && relName == i.Release.GetName() {
+				// The release label is something that's going to ruin shipper
+				// traffic shift approach. We have 2 options here: remove it
+				// or bail out. The 1st option is possible if the user specified
+				// this explicitly, so there would be no surprises for them.
+				// The second option is to bail out and ask the user to remove
+				// the corresponding label.
+				if _, ok := i.InstallationTarget.Labels[shipperv1.HelmReleaseWorkaroundLabel]; ok {
+					// Ok, the user asked us to apply the workaround explicitly
+					delete(svc.Labels, "release")
+				} else {
+					return NewCreateResourceError("Service object contains a release label"+
+						" which will break shipper traffic shifting. Consider using %q label"+
+						" to tell the system to resolve this automatically.",
+						shipperv1.HelmReleaseWorkaroundLabel)
+				}
+			}
+			// There might be more than 1 service object in the chart, but
+			// only 1 is allowed to be the load balancer. We count them here
+			// in order to check how many contain the lb label.
+			totalSeenServiceObjs++
+			// We are memorizing the recent service object index, so we can
+			// access and patch it instantly down the execution flow.
+			lastSeenServiceObjIx = int32(ix)
+			lbValue, ok := svc.Labels[shipperv1.LBLabel]
+			if ok && lbValue == shipperv1.LBForProduction {
+				seenLBForProduction++
+			}
+		}
+
 		// ResourceClient.Create() requires an Unstructured object to work with, so we
 		// need to convert.
 		obj := &unstructured.Unstructured{}
 		err = i.Scheme.Convert(decodedObj, obj, nil)
 		if err != nil {
-			return NewConvertUnstructuredError("error converting object to unstructured: %s", err)
-		}
-
-		// Here we keep a counter of Services that have the lb label. This will
-		// be used later on to determine whether or not an invalid error should
-		// be returned to the caller.
-		if svc, ok := decodedObj.(*corev1.Service); ok {
-			if lbValue, ok := svc.Labels[shipperv1.LBLabel]; ok && lbValue == shipperv1.LBForProduction {
-				seenLBForProduction++
-			}
+			return NewConvertUnstructuredError(
+				"error converting object to unstructured: %s", err)
 		}
 
 		renderedObjects = append(renderedObjects, struct {
@@ -312,10 +344,36 @@ func (i *Installer) installManifests(
 
 	// Shipper requires a Chart with exactly one v1.Service manifest containing
 	// the expected lb label.
+	if seenLBForProduction == 0 {
+		// If we found none, but there is only 1 service object, we can patch
+		// the service object with the missing lb label and move forward.
+		if totalSeenServiceObjs == 1 {
+			decodedObj := renderedObjects[lastSeenServiceObjIx].decoded
+			labelsToInject := mergeLabels(i.Release.Labels, map[string]string{
+				shipperv1.LBLabel: shipperv1.LBForProduction,
+			})
+			decodedObj = i.patchObject(decodedObj, labelsToInject, &ownerReference)
+			obj := &unstructured.Unstructured{}
+			if err := i.Scheme.Convert(decodedObj, obj, nil); err != nil {
+				return NewConvertUnstructuredError(
+					"error converting object to unstructured: %s", err)
+			}
+			renderedObjects[lastSeenServiceObjIx].decoded = decodedObj
+			renderedObjects[lastSeenServiceObjIx].unstructured = obj
+			seenLBForProduction++
+		} else {
+			return controller.NewInvalidChartError(
+				fmt.Sprintf(
+					"%d service objects found but none is marked with %q",
+					totalSeenServiceObjs, shipperv1.LBLabel))
+		}
+	}
+
 	if seenLBForProduction != 1 {
 		return controller.NewInvalidChartError(
 			fmt.Sprintf(
-				"one and only one v1.Service object with label %q is required, but found %d object(s) instead",
+				"one and only one v1.Service object with label %q is required,"+
+					" but found %d object(s) instead",
 				shipperv1.LBLabel, seenLBForProduction))
 	}
 
