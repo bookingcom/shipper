@@ -125,6 +125,86 @@ func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObject
 	validateDeploymentCreateAction(t, validateAction(t, filteredActions[2], "Deployment"))
 }
 
+func enableInstallationTargetHelmReleaseWorkaround(it *shipperv1.InstallationTarget) {
+	it.Labels[shipperv1.HelmReleaseWorkaroundLabel] = "1"
+}
+
+func disableInstallationTargetHelmReleaseWorkaround(it *shipperv1.InstallationTarget) {
+	if _, ok := it.Labels[shipperv1.HelmReleaseWorkaroundLabel]; ok {
+		delete(it.Labels, shipperv1.HelmReleaseWorkaroundLabel)
+	}
+}
+
+func TestInstallerOffTheShelfEnableHelmWorkaround(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildReleaseWithChartVersion("0.0.1-off-the-shelf", "reviews-api", "0", "deadbeef", "reviews-api", "0.0.1-off-the-shelf")
+	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
+
+	enableInstallationTargetHelmReleaseWorkaround(it)
+
+	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
+	if err != nil {
+		panic(err)
+	}
+	installer := newInstaller(release, it)
+
+	svc := loadService("off-the-shelf")
+	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+
+	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
+
+	fakePair := clientsPerCluster[cluster.Name]
+
+	restConfig := &rest.Config{}
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-off-the-shelf-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-off-the-shelf-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-off-the-shelf-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
+	}
+
+	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+		t.Fatal(err)
+	}
+
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeDynamicClient.Actions(), t)
+
+	filteredActions := filterActions(fakePair.fakeDynamicClient.Actions(), "create")
+	validateAction(t, filteredActions[0], "ConfigMap")
+	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
+	validateDeploymentCreateAction(t, validateAction(t, filteredActions[2], "Deployment"))
+}
+
+func TestInstallerOffTheShelfDisableHelmWorkaround(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildReleaseWithChartVersion("0.0.1-off-the-shelf", "reviews-api", "0", "deadbeef", "reviews-api", "0.0.1-off-the-shelf")
+	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
+
+	disableInstallationTargetHelmReleaseWorkaround(it)
+
+	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
+	if err != nil {
+		panic(err)
+	}
+	installer := newInstaller(release, it)
+
+	svc := loadService("off-the-shelf")
+	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+
+	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
+
+	fakePair := clientsPerCluster[cluster.Name]
+
+	restConfig := &rest.Config{}
+
+	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
+		t.Fatal("Expected an error to be raised here, nothing thrown")
+	}
+}
+
 func extractUnstructuredContent(scheme *runtime.Scheme, obj runtime.Object) (*unstructured.Unstructured, map[string]interface{}) {
 	u := &unstructured.Unstructured{}
 	err := scheme.Convert(obj, u, nil)
