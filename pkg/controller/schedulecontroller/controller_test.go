@@ -109,6 +109,9 @@ func TestControllerCreateAssociatedObjectsDuplicateInstallationTarget(t *testing
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      release.GetName(),
 			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(release),
+			},
 		},
 	}
 	fixtures := []runtime.Object{release, cluster, installationtarget}
@@ -143,6 +146,9 @@ func TestControllerCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      release.GetName(),
 			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(release),
+			},
 		},
 	}
 	fixtures := []runtime.Object{cluster, release, traffictarget}
@@ -176,6 +182,9 @@ func TestControllerCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) 
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      release.GetName(),
 			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(release),
+			},
 		},
 	}
 	fixtures := []runtime.Object{cluster, release, capacitytarget}

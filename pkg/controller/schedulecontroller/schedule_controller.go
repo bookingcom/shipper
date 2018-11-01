@@ -41,6 +41,10 @@ type Controller struct {
 	clustersLister shipperlisters.ClusterLister
 	clustersSynced cache.InformerSynced
 
+	installationTargerLister shipperlisters.InstallationTargetLister
+	capacityTargetLister     shipperlisters.CapacityTargetLister
+	trafficTargetLister      shipperlisters.TrafficTargetLister
+
 	workqueue      workqueue.RateLimitingInterface
 	chartFetchFunc chart.FetchFunc
 	recorder       record.EventRecorder
@@ -57,6 +61,10 @@ func NewController(
 	releaseInformer := shipperInformerFactory.Shipper().V1().Releases()
 	clusterInformer := shipperInformerFactory.Shipper().V1().Clusters()
 
+	installationTargetLister := shipperInformerFactory.Shipper().V1().InstallationTargets().Lister()
+	capacityTargetLister := shipperInformerFactory.Shipper().V1().CapacityTargets().Lister()
+	trafficTargetLister := shipperInformerFactory.Shipper().V1().TrafficTargets().Lister()
+
 	controller := &Controller{
 		shipperclientset: shipperclientset,
 
@@ -65,6 +73,11 @@ func NewController(
 
 		clustersLister: clusterInformer.Lister(),
 		clustersSynced: clusterInformer.Informer().HasSynced,
+
+		installationTargerLister: installationTargetLister,
+		capacityTargetLister:     capacityTargetLister,
+		trafficTargetLister:      trafficTargetLister,
+
 		workqueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "schedule_controller_releases"),
 		chartFetchFunc: chartFetchFunc,
 		recorder:       recorder,
@@ -175,6 +188,9 @@ func (c *Controller) syncOne(key string) bool {
 		release,
 		c.shipperclientset,
 		c.clustersLister,
+		c.installationTargerLister,
+		c.capacityTargetLister,
+		c.trafficTargetLister,
 		c.chartFetchFunc,
 		c.recorder,
 	)

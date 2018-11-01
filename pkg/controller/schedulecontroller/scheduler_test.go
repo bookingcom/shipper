@@ -7,6 +7,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubetesting "k8s.io/client-go/testing"
@@ -76,9 +77,21 @@ func newScheduler(
 ) (*Scheduler, *shipperfake.Clientset) {
 	clientset := shipperfake.NewSimpleClientset(fixtures...)
 	informerFactory := shipperinformers.NewSharedInformerFactory(clientset, time.Millisecond*0)
-	clustersLister := informerFactory.Shipper().V1().Clusters().Lister()
 
-	c := NewScheduler(release, clientset, clustersLister, shipperchart.FetchRemote(), record.NewFakeRecorder(42))
+	clustersLister := informerFactory.Shipper().V1().Clusters().Lister()
+	installationTargetLister := informerFactory.Shipper().V1().InstallationTargets().Lister()
+	capacityTargetLister := informerFactory.Shipper().V1().CapacityTargets().Lister()
+	trafficTargetLister := informerFactory.Shipper().V1().TrafficTargets().Lister()
+
+	c := NewScheduler(
+		release,
+		clientset,
+		clustersLister,
+		installationTargetLister,
+		capacityTargetLister,
+		trafficTargetLister,
+		shipperchart.FetchRemote(),
+		record.NewFakeRecorder(42))
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
@@ -290,7 +303,7 @@ func TestCreateAssociatedObjects(t *testing.T) {
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
-func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
+func TestCreateAssociatedObjectsDuplicateInstallationTargetSameOwner(t *testing.T) {
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
 	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
@@ -299,6 +312,9 @@ func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      release.GetName(),
 			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(release),
+			},
 		},
 	}
 	fixtures := []runtime.Object{release, cluster, installationtarget}
@@ -326,7 +342,41 @@ func TestCreateAssociatedObjectsDuplicateInstallationTarget(t *testing.T) {
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
-func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
+func TestCreateAssociatedObjectsDuplicateInstallationTargetNoOwner(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
+
+	installationtarget := &shipperv1.InstallationTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+			// No explicit owner reference here
+		},
+	}
+	fixtures := []runtime.Object{release, cluster, installationtarget}
+
+	// Expected a release but no actions. With an existing installationtarget
+	// object but no explicit reference, it's a no-go. Expected an
+	// already-exists error.
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipperv1.ReleaseCondition{
+		{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+
+	c, _ := newScheduler(release, fixtures)
+
+	err := c.scheduleRelease()
+	if err == nil {
+		t.Fatalf("Expected an error here, none received")
+	}
+
+	if !errors.IsAlreadyExists(err) {
+		t.Fatalf("Expected an already-exists error, got: %s", err)
+	}
+}
+
+func TestCreateAssociatedObjectsDuplicateTrafficTargetSameOwner(t *testing.T) {
 	// Fixtures
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
@@ -336,6 +386,9 @@ func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      release.GetName(),
 			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(release),
+			},
 		},
 	}
 	fixtures := []runtime.Object{cluster, release, traffictarget}
@@ -363,7 +416,42 @@ func TestCreateAssociatedObjectsDuplicateTrafficTarget(t *testing.T) {
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
-func TestCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
+func TestCreateAssociatedObjectsDuplicateTrafficTargetNoOwner(t *testing.T) {
+	// Fixtures
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
+
+	traffictarget := &shipperv1.TrafficTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+			// No explicit owner reference here
+		},
+	}
+	fixtures := []runtime.Object{cluster, release, traffictarget}
+
+	// Expected a release but no actions. With an existing traffictarget
+	// object but no explicit reference, it's a no-go. Expected an
+	// already-exists error.
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipperv1.ReleaseCondition{
+		{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+
+	c, _ := newScheduler(release, fixtures)
+	err := c.scheduleRelease()
+
+	if err == nil {
+		t.Fatalf("Expected an error here, none received")
+	}
+
+	if !errors.IsAlreadyExists(err) {
+		t.Fatalf("Expected an already-exists error, got: %s", err)
+	}
+}
+
+func TestCreateAssociatedObjectsDuplicateCapacityTargetSameOwner(t *testing.T) {
 	// Fixtures
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
@@ -373,6 +461,9 @@ func TestCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      release.GetName(),
 			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(release),
+			},
 		},
 	}
 	fixtures := []runtime.Object{cluster, release, capacitytarget}
@@ -398,6 +489,40 @@ func TestCreateAssociatedObjectsDuplicateCapacityTarget(t *testing.T) {
 		[]string{"releases", "installationtargets", "traffictargets", "capacitytargets"},
 	)
 	shippertesting.CheckActions(expectedActions, actions, t)
+}
+
+func TestCreateAssociatedObjectsDuplicateCapacityTargetNoOwner(t *testing.T) {
+	// Fixtures
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipperv1.ReleaseClustersAnnotation] = cluster.GetName()
+
+	capacitytarget := &shipperv1.CapacityTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+		},
+	}
+	fixtures := []runtime.Object{cluster, release, capacitytarget}
+
+	// Expected a release but no actions. With an existing capacitytarget
+	// object but no explicit reference, it's a no-go. Expected an
+	// already-exists error.
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipperv1.ReleaseCondition{
+		{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+
+	c, _ := newScheduler(release, fixtures)
+	err := c.scheduleRelease()
+
+	if err == nil {
+		t.Fatalf("Expected an error here, none received")
+	}
+
+	if !errors.IsAlreadyExists(err) {
+		t.Fatalf("Expected an already-exists error, got: %s", err)
+	}
 }
 
 func filterActions(
