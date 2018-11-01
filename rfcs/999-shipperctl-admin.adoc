@@ -14,31 +14,36 @@ Having a complicated process also complicates other parts of our project, specif
 
 == Reference level explanation
 
-`+shipperctl admin clusters apply`+ performs a bulk operation setting up all clusters contained in a Shipper cluster configuration file. This file contains all clusters to be configured for Shipper operation, for both Management and Application clusters.
+`+shipperctl admin clusters apply`+ performs a bulk operation setting up all clusters contained in a Shipper cluster configuration file. This file contains all clusters to be configured for Shipper operation, for both Management and Application clusters. It is structed like a Kubernetes object because that's a handy set of primitives (for dealing with compatibility, for example), but it is not an object which lives in a cluster. Potentially in the future this might be consumed by an operator.
 
 .Cluster configuration file example
 [source,yaml]
 ----
-managementClusters:
-- name:    eu-management     # <1>
-- name:    us-management
-  context: gke-us-management # <2>
+apiVersion: shipper.booking.com/v1alpha1
+kind: ClusterManifest
+metadata:
+  name: production
+spec:
+  managementClusters:
+  - name:    eu-management     # <1>
+  - name:    us-management
+    context: gke-us-management # <2>
 
-applicationClusters:
-- name:   eu-application     # <1>
-  region: eu-west1
-  zone:   a
-  capabilities:
-    - gdpr
-    - ipv4
-    - kubernetes1.12
-- name:    us-application
-  context: gke-us-application # <2>
-  region:  us-west1
-  zone:    a
-  capabilities:
-    - ipv4
-    - ssd-local-disk
+  applicationClusters:
+  - name:   eu-application     # <1>
+    region: eu-west1
+    zone:   a
+    capabilities:
+      - gdpr
+      - ipv4
+      - kubernetes1.12
+  - name:    us-application
+    context: gke-us-application # <2>
+    region:  us-west1
+    zone:    a
+    capabilities:
+      - ipv4
+      - ssd-local-disk
 ----
 <1> Without the `context` field present, `name` is considered a valid and existing _kubectl_ context, and will be used both to gather connection details to perform relevant operations on the cluster to set up Shipper and to name cluster specific manifests in the Management Cluster.
 <2> With the `context` field present, the `name` value is used only to name cluster specific manifests in the Management Cluster. Connection details are gathered using the specified `context` value.
