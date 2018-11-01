@@ -297,7 +297,7 @@ func (i *Installer) installManifests(
 		// be used later on to determine whether or not an invalid error should
 		// be returned to the caller.
 		if svc, ok := decodedObj.(*corev1.Service); ok {
-			if relName, ok := svc.Labels["release"]; ok && relName == i.Release.GetName() {
+			if relName, ok := svc.Labels[shipperv1.HelmDefaultReleaseLabel]; ok && relName == i.Release.GetName() {
 				// The release label is something that's going to ruin shipper
 				// traffic shift approach. We have 2 options here: remove it
 				// or bail out. The 1st option is possible if the user specified
@@ -306,11 +306,12 @@ func (i *Installer) installManifests(
 				// the corresponding label.
 				if _, ok := i.InstallationTarget.Labels[shipperv1.HelmReleaseWorkaroundLabel]; ok {
 					// Ok, the user asked us to apply the workaround explicitly
-					delete(svc.Labels, "release")
+					delete(svc.Labels, shipperv1.HelmDefaultReleaseLabel)
 				} else {
-					return NewCreateResourceError("Service object contains a release label"+
+					return NewCreateResourceError("Service object contains the %q label"+
 						" which will break shipper traffic shifting. Consider using %q label"+
 						" to tell the system to resolve this automatically.",
+						shipperv1.HelmDefaultReleaseLabel,
 						shipperv1.HelmReleaseWorkaroundLabel)
 				}
 			}

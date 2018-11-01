@@ -17,6 +17,7 @@ const (
 	ReleaseEnvironmentHashLabel = "shipper-release-hash"
 	PodTrafficStatusLabel       = "shipper-traffic-status"
 
+	HelmDefaultReleaseLabel    = "release"
 	HelmReleaseWorkaroundLabel = "shipper-enable-helm-release-workaround"
 
 	ReleaseRecordWaitingForObject = "WaitingForObject"
