@@ -115,6 +115,7 @@ func (i *Installer) buildResourceClient(
 func (i *Installer) patchDeployment(
 	d *appsv1.Deployment,
 	labelsToInject map[string]string,
+	labelsToDrop map[string]bool,
 	ownerReference *metav1.OwnerReference,
 ) runtime.Object {
 
@@ -130,6 +131,10 @@ func (i *Installer) patchDeployment(
 
 	for k, v := range labelsToInject {
 		newLabels[k] = v
+	}
+
+	for k := range labelsToDrop {
+		delete(newLabels, k)
 	}
 	d.SetLabels(newLabels)
 
@@ -160,6 +165,7 @@ func (i *Installer) patchDeployment(
 func (i *Installer) patchService(
 	s *corev1.Service,
 	labelsToInject map[string]string,
+	labelsToDrop map[string]bool,
 	ownerReference *metav1.OwnerReference,
 ) runtime.Object {
 	appName, ok := labelsToInject[shipperv1.AppLabel]
@@ -171,7 +177,11 @@ func (i *Installer) patchService(
 
 	// Those are modified regardless.
 	s.OwnerReferences = []metav1.OwnerReference{*ownerReference}
-	s.Labels = mergeLabels(s.Labels, labelsToInject)
+	newLabels := mergeLabels(s.Labels, labelsToInject)
+	for k := range labelsToDrop {
+		delete(newLabels, k)
+	}
+	s.Labels = newLabels
 	s.Spec.Selector[shipperv1.AppLabel] = appName
 
 	// We are interested only in patching Services properly identified by our specific label
@@ -184,6 +194,7 @@ func (i *Installer) patchService(
 func (i *Installer) patchUnstructured(
 	o *unstructured.Unstructured,
 	labelsToInject map[string]string,
+	labelsToDrop map[string]bool,
 	ownerReference *metav1.OwnerReference,
 ) runtime.Object {
 
@@ -203,21 +214,30 @@ func (i *Installer) patchUnstructured(
 func (i *Installer) patchObject(
 	object runtime.Object,
 	labelsToInject map[string]string,
+	labelsToDrop map[string]bool,
 	ownerReference *metav1.OwnerReference,
 ) runtime.Object {
 	switch o := object.(type) {
 	case *appsv1.Deployment:
-		return i.patchDeployment(o, labelsToInject, ownerReference)
+		return i.patchDeployment(o, labelsToInject, labelsToDrop, ownerReference)
 	case *corev1.Service:
-		return i.patchService(o, labelsToInject, ownerReference)
+		return i.patchService(o, labelsToInject, labelsToDrop, ownerReference)
 	default:
 		unstructuredObj := &unstructured.Unstructured{}
 		err := i.Scheme.Convert(object, unstructuredObj, nil)
 		if err != nil {
 			panic(err)
 		}
-		return i.patchUnstructured(unstructuredObj, labelsToInject, ownerReference)
+		return i.patchUnstructured(unstructuredObj, labelsToInject, labelsToDrop, ownerReference)
 	}
+}
+
+func copyLabels(orig map[string]string) map[string]string {
+	cp := make(map[string]string)
+	for k, v := range orig {
+		cp[k] = v
+	}
+	return cp
 }
 
 // installManifests attempts to install the manifests on the specified cluster.
@@ -251,31 +271,25 @@ func (i *Installer) installManifests(
 	// Create the OwnerReference for the manifest objects.
 	ownerReference := janitor.ConfigMapAnchorToOwnerReference(createdConfigMap)
 
-	// Keep decoded and unstructured objects around until we are ready to
-	// process them.
-	var renderedObjects []struct {
-		unstructured *unstructured.Unstructured
-		decoded      runtime.Object
-	}
-
 	// Counter for v1.Service objects that have lb label set to production.
-	var seenLBForProduction int32
 
 	var (
+		seenLBForProduction  int32
 		lastSeenServiceObjIx int32
 		totalSeenServiceObjs int32
 	)
 
-	// Try to install all the rendered objects in the target cluster. We should
-	// fail in the first error to report that this cluster has an issue. Since the
-	// InstallationTarget.Status represent a per cluster status with a scalar
-	// value, we don't try to install other objects for now.
-	//
-	// We'll do this in two parts: the first for loop will decode the manifest
-	// and convert it to unstructured in addition of keep tabs of the number of
-	// v1.Service manifests that have the lb label set to production.
-	for ix, manifest := range manifests {
+	// Keep decoded and unstructured objects around until we are ready to
+	// process them. The labels are separated in order to do some non-trivial
+	// juggling with them and patch objects at the very end.
+	type PreparedObj struct {
+		decoded        runtime.Object
+		labelsToInject map[string]string
+		labelsToDrop   map[string]bool
+	}
+	preparedObjs := make([]*PreparedObj, len(manifests))
 
+	for ix, manifest := range manifests {
 		decodedObj, _, err :=
 			kubescheme.Codecs.
 				UniversalDeserializer().
@@ -285,13 +299,11 @@ func (i *Installer) installManifests(
 			return NewDecodeManifestError("error decoding manifest: %s", err)
 		}
 
-		// We label final objects with Release labels so that we can find/filter them
-		// later in Capacity and Installation controllers.
-		// This may overwrite some of the pre-existing labels. It's not ideal but with
-		// current implementation we require that shipperv1.ReleaseLabel is propagated
-		// correctly. This may be subject to change.
-		labelsToInject := i.Release.Labels
-		decodedObj = i.patchObject(decodedObj, labelsToInject, &ownerReference)
+		preparedObjs[ix] = &PreparedObj{
+			decoded:        decodedObj,
+			labelsToInject: copyLabels(i.Release.Labels),
+			labelsToDrop:   make(map[string]bool),
+		}
 
 		// Here we keep a counter of Services that have the lb label. This will
 		// be used later on to determine whether or not an invalid error should
@@ -306,7 +318,7 @@ func (i *Installer) installManifests(
 				// the corresponding label.
 				if _, ok := i.InstallationTarget.Labels[shipperv1.HelmReleaseWorkaroundLabel]; ok {
 					// Ok, the user asked us to apply the workaround explicitly
-					delete(svc.Labels, shipperv1.HelmDefaultReleaseLabel)
+					preparedObjs[ix].labelsToDrop[shipperv1.HelmDefaultReleaseLabel] = true
 				} else {
 					return NewCreateResourceError("Service object contains the %q label"+
 						" which will break shipper traffic shifting. Consider using %q label"+
@@ -322,25 +334,10 @@ func (i *Installer) installManifests(
 			// We are memorizing the recent service object index, so we can
 			// access and patch it instantly down the execution flow.
 			lastSeenServiceObjIx = int32(ix)
-			lbValue, ok := svc.Labels[shipperv1.LBLabel]
-			if ok && lbValue == shipperv1.LBForProduction {
+			if lbValue, ok := svc.Labels[shipperv1.LBLabel]; ok && lbValue == shipperv1.LBForProduction {
 				seenLBForProduction++
 			}
 		}
-
-		// ResourceClient.Create() requires an Unstructured object to work with, so we
-		// need to convert.
-		obj := &unstructured.Unstructured{}
-		err = i.Scheme.Convert(decodedObj, obj, nil)
-		if err != nil {
-			return NewConvertUnstructuredError(
-				"error converting object to unstructured: %s", err)
-		}
-
-		renderedObjects = append(renderedObjects, struct {
-			unstructured *unstructured.Unstructured
-			decoded      runtime.Object
-		}{unstructured: obj, decoded: decodedObj})
 	}
 
 	// Shipper requires a Chart with exactly one v1.Service manifest containing
@@ -349,18 +346,7 @@ func (i *Installer) installManifests(
 		// If we found none, but there is only 1 service object, we can patch
 		// the service object with the missing lb label and move forward.
 		if totalSeenServiceObjs == 1 {
-			decodedObj := renderedObjects[lastSeenServiceObjIx].decoded
-			labelsToInject := mergeLabels(i.Release.Labels, map[string]string{
-				shipperv1.LBLabel: shipperv1.LBForProduction,
-			})
-			decodedObj = i.patchObject(decodedObj, labelsToInject, &ownerReference)
-			obj := &unstructured.Unstructured{}
-			if err := i.Scheme.Convert(decodedObj, obj, nil); err != nil {
-				return NewConvertUnstructuredError(
-					"error converting object to unstructured: %s", err)
-			}
-			renderedObjects[lastSeenServiceObjIx].decoded = decodedObj
-			renderedObjects[lastSeenServiceObjIx].unstructured = obj
+			preparedObjs[lastSeenServiceObjIx].labelsToInject[shipperv1.LBLabel] = shipperv1.LBForProduction
 			seenLBForProduction++
 		} else {
 			return controller.NewInvalidChartError(
@@ -378,12 +364,23 @@ func (i *Installer) installManifests(
 				shipperv1.LBLabel, seenLBForProduction))
 	}
 
-	// The second loop is meant to install all the decoded and transformed
+	// The third loop is here to install all the decoded and transformed
 	// manifests once we assume it the Chart is in good shape.
-	for _, r := range renderedObjects {
-		obj := r.unstructured
-		decodedObj := r.decoded
-		gvk := obj.GroupVersionKind()
+	for _, r := range preparedObjs {
+		decoded := r.decoded
+
+		if len(r.labelsToInject) > 0 || len(r.labelsToDrop) > 0 {
+			decoded = i.patchObject(decoded, r.labelsToInject, r.labelsToDrop, &ownerReference)
+		}
+
+		unstr := &unstructured.Unstructured{}
+		err = i.Scheme.Convert(decoded, unstr, nil)
+		if err != nil {
+			return NewConvertUnstructuredError(
+				"error converting object to unstructured: %s", err)
+		}
+
+		gvk := unstr.GroupVersionKind()
 
 		// Once we've gathered enough information about the document we want to
 		// install, we're able to build a resource client to interact with the target
@@ -400,19 +397,19 @@ func (i *Installer) installManifests(
 		// attempts to create the resource, taking some time to re-sync
 		// the quota information when objects can't be created since they
 		// already exist.
-		existingObj, err := resourceClient.Get(obj.GetName(), metav1.GetOptions{})
+		existingObj, err := resourceClient.Get(unstr.GetName(), metav1.GetOptions{})
 
 		// Any error other than NotFound is not recoverable from this point on.
 		if err != nil && !errors.IsNotFound(err) {
-			return NewGetResourceError(`error getting resource %s '%s/%s': %s`, obj.GetKind(), obj.GetNamespace(), obj.GetName(), err)
+			return NewGetResourceError(`error getting resource %s '%s/%s': %s`, unstr.GetKind(), unstr.GetNamespace(), unstr.GetName(), err)
 		}
 
 		// If have an error here, it means it is NotFound, so proceed to
 		// create the object on the application cluster.
 		if err != nil {
-			_, err = resourceClient.Create(obj)
+			_, err = resourceClient.Create(unstr)
 			if err != nil {
-				return NewCreateResourceError(`error creating resource %s "%s/%s": %s`, obj.GetKind(), obj.GetNamespace(), obj.GetName(), err)
+				return NewCreateResourceError(`error creating resource %s "%s/%s": %s`, unstr.GetKind(), unstr.GetNamespace(), unstr.GetName(), err)
 			}
 			continue
 		}
@@ -445,11 +442,11 @@ func (i *Installer) installManifests(
 			})
 			existingObj.SetOwnerReferences(ownerReferences)
 		}
-		existingObj.SetLabels(obj.GetLabels())
-		existingObj.SetAnnotations(obj.GetAnnotations())
+		existingObj.SetLabels(unstr.GetLabels())
+		existingObj.SetAnnotations(unstr.GetAnnotations())
 		existingUnstructuredObj := existingObj.UnstructuredContent()
-		newUnstructuredObj := obj.UnstructuredContent()
-		switch decodedObj.(type) {
+		newUnstructuredObj := unstr.UnstructuredContent()
+		switch decoded.(type) {
 		case *corev1.Service:
 			// Copy over clusterIP from existing object's .spec to the
 			// rendered one.
@@ -461,7 +458,7 @@ func (i *Installer) installManifests(
 		existingObj.SetUnstructuredContent(existingUnstructuredObj)
 		if _, clientErr := resourceClient.Update(existingObj); clientErr != nil {
 			return NewUpdateResourceError(`error updating resource %s "%s/%s": %s`,
-				existingObj.GetKind(), obj.GetNamespace(), obj.GetName(), clientErr)
+				existingObj.GetKind(), unstr.GetNamespace(), unstr.GetName(), clientErr)
 		}
 	}
 
