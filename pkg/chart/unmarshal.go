@@ -24,7 +24,7 @@ func GetDeployments(rawRendered []string) []appsv1.Deployment {
 		const expectedKind = "Deployment"
 		gotKind := obj.GetObjectKind().GroupVersionKind().Kind
 		if gotKind != expectedKind {
-			glog.V(10).Info("got a %q, skipping", gotKind)
+			glog.V(10).Infof("got a %q, skipping", gotKind)
 			continue
 		}
 
