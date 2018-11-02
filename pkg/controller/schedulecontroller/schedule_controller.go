@@ -180,7 +180,7 @@ func (c *Controller) syncOne(key string) bool {
 	}
 
 	if releaseutil.ReleaseScheduled(release) {
-		glog.V(4).Info("Release %q has already been scheduled, ignoring", key)
+		glog.V(4).Infof("Release %q has already been scheduled, ignoring", key)
 		return false
 	}
 
