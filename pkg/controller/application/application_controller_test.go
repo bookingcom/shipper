@@ -38,7 +38,7 @@ func TestHashReleaseEnv(t *testing.T) {
 	rel := newRelease("test-release", app)
 
 	appHash := hashReleaseEnvironment(app.Spec.Template)
-	relHash := hashReleaseEnvironment(rel.Environment)
+	relHash := hashReleaseEnvironment(rel.Spec.Environment)
 	if appHash != relHash {
 		t.Errorf("two identical environments should have hashed to the same value, but they did not: app %q and rel %q", appHash, relHash)
 	}
@@ -89,7 +89,7 @@ func TestCreateFirstRelease(t *testing.T) {
 	// because the testing client does not update listers after Create actions.
 
 	expectedRelease := newRelease(expectedRelName, app)
-	expectedRelease.Environment.Chart.RepoURL = "127.0.0.1"
+	expectedRelease.Spec.Environment.Chart.RepoURL = "127.0.0.1"
 	expectedRelease.Labels[shipperv1.ReleaseEnvironmentHashLabel] = envHash
 	expectedRelease.Annotations[shipperv1.ReleaseTemplateIterationAnnotation] = "0"
 	expectedRelease.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
@@ -110,7 +110,7 @@ func TestStatusStableState(t *testing.T) {
 	releaseA.Spec.TargetStep = 2
 	releaseA.Status.AchievedStep = &shipperv1.AchievedStep{
 		Step: 2,
-		Name: releaseA.Environment.Strategy.Steps[2].Name,
+		Name: releaseA.Spec.Environment.Strategy.Steps[2].Name,
 	}
 
 	releaseA.Status.Conditions = []shipperv1.ReleaseCondition{
@@ -127,7 +127,7 @@ func TestStatusStableState(t *testing.T) {
 	releaseB.Spec.TargetStep = 2
 	releaseB.Status.AchievedStep = &shipperv1.AchievedStep{
 		Step: 2,
-		Name: releaseB.Environment.Strategy.Steps[2].Name,
+		Name: releaseB.Spec.Environment.Strategy.Steps[2].Name,
 	}
 
 	releaseB.Status.Conditions = []shipperv1.ReleaseCondition{
@@ -176,7 +176,7 @@ func TestRevisionHistoryLimit(t *testing.T) {
 	releaseFoo.Spec.TargetStep = 2
 	releaseFoo.Status.AchievedStep = &shipperv1.AchievedStep{
 		Step: 2,
-		Name: releaseFoo.Environment.Strategy.Steps[2].Name,
+		Name: releaseFoo.Spec.Environment.Strategy.Steps[2].Name,
 	}
 	releaseutil.SetReleaseCondition(&releaseFoo.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
 	releaseutil.SetGeneration(releaseFoo, 0)
@@ -185,7 +185,7 @@ func TestRevisionHistoryLimit(t *testing.T) {
 	releaseBar.Spec.TargetStep = 2
 	releaseBar.Status.AchievedStep = &shipperv1.AchievedStep{
 		Step: 2,
-		Name: releaseBar.Environment.Strategy.Steps[2].Name,
+		Name: releaseBar.Spec.Environment.Strategy.Steps[2].Name,
 	}
 	releaseutil.SetReleaseCondition(&releaseBar.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
 	releaseutil.SetGeneration(releaseBar, 1)
@@ -194,7 +194,7 @@ func TestRevisionHistoryLimit(t *testing.T) {
 	releaseBaz.Spec.TargetStep = 2
 	releaseBaz.Status.AchievedStep = &shipperv1.AchievedStep{
 		Step: 2,
-		Name: releaseBaz.Environment.Strategy.Steps[2].Name,
+		Name: releaseBaz.Spec.Environment.Strategy.Steps[2].Name,
 	}
 	releaseutil.SetReleaseCondition(&releaseBaz.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
 	releaseutil.SetGeneration(releaseBaz, 2)
@@ -257,11 +257,11 @@ func TestCreateThirdRelease(t *testing.T) {
 	releaseutil.SetIteration(firstRel, 0)
 	releaseutil.SetGeneration(firstRel, 0)
 	releaseutil.SetReleaseCondition(&firstRel.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
-	firstRel.Environment.Chart.RepoURL = srv.URL()
+	firstRel.Spec.Environment.Chart.RepoURL = srv.URL()
 	firstRel.Spec.TargetStep = 2
 	firstRel.Status.AchievedStep = &shipperv1.AchievedStep{
 		Step: 2,
-		Name: firstRel.Environment.Strategy.Steps[2].Name,
+		Name: firstRel.Spec.Environment.Strategy.Steps[2].Name,
 	}
 
 	incumbentRelName := fmt.Sprintf("%s-%s-1", testAppName, incumbentEnvHash)
@@ -269,11 +269,11 @@ func TestCreateThirdRelease(t *testing.T) {
 	releaseutil.SetIteration(incumbentRel, 1)
 	releaseutil.SetGeneration(incumbentRel, 1)
 	releaseutil.SetReleaseCondition(&incumbentRel.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
-	incumbentRel.Environment.Chart.RepoURL = srv.URL()
+	incumbentRel.Spec.Environment.Chart.RepoURL = srv.URL()
 	incumbentRel.Spec.TargetStep = 2
 	incumbentRel.Status.AchievedStep = &shipperv1.AchievedStep{
 		Step: 2,
-		Name: incumbentRel.Environment.Strategy.Steps[2].Name,
+		Name: incumbentRel.Spec.Environment.Strategy.Steps[2].Name,
 	}
 
 	app.Status.History = []string{firstRelName, incumbentRelName}
@@ -349,11 +349,11 @@ func TestCreateSecondRelease(t *testing.T) {
 	releaseutil.SetGeneration(incumbentRel, 0)
 	releaseutil.SetIteration(incumbentRel, 0)
 	releaseutil.SetReleaseCondition(&incumbentRel.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
-	incumbentRel.Environment.Chart.RepoURL = srv.URL()
+	incumbentRel.Spec.Environment.Chart.RepoURL = srv.URL()
 	incumbentRel.Spec.TargetStep = 2
 	incumbentRel.Status.AchievedStep = &shipperv1.AchievedStep{
 		Step: 2,
-		Name: incumbentRel.Environment.Strategy.Steps[2].Name,
+		Name: incumbentRel.Spec.Environment.Strategy.Steps[2].Name,
 	}
 
 	f.objects = append(f.objects, incumbentRel)
@@ -432,15 +432,15 @@ func TestAbort(t *testing.T) {
 	relName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
 
 	release := newRelease(relName, app)
-	release.Environment.Chart.RepoURL = srv.URL()
+	release.Spec.Environment.Chart.RepoURL = srv.URL()
 	release.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
 	release.Spec.TargetStep = 2
 	release.Status.AchievedStep = &shipperv1.AchievedStep{
 		Step: 2,
-		Name: release.Environment.Strategy.Steps[2].Name,
+		Name: release.Spec.Environment.Strategy.Steps[2].Name,
 	}
 
-	release.Environment.ClusterRequirements = shipperv1.ClusterRequirements{
+	release.Spec.Environment.ClusterRequirements = shipperv1.ClusterRequirements{
 		Regions: []shipperv1.RegionRequirement{{Name: "bar"}},
 	}
 
@@ -451,7 +451,7 @@ func TestAbort(t *testing.T) {
 	expectedApp := app.DeepCopy()
 	expectedApp.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
 	// Should have overwritten the old template with the generation 0 one.
-	expectedApp.Spec.Template = release.Environment
+	expectedApp.Spec.Template = release.Spec.Environment
 
 	expectedApp.Status.History = []string{relName}
 
@@ -510,7 +510,7 @@ func TestStateRollingOut(t *testing.T) {
 	contender.Spec.TargetStep = 1
 	contender.Status.AchievedStep = &shipperv1.AchievedStep{
 		Step: 0,
-		Name: contender.Environment.Strategy.Steps[0].Name,
+		Name: contender.Spec.Environment.Strategy.Steps[0].Name,
 	}
 
 	f.objects = append(f.objects, contender)
@@ -557,7 +557,7 @@ func TestDeletingAbortedReleases(t *testing.T) {
 	releaseBar.Spec.TargetStep = 2
 	releaseBar.Status.AchievedStep = &shipperv1.AchievedStep{
 		Step: 2,
-		Name: releaseBar.Environment.Strategy.Steps[2].Name,
+		Name: releaseBar.Spec.Environment.Strategy.Steps[2].Name,
 	}
 
 	f.objects = append(f.objects, releaseFoo, releaseBar)
@@ -594,23 +594,23 @@ func TestDeletingAbortedReleases(t *testing.T) {
 
 func newRelease(releaseName string, app *shipperv1.Application) *shipperv1.Release {
 	return &shipperv1.Release{
-		ReleaseMeta: shipperv1.ReleaseMeta{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        releaseName,
-				Namespace:   app.GetNamespace(),
-				Annotations: map[string]string{},
-				Labels: map[string]string{
-					shipperv1.ReleaseLabel: releaseName,
-					shipperv1.AppLabel:     app.GetName(),
-				},
-				OwnerReferences: []metav1.OwnerReference{
-					{
-						APIVersion: "shipper.booking.com/v1",
-						Kind:       "Application",
-						Name:       app.GetName(),
-					},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        releaseName,
+			Namespace:   app.GetNamespace(),
+			Annotations: map[string]string{},
+			Labels: map[string]string{
+				shipperv1.ReleaseLabel: releaseName,
+				shipperv1.AppLabel:     app.GetName(),
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "shipper.booking.com/v1",
+					Kind:       "Application",
+					Name:       app.GetName(),
 				},
 			},
+		},
+		Spec: shipperv1.ReleaseSpec{
 			Environment: *(app.Spec.Template.DeepCopy()),
 		},
 	}

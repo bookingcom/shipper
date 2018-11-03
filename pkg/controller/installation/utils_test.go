@@ -228,19 +228,19 @@ func newInstaller(release *shipperv1.Release, it *shipperv1.InstallationTarget) 
 
 func buildRelease(name, namespace, generation, uid, appName string) *shipperv1.Release {
 	return &shipperv1.Release{
-		ReleaseMeta: shipperv1.ReleaseMeta{
-			ObjectMeta: v1.ObjectMeta{
-				Name:      name,
-				Namespace: namespace,
-				UID:       types.UID(uid),
-				Labels: map[string]string{
-					shipperv1.AppLabel:     appName,
-					shipperv1.ReleaseLabel: name,
-				},
-				Annotations: map[string]string{
-					shipperv1.ReleaseGenerationAnnotation: generation,
-				},
+		ObjectMeta: v1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			UID:       types.UID(uid),
+			Labels: map[string]string{
+				shipperv1.AppLabel:     appName,
+				shipperv1.ReleaseLabel: name,
 			},
+			Annotations: map[string]string{
+				shipperv1.ReleaseGenerationAnnotation: generation,
+			},
+		},
+		Spec: shipperv1.ReleaseSpec{
 			Environment: shipperv1.ReleaseEnvironment{
 				Chart: shipperv1.Chart{
 					Name:    "reviews-api",

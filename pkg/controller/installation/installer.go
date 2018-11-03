@@ -53,7 +53,7 @@ func NewInstaller(chartFetchFunc shipperchart.FetchFunc,
 // cluster, or an error.
 func (i *Installer) renderManifests(_ *shipperv1.Cluster) ([]string, error) {
 	rel := i.Release
-	chart, err := i.fetchChart(rel.Environment.Chart)
+	chart, err := i.fetchChart(rel.Spec.Environment.Chart)
 	if err != nil {
 		return nil, RenderManifestError(err)
 	}
@@ -62,7 +62,7 @@ func (i *Installer) renderManifests(_ *shipperv1.Cluster) ([]string, error) {
 		chart,
 		rel.GetName(),
 		rel.GetNamespace(),
-		rel.Environment.Values,
+		rel.Spec.Environment.Values,
 	)
 
 	if err != nil {

@@ -244,7 +244,7 @@ func TestInstallerBrokenChartTarball(t *testing.T) {
 
 	// there is a reviews-api-invalid-tarball.tgz in testdata which contains invalid deployment and service templates
 	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
-	release.Environment.Chart.Version = "invalid-tarball"
+	release.Spec.Environment.Chart.Version = "invalid-tarball"
 
 	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
 	installer := newInstaller(release, it)
@@ -266,7 +266,7 @@ func TestInstallerChartTarballBrokenService(t *testing.T) {
 
 	// there is a reviews-api-invalid-tarball.tgz in testdata which contains invalid deployment and service templates
 	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
-	release.Environment.Chart.Version = "0.0.1-broken-service"
+	release.Spec.Environment.Chart.Version = "0.0.1-broken-service"
 
 	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
 	installer := newInstaller(release, it)
@@ -289,7 +289,7 @@ func TestInstallerBrokenChartContents(t *testing.T) {
 	// There is a reviews-api-invalid-k8s-objects.tgz in testdata which contains
 	// invalid deployment and service templates.
 	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
-	release.Environment.Chart.Version = "invalid-k8s-objects"
+	release.Spec.Environment.Chart.Version = "invalid-k8s-objects"
 
 	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
 	installer := newInstaller(release, it)

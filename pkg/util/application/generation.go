@@ -26,5 +26,5 @@ func SetHighestObservedGeneration(app *shipperv1.Application, generation int) {
 }
 
 func CopyEnvironment(app *shipperv1.Application, rel *shipperv1.Release) {
-	app.Spec.Template = *(rel.Environment.DeepCopy())
+	app.Spec.Template = *(rel.Spec.Environment.DeepCopy())
 }

@@ -23,26 +23,25 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application, rel
 	glog.V(4).Infof("Generated Release name for Application %q: %q", controller.MetaKey(app), releaseName)
 
 	newRelease := &shipperv1.Release{
-		ReleaseMeta: shipperv1.ReleaseMeta{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      releaseName,
-				Namespace: app.Namespace,
-				Labels: map[string]string{
-					shipperv1.ReleaseLabel:                releaseName,
-					shipperv1.AppLabel:                    app.Name,
-					shipperv1.ReleaseEnvironmentHashLabel: hashReleaseEnvironment(app.Spec.Template),
-				},
-				Annotations: map[string]string{
-					shipperv1.ReleaseTemplateIterationAnnotation: strconv.Itoa(iteration),
-					shipperv1.ReleaseGenerationAnnotation:        strconv.Itoa(generation),
-				},
-				OwnerReferences: []metav1.OwnerReference{
-					createOwnerRefFromApplication(app),
-				},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      releaseName,
+			Namespace: app.Namespace,
+			Labels: map[string]string{
+				shipperv1.ReleaseLabel:                releaseName,
+				shipperv1.AppLabel:                    app.Name,
+				shipperv1.ReleaseEnvironmentHashLabel: hashReleaseEnvironment(app.Spec.Template),
 			},
+			Annotations: map[string]string{
+				shipperv1.ReleaseTemplateIterationAnnotation: strconv.Itoa(iteration),
+				shipperv1.ReleaseGenerationAnnotation:        strconv.Itoa(generation),
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromApplication(app),
+			},
+		},
+		Spec: shipperv1.ReleaseSpec{
 			Environment: *(app.Spec.Template.DeepCopy()),
 		},
-		Spec:   shipperv1.ReleaseSpec{},
 		Status: shipperv1.ReleaseStatus{},
 	}
 

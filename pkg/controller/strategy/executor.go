@@ -332,7 +332,7 @@ func (s *Executor) execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 		previouslyAchievedStep := s.contender.release.Status.AchievedStep
 		if previouslyAchievedStep == nil || targetStep != previouslyAchievedStep.Step {
 			// we validate that it fits in the len() of Strategy.Steps early in the process
-			targetStepName := s.contender.release.Environment.Strategy.Steps[targetStep].Name
+			targetStepName := s.contender.release.Spec.Environment.Strategy.Steps[targetStep].Name
 			contenderStatus.AchievedStep = &shipperv1.AchievedStep{
 				Step: targetStep,
 				Name: targetStepName,

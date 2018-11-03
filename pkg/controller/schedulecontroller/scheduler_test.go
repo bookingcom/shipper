@@ -31,19 +31,19 @@ func buildRelease() *shipperv1.Release {
 			APIVersion: "shipper.booking.com/v1",
 			Kind:       "Release",
 		},
-		ReleaseMeta: shipperv1.ReleaseMeta{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        "test-release",
-				Namespace:   shippertesting.TestNamespace,
-				Annotations: map[string]string{},
-				OwnerReferences: []metav1.OwnerReference{
-					{
-						APIVersion: "shipper.booking.com/v1",
-						Kind:       "Application",
-						Name:       "test-application",
-					},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "test-release",
+			Namespace:   shippertesting.TestNamespace,
+			Annotations: map[string]string{},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "shipper.booking.com/v1",
+					Kind:       "Application",
+					Name:       "test-application",
 				},
 			},
+		},
+		Spec: shipperv1.ReleaseSpec{
 			Environment: shipperv1.ReleaseEnvironment{
 				Chart: shipperv1.Chart{
 					Name:    "simple",
@@ -112,7 +112,7 @@ func TestSchedule(t *testing.T) {
 	release := buildRelease()
 	fixtures := []runtime.Object{clusterA, clusterB, release}
 	// Demand two clusters.
-	release.Environment.ClusterRequirements.Regions[0].Replicas = pint32(2)
+	release.Spec.Environment.ClusterRequirements.Regions[0].Replicas = pint32(2)
 
 	// Expected values. The release should have, at the end of the business
 	// logic, a list of clusters containing all clusters we've added to
@@ -870,18 +870,18 @@ func generateClusterForTestCase(name int, spec shipperv1.ClusterSpec) *shipperv1
 
 func generateReleaseForTestCase(reqs shipperv1.ClusterRequirements) *shipperv1.Release {
 	return &shipperv1.Release{
-		ReleaseMeta: shipperv1.ReleaseMeta{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-release",
-				Namespace: shippertesting.TestNamespace,
-				OwnerReferences: []metav1.OwnerReference{
-					{
-						APIVersion: "shipper.booking.com/v1",
-						Kind:       "Application",
-						Name:       "test-application",
-					},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-release",
+			Namespace: shippertesting.TestNamespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "shipper.booking.com/v1",
+					Kind:       "Application",
+					Name:       "test-application",
 				},
 			},
+		},
+		Spec: shipperv1.ReleaseSpec{
 			Environment: shipperv1.ReleaseEnvironment{
 				ClusterRequirements: reqs,
 			},
