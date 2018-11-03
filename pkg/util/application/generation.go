@@ -3,8 +3,8 @@ package application
 import (
 	"strconv"
 
-	"github.com/bookingcom/shipper/pkg/errors"
 	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	"github.com/bookingcom/shipper/pkg/errors"
 )
 
 func GetHighestObservedGeneration(app *shipperv1.Application) (int, error) {
