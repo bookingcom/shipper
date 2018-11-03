@@ -279,6 +279,11 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 		return false
 	}
 
+	if releaseutil.IsEmpty(rel) {
+		glog.V(1).Infof("Release %q is not scheduled yet, skipping", key)
+		return false
+	}
+
 	appKey, err := c.getAssociatedApplicationKey(rel)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("error syncing Release %q (will not retry): %s", key, err))
