@@ -165,16 +165,11 @@ type ClusterStatus struct {
 // contender versions. This is used by the StrategyController to change the
 // state of the cluster to satisfy a single step of a Strategy.
 type Release struct {
-	metav1.TypeMeta `json:",inline"`
-	ReleaseMeta     `json:"metadata,omitempty"`
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   ReleaseSpec   `json:"spec"`
 	Status ReleaseStatus `json:"status"`
-}
-
-type ReleaseMeta struct {
-	metav1.ObjectMeta `json:",inline"`
-	Environment       ReleaseEnvironment `json:"environment"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -187,8 +182,8 @@ type ReleaseList struct {
 }
 
 type ReleaseSpec struct {
-	// better indicated with labels?
-	TargetStep int32 `json:"targetStep"`
+	TargetStep  int32              `json:"targetStep"`
+	Environment ReleaseEnvironment `json:"environment"`
 }
 
 // this will likely grow into a struct with interesting fields

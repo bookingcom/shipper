@@ -151,12 +151,12 @@ func (c *Scheduler) UpdateRelease() (*v1.Release, error) {
 }
 
 func (c *Scheduler) fetchChartAndExtractReplicaCount() (int32, error) {
-	chart, err := c.fetchChart(c.Release.Environment.Chart)
+	chart, err := c.fetchChart(c.Release.Spec.Environment.Chart)
 	if err != nil {
 		return 0, NewChartFetchFailureError(
-			c.Release.Environment.Chart.Name,
-			c.Release.Environment.Chart.Version,
-			c.Release.Environment.Chart.RepoURL,
+			c.Release.Spec.Environment.Chart.Name,
+			c.Release.Spec.Environment.Chart.Version,
+			c.Release.Spec.Environment.Chart.RepoURL,
 			err,
 		)
 	}
@@ -179,12 +179,12 @@ func (c *Scheduler) extractReplicasFromChart(chart *helmchart.Chart) (int32, err
 	}
 
 	applicationName := owners[0].Name
-	rendered, err := shipperchart.Render(chart, applicationName, c.Release.Namespace, c.Release.Environment.Values)
+	rendered, err := shipperchart.Render(chart, applicationName, c.Release.Namespace, c.Release.Spec.Environment.Values)
 	if err != nil {
 		return 0, NewBrokenChartError(
-			c.Release.Environment.Chart.Name,
-			c.Release.Environment.Chart.Version,
-			c.Release.Environment.Chart.RepoURL,
+			c.Release.Spec.Environment.Chart.Name,
+			c.Release.Spec.Environment.Chart.Version,
+			c.Release.Spec.Environment.Chart.RepoURL,
 			err,
 		)
 	}
@@ -192,9 +192,9 @@ func (c *Scheduler) extractReplicasFromChart(chart *helmchart.Chart) (int32, err
 	deployments := shipperchart.GetDeployments(rendered)
 	if len(deployments) != 1 {
 		return 0, NewWrongChartDeploymentsError(
-			c.Release.Environment.Chart.Name,
-			c.Release.Environment.Chart.Version,
-			c.Release.Environment.Chart.RepoURL,
+			c.Release.Spec.Environment.Chart.Name,
+			c.Release.Spec.Environment.Chart.Version,
+			c.Release.Spec.Environment.Chart.RepoURL,
 			len(deployments),
 		)
 	}
@@ -379,8 +379,8 @@ func (c *Scheduler) CreateTrafficTarget() error {
 // computeTargetClusters picks out the clusters from the given list which match
 // the release's clusterRequirements.
 func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]string, error) {
-	regionSpecs := release.Environment.ClusterRequirements.Regions
-	requiredCapabilities := release.Environment.ClusterRequirements.Capabilities
+	regionSpecs := release.Spec.Environment.ClusterRequirements.Regions
+	requiredCapabilities := release.Spec.Environment.ClusterRequirements.Capabilities
 	capableClustersByRegion := map[string][]*v1.Cluster{}
 	regionReplicas := map[string]int{}
 
@@ -393,7 +393,7 @@ func computeTargetClusters(release *v1.Release, clusterList []*v1.Cluster) ([]st
 		return nil, err
 	}
 
-	err = validateClusterRequirements(release.Environment.ClusterRequirements)
+	err = validateClusterRequirements(release.Spec.Environment.ClusterRequirements)
 	if err != nil {
 		return nil, err
 	}

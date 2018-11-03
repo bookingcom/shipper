@@ -759,7 +759,7 @@ func (f *fixture) expectReleaseReleased(rel *shipperv1.Release, targetStep int32
 		"status": shipperv1.ReleaseStatus{
 			AchievedStep: &shipperv1.AchievedStep{
 				Step: targetStep,
-				Name: rel.Environment.Strategy.Steps[targetStep].Name,
+				Name: rel.Spec.Environment.Strategy.Steps[targetStep].Name,
 			},
 			Conditions: []shipperv1.ReleaseCondition{
 				{Type: shipperv1.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
@@ -825,7 +825,7 @@ func (f *fixture) expectReleaseWaitingForCommand(rel *shipperv1.Release, step in
 		"status": shipperv1.ReleaseStatus{
 			AchievedStep: &shipperv1.AchievedStep{
 				Step: step,
-				Name: rel.Environment.Strategy.Steps[step].Name,
+				Name: rel.Spec.Environment.Strategy.Steps[step].Name,
 			},
 			Conditions: []shipperv1.ReleaseCondition{
 				{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
@@ -890,7 +890,7 @@ func (f *fixture) expectInstallationNotReady(rel *shipperv1.Release, achievedSte
 	if achievedStepIndex != nil {
 		achievedStep = &shipperv1.AchievedStep{
 			Step: *achievedStepIndex,
-			Name: rel.Environment.Strategy.Steps[*achievedStepIndex].Name,
+			Name: rel.Spec.Environment.Strategy.Steps[*achievedStepIndex].Name,
 		}
 	}
 
@@ -937,7 +937,7 @@ func (f *fixture) expectCapacityNotReady(rel *shipperv1.Release, targetStep, ach
 	if achievedStepIndex != 0 {
 		achievedStep = &shipperv1.AchievedStep{
 			Step: achievedStepIndex,
-			Name: rel.Environment.Strategy.Steps[achievedStepIndex].Name,
+			Name: rel.Spec.Environment.Strategy.Steps[achievedStepIndex].Name,
 		}
 	}
 
@@ -1036,7 +1036,7 @@ func (f *fixture) expectTrafficNotReady(rel *shipperv1.Release, targetStep, achi
 	if achievedStepIndex != 0 {
 		achievedStep = &shipperv1.AchievedStep{
 			Step: achievedStepIndex,
-			Name: rel.Environment.Strategy.Steps[achievedStepIndex].Name,
+			Name: rel.Spec.Environment.Strategy.Steps[achievedStepIndex].Name,
 		}
 	}
 

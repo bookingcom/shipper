@@ -467,7 +467,7 @@ func (c *Controller) buildExecutor(incumbentRelease, contenderRelease *v1.Releas
 		return nil, err
 	}
 
-	strategy := *contenderReleaseInfo.release.Environment.Strategy
+	strategy := *contenderReleaseInfo.release.Spec.Environment.Strategy
 
 	// No incumbent, only this contender: a new application.
 	if incumbentRelease == nil {

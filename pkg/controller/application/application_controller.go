@@ -409,7 +409,7 @@ func (c *Controller) processApplication(app *shipperv1.Application) error {
 		highestObserved = generation
 	}
 
-	if !identicalEnvironments(app.Spec.Template, contender.Environment) {
+	if !identicalEnvironments(app.Spec.Template, contender.Spec.Environment) {
 		// The application's template has been modified and is different than
 		// the contender's environment. This means that a new release should
 		// be created with the new template.

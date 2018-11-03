@@ -205,28 +205,23 @@ func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 			APIVersion: "shipper.booking.com/v1",
 			Kind:       "Release",
 		},
-		ReleaseMeta: shipperv1.ReleaseMeta{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      incumbentName,
-				Namespace: namespace,
-				OwnerReferences: []metav1.OwnerReference{
-					metav1.OwnerReference{
-						APIVersion: "shipper.booking.com/v1",
-						Kind:       "Application",
-						Name:       app.GetName(),
-						UID:        app.GetUID(),
-					},
-				},
-				Labels: map[string]string{
-					shipperv1.ReleaseLabel: incumbentName,
-					shipperv1.AppLabel:     app.GetName(),
-				},
-				Annotations: map[string]string{
-					shipperv1.ReleaseGenerationAnnotation: "0",
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      incumbentName,
+			Namespace: namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				metav1.OwnerReference{
+					APIVersion: "shipper.booking.com/v1",
+					Kind:       "Application",
+					Name:       app.GetName(),
+					UID:        app.GetUID(),
 				},
 			},
-			Environment: shipperv1.ReleaseEnvironment{
-				Strategy: &vanguard,
+			Labels: map[string]string{
+				shipperv1.ReleaseLabel: incumbentName,
+				shipperv1.AppLabel:     app.GetName(),
+			},
+			Annotations: map[string]string{
+				shipperv1.ReleaseGenerationAnnotation: "0",
 			},
 		},
 		Status: shipperv1.ReleaseStatus{
@@ -241,6 +236,9 @@ func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 		},
 		Spec: shipperv1.ReleaseSpec{
 			TargetStep: 2,
+			Environment: shipperv1.ReleaseEnvironment{
+				Strategy: &vanguard,
+			},
 		},
 	}
 
@@ -355,29 +353,23 @@ func buildContender(totalReplicaCount uint) *releaseInfo {
 			APIVersion: "shipper.booking.com/v1",
 			Kind:       "Release",
 		},
-		ReleaseMeta: shipperv1.ReleaseMeta{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      contenderName,
-				Namespace: namespace,
-				OwnerReferences: []metav1.OwnerReference{
-					metav1.OwnerReference{
-						APIVersion: "shipper.booking.com/v1",
-						Kind:       "Application",
-						Name:       app.GetName(),
-						UID:        app.GetUID(),
-					},
-				},
-				Labels: map[string]string{
-					shipperv1.ReleaseLabel: contenderName,
-					shipperv1.AppLabel:     app.GetName(),
-				},
-				Annotations: map[string]string{
-					shipperv1.ReleaseGenerationAnnotation: "1",
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      contenderName,
+			Namespace: namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				metav1.OwnerReference{
+					APIVersion: "shipper.booking.com/v1",
+					Kind:       "Application",
+					Name:       app.GetName(),
+					UID:        app.GetUID(),
 				},
 			},
-
-			Environment: shipperv1.ReleaseEnvironment{
-				Strategy: &vanguard,
+			Labels: map[string]string{
+				shipperv1.ReleaseLabel: contenderName,
+				shipperv1.AppLabel:     app.GetName(),
+			},
+			Annotations: map[string]string{
+				shipperv1.ReleaseGenerationAnnotation: "1",
 			},
 		},
 		Status: shipperv1.ReleaseStatus{
@@ -387,6 +379,9 @@ func buildContender(totalReplicaCount uint) *releaseInfo {
 		},
 		Spec: shipperv1.ReleaseSpec{
 			TargetStep: 0,
+			Environment: shipperv1.ReleaseEnvironment{
+				Strategy: &vanguard,
+			},
 		},
 	}
 

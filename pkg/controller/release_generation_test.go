@@ -50,12 +50,10 @@ func TestSortBrokenReleaseAnnotation(t *testing.T) {
 
 func newRelease(releaseName string, annotation string) *shipperv1.Release {
 	return &shipperv1.Release{
-		ReleaseMeta: shipperv1.ReleaseMeta{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: releaseName,
-				Annotations: map[string]string{
-					shipperv1.ReleaseGenerationAnnotation: annotation,
-				},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: releaseName,
+			Annotations: map[string]string{
+				shipperv1.ReleaseGenerationAnnotation: annotation,
 			},
 		},
 	}
