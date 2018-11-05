@@ -232,14 +232,6 @@ func (i *Installer) patchObject(
 	}
 }
 
-func copyLabels(orig map[string]string) map[string]string {
-	cp := make(map[string]string)
-	for k, v := range orig {
-		cp[k] = v
-	}
-	return cp
-}
-
 // installManifests attempts to install the manifests on the specified cluster.
 func (i *Installer) installManifests(
 	cluster *shipperv1.Cluster,
@@ -481,9 +473,8 @@ func (i *Installer) installRelease(
 	return i.installManifests(cluster, client, restConfig, dynamicClientBuilder, renderedManifests)
 }
 
-// mergeLabels takes to sets of labels and merge them into another set.
-//
-// Values of the second set overwrite values from the first one.
+// mergeLabels creates a new label map and merges the k-v pairs from maps a
+// and then b. b-values have precedence over a-values on key match.
 func mergeLabels(a map[string]string, b map[string]string) map[string]string {
 
 	labels := make(map[string]string)
@@ -497,4 +488,10 @@ func mergeLabels(a map[string]string, b map[string]string) map[string]string {
 	}
 
 	return labels
+}
+
+// copyLabels performs a shallow copy of labels from the original map and
+// returns the copied map.
+func copyLabels(orig map[string]string) map[string]string {
+	return mergeLabels(orig, map[string]string{})
 }
