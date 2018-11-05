@@ -279,8 +279,11 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 		return false
 	}
 
+	// this should never happen, but if it does (because the migration script
+	// fails for some reason, for example) I'd prefer not to panic at a random
+	// read of a null ptr in .spec.environment
 	if releaseutil.IsEmpty(rel) {
-		glog.V(1).Infof("Release %q is not scheduled yet, skipping", key)
+		glog.V(1).Infof("Release %q has an empty Environment, bailing out", key)
 		return false
 	}
 
