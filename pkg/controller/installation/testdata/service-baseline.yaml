@@ -4,10 +4,12 @@ metadata:
   name: 0.0.1-reviews-api
   labels:
     app: reviews-api
-    chart: reviews-api-0.1.0
+    chart: reviews-api-0.0.1
     release: 0.0.1
     heritage: Tiller
     shipper-lb: production
+    shipper-app: reviews-api
+    shipper-release: 0.0.1
 spec:
   type: ClusterIP
   ports:
@@ -17,6 +19,5 @@ spec:
       name: nginx
   selector:
     app: reviews-api
-    release: 0.0.1
     shipper-app: reviews-api
     shipper-traffic-status: "enabled"
