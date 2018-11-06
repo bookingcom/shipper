@@ -15,7 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 )
@@ -25,7 +25,7 @@ var (
 	kubeconfig   = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
 	resyncPeriod = flag.String("resync", "5m", "Informer's cache re-sync in Go's duration format.")
 	addr         = flag.String("addr", ":8890", "Addr to expose /metrics on.")
-	ns           = flag.String("namespace", shipperv1.ShipperNamespace, "Namespace for Shipper resources.")
+	ns           = flag.String("namespace", shipper.ShipperNamespace, "Namespace for Shipper resources.")
 )
 
 func main() {
@@ -61,12 +61,12 @@ func main() {
 	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, resync)
 
 	ssm := ShipperStateMetrics{
-		appsLister:     shipperInformerFactory.Shipper().V1().Applications().Lister(),
-		relsLister:     shipperInformerFactory.Shipper().V1().Releases().Lister(),
-		itsLister:      shipperInformerFactory.Shipper().V1().InstallationTargets().Lister(),
-		ctsLister:      shipperInformerFactory.Shipper().V1().CapacityTargets().Lister(),
-		ttsLister:      shipperInformerFactory.Shipper().V1().TrafficTargets().Lister(),
-		clustersLister: shipperInformerFactory.Shipper().V1().Clusters().Lister(),
+		appsLister:     shipperInformerFactory.Shipper().V1alpha1().Applications().Lister(),
+		relsLister:     shipperInformerFactory.Shipper().V1alpha1().Releases().Lister(),
+		itsLister:      shipperInformerFactory.Shipper().V1alpha1().InstallationTargets().Lister(),
+		ctsLister:      shipperInformerFactory.Shipper().V1alpha1().CapacityTargets().Lister(),
+		ttsLister:      shipperInformerFactory.Shipper().V1alpha1().TrafficTargets().Lister(),
+		clustersLister: shipperInformerFactory.Shipper().V1alpha1().Clusters().Lister(),
 
 		nssLister:     kubeInformerFactory.Core().V1().Namespaces().Lister(),
 		secretsLister: kubeInformerFactory.Core().V1().Secrets().Lister(),

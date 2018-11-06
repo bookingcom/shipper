@@ -16,7 +16,7 @@ import (
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/conditions"
@@ -73,7 +73,7 @@ func TestContenderDoNothingClusterInstallationNotReady(t *testing.T) {
 
 		// the fixture creates installation targets in 'installation succeeded' status,
 		// so we'll break one
-		contender.installationTarget.Status.Clusters[1].Status = shipperv1.InstallationStatusFailed
+		contender.installationTarget.Status.Clusters[1].Status = shipper.InstallationStatusFailed
 
 		f.addObjects(contender, incumbent)
 
@@ -317,7 +317,7 @@ func TestContenderReleaseIsInstalled(t *testing.T) {
 		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(totalReplicaCount)
 		contender.trafficTarget.Spec.Clusters[0].Weight = 100
 		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 100
-		releaseutil.SetReleaseCondition(&contender.release.Status, shipperv1.ReleaseCondition{Type: shipperv1.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue, Reason: "", Message: ""})
+		releaseutil.SetReleaseCondition(&contender.release.Status, shipper.ReleaseCondition{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue, Reason: "", Message: ""})
 
 		incumbent.trafficTarget.Spec.Clusters[0].Weight = 0
 		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 0
@@ -513,7 +513,7 @@ func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerF
 	f.discovery = fakeDiscovery
 	f.discovery.Resources = []*metav1.APIResourceList{
 		{
-			GroupVersion: "shipper.booking.com/v1",
+			GroupVersion: "shipper.booking.com/v1alpha1",
 			APIResources: []metav1.APIResource{
 				{
 					Kind:       "Application",
@@ -589,11 +589,11 @@ func (f *fixture) run() {
 	shippertesting.CheckEvents(f.expectedOrderedEvents, f.receivedEvents, f.t)
 }
 
-func (f *fixture) expectCapacityStatusPatch(ct *shipperv1.CapacityTarget, r *shipperv1.Release, value uint, totalReplicaCount uint, role role) {
-	gvr := shipperv1.SchemeGroupVersion.WithResource("capacitytargets")
+func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipper.Release, value uint, totalReplicaCount uint, role role) {
+	gvr := shipper.SchemeGroupVersion.WithResource("capacitytargets")
 	newSpec := map[string]interface{}{
-		"spec": shipperv1.CapacityTargetSpec{
-			Clusters: []shipperv1.ClusterCapacityTarget{
+		"spec": shipper.CapacityTargetSpec{
+			Clusters: []shipper.ClusterCapacityTarget{
 				{Name: "minikube", Percent: int32(value), TotalReplicaCount: int32(totalReplicaCount)},
 			},
 		},
@@ -608,13 +608,13 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipperv1.CapacityTarget, r *shi
 
 	if role == Contender {
 		strategyConditions = conditions.NewStrategyConditions(
-			shipperv1.ReleaseStrategyCondition{
-				Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedInstallation,
 				Status: corev1.ConditionTrue,
 				Step:   step,
 			},
-			shipperv1.ReleaseStrategyCondition{
-				Type:    shipperv1.StrategyConditionContenderAchievedCapacity,
+			shipper.ReleaseStrategyCondition{
+				Type:    shipper.StrategyConditionContenderAchievedCapacity,
 				Status:  corev1.ConditionFalse,
 				Step:    step,
 				Reason:  conditions.ClustersNotReady,
@@ -623,28 +623,28 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipperv1.CapacityTarget, r *shi
 		)
 	} else {
 		strategyConditions = conditions.NewStrategyConditions(
-			shipperv1.ReleaseStrategyCondition{
-				Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedInstallation,
 				Status: corev1.ConditionTrue,
 				Step:   step,
 			},
-			shipperv1.ReleaseStrategyCondition{
-				Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedCapacity,
 				Status: corev1.ConditionTrue,
 				Step:   step,
 			},
-			shipperv1.ReleaseStrategyCondition{
-				Type:   shipperv1.StrategyConditionContenderAchievedTraffic,
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedTraffic,
 				Status: corev1.ConditionTrue,
 				Step:   step,
 			},
-			shipperv1.ReleaseStrategyCondition{
-				Type:   shipperv1.StrategyConditionIncumbentAchievedTraffic,
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionIncumbentAchievedTraffic,
 				Status: corev1.ConditionTrue,
 				Step:   step,
 			},
-			shipperv1.ReleaseStrategyCondition{
-				Type:    shipperv1.StrategyConditionIncumbentAchievedCapacity,
+			shipper.ReleaseStrategyCondition{
+				Type:    shipper.StrategyConditionIncumbentAchievedCapacity,
 				Status:  corev1.ConditionFalse,
 				Step:    step,
 				Reason:  conditions.ClustersNotReady,
@@ -653,7 +653,7 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipperv1.CapacityTarget, r *shi
 		)
 	}
 
-	r.Status.Strategy = &shipperv1.ReleaseStrategyStatus{
+	r.Status.Strategy = &shipper.ReleaseStrategyStatus{
 		Conditions: strategyConditions.AsReleaseStrategyConditions(),
 		State:      strategyConditions.AsReleaseStrategyState(r.Spec.TargetStep, true, false),
 	}
@@ -662,7 +662,7 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipperv1.CapacityTarget, r *shi
 	}
 	patch, _ = json.Marshal(newStatus)
 	action = kubetesting.NewPatchAction(
-		shipperv1.SchemeGroupVersion.WithResource("releases"),
+		shipper.SchemeGroupVersion.WithResource("releases"),
 		r.GetNamespace(),
 		r.GetName(),
 		patch)
@@ -671,11 +671,11 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipperv1.CapacityTarget, r *shi
 	f.expectedOrderedEvents = []string{}
 }
 
-func (f *fixture) expectTrafficStatusPatch(tt *shipperv1.TrafficTarget, r *shipperv1.Release, value uint32, role role) {
-	gvr := shipperv1.SchemeGroupVersion.WithResource("traffictargets")
+func (f *fixture) expectTrafficStatusPatch(tt *shipper.TrafficTarget, r *shipper.Release, value uint32, role role) {
+	gvr := shipper.SchemeGroupVersion.WithResource("traffictargets")
 	newSpec := map[string]interface{}{
-		"spec": shipperv1.TrafficTargetSpec{
-			Clusters: []shipperv1.ClusterTrafficTarget{
+		"spec": shipper.TrafficTargetSpec{
+			Clusters: []shipper.ClusterTrafficTarget{
 				{Name: "minikube", Weight: value},
 			},
 		},
@@ -690,18 +690,18 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipperv1.TrafficTarget, r *shipp
 
 	if role == Contender {
 		strategyConditions = conditions.NewStrategyConditions(
-			shipperv1.ReleaseStrategyCondition{
-				Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedInstallation,
 				Status: corev1.ConditionTrue,
 				Step:   step,
 			},
-			shipperv1.ReleaseStrategyCondition{
-				Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedCapacity,
 				Status: corev1.ConditionTrue,
 				Step:   step,
 			},
-			shipperv1.ReleaseStrategyCondition{
-				Type:    shipperv1.StrategyConditionContenderAchievedTraffic,
+			shipper.ReleaseStrategyCondition{
+				Type:    shipper.StrategyConditionContenderAchievedTraffic,
 				Status:  corev1.ConditionFalse,
 				Step:    step,
 				Reason:  conditions.ClustersNotReady,
@@ -710,23 +710,23 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipperv1.TrafficTarget, r *shipp
 		)
 	} else {
 		strategyConditions = conditions.NewStrategyConditions(
-			shipperv1.ReleaseStrategyCondition{
-				Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedInstallation,
 				Status: corev1.ConditionTrue,
 				Step:   step,
 			},
-			shipperv1.ReleaseStrategyCondition{
-				Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedCapacity,
 				Status: corev1.ConditionTrue,
 				Step:   step,
 			},
-			shipperv1.ReleaseStrategyCondition{
-				Type:   shipperv1.StrategyConditionContenderAchievedTraffic,
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedTraffic,
 				Status: corev1.ConditionTrue,
 				Step:   step,
 			},
-			shipperv1.ReleaseStrategyCondition{
-				Type:    shipperv1.StrategyConditionIncumbentAchievedTraffic,
+			shipper.ReleaseStrategyCondition{
+				Type:    shipper.StrategyConditionIncumbentAchievedTraffic,
 				Status:  corev1.ConditionFalse,
 				Step:    step,
 				Reason:  conditions.ClustersNotReady,
@@ -735,7 +735,7 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipperv1.TrafficTarget, r *shipp
 		)
 	}
 
-	r.Status.Strategy = &shipperv1.ReleaseStrategyStatus{
+	r.Status.Strategy = &shipper.ReleaseStrategyStatus{
 		Conditions: strategyConditions.AsReleaseStrategyConditions(),
 		State:      strategyConditions.AsReleaseStrategyState(r.Spec.TargetStep, true, false),
 	}
@@ -744,7 +744,7 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipperv1.TrafficTarget, r *shipp
 	}
 	patch, _ = json.Marshal(newStatus)
 	action = kubetesting.NewPatchAction(
-		shipperv1.SchemeGroupVersion.WithResource("releases"),
+		shipper.SchemeGroupVersion.WithResource("releases"),
 		r.GetNamespace(),
 		r.GetName(),
 		patch)
@@ -753,50 +753,50 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipperv1.TrafficTarget, r *shipp
 	f.expectedOrderedEvents = []string{}
 }
 
-func (f *fixture) expectReleaseReleased(rel *shipperv1.Release, targetStep int32) {
-	gvr := shipperv1.SchemeGroupVersion.WithResource("releases")
+func (f *fixture) expectReleaseReleased(rel *shipper.Release, targetStep int32) {
+	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 	newStatus := map[string]interface{}{
-		"status": shipperv1.ReleaseStatus{
-			AchievedStep: &shipperv1.AchievedStep{
+		"status": shipper.ReleaseStatus{
+			AchievedStep: &shipper.AchievedStep{
 				Step: targetStep,
 				Name: rel.Spec.Environment.Strategy.Steps[targetStep].Name,
 			},
-			Conditions: []shipperv1.ReleaseCondition{
-				{Type: shipperv1.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
-				{Type: shipperv1.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
-				{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+			Conditions: []shipper.ReleaseCondition{
+				{Type: shipper.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
+				{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
+				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 			},
-			Strategy: &shipperv1.ReleaseStrategyStatus{
-				State: shipperv1.ReleaseStrategyState{
-					WaitingForInstallation: shipperv1.StrategyStateFalse,
-					WaitingForCommand:      shipperv1.StrategyStateFalse,
-					WaitingForTraffic:      shipperv1.StrategyStateFalse,
-					WaitingForCapacity:     shipperv1.StrategyStateFalse,
+			Strategy: &shipper.ReleaseStrategyStatus{
+				State: shipper.ReleaseStrategyState{
+					WaitingForInstallation: shipper.StrategyStateFalse,
+					WaitingForCommand:      shipper.StrategyStateFalse,
+					WaitingForTraffic:      shipper.StrategyStateFalse,
+					WaitingForCapacity:     shipper.StrategyStateFalse,
 				},
 				// The following conditions are sorted alphabetically by Type
-				Conditions: []shipperv1.ReleaseStrategyCondition{
+				Conditions: []shipper.ReleaseStrategyCondition{
 					{
-						Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+						Type:   shipper.StrategyConditionContenderAchievedCapacity,
 						Status: corev1.ConditionTrue,
 						Step:   targetStep,
 					},
 					{
-						Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+						Type:   shipper.StrategyConditionContenderAchievedInstallation,
 						Status: corev1.ConditionTrue,
 						Step:   targetStep,
 					},
 					{
-						Type:   shipperv1.StrategyConditionContenderAchievedTraffic,
+						Type:   shipper.StrategyConditionContenderAchievedTraffic,
 						Status: corev1.ConditionTrue,
 						Step:   targetStep,
 					},
 					{
-						Type:   shipperv1.StrategyConditionIncumbentAchievedCapacity,
+						Type:   shipper.StrategyConditionIncumbentAchievedCapacity,
 						Status: corev1.ConditionTrue,
 						Step:   targetStep,
 					},
 					{
-						Type:   shipperv1.StrategyConditionIncumbentAchievedTraffic,
+						Type:   shipper.StrategyConditionIncumbentAchievedTraffic,
 						Status: corev1.ConditionTrue,
 						Step:   targetStep,
 					},
@@ -819,47 +819,47 @@ func (f *fixture) expectReleaseReleased(rel *shipperv1.Release, targetStep int32
 	}
 }
 
-func (f *fixture) expectReleaseWaitingForCommand(rel *shipperv1.Release, step int32) {
-	gvr := shipperv1.SchemeGroupVersion.WithResource("releases")
+func (f *fixture) expectReleaseWaitingForCommand(rel *shipper.Release, step int32) {
+	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 	newStatus := map[string]interface{}{
-		"status": shipperv1.ReleaseStatus{
-			AchievedStep: &shipperv1.AchievedStep{
+		"status": shipper.ReleaseStatus{
+			AchievedStep: &shipper.AchievedStep{
 				Step: step,
 				Name: rel.Spec.Environment.Strategy.Steps[step].Name,
 			},
-			Conditions: []shipperv1.ReleaseCondition{
-				{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+			Conditions: []shipper.ReleaseCondition{
+				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 			},
-			Strategy: &shipperv1.ReleaseStrategyStatus{
-				State: shipperv1.ReleaseStrategyState{
-					WaitingForInstallation: shipperv1.StrategyStateFalse,
-					WaitingForCommand:      shipperv1.StrategyStateTrue,
-					WaitingForTraffic:      shipperv1.StrategyStateFalse,
-					WaitingForCapacity:     shipperv1.StrategyStateFalse,
+			Strategy: &shipper.ReleaseStrategyStatus{
+				State: shipper.ReleaseStrategyState{
+					WaitingForInstallation: shipper.StrategyStateFalse,
+					WaitingForCommand:      shipper.StrategyStateTrue,
+					WaitingForTraffic:      shipper.StrategyStateFalse,
+					WaitingForCapacity:     shipper.StrategyStateFalse,
 				},
-				Conditions: []shipperv1.ReleaseStrategyCondition{
+				Conditions: []shipper.ReleaseStrategyCondition{
 					{
-						Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+						Type:   shipper.StrategyConditionContenderAchievedCapacity,
 						Status: corev1.ConditionTrue,
 						Step:   step,
 					},
 					{
-						Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+						Type:   shipper.StrategyConditionContenderAchievedInstallation,
 						Status: corev1.ConditionTrue,
 						Step:   step,
 					},
 					{
-						Type:   shipperv1.StrategyConditionContenderAchievedTraffic,
+						Type:   shipper.StrategyConditionContenderAchievedTraffic,
 						Status: corev1.ConditionTrue,
 						Step:   step,
 					},
 					{
-						Type:   shipperv1.StrategyConditionIncumbentAchievedCapacity,
+						Type:   shipper.StrategyConditionIncumbentAchievedCapacity,
 						Status: corev1.ConditionTrue,
 						Step:   step,
 					},
 					{
-						Type:   shipperv1.StrategyConditionIncumbentAchievedTraffic,
+						Type:   shipper.StrategyConditionIncumbentAchievedTraffic,
 						Status: corev1.ConditionTrue,
 						Step:   step,
 					},
@@ -883,33 +883,33 @@ func (f *fixture) expectReleaseWaitingForCommand(rel *shipperv1.Release, step in
 
 // NOTE(btyler): when we add tests to use this function with a wider set of use
 // cases, we'll need a "pint32(int32) *int32" func to let us take pointers to literals
-func (f *fixture) expectInstallationNotReady(rel *shipperv1.Release, achievedStepIndex *int32, targetStepIndex int32, role role) {
-	gvr := shipperv1.SchemeGroupVersion.WithResource("releases")
+func (f *fixture) expectInstallationNotReady(rel *shipper.Release, achievedStepIndex *int32, targetStepIndex int32, role role) {
+	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 
-	var achievedStep *shipperv1.AchievedStep
+	var achievedStep *shipper.AchievedStep
 	if achievedStepIndex != nil {
-		achievedStep = &shipperv1.AchievedStep{
+		achievedStep = &shipper.AchievedStep{
 			Step: *achievedStepIndex,
 			Name: rel.Spec.Environment.Strategy.Steps[*achievedStepIndex].Name,
 		}
 	}
 
 	newStatus := map[string]interface{}{
-		"status": shipperv1.ReleaseStatus{
+		"status": shipper.ReleaseStatus{
 			AchievedStep: achievedStep,
-			Conditions: []shipperv1.ReleaseCondition{
-				{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+			Conditions: []shipper.ReleaseCondition{
+				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 			},
-			Strategy: &shipperv1.ReleaseStrategyStatus{
-				State: shipperv1.ReleaseStrategyState{
-					WaitingForInstallation: shipperv1.StrategyStateTrue,
-					WaitingForCommand:      shipperv1.StrategyStateFalse,
-					WaitingForTraffic:      shipperv1.StrategyStateFalse,
-					WaitingForCapacity:     shipperv1.StrategyStateFalse,
+			Strategy: &shipper.ReleaseStrategyStatus{
+				State: shipper.ReleaseStrategyState{
+					WaitingForInstallation: shipper.StrategyStateTrue,
+					WaitingForCommand:      shipper.StrategyStateFalse,
+					WaitingForTraffic:      shipper.StrategyStateFalse,
+					WaitingForCapacity:     shipper.StrategyStateFalse,
 				},
-				Conditions: []shipperv1.ReleaseStrategyCondition{
+				Conditions: []shipper.ReleaseStrategyCondition{
 					{
-						Type:    shipperv1.StrategyConditionContenderAchievedInstallation,
+						Type:    shipper.StrategyConditionContenderAchievedInstallation,
 						Status:  corev1.ConditionFalse,
 						Reason:  conditions.ClustersNotReady,
 						Step:    targetStepIndex,
@@ -928,14 +928,14 @@ func (f *fixture) expectInstallationNotReady(rel *shipperv1.Release, achievedSte
 	f.expectedOrderedEvents = []string{}
 }
 
-func (f *fixture) expectCapacityNotReady(rel *shipperv1.Release, targetStep, achievedStepIndex int32, role role, brokenClusterName string) {
-	gvr := shipperv1.SchemeGroupVersion.WithResource("releases")
+func (f *fixture) expectCapacityNotReady(rel *shipper.Release, targetStep, achievedStepIndex int32, role role, brokenClusterName string) {
+	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 
 	var newStatus map[string]interface{}
 
-	var achievedStep *shipperv1.AchievedStep
+	var achievedStep *shipper.AchievedStep
 	if achievedStepIndex != 0 {
-		achievedStep = &shipperv1.AchievedStep{
+		achievedStep = &shipper.AchievedStep{
 			Step: achievedStepIndex,
 			Name: rel.Spec.Environment.Strategy.Steps[achievedStepIndex].Name,
 		}
@@ -943,28 +943,28 @@ func (f *fixture) expectCapacityNotReady(rel *shipperv1.Release, targetStep, ach
 
 	if role == Contender {
 		newStatus = map[string]interface{}{
-			"status": shipperv1.ReleaseStatus{
+			"status": shipper.ReleaseStatus{
 				AchievedStep: achievedStep,
-				Conditions: []shipperv1.ReleaseCondition{
-					{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+				Conditions: []shipper.ReleaseCondition{
+					{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 				},
-				Strategy: &shipperv1.ReleaseStrategyStatus{
-					State: shipperv1.ReleaseStrategyState{
-						WaitingForInstallation: shipperv1.StrategyStateFalse,
-						WaitingForCommand:      shipperv1.StrategyStateFalse,
-						WaitingForTraffic:      shipperv1.StrategyStateFalse,
-						WaitingForCapacity:     shipperv1.StrategyStateTrue,
+				Strategy: &shipper.ReleaseStrategyStatus{
+					State: shipper.ReleaseStrategyState{
+						WaitingForInstallation: shipper.StrategyStateFalse,
+						WaitingForCommand:      shipper.StrategyStateFalse,
+						WaitingForTraffic:      shipper.StrategyStateFalse,
+						WaitingForCapacity:     shipper.StrategyStateTrue,
 					},
-					Conditions: []shipperv1.ReleaseStrategyCondition{
+					Conditions: []shipper.ReleaseStrategyCondition{
 						{
-							Type:    shipperv1.StrategyConditionContenderAchievedCapacity,
+							Type:    shipper.StrategyConditionContenderAchievedCapacity,
 							Status:  corev1.ConditionFalse,
 							Reason:  conditions.ClustersNotReady,
 							Message: fmt.Sprintf("clusters pending capacity adjustments: [%s]", brokenClusterName),
 							Step:    targetStep,
 						},
 						{
-							Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+							Type:   shipper.StrategyConditionContenderAchievedInstallation,
 							Status: corev1.ConditionTrue,
 							Step:   targetStep,
 						},
@@ -974,43 +974,43 @@ func (f *fixture) expectCapacityNotReady(rel *shipperv1.Release, targetStep, ach
 		}
 	} else {
 		newStatus = map[string]interface{}{
-			"status": shipperv1.ReleaseStatus{
+			"status": shipper.ReleaseStatus{
 				AchievedStep: achievedStep,
-				Conditions: []shipperv1.ReleaseCondition{
-					{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+				Conditions: []shipper.ReleaseCondition{
+					{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 				},
-				Strategy: &shipperv1.ReleaseStrategyStatus{
-					State: shipperv1.ReleaseStrategyState{
-						WaitingForInstallation: shipperv1.StrategyStateFalse,
-						WaitingForCommand:      shipperv1.StrategyStateFalse,
-						WaitingForTraffic:      shipperv1.StrategyStateFalse,
-						WaitingForCapacity:     shipperv1.StrategyStateTrue,
+				Strategy: &shipper.ReleaseStrategyStatus{
+					State: shipper.ReleaseStrategyState{
+						WaitingForInstallation: shipper.StrategyStateFalse,
+						WaitingForCommand:      shipper.StrategyStateFalse,
+						WaitingForTraffic:      shipper.StrategyStateFalse,
+						WaitingForCapacity:     shipper.StrategyStateTrue,
 					},
-					Conditions: []shipperv1.ReleaseStrategyCondition{
+					Conditions: []shipper.ReleaseStrategyCondition{
 						{
-							Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+							Type:   shipper.StrategyConditionContenderAchievedCapacity,
 							Status: corev1.ConditionTrue,
 							Step:   targetStep,
 						},
 						{
-							Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+							Type:   shipper.StrategyConditionContenderAchievedInstallation,
 							Status: corev1.ConditionTrue,
 							Step:   targetStep,
 						},
 						{
-							Type:   shipperv1.StrategyConditionContenderAchievedTraffic,
+							Type:   shipper.StrategyConditionContenderAchievedTraffic,
 							Status: corev1.ConditionTrue,
 							Step:   targetStep,
 						},
 						{
-							Type:    shipperv1.StrategyConditionIncumbentAchievedCapacity,
+							Type:    shipper.StrategyConditionIncumbentAchievedCapacity,
 							Status:  corev1.ConditionFalse,
 							Reason:  conditions.ClustersNotReady,
 							Step:    targetStep,
 							Message: fmt.Sprintf("clusters pending capacity adjustments: [%s]", brokenClusterName),
 						},
 						{
-							Type:   shipperv1.StrategyConditionIncumbentAchievedTraffic,
+							Type:   shipper.StrategyConditionIncumbentAchievedTraffic,
 							Status: corev1.ConditionTrue,
 							Step:   targetStep,
 						},
@@ -1028,13 +1028,13 @@ func (f *fixture) expectCapacityNotReady(rel *shipperv1.Release, targetStep, ach
 	f.expectedOrderedEvents = []string{}
 }
 
-func (f *fixture) expectTrafficNotReady(rel *shipperv1.Release, targetStep, achievedStepIndex int32, role role, brokenClusterName string) {
-	gvr := shipperv1.SchemeGroupVersion.WithResource("releases")
+func (f *fixture) expectTrafficNotReady(rel *shipper.Release, targetStep, achievedStepIndex int32, role role, brokenClusterName string) {
+	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 	var newStatus map[string]interface{}
 
-	var achievedStep *shipperv1.AchievedStep
+	var achievedStep *shipper.AchievedStep
 	if achievedStepIndex != 0 {
-		achievedStep = &shipperv1.AchievedStep{
+		achievedStep = &shipper.AchievedStep{
 			Step: achievedStepIndex,
 			Name: rel.Spec.Environment.Strategy.Steps[achievedStepIndex].Name,
 		}
@@ -1042,31 +1042,31 @@ func (f *fixture) expectTrafficNotReady(rel *shipperv1.Release, targetStep, achi
 
 	if role == Contender {
 		newStatus = map[string]interface{}{
-			"status": shipperv1.ReleaseStatus{
+			"status": shipper.ReleaseStatus{
 				AchievedStep: achievedStep,
-				Conditions: []shipperv1.ReleaseCondition{
-					{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+				Conditions: []shipper.ReleaseCondition{
+					{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 				},
-				Strategy: &shipperv1.ReleaseStrategyStatus{
-					State: shipperv1.ReleaseStrategyState{
-						WaitingForInstallation: shipperv1.StrategyStateFalse,
-						WaitingForCommand:      shipperv1.StrategyStateFalse,
-						WaitingForTraffic:      shipperv1.StrategyStateTrue,
-						WaitingForCapacity:     shipperv1.StrategyStateFalse,
+				Strategy: &shipper.ReleaseStrategyStatus{
+					State: shipper.ReleaseStrategyState{
+						WaitingForInstallation: shipper.StrategyStateFalse,
+						WaitingForCommand:      shipper.StrategyStateFalse,
+						WaitingForTraffic:      shipper.StrategyStateTrue,
+						WaitingForCapacity:     shipper.StrategyStateFalse,
 					},
-					Conditions: []shipperv1.ReleaseStrategyCondition{
+					Conditions: []shipper.ReleaseStrategyCondition{
 						{
-							Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+							Type:   shipper.StrategyConditionContenderAchievedCapacity,
 							Status: corev1.ConditionTrue,
 							Step:   targetStep,
 						},
 						{
-							Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+							Type:   shipper.StrategyConditionContenderAchievedInstallation,
 							Status: corev1.ConditionTrue,
 							Step:   targetStep,
 						},
 						{
-							Type:    shipperv1.StrategyConditionContenderAchievedTraffic,
+							Type:    shipper.StrategyConditionContenderAchievedTraffic,
 							Status:  corev1.ConditionFalse,
 							Reason:  conditions.ClustersNotReady,
 							Message: fmt.Sprintf("clusters pending traffic adjustments: [%s]", brokenClusterName),
@@ -1078,36 +1078,36 @@ func (f *fixture) expectTrafficNotReady(rel *shipperv1.Release, targetStep, achi
 		}
 	} else {
 		newStatus = map[string]interface{}{
-			"status": shipperv1.ReleaseStatus{
+			"status": shipper.ReleaseStatus{
 				AchievedStep: achievedStep,
-				Conditions: []shipperv1.ReleaseCondition{
-					{Type: shipperv1.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+				Conditions: []shipper.ReleaseCondition{
+					{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 				},
-				Strategy: &shipperv1.ReleaseStrategyStatus{
-					State: shipperv1.ReleaseStrategyState{
-						WaitingForInstallation: shipperv1.StrategyStateFalse,
-						WaitingForCommand:      shipperv1.StrategyStateFalse,
-						WaitingForTraffic:      shipperv1.StrategyStateTrue,
-						WaitingForCapacity:     shipperv1.StrategyStateFalse,
+				Strategy: &shipper.ReleaseStrategyStatus{
+					State: shipper.ReleaseStrategyState{
+						WaitingForInstallation: shipper.StrategyStateFalse,
+						WaitingForCommand:      shipper.StrategyStateFalse,
+						WaitingForTraffic:      shipper.StrategyStateTrue,
+						WaitingForCapacity:     shipper.StrategyStateFalse,
 					},
-					Conditions: []shipperv1.ReleaseStrategyCondition{
+					Conditions: []shipper.ReleaseStrategyCondition{
 						{
-							Type:   shipperv1.StrategyConditionContenderAchievedCapacity,
+							Type:   shipper.StrategyConditionContenderAchievedCapacity,
 							Status: corev1.ConditionTrue,
 							Step:   targetStep,
 						},
 						{
-							Type:   shipperv1.StrategyConditionContenderAchievedInstallation,
+							Type:   shipper.StrategyConditionContenderAchievedInstallation,
 							Status: corev1.ConditionTrue,
 							Step:   targetStep,
 						},
 						{
-							Type:   shipperv1.StrategyConditionContenderAchievedTraffic,
+							Type:   shipper.StrategyConditionContenderAchievedTraffic,
 							Status: corev1.ConditionTrue,
 							Step:   targetStep,
 						},
 						{
-							Type:    shipperv1.StrategyConditionIncumbentAchievedTraffic,
+							Type:    shipper.StrategyConditionIncumbentAchievedTraffic,
 							Status:  corev1.ConditionFalse,
 							Reason:  conditions.ClustersNotReady,
 							Message: fmt.Sprintf("clusters pending traffic adjustments: [%s]", brokenClusterName),

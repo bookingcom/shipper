@@ -6,13 +6,13 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 func TestSortReleasesByGeneration(t *testing.T) {
 	expectedOrder := []string{"charlie", "beta", "delta", "alpha"}
 
-	releases := []*shipperv1.Release{
+	releases := []*shipper.Release{
 		newRelease("alpha", "9"),
 		newRelease("beta", "2"),
 		newRelease("charlie", "1"),
@@ -35,7 +35,7 @@ func TestSortReleasesByGeneration(t *testing.T) {
 }
 
 func TestSortBrokenReleaseAnnotation(t *testing.T) {
-	brokenReleases := []*shipperv1.Release{
+	brokenReleases := []*shipper.Release{
 		newRelease("alpha", "9"),
 		newRelease("beta", "2"),
 		newRelease("charlie", "1"),
@@ -48,12 +48,12 @@ func TestSortBrokenReleaseAnnotation(t *testing.T) {
 	}
 }
 
-func newRelease(releaseName string, annotation string) *shipperv1.Release {
-	return &shipperv1.Release{
+func newRelease(releaseName string, annotation string) *shipper.Release {
+	return &shipper.Release{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: releaseName,
 			Annotations: map[string]string{
-				shipperv1.ReleaseGenerationAnnotation: annotation,
+				shipper.ReleaseGenerationAnnotation: annotation,
 			},
 		},
 	}

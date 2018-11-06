@@ -27,7 +27,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/chart"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
@@ -63,7 +63,7 @@ var (
 	kubeconfig          = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
 	certPath            = flag.String("cert", "", "Path to the TLS certificate for target clusters.")
 	keyPath             = flag.String("key", "", "Path to the TLS private key for target clusters.")
-	ns                  = flag.String("namespace", shipperv1.ShipperNamespace, "Namespace for Shipper resources.")
+	ns                  = flag.String("namespace", shipper.ShipperNamespace, "Namespace for Shipper resources.")
 	resyncPeriod        = flag.String("resync", "30s", "Informer's cache re-sync in Go's duration format.")
 	enabledControllers  = flag.String("enable", strings.Join(controllers, ","), "comma-seperated list of controllers to run (if not all)")
 	disabledControllers = flag.String("disable", "", "comma-seperated list of controllers to disable")
@@ -172,7 +172,7 @@ func main() {
 			return kubernetes.NewForConfig(&shallowCopy)
 		},
 		kubeInformerFactory.Core().V1().Secrets(),
-		shipperInformerFactory.Shipper().V1().Clusters(),
+		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
 		*ns,
 		restTimeout,
 	)
@@ -456,7 +456,7 @@ func startInstallationController(cfg *cfg) (bool, error) {
 		return false, nil
 	}
 
-	dynamicClientBuilderFunc := func(gvk *schema.GroupVersionKind, config *rest.Config, cluster *shipperv1.Cluster) dynamic.Interface {
+	dynamicClientBuilderFunc := func(gvk *schema.GroupVersionKind, config *rest.Config, cluster *shipper.Cluster) dynamic.Interface {
 		config.APIPath = dynamic.LegacyAPIPathResolverFunc(*gvk)
 		config.GroupVersion = &schema.GroupVersion{Group: gvk.Group, Version: gvk.Version}
 

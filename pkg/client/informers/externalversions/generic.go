@@ -21,7 +21,7 @@ package externalversions
 import (
 	"fmt"
 
-	v1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	v1alpha1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	cache "k8s.io/client-go/tools/cache"
 )
@@ -52,19 +52,19 @@ func (f *genericInformer) Lister() cache.GenericLister {
 // TODO extend this to unknown resources with a client pool
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
-	// Group=shipper.booking.com, Version=v1
-	case v1.SchemeGroupVersion.WithResource("applications"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().Applications().Informer()}, nil
-	case v1.SchemeGroupVersion.WithResource("capacitytargets"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().CapacityTargets().Informer()}, nil
-	case v1.SchemeGroupVersion.WithResource("clusters"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().Clusters().Informer()}, nil
-	case v1.SchemeGroupVersion.WithResource("installationtargets"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().InstallationTargets().Informer()}, nil
-	case v1.SchemeGroupVersion.WithResource("releases"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().Releases().Informer()}, nil
-	case v1.SchemeGroupVersion.WithResource("traffictargets"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1().TrafficTargets().Informer()}, nil
+	// Group=shipper.booking.com, Version=v1alpha1
+	case v1alpha1.SchemeGroupVersion.WithResource("applications"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1alpha1().Applications().Informer()}, nil
+	case v1alpha1.SchemeGroupVersion.WithResource("capacitytargets"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1alpha1().CapacityTargets().Informer()}, nil
+	case v1alpha1.SchemeGroupVersion.WithResource("clusters"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1alpha1().Clusters().Informer()}, nil
+	case v1alpha1.SchemeGroupVersion.WithResource("installationtargets"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1alpha1().InstallationTargets().Informer()}, nil
+	case v1alpha1.SchemeGroupVersion.WithResource("releases"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1alpha1().Releases().Informer()}, nil
+	case v1alpha1.SchemeGroupVersion.WithResource("traffictargets"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Shipper().V1alpha1().TrafficTargets().Informer()}, nil
 
 	}
 

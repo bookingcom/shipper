@@ -7,7 +7,10 @@ spec:
   # group name to use for REST API: /apis/<group>/<version>
   group: shipper.booking.com
   # version name to use for REST API: /apis/<group>/<version>
-  version: v1
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
   # either Namespaced or Cluster
   scope: Cluster
   names:

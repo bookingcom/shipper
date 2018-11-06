@@ -6,7 +6,7 @@ dep status -v
 
 gometalinter \
     --vendor \
-    --skip=pkg/apis/shipper/v1 \
+    --skip=pkg/apis/shipper/v1alpha1 \
     --skip=pkg/client \
     --disable-all \
     --enable=vet \

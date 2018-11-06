@@ -13,7 +13,7 @@ import (
 	corev1informer "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 
@@ -29,7 +29,7 @@ type clusterReleaseWeights map[string]map[string]uint32
 func newPodLabelShifter(
 	appName string,
 	namespace string,
-	trafficTargets []*shipperv1.TrafficTarget,
+	trafficTargets []*shipper.TrafficTarget,
 ) (*podLabelShifter, error) {
 
 	weights, err := buildClusterReleaseWeights(trafficTargets)
@@ -38,8 +38,8 @@ func newPodLabelShifter(
 	}
 
 	serviceSelector := map[string]string{
-		shipperv1.AppLabel: appName,
-		shipperv1.LBLabel:  shipperv1.LBForProduction,
+		shipper.AppLabel: appName,
+		shipper.LBLabel:  shipper.LBForProduction,
 	}
 
 	return &podLabelShifter{
@@ -90,7 +90,7 @@ func (p *podLabelShifter) SyncCluster(
 
 	nsPodLister := informer.Lister().Pods(p.namespace)
 
-	appSelector := labels.Set{shipperv1.AppLabel: p.appName}.AsSelector()
+	appSelector := labels.Set{shipper.AppLabel: p.appName}.AsSelector()
 	pods, err := nsPodLister.List(appSelector)
 	if err != nil {
 		return nil, nil,
@@ -107,7 +107,7 @@ func (p *podLabelShifter) SyncCluster(
 	errors := []error{}
 	for release, weight := range releaseWeights {
 
-		releaseSelector := labels.Set{shipperv1.ReleaseLabel: release}.AsSelector()
+		releaseSelector := labels.Set{shipper.ReleaseLabel: release}.AsSelector()
 		releasePods, err := nsPodLister.List(releaseSelector)
 		if err != nil {
 			return nil, nil,
@@ -139,8 +139,8 @@ func (p *podLabelShifter) SyncCluster(
 			for i := 0; i < excess; i++ {
 				pod := trafficPods[i].DeepCopy()
 
-				if value, ok := pod.Labels[shipperv1.PodTrafficStatusLabel]; !ok || value == shipperv1.Enabled {
-					patch := patchPodTrafficStatusLabel(pod, shipperv1.Disabled)
+				if value, ok := pod.Labels[shipper.PodTrafficStatusLabel]; !ok || value == shipper.Enabled {
+					patch := patchPodTrafficStatusLabel(pod, shipper.Disabled)
 					_, err := podsClient.Patch(pod.Name, types.JSONPatchType, patch)
 					if err != nil {
 						errors = append(errors,
@@ -170,8 +170,8 @@ func (p *podLabelShifter) SyncCluster(
 			for i := 0; i < missing; i++ {
 				pod := idlePods[i].DeepCopy()
 
-				if value, ok := pod.Labels[shipperv1.PodTrafficStatusLabel]; !ok || ok && value == shipperv1.Disabled {
-					patch := patchPodTrafficStatusLabel(pod, shipperv1.Enabled)
+				if value, ok := pod.Labels[shipper.PodTrafficStatusLabel]; !ok || ok && value == shipper.Disabled {
+					patch := patchPodTrafficStatusLabel(pod, shipper.Enabled)
 					_, err := podsClient.Patch(pod.Name, types.JSONPatchType, patch)
 					if err != nil {
 						errors = append(errors,
@@ -216,7 +216,7 @@ type PatchOperation struct {
 func patchPodTrafficStatusLabel(pod *corev1.Pod, value string) []byte {
 	var op string
 
-	if _, ok := pod.Labels[shipperv1.PodTrafficStatusLabel]; ok {
+	if _, ok := pod.Labels[shipper.PodTrafficStatusLabel]; ok {
 		op = "replace"
 	} else {
 		op = "add"
@@ -225,7 +225,7 @@ func patchPodTrafficStatusLabel(pod *corev1.Pod, value string) []byte {
 	patchList := []PatchOperation{
 		{
 			Op:    op,
-			Path:  fmt.Sprintf("/metadata/labels/%s", shipperv1.PodTrafficStatusLabel),
+			Path:  fmt.Sprintf("/metadata/labels/%s", shipper.PodTrafficStatusLabel),
 			Value: value,
 		},
 	}
@@ -276,11 +276,11 @@ func calculateReleasePodTarget(releasePods int, releaseWeight uint32, totalPods 
 		}
 	}
 */
-func buildClusterReleaseWeights(trafficTargets []*shipperv1.TrafficTarget) (clusterReleaseWeights, error) {
+func buildClusterReleaseWeights(trafficTargets []*shipper.TrafficTarget) (clusterReleaseWeights, error) {
 	clusterReleases := map[string]map[string]uint32{}
-	releaseTT := map[string]*shipperv1.TrafficTarget{}
+	releaseTT := map[string]*shipper.TrafficTarget{}
 	for _, tt := range trafficTargets {
-		release, ok := tt.Labels[shipperv1.ReleaseLabel]
+		release, ok := tt.Labels[shipper.ReleaseLabel]
 		if !ok {
 			return nil, fmt.Errorf(
 				"TrafficTarget '%s/%s' needs a 'release' label in order to select resources in the target clusters.",

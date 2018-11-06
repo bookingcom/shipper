@@ -1,11 +1,11 @@
 package release
 
 import (
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
-func IsEmpty(rel *shipperv1.Release) bool {
-	return rel.Spec.Environment.Chart == shipperv1.Chart{} &&
+func IsEmpty(rel *shipper.Release) bool {
+	return rel.Spec.Environment.Chart == shipper.Chart{} &&
 		rel.Spec.Environment.Values == nil &&
 		rel.Spec.Environment.Strategy == nil &&
 		len(rel.Spec.Environment.ClusterRequirements.Regions) == 0 &&

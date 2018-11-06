@@ -3,11 +3,11 @@ package controller
 import (
 	"sort"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
-func SortReleasesByGeneration(releases []*shipperv1.Release) ([]*shipperv1.Release, error) {
+func SortReleasesByGeneration(releases []*shipper.Release) ([]*shipper.Release, error) {
 	if len(releases) == 0 {
 		return releases, nil
 	}

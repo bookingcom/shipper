@@ -15,7 +15,7 @@ import (
 	"k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/controller/janitor"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
@@ -158,8 +158,8 @@ func validateServiceCreateAction(t *testing.T, existingService *corev1.Service, 
 	// First we test the data that is expected to be in the created service
 	// object, since we delete keys on the underlying unstructured object
 	// later on, when comparing spec and metadata.
-	if _, ok := unstructuredObj.GetLabels()[shipperv1.ReleaseLabel]; !ok {
-		t.Fatalf("could not find %q in Deployment .metadata.labels", shipperv1.ReleaseLabel)
+	if _, ok := unstructuredObj.GetLabels()[shipper.ReleaseLabel]; !ok {
+		t.Fatalf("could not find %q in Deployment .metadata.labels", shipper.ReleaseLabel)
 	}
 
 	_, expectedUnstructuredServiceContent := extractUnstructuredContent(scheme, existingService)
@@ -192,8 +192,8 @@ func validateDeploymentCreateAction(t *testing.T, obj runtime.Object) {
 	if err != nil {
 		panic(err)
 	}
-	if _, ok := u.GetLabels()[shipperv1.ReleaseLabel]; !ok {
-		t.Fatalf("could not find %q in Deployment .metadata.labels", shipperv1.ReleaseLabel)
+	if _, ok := u.GetLabels()[shipper.ReleaseLabel]; !ok {
+		t.Fatalf("could not find %q in Deployment .metadata.labels", shipper.ReleaseLabel)
 	}
 
 	deployment := &appsv1.Deployment{}
@@ -201,12 +201,12 @@ func validateDeploymentCreateAction(t *testing.T, obj runtime.Object) {
 		t.Fatalf("could not decode deployment from unstructured: %s", err)
 	}
 
-	if _, ok := deployment.Spec.Selector.MatchLabels[shipperv1.ReleaseLabel]; !ok {
-		t.Fatal("deployment .spec.selector.matchLabels doesn't contain shipperV1.ReleaseLabel")
+	if _, ok := deployment.Spec.Selector.MatchLabels[shipper.ReleaseLabel]; !ok {
+		t.Fatal("deployment .spec.selector.matchLabels doesn't contain shipper.ReleaseLabel")
 	}
 
-	if _, ok := deployment.Spec.Template.Labels[shipperv1.ReleaseLabel]; !ok {
-		t.Fatal("deployment .spec.template.labels doesn't contain shipperV1.ReleaseLabel")
+	if _, ok := deployment.Spec.Template.Labels[shipper.ReleaseLabel]; !ok {
+		t.Fatal("deployment .spec.template.labels doesn't contain shipper.ReleaseLabel")
 	}
 
 	const (

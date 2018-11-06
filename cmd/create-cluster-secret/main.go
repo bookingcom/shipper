@@ -13,7 +13,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 )
 
@@ -64,18 +64,18 @@ func main() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: *clusterName,
 					Annotations: map[string]string{
-						shipperv1.SecretChecksumAnnotation:             "some-checksum",
-						shipperv1.SecretClusterSkipTlsVerifyAnnotation: strconv.FormatBool(restCfg.Insecure),
+						shipper.SecretChecksumAnnotation:             "some-checksum",
+						shipper.SecretClusterSkipTlsVerifyAnnotation: strconv.FormatBool(restCfg.Insecure),
 					},
 				},
 				Type: corev1.SecretTypeOpaque,
 				Data: secretData,
 			}
 
-			// Only add shipperv1.SecretClusterSkipTlsVerifyAnnotation if the
+			// Only add shipper.SecretClusterSkipTlsVerifyAnnotation if the
 			// configuration specifies an insecure connection.
 			if restCfg.Insecure {
-				clusterSecret.Annotations[shipperv1.SecretClusterSkipTlsVerifyAnnotation] = strconv.FormatBool(restCfg.Insecure)
+				clusterSecret.Annotations[shipper.SecretClusterSkipTlsVerifyAnnotation] = strconv.FormatBool(restCfg.Insecure)
 			}
 
 			if _, err := kubeClient.CoreV1().Secrets(*shipperNamespace).Create(clusterSecret); err != nil {
@@ -91,13 +91,13 @@ func main() {
 			existingSecret.Annotations = map[string]string{}
 		}
 
-		// Delete the shipperv1.SecretClusterSkipTlsVerifyAnnotation if
+		// Delete the shipper.SecretClusterSkipTlsVerifyAnnotation if
 		// configuration specifies a secure connection, add the annotation
 		// it otherwise.
 		if !restCfg.Insecure {
-			delete(existingSecret.Annotations, shipperv1.SecretClusterSkipTlsVerifyAnnotation)
+			delete(existingSecret.Annotations, shipper.SecretClusterSkipTlsVerifyAnnotation)
 		} else {
-			existingSecret.Annotations[shipperv1.SecretClusterSkipTlsVerifyAnnotation] = strconv.FormatBool(restCfg.Insecure)
+			existingSecret.Annotations[shipper.SecretClusterSkipTlsVerifyAnnotation] = strconv.FormatBool(restCfg.Insecure)
 		}
 
 		if _, err := nsSecrets.Update(existingSecret); err != nil {
@@ -110,22 +110,22 @@ func main() {
 
 	shipperClient := versioned.NewForConfigOrDie(restCfg)
 
-	if existingCluster, err := shipperClient.ShipperV1().Clusters().Get(*clusterName, metav1.GetOptions{}); err != nil {
+	if existingCluster, err := shipperClient.ShipperV1alpha1().Clusters().Get(*clusterName, metav1.GetOptions{}); err != nil {
 		if errors.IsNotFound(err) {
-			cluster := &shipperv1.Cluster{
+			cluster := &shipper.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: *clusterName,
 				},
-				Spec: shipperv1.ClusterSpec{
+				Spec: shipper.ClusterSpec{
 					APIMaster:    restCfg.Host,
 					Capabilities: []string{},
 					Region:       "eu-west",
-					Scheduler: shipperv1.ClusterSchedulerSettings{
+					Scheduler: shipper.ClusterSchedulerSettings{
 						Unschedulable: false,
 					},
 				},
 			}
-			if _, err = shipperClient.ShipperV1().Clusters().Create(cluster); err != nil {
+			if _, err = shipperClient.ShipperV1alpha1().Clusters().Create(cluster); err != nil {
 				glog.Fatal(err)
 			}
 			glog.Infof("Successfully created cluster %q", *clusterName)
@@ -133,15 +133,15 @@ func main() {
 			glog.Fatal(err)
 		}
 	} else if *replaceCluster {
-		existingCluster.Spec = shipperv1.ClusterSpec{
+		existingCluster.Spec = shipper.ClusterSpec{
 			APIMaster:    restCfg.Host,
 			Capabilities: []string{},
 			Region:       "eu-west",
-			Scheduler: shipperv1.ClusterSchedulerSettings{
+			Scheduler: shipper.ClusterSchedulerSettings{
 				Unschedulable: false,
 			},
 		}
-		if _, err := shipperClient.ShipperV1().Clusters().Update(existingCluster); err != nil {
+		if _, err := shipperClient.ShipperV1alpha1().Clusters().Update(existingCluster); err != nil {
 			glog.Fatal(err)
 		}
 		glog.Infof("Successfully replaced cluster %q", *clusterName)

@@ -10,7 +10,7 @@ import (
 
 	"k8s.io/helm/pkg/repo/repotest"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 const (
@@ -34,7 +34,7 @@ func TestFetchRemote(t *testing.T) {
 		os.RemoveAll(hh.String())
 	}()
 
-	inChart := shipperv1.Chart{
+	inChart := shipper.Chart{
 		Name:    testFetchChartName,
 		Version: testFetchChartVersion,
 		RepoURL: srv.URL(),
@@ -71,7 +71,7 @@ func TestFetchCacheNoRemote(t *testing.T) {
 	}
 
 	fetch := FetchRemoteWithCache(cache, tenMb)
-	inChart := shipperv1.Chart{
+	inChart := shipper.Chart{
 		Name:    testFetchChartName,
 		Version: testFetchChartVersion,
 		RepoURL: testFetchChartRepoURL,
@@ -98,7 +98,7 @@ func TestFetchCacheRemoteGoneAway(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	inChart := shipperv1.Chart{
+	inChart := shipper.Chart{
 		Name:    testFetchChartName,
 		Version: testFetchChartVersion,
 		RepoURL: srv.URL(),
