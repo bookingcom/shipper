@@ -45,6 +45,10 @@ const (
 
 	Enabled  = "enabled"
 	Disabled = "disabled"
+
+	HelmAppLabel        = "app"
+	HelmReleaseLabel    = "release"
+	HelmWorkaroundLabel = "enable-helm-release-workaround"
 )
 
 // +genclient

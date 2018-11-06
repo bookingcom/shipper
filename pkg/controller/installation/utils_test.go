@@ -266,8 +266,9 @@ func buildInstallationTargetWithOwner(ownerName, ownerUID, namespace, appName st
 				},
 			},
 			Labels: map[string]string{
-				shipperv1.AppLabel:     appName,
-				shipperv1.ReleaseLabel: ownerName,
+				shipperv1.AppLabel:            appName,
+				shipperv1.ReleaseLabel:        ownerName,
+				shipperv1.HelmWorkaroundLabel: shipperv1.Enabled,
 			},
 		},
 		Spec: shipperv1.InstallationTargetSpec{

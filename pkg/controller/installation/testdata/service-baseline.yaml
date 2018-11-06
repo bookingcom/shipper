@@ -17,6 +17,5 @@ spec:
       name: nginx
   selector:
     app: reviews-api
-    release: 0.0.1
     shipper-app: reviews-api
     shipper-traffic-status: "enabled"

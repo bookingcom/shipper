@@ -303,3 +303,28 @@ func TestInstallerBrokenChartContents(t *testing.T) {
 		t.Fatal("installRelease should fail, invalid k8s objects")
 	}
 }
+
+func TestInstallerSingleServiceNoLB(t *testing.T) {
+	t.Fatalf("TODO")
+}
+
+func TestInstallerSingleServiceWithLB(t *testing.T) {
+	t.Fatalf("TODO")
+}
+
+func TestInstallerMultiServiceNoLB(t *testing.T) {
+	t.Fatalf("TODO")
+}
+
+func TestInstallerMultiServiceWithLB(t *testing.T) {
+	t.Fatalf("TODO")
+}
+
+func TestInstallerServiceWithReleaseNoWorkaround(t *testing.T) {
+	t.Fatalf("TODO")
+}
+
+func TestInstallerServiceWithReleaseWithWorkaround(t *testing.T) {
+	t.Fatalf("TODO")
+
+}

@@ -162,23 +162,60 @@ func (i *Installer) patchService(
 	labelsToInject map[string]string,
 	ownerReference *metav1.OwnerReference,
 ) runtime.Object {
-	appName, ok := labelsToInject[shipperv1.AppLabel]
-	if !ok {
-		// If we reach this point, it is fine to panic() since there's nothing
-		// much to do if we don't have the application label.
-		panic(fmt.Sprintf("Programmer error, label %q should always be present", shipperv1.AppLabel))
+
+	requiredLabels := []string{shipperv1.AppLabel}
+	for _, label := range requiredLabels {
+		if _, ok := labelsToInject[label]; !ok {
+			// If we reach this point, it is fine to panic() since there's nothing
+			// much to do if we don't have the mandatory labels.
+			panic(fmt.Sprintf("Programmer error, label %q should always be present", label))
+		}
 	}
 
 	// Those are modified regardless.
 	s.OwnerReferences = []metav1.OwnerReference{*ownerReference}
 	s.Labels = mergeLabels(s.Labels, labelsToInject)
-	s.Spec.Selector[shipperv1.AppLabel] = appName
+
+	return s
+}
+
+func (i *Installer) modifyServiceSelector(
+	s *corev1.Service,
+) (runtime.Object, error) {
+
+	labels := s.Labels
+	appName, ok := labels[shipperv1.HelmAppLabel]
+	if !ok {
+		return nil, controller.NewInvalidChartError(
+			fmt.Sprintf("A service object metadata is expected to contain %q label, none found",
+				shipperv1.HelmAppLabel))
+	}
 
 	// We are interested only in patching Services properly identified by our specific label
-	if lbValue, ok := s.Labels[shipperv1.LBLabel]; ok && lbValue == shipperv1.LBForProduction {
+	if lbValue, ok := labels[shipperv1.LBLabel]; ok && lbValue == shipperv1.LBForProduction {
 		s.Spec.Selector[shipperv1.PodTrafficStatusLabel] = shipperv1.Enabled
 	}
-	return s
+
+	if relName, ok := s.Spec.Selector[shipperv1.HelmReleaseLabel]; ok {
+		if _, ok := i.InstallationTarget.Labels[shipperv1.HelmWorkaroundLabel]; ok {
+			// This selector label is native to helm-bootstrapped charts.
+			// In order to make it work the shipper way, we remove the
+			// label and proceed normally. With one little twist: the user
+			// has to ask shipper to do it explicitly.
+			if relName == i.Release.Name {
+				delete(s.Spec.Selector, shipperv1.HelmReleaseLabel)
+			}
+		} else {
+			return nil, controller.NewInvalidChartError(
+				fmt.Sprintf("The chart contains %q label. This will break shipper"+
+					" traffic shifting logic. Consider using the workaround label %q",
+					shipperv1.HelmReleaseLabel, shipperv1.HelmWorkaroundLabel))
+		}
+	}
+
+	s.Spec.Selector[shipperv1.AppLabel] = appName
+
+	return s, nil
 }
 
 func (i *Installer) patchUnstructured(
@@ -259,7 +296,10 @@ func (i *Installer) installManifests(
 	}
 
 	// Counter for v1.Service objects that have lb label set to production.
-	var seenLBForProduction int32
+	var (
+		seenLBForProduction int32
+		seenSvcObjs         int32
+	)
 
 	// Try to install all the rendered objects in the target cluster. We should
 	// fail in the first error to report that this cluster has an issue. Since the
@@ -287,21 +327,26 @@ func (i *Installer) installManifests(
 		labelsToInject := i.Release.Labels
 		decodedObj = i.patchObject(decodedObj, labelsToInject, &ownerReference)
 
+		// Here we keep a counter of Services that have the lb label. This will
+		// be used later on to determine whether or not an invalid error should
+		// be returned to the caller.
+		if svc, ok := decodedObj.(*corev1.Service); ok {
+			decodedObj, err = i.modifyServiceSelector(svc)
+			if err != nil {
+				return err
+			}
+			seenSvcObjs++
+			if lbValue, ok := svc.Labels[shipperv1.LBLabel]; ok && lbValue == shipperv1.LBForProduction {
+				seenLBForProduction++
+			}
+		}
+
 		// ResourceClient.Create() requires an Unstructured object to work with, so we
 		// need to convert.
 		obj := &unstructured.Unstructured{}
 		err = i.Scheme.Convert(decodedObj, obj, nil)
 		if err != nil {
 			return NewConvertUnstructuredError("error converting object to unstructured: %s", err)
-		}
-
-		// Here we keep a counter of Services that have the lb label. This will
-		// be used later on to determine whether or not an invalid error should
-		// be returned to the caller.
-		if svc, ok := decodedObj.(*corev1.Service); ok {
-			if lbValue, ok := svc.Labels[shipperv1.LBLabel]; ok && lbValue == shipperv1.LBForProduction {
-				seenLBForProduction++
-			}
 		}
 
 		renderedObjects = append(renderedObjects, struct {
@@ -312,7 +357,7 @@ func (i *Installer) installManifests(
 
 	// Shipper requires a Chart with exactly one v1.Service manifest containing
 	// the expected lb label.
-	if seenLBForProduction != 1 {
+	if !((seenLBForProduction == 0 && seenSvcObjs == 1) || seenLBForProduction == 1) {
 		return controller.NewInvalidChartError(
 			fmt.Sprintf(
 				"one and only one v1.Service object with label %q is required, but found %d object(s) instead",
