@@ -175,6 +175,12 @@ func (i *Installer) patchService(
 		panic(fmt.Sprintf("Programmer error, label %q should always be present", shipperv1.AppLabel))
 	}
 
+	sel := mergeLabels(s.Spec.Selector, labelsToInject)
+	for k := range labelsToDrop {
+		delete(sel, k)
+	}
+	s.Spec.Selector = sel
+
 	// Those are modified regardless.
 	s.OwnerReferences = []metav1.OwnerReference{*ownerReference}
 	newLabels := mergeLabels(s.Labels, labelsToInject)

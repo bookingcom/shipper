@@ -7,7 +7,6 @@ metadata:
     chart: reviews-api-0.1.0
     release: 0.0.1-off-the-shelf
     heritage: Tiller
-    shipper-lb: production
 spec:
   type: ClusterIP
   ports:
@@ -17,6 +16,7 @@ spec:
       name: nginx
   selector:
     app: reviews-api
-    release: 0.0.1-off-the-shelf
     shipper-app: reviews-api
+    shipper-lb: production
+    shipper-release: 0.0.1-off-the-shelf
     shipper-traffic-status: "enabled"
