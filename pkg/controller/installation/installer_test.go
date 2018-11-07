@@ -307,7 +307,8 @@ func TestInstallerBrokenChartContents(t *testing.T) {
 
 func TestInstallerSingleServiceNoLB(t *testing.T) {
 	cluster := buildCluster("minikube-a")
-	release := buildReleaseWithChartVersion("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api", "single-service-no-lb")
+	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+	release.Environment.Chart.Version = "single-service-no-lb"
 
 	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
 	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
@@ -347,7 +348,8 @@ func TestInstallerSingleServiceNoLB(t *testing.T) {
 
 func TestInstallerSingleServiceWithLB(t *testing.T) {
 	cluster := buildCluster("minikube-a")
-	release := buildReleaseWithChartVersion("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api", "single-service-with-lb")
+	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+	release.Environment.Chart.Version = "single-service-with-lb"
 
 	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
 	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
@@ -387,7 +389,8 @@ func TestInstallerSingleServiceWithLB(t *testing.T) {
 
 func TestInstallerMultiServiceNoLB(t *testing.T) {
 	cluster := buildCluster("minikube-a")
-	release := buildReleaseWithChartVersion("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api", "multi-service-no-lb")
+	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+	release.Environment.Chart.Version = "multi-service-no-lb"
 
 	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
 	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
@@ -417,7 +420,8 @@ func TestInstallerMultiServiceNoLB(t *testing.T) {
 
 func TestInstallerMultiServiceWithLB(t *testing.T) {
 	cluster := buildCluster("minikube-a")
-	release := buildReleaseWithChartVersion("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api", "multi-service-with-lb")
+	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+	release.Environment.Chart.Version = "multi-service-with-lb"
 
 	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
 	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
@@ -458,10 +462,33 @@ func TestInstallerMultiServiceWithLB(t *testing.T) {
 }
 
 func TestInstallerServiceWithReleaseNoWorkaround(t *testing.T) {
-	t.Fatalf("TODO")
-}
+	cluster := buildCluster("minikube-a")
+	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
 
-func TestInstallerServiceWithReleaseWithWorkaround(t *testing.T) {
-	t.Fatalf("TODO")
+	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
+	delete(it.ObjectMeta.Labels, shipperv1.HelmWorkaroundLabel)
 
+	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
+	if err != nil {
+		panic(err)
+	}
+	installer := newInstaller(release, it)
+	svc := loadService("baseline")
+	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+
+	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
+
+	fakePair := clientsPerCluster[cluster.Name]
+
+	restConfig := &rest.Config{}
+
+	err = installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder)
+	if err == nil {
+		t.Fatal("Expected error, none raised")
+	}
+	if matched, err := regexp.MatchString("This will break shipper traffic shifting logic", err.Error()); err != nil {
+		t.Fatalf("Failed to match the error message against the regex: %s", err)
+	} else if !matched {
+		t.Fatalf("Unexpected error: %s", err)
+	}
 }

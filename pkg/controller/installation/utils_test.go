@@ -227,10 +227,6 @@ func newInstaller(release *shipperv1.Release, it *shipperv1.InstallationTarget) 
 }
 
 func buildRelease(name, namespace, generation, uid, appName string) *shipperv1.Release {
-	return buildReleaseWithChartVersion(name, namespace, generation, uid, appName, "0.0.1")
-}
-
-func buildReleaseWithChartVersion(name, namespace, generation, uid, appName, chartVersion string) *shipperv1.Release {
 	return &shipperv1.Release{
 		ReleaseMeta: shipperv1.ReleaseMeta{
 			ObjectMeta: v1.ObjectMeta{
@@ -248,7 +244,7 @@ func buildReleaseWithChartVersion(name, namespace, generation, uid, appName, cha
 			Environment: shipperv1.ReleaseEnvironment{
 				Chart: shipperv1.Chart{
 					Name:    "reviews-api",
-					Version: chartVersion, //"0.0.1",
+					Version: "0.0.1",
 					RepoURL: "localhost",
 				},
 			},
