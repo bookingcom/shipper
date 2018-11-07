@@ -24,6 +24,7 @@ var (
 	clusterName      *string
 	replaceSecret    *bool
 	replaceCluster   *bool
+	apiServer        *string
 )
 
 func init() {
@@ -39,6 +40,7 @@ func init() {
 	clusterName = flag.String("cluster-name", "local", "Cluster name that will be used")
 	replaceSecret = flag.Bool("replace-secret", false, "Replace existing secret")
 	replaceCluster = flag.Bool("replace-cluster", false, "Replace existing Shipper cluster")
+	apiServer = flag.String("api-server", "", "Use this address as the Cluster's host. Defaults to value in kubeconfig")
 }
 
 func main() {
@@ -49,12 +51,24 @@ func main() {
 		glog.Fatal(err)
 	}
 
+	if *apiServer == "" {
+		*apiServer = restCfg.Host
+	}
+
 	kubeClient := kubernetes.NewForConfigOrDie(restCfg)
 
 	secretData := make(map[string][]byte)
-	secretData["tls.ca"] = restCfg.CAData
-	secretData["tls.crt"] = restCfg.CertData
-	secretData["tls.key"] = restCfg.KeyData
+	if restCfg.CAData != nil {
+		secretData["tls.ca"] = restCfg.CAData
+	}
+
+	if restCfg.CertData != nil {
+		secretData["tls.crt"] = restCfg.CertData
+	}
+
+	if restCfg.KeyData != nil {
+		secretData["tls.key"] = restCfg.KeyData
+	}
 
 	nsSecrets := kubeClient.CoreV1().Secrets(*shipperNamespace)
 
@@ -117,7 +131,7 @@ func main() {
 					Name: *clusterName,
 				},
 				Spec: shipper.ClusterSpec{
-					APIMaster:    restCfg.Host,
+					APIMaster:    *apiServer,
 					Capabilities: []string{},
 					Region:       "eu-west",
 					Scheduler: shipper.ClusterSchedulerSettings{
@@ -134,7 +148,7 @@ func main() {
 		}
 	} else if *replaceCluster {
 		existingCluster.Spec = shipper.ClusterSpec{
-			APIMaster:    restCfg.Host,
+			APIMaster:    *apiServer,
 			Capabilities: []string{},
 			Region:       "eu-west",
 			Scheduler: shipper.ClusterSchedulerSettings{
