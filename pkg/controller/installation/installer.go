@@ -184,7 +184,7 @@ func (i *Installer) modifyServiceSelector(
 ) (runtime.Object, error) {
 
 	labels := s.Labels
-	appName, ok := labels[shipperv1.HelmAppLabel]
+	appName, ok := labels[shipperv1.AppLabel]
 	if !ok {
 		return nil, controller.NewInvalidChartError(
 			fmt.Sprintf("A service object metadata is expected to contain %q label, none found",
