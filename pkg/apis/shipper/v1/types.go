@@ -340,11 +340,44 @@ type CapacityTargetStatus struct {
 }
 
 type ClusterCapacityStatus struct {
-	Name              string                     `json:"name"`
-	AvailableReplicas int32                      `json:"availableReplicas"`
-	AchievedPercent   int32                      `json:"achievedPercent"`
-	SadPods           []PodStatus                `json:"sadPods,omitempty"`
-	Conditions        []ClusterCapacityCondition `json:"conditions,omitempty"`
+	Name              string                        `json:"name"`
+	AvailableReplicas int32                         `json:"availableReplicas"`
+	AchievedPercent   int32                         `json:"achievedPercent"`
+	SadPods           []PodStatus                   `json:"sadPods,omitempty"`
+	Conditions        []ClusterCapacityCondition    `json:"conditions,omitempty"`
+	Report            []ClusterCapacityStatusReport `json:"report"`
+}
+
+type ClusterCapacityStatusReportConditionContainerStateBreakdown struct {
+	Type    string `json:"type"`
+	Reason  string `json:"reason,omitempty"`
+	Count   int32  `json:"count"`
+	Example struct {
+		Pod     string `json:"pod"`
+		Message string `json:"message"`
+	} `json:"example"`
+}
+
+type ClusterCapacityStatusReportConditionContainerBreakdown struct {
+	Name   string                                                        `json:"name"`
+	States []ClusterCapacityStatusReportConditionContainerStateBreakdown `json:"states"`
+}
+
+type ClusterCapacityStatusReportConditionBreakdown struct {
+	Type       string                                                   `json:"type"`
+	Status     corev1.ConditionStatus                                   `json:"status"`
+	Reason     string                                                   `json:"reason,omitempty"`
+	Count      int32                                                    `json:"count"`
+	Containers []ClusterCapacityStatusReportConditionContainerBreakdown `json:"containers"`
+}
+
+type ClusterCapacityStatusReportOwner struct {
+	Name string `json:"name"`
+}
+
+type ClusterCapacityStatusReport struct {
+	Owner ClusterCapacityStatusReportOwner `json:"owner"`
+	Breakdown []ClusterCapacityStatusReportConditionBreakdown `json:"breakdown"`
 }
 
 type ClusterConditionType string
