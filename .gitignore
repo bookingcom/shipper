@@ -2,5 +2,6 @@
 #shipper
 e2e.test
 .vscode/
+.idea/
 pkg/chart/testdata/chartmuseum
 pkg/chart/testdata/index.yaml
