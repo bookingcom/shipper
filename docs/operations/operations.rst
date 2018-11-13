@@ -7,4 +7,5 @@ Operations and administration
     :maxdepth: 2
 
     shipperctl
+    deployment
     troubleshooting

@@ -17,3 +17,4 @@ Quick Start to Run
 Running Shipper on minikube::
 
     $ curl https://.../shipper-deployment.yaml | kubectl apply -f
+
