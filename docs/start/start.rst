@@ -3,18 +3,14 @@
 Getting started
 ===============
 
-This section gets you started with Shipper using Minikube on your workstation.
+.. warning:: To fully understand Shipper, you need to:
 
-It assumes:
+    * be familiar with Docker core concepts.
+    * be familiar with Kubernetes core concepts.
+    * have Minikube already installed and running on your system.
 
-* You're familiar with Docker core concepts.
-* You're familiar with Kubernetes core concepts.
-* Minikube is already installed and running on your system.
+.. toctree::
+    :maxdepth: 2
 
-Quick Start to Run
-------------------
-
-Running Shipper on minikube::
-
-    $ curl https://.../shipper-deployment.yaml | kubectl apply -f
+    concepts/index
 
