@@ -52,7 +52,7 @@ func (c *Controller) createReleaseForApplication(app *shipperv1.Application, rel
 	// propagate annotation from application to release object
 	for k, v := range app.GetAnnotations() {
 		newRelease.Annotations[k] = v
-	}:
+	}
 
 	glog.V(4).Infof("Release %q labels: %v", controller.MetaKey(app), newRelease.Labels)
 	glog.V(4).Infof("Release %q annotations: %v", controller.MetaKey(app), newRelease.Annotations)
