@@ -10,12 +10,12 @@ import (
 	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 	"k8s.io/helm/pkg/timeconv"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 // Render renders a chart, with the given values. It returns a list of rendered
 // Kubernetes objects.
-func Render(chart *helmchart.Chart, name, ns string, shipperValues *shipperv1.ChartValues) ([]string, error) {
+func Render(chart *helmchart.Chart, name, ns string, shipperValues *shipper.ChartValues) ([]string, error) {
 	chartConfig := &helmchart.Config{}
 	if shipperValues != nil {
 		values := chartutil.Values(*shipperValues)

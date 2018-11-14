@@ -6,7 +6,7 @@ import (
 
 	"github.com/cespare/xxhash"
 
-	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 const (
@@ -14,11 +14,11 @@ const (
 )
 
 type scoredCluster struct {
-	cluster *v1.Cluster
+	cluster *shipper.Cluster
 	score   float64
 }
 
-func buildPrefList(appIdentity string, clusterList []*v1.Cluster) []*v1.Cluster {
+func buildPrefList(appIdentity string, clusterList []*shipper.Cluster) []*shipper.Cluster {
 	/*
 		This part is a bit subtle: we're creating a preference list of clusters
 		by creating a sorting key composed of a hash of the Application name
@@ -90,7 +90,7 @@ func buildPrefList(appIdentity string, clusterList []*v1.Cluster) []*v1.Cluster 
 	})
 
 	// Undecorate.
-	prefList := make([]*v1.Cluster, 0, len(scoredClusters))
+	prefList := make([]*shipper.Cluster, 0, len(scoredClusters))
 	for _, scoredCluster := range scoredClusters {
 		prefList = append(prefList, scoredCluster.cluster)
 	}

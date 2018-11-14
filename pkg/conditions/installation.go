@@ -7,14 +7,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 var InstallationConditionsShouldDiscardTimestamps = false
 
 func IsInstallationConditionTrue(
-	conditions []shipperv1.ClusterInstallationCondition,
-	typ shipperv1.ClusterConditionType,
+	conditions []shipper.ClusterInstallationCondition,
+	typ shipper.ClusterConditionType,
 ) bool {
 	for _, e := range conditions {
 		if e.Type == typ {
@@ -25,12 +25,12 @@ func IsInstallationConditionTrue(
 }
 
 func SetInstallationCondition(
-	conditions []shipperv1.ClusterInstallationCondition,
-	typ shipperv1.ClusterConditionType,
+	conditions []shipper.ClusterInstallationCondition,
+	typ shipper.ClusterConditionType,
 	status corev1.ConditionStatus,
 	reason string,
 	message string,
-) []shipperv1.ClusterInstallationCondition {
+) []shipper.ClusterInstallationCondition {
 	conditionIndex := -1
 	for i, e := range conditions {
 		if e.Type == typ {
@@ -44,7 +44,7 @@ func SetInstallationCondition(
 		if !InstallationConditionsShouldDiscardTimestamps {
 			lastTransitionTime = metav1.NewTime(time.Now())
 		}
-		aCondition := shipperv1.ClusterInstallationCondition{
+		aCondition := shipper.ClusterInstallationCondition{
 			Type:               typ,
 			Status:             status,
 			LastTransitionTime: lastTransitionTime,

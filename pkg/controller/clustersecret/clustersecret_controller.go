@@ -17,9 +17,9 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/tls"
 )
 
@@ -49,7 +49,7 @@ func NewController(
 	ownNamespace string,
 	recorder record.EventRecorder,
 ) *Controller {
-	clusterInformer := shipperInformerFactory.Shipper().V1().Clusters()
+	clusterInformer := shipperInformerFactory.Shipper().V1alpha1().Clusters()
 	secretInformer := kubeInformerFactory.Core().V1().Secrets()
 
 	controller := &Controller{
@@ -218,7 +218,7 @@ func (c *Controller) syncOne(key string) error {
 	return nil
 }
 
-func (c *Controller) resolveOwnerRef(meta metav1.Object) (*shipperv1.Cluster, error) {
+func (c *Controller) resolveOwnerRef(meta metav1.Object) (*shipper.Cluster, error) {
 	refs := meta.GetOwnerReferences()
 	if len(refs) != 1 || refs[0].Kind != "Cluster" {
 		return nil, nil

@@ -15,7 +15,7 @@ import (
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/conditions"
@@ -37,13 +37,13 @@ func TestUpdatingCapacityTargetUpdatesDeployment(t *testing.T) {
 
 	f.ExpectDeploymentPatchWithReplicas(deployment, 5)
 
-	expectedClusterConditions := []shipperv1.ClusterCapacityCondition{
+	expectedClusterConditions := []shipper.ClusterCapacityCondition{
 		{
-			Type:   shipperv1.ClusterConditionTypeOperational,
+			Type:   shipper.ClusterConditionTypeOperational,
 			Status: corev1.ConditionTrue,
 		},
 		{
-			Type:   shipperv1.ClusterConditionTypeReady,
+			Type:   shipper.ClusterConditionTypeReady,
 			Status: corev1.ConditionTrue,
 		},
 	}
@@ -62,9 +62,9 @@ func TestUpdatingDeploymentsUpdatesTheCapacityTargetStatus(t *testing.T) {
 	deployment := newDeployment(5, 5)
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment)
 
-	clusterConditions := []shipperv1.ClusterCapacityCondition{
+	clusterConditions := []shipper.ClusterCapacityCondition{
 		{
-			Type:    shipperv1.ClusterConditionTypeReady,
+			Type:    shipper.ClusterConditionTypeReady,
 			Status:  corev1.ConditionFalse,
 			Reason:  conditions.WrongPodCount,
 			Message: "expected 5 replicas but have 0",
@@ -89,9 +89,9 @@ func TestSadPodsAreReflectedInCapacityTargetStatus(t *testing.T) {
 	sadPod := createSadPodForDeployment(deployment)
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment, happyPod, sadPod)
 
-	clusterConditions := []shipperv1.ClusterCapacityCondition{
+	clusterConditions := []shipper.ClusterCapacityCondition{
 		{
-			Type:    shipperv1.ClusterConditionTypeReady,
+			Type:    shipper.ClusterConditionTypeReady,
 			Status:  corev1.ConditionFalse,
 			Reason:  conditions.PodsNotReady,
 			Message: "there are 1 sad pods",
@@ -189,8 +189,8 @@ func (f *fixture) ExpectDeploymentPatchWithReplicas(deployment *appsv1.Deploymen
 	f.targetClusterActions = append(f.targetClusterActions, patchAction)
 }
 
-func (f *fixture) expectCapacityTargetStatusUpdate(capacityTarget *shipperv1.CapacityTarget, availableReplicas, achievedPercent int32, clusterConditions []shipperv1.ClusterCapacityCondition, sadPods ...shipperv1.PodStatus) {
-	clusterStatus := shipperv1.ClusterCapacityStatus{
+func (f *fixture) expectCapacityTargetStatusUpdate(capacityTarget *shipper.CapacityTarget, availableReplicas, achievedPercent int32, clusterConditions []shipper.ClusterCapacityCondition, sadPods ...shipper.PodStatus) {
+	clusterStatus := shipper.ClusterCapacityStatus{
 		Name:              capacityTarget.Spec.Clusters[0].Name,
 		AvailableReplicas: availableReplicas,
 		AchievedPercent:   achievedPercent,
@@ -201,7 +201,7 @@ func (f *fixture) expectCapacityTargetStatusUpdate(capacityTarget *shipperv1.Cap
 	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, clusterStatus)
 
 	updateAction := kubetesting.NewUpdateAction(
-		schema.GroupVersionResource{Group: "shipper.booking.com", Version: "v1", Resource: "capacitytargets"},
+		schema.GroupVersionResource{Group: "shipper.booking.com", Version: "v1alpha1", Resource: "capacitytargets"},
 		capacityTarget.GetNamespace(),
 		capacityTarget,
 	)
@@ -209,35 +209,35 @@ func (f *fixture) expectCapacityTargetStatusUpdate(capacityTarget *shipperv1.Cap
 	f.managementClusterActions = append(f.managementClusterActions, updateAction)
 }
 
-func newCapacityTarget(totalReplicaCount, percent int32) *shipperv1.CapacityTarget {
+func newCapacityTarget(totalReplicaCount, percent int32) *shipper.CapacityTarget {
 	name := "capacity-v0.0.1"
 	namespace := "reviewsapi"
-	minikube := shipperv1.ClusterCapacityTarget{
+	minikube := shipper.ClusterCapacityTarget{
 		Name:              "minikube",
 		Percent:           percent,
 		TotalReplicaCount: totalReplicaCount,
 	}
 
-	clusters := []shipperv1.ClusterCapacityTarget{minikube}
+	clusters := []shipper.ClusterCapacityTarget{minikube}
 
 	metaLabels := map[string]string{
-		shipperv1.ReleaseLabel: "0.0.1",
+		shipper.ReleaseLabel: "0.0.1",
 	}
 
-	return &shipperv1.CapacityTarget{
+	return &shipper.CapacityTarget{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 			Labels:    metaLabels,
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
-					APIVersion: "shipper.booking.com/v1",
+					APIVersion: "shipper.booking.com/v1alpha1",
 					Kind:       "Release",
 					Name:       "0.0.1",
 				},
 			},
 		},
-		Spec: shipperv1.CapacityTargetSpec{
+		Spec: shipper.CapacityTargetSpec{
 			Clusters: clusters,
 		},
 	}
@@ -251,12 +251,12 @@ func newDeployment(replicas int32, availableReplicas int32) *appsv1.Deployment {
 	}
 
 	metaLabels := map[string]string{
-		shipperv1.ReleaseLabel: "0.0.1",
+		shipper.ReleaseLabel: "0.0.1",
 	}
 
 	specSelector := &metav1.LabelSelector{
 		MatchLabels: map[string]string{
-			shipperv1.ReleaseLabel: "0.0.1",
+			shipper.ReleaseLabel: "0.0.1",
 		},
 	}
 
@@ -296,7 +296,7 @@ func createSadPodForDeployment(deployment *appsv1.Deployment) *corev1.Pod {
 			Name:      "nginx-1a93Y2-sad",
 			Namespace: "reviewsapi",
 			Labels: map[string]string{
-				shipperv1.ReleaseLabel: deployment.Labels[shipperv1.ReleaseLabel],
+				shipper.ReleaseLabel: deployment.Labels[shipper.ReleaseLabel],
 			},
 		},
 		Status: status,
@@ -319,15 +319,15 @@ func createHappyPodForDeployment(deployment *appsv1.Deployment) *corev1.Pod {
 			Name:      "nginx-1a93Y2-happy",
 			Namespace: "reviewsapi",
 			Labels: map[string]string{
-				shipperv1.ReleaseLabel: deployment.Labels[shipperv1.ReleaseLabel],
+				shipper.ReleaseLabel: deployment.Labels[shipper.ReleaseLabel],
 			},
 		},
 		Status: status,
 	}
 }
 
-func createSadPodConditionFromPod(sadPod *corev1.Pod) shipperv1.PodStatus {
-	return shipperv1.PodStatus{
+func createSadPodConditionFromPod(sadPod *corev1.Pod) shipper.PodStatus {
+	return shipper.PodStatus{
 		Name:      sadPod.Name,
 		Condition: sadPod.Status.Conditions[0],
 	}

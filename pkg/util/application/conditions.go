@@ -4,18 +4,18 @@ import (
 	coreV1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	shipperV1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"sort"
 )
 
 var ConditionsShouldDiscardTimestamps = false
 
-func NewApplicationCondition(condType shipperV1.ApplicationConditionType, status coreV1.ConditionStatus, reason, message string) *shipperV1.ApplicationCondition {
+func NewApplicationCondition(condType shipper.ApplicationConditionType, status coreV1.ConditionStatus, reason, message string) *shipper.ApplicationCondition {
 	now := metaV1.Now()
 	if ConditionsShouldDiscardTimestamps {
 		now = metaV1.Time{}
 	}
-	return &shipperV1.ApplicationCondition{
+	return &shipper.ApplicationCondition{
 		Type:               condType,
 		Status:             status,
 		LastTransitionTime: now,
@@ -24,7 +24,7 @@ func NewApplicationCondition(condType shipperV1.ApplicationConditionType, status
 	}
 }
 
-func SetApplicationCondition(status *shipperV1.ApplicationStatus, condition shipperV1.ApplicationCondition) {
+func SetApplicationCondition(status *shipper.ApplicationStatus, condition shipper.ApplicationCondition) {
 	currentCond := GetApplicationCondition(*status, condition.Type)
 	if currentCond != nil && currentCond.Status == condition.Status && currentCond.Reason == condition.Reason {
 		return
@@ -39,7 +39,7 @@ func SetApplicationCondition(status *shipperV1.ApplicationStatus, condition ship
 	})
 }
 
-func GetApplicationCondition(status shipperV1.ApplicationStatus, condType shipperV1.ApplicationConditionType) *shipperV1.ApplicationCondition {
+func GetApplicationCondition(status shipper.ApplicationStatus, condType shipper.ApplicationConditionType) *shipper.ApplicationCondition {
 	for _, c := range status.Conditions {
 		if c.Type == condType {
 			return &c
@@ -48,8 +48,8 @@ func GetApplicationCondition(status shipperV1.ApplicationStatus, condType shippe
 	return nil
 }
 
-func filterOutCondition(conditions []shipperV1.ApplicationCondition, condType shipperV1.ApplicationConditionType) []shipperV1.ApplicationCondition {
-	var newConditions []shipperV1.ApplicationCondition
+func filterOutCondition(conditions []shipper.ApplicationCondition, condType shipper.ApplicationConditionType) []shipper.ApplicationCondition {
+	var newConditions []shipper.ApplicationCondition
 	for _, c := range conditions {
 		if c.Type == condType {
 			continue

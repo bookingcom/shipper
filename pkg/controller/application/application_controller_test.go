@@ -14,7 +14,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/helm/pkg/repo/repotest"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
@@ -44,7 +44,7 @@ func TestHashReleaseEnv(t *testing.T) {
 	}
 
 	distinctApp := newApplication(testAppName)
-	distinctApp.Spec.Template.Strategy = &shipperv1.RolloutStrategy{}
+	distinctApp.Spec.Template.Strategy = &shipper.RolloutStrategy{}
 	distinctHash := hashReleaseEnvironment(distinctApp.Spec.Template)
 	if distinctHash == appHash {
 		t.Errorf("two different environments hashed to the same thing: %q", distinctHash)
@@ -63,23 +63,23 @@ func TestCreateFirstRelease(t *testing.T) {
 
 	f.objects = append(f.objects, app)
 	expectedApp := app.DeepCopy()
-	expectedApp.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
-	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
+	expectedApp.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "0"
+	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
 		{
-			Type:   shipperv1.ApplicationConditionTypeAborting,
+			Type:   shipper.ApplicationConditionTypeAborting,
 			Status: corev1.ConditionFalse,
 		},
 		{
-			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
+			Type:   shipper.ApplicationConditionTypeReleaseSynced,
 			Status: corev1.ConditionTrue,
 		},
 		{
-			Type:    shipperv1.ApplicationConditionTypeRollingOut,
+			Type:    shipper.ApplicationConditionTypeRollingOut,
 			Status:  corev1.ConditionTrue,
 			Message: fmt.Sprintf(InitialReleaseMessageFormat, expectedRelName),
 		},
 		{
-			Type:   shipperv1.ApplicationConditionTypeValidHistory,
+			Type:   shipper.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
 	}
@@ -90,9 +90,9 @@ func TestCreateFirstRelease(t *testing.T) {
 
 	expectedRelease := newRelease(expectedRelName, app)
 	expectedRelease.Spec.Environment.Chart.RepoURL = "127.0.0.1"
-	expectedRelease.Labels[shipperv1.ReleaseEnvironmentHashLabel] = envHash
-	expectedRelease.Annotations[shipperv1.ReleaseTemplateIterationAnnotation] = "0"
-	expectedRelease.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
+	expectedRelease.Labels[shipper.ReleaseEnvironmentHashLabel] = envHash
+	expectedRelease.Annotations[shipper.ReleaseTemplateIterationAnnotation] = "0"
+	expectedRelease.Annotations[shipper.ReleaseGenerationAnnotation] = "0"
 
 	f.expectReleaseCreate(expectedRelease)
 	f.expectApplicationUpdate(expectedApp)
@@ -106,33 +106,33 @@ func TestStatusStableState(t *testing.T) {
 	envHashA := hashReleaseEnvironment(app.Spec.Template)
 	expectedRelNameA := fmt.Sprintf("%s-%s-0", testAppName, envHashA)
 	releaseA := newRelease(expectedRelNameA, app)
-	releaseA.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
+	releaseA.Annotations[shipper.ReleaseGenerationAnnotation] = "0"
 	releaseA.Spec.TargetStep = 2
-	releaseA.Status.AchievedStep = &shipperv1.AchievedStep{
+	releaseA.Status.AchievedStep = &shipper.AchievedStep{
 		Step: 2,
 		Name: releaseA.Spec.Environment.Strategy.Steps[2].Name,
 	}
 
-	releaseA.Status.Conditions = []shipperv1.ReleaseCondition{
-		{Type: shipperv1.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
-		{Type: shipperv1.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
+	releaseA.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
+		{Type: shipper.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
 	}
 
-	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "1"
+	app.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "1"
 	app.Spec.Template.Chart.RepoURL = "http://localhost"
 	envHashB := hashReleaseEnvironment(app.Spec.Template)
 	expectedRelNameB := fmt.Sprintf("%s-%s-0", testAppName, envHashB)
 	releaseB := newRelease(expectedRelNameB, app)
-	releaseB.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
+	releaseB.Annotations[shipper.ReleaseGenerationAnnotation] = "1"
 	releaseB.Spec.TargetStep = 2
-	releaseB.Status.AchievedStep = &shipperv1.AchievedStep{
+	releaseB.Status.AchievedStep = &shipper.AchievedStep{
 		Step: 2,
 		Name: releaseB.Spec.Environment.Strategy.Steps[2].Name,
 	}
 
-	releaseB.Status.Conditions = []shipperv1.ReleaseCondition{
-		{Type: shipperv1.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
-		{Type: shipperv1.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
+	releaseB.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
+		{Type: shipper.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
 	}
 
 	f.objects = append(f.objects, app, releaseA, releaseB)
@@ -141,22 +141,22 @@ func TestStatusStableState(t *testing.T) {
 		expectedRelNameA,
 		expectedRelNameB,
 	}
-	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
+	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
 		{
-			Type:   shipperv1.ApplicationConditionTypeAborting,
+			Type:   shipper.ApplicationConditionTypeAborting,
 			Status: corev1.ConditionFalse,
 		},
 		{
-			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
+			Type:   shipper.ApplicationConditionTypeReleaseSynced,
 			Status: corev1.ConditionTrue,
 		},
 		{
-			Type:    shipperv1.ApplicationConditionTypeRollingOut,
+			Type:    shipper.ApplicationConditionTypeRollingOut,
 			Status:  corev1.ConditionFalse,
 			Message: fmt.Sprintf(ReleaseActiveMessageFormat, expectedRelNameB),
 		},
 		{
-			Type:   shipperv1.ApplicationConditionTypeValidHistory,
+			Type:   shipper.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
 	}
@@ -174,29 +174,29 @@ func TestRevisionHistoryLimit(t *testing.T) {
 
 	releaseFoo := newRelease("foo", app)
 	releaseFoo.Spec.TargetStep = 2
-	releaseFoo.Status.AchievedStep = &shipperv1.AchievedStep{
+	releaseFoo.Status.AchievedStep = &shipper.AchievedStep{
 		Step: 2,
 		Name: releaseFoo.Spec.Environment.Strategy.Steps[2].Name,
 	}
-	releaseutil.SetReleaseCondition(&releaseFoo.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
+	releaseutil.SetReleaseCondition(&releaseFoo.Status, *releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
 	releaseutil.SetGeneration(releaseFoo, 0)
 
 	releaseBar := newRelease("bar", app)
 	releaseBar.Spec.TargetStep = 2
-	releaseBar.Status.AchievedStep = &shipperv1.AchievedStep{
+	releaseBar.Status.AchievedStep = &shipper.AchievedStep{
 		Step: 2,
 		Name: releaseBar.Spec.Environment.Strategy.Steps[2].Name,
 	}
-	releaseutil.SetReleaseCondition(&releaseBar.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
+	releaseutil.SetReleaseCondition(&releaseBar.Status, *releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
 	releaseutil.SetGeneration(releaseBar, 1)
 
 	releaseBaz := newRelease("baz", app)
 	releaseBaz.Spec.TargetStep = 2
-	releaseBaz.Status.AchievedStep = &shipperv1.AchievedStep{
+	releaseBaz.Status.AchievedStep = &shipper.AchievedStep{
 		Step: 2,
 		Name: releaseBaz.Spec.Environment.Strategy.Steps[2].Name,
 	}
-	releaseutil.SetReleaseCondition(&releaseBaz.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
+	releaseutil.SetReleaseCondition(&releaseBaz.Status, *releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
 	releaseutil.SetGeneration(releaseBaz, 2)
 
 	f.objects = append(f.objects, releaseFoo, releaseBar, releaseBaz)
@@ -204,28 +204,28 @@ func TestRevisionHistoryLimit(t *testing.T) {
 	app.Status.History = []string{"foo", "bar", "baz"}
 
 	expectedApp := app.DeepCopy()
-	expectedApp.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "2"
+	expectedApp.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "2"
 
 	// This ought to be true, but deletes don't filter through the kubetesting
 	// lister.
 
 	//expectedApp.Status.History = []string{"baz"}
-	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
+	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
 		{
-			Type:   shipperv1.ApplicationConditionTypeAborting,
+			Type:   shipper.ApplicationConditionTypeAborting,
 			Status: corev1.ConditionFalse,
 		},
 		{
-			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
+			Type:   shipper.ApplicationConditionTypeReleaseSynced,
 			Status: corev1.ConditionTrue,
 		},
 		{
-			Type:    shipperv1.ApplicationConditionTypeRollingOut,
+			Type:    shipper.ApplicationConditionTypeRollingOut,
 			Status:  corev1.ConditionFalse,
 			Message: fmt.Sprintf(ReleaseActiveMessageFormat, releaseBaz.Name),
 		},
 		{
-			Type:   shipperv1.ApplicationConditionTypeValidHistory,
+			Type:   shipper.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
 	}
@@ -256,10 +256,10 @@ func TestCreateThirdRelease(t *testing.T) {
 	firstRel := newRelease(firstRelName, app)
 	releaseutil.SetIteration(firstRel, 0)
 	releaseutil.SetGeneration(firstRel, 0)
-	releaseutil.SetReleaseCondition(&firstRel.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
+	releaseutil.SetReleaseCondition(&firstRel.Status, *releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
 	firstRel.Spec.Environment.Chart.RepoURL = srv.URL()
 	firstRel.Spec.TargetStep = 2
-	firstRel.Status.AchievedStep = &shipperv1.AchievedStep{
+	firstRel.Status.AchievedStep = &shipper.AchievedStep{
 		Step: 2,
 		Name: firstRel.Spec.Environment.Strategy.Steps[2].Name,
 	}
@@ -268,17 +268,17 @@ func TestCreateThirdRelease(t *testing.T) {
 	incumbentRel := newRelease(incumbentRelName, app)
 	releaseutil.SetIteration(incumbentRel, 1)
 	releaseutil.SetGeneration(incumbentRel, 1)
-	releaseutil.SetReleaseCondition(&incumbentRel.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
+	releaseutil.SetReleaseCondition(&incumbentRel.Status, *releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
 	incumbentRel.Spec.Environment.Chart.RepoURL = srv.URL()
 	incumbentRel.Spec.TargetStep = 2
-	incumbentRel.Status.AchievedStep = &shipperv1.AchievedStep{
+	incumbentRel.Status.AchievedStep = &shipper.AchievedStep{
 		Step: 2,
 		Name: incumbentRel.Spec.Environment.Strategy.Steps[2].Name,
 	}
 
 	app.Status.History = []string{firstRelName, incumbentRelName}
-	app.Spec.Template.ClusterRequirements = shipperv1.ClusterRequirements{
-		Regions: []shipperv1.RegionRequirement{{Name: "foo"}},
+	app.Spec.Template.ClusterRequirements = shipper.ClusterRequirements{
+		Regions: []shipper.RegionRequirement{{Name: "foo"}},
 	}
 
 	f.objects = append(f.objects, app, firstRel, incumbentRel)
@@ -287,7 +287,7 @@ func TestCreateThirdRelease(t *testing.T) {
 	expectedContenderRelName := fmt.Sprintf("%s-%s-0", testAppName, contenderEnvHash)
 
 	expectedContenderRel := newRelease(expectedContenderRelName, app)
-	expectedContenderRel.Labels[shipperv1.ReleaseEnvironmentHashLabel] = contenderEnvHash
+	expectedContenderRel.Labels[shipper.ReleaseEnvironmentHashLabel] = contenderEnvHash
 	releaseutil.SetIteration(expectedContenderRel, 0)
 	releaseutil.SetGeneration(expectedContenderRel, 2)
 
@@ -299,22 +299,22 @@ func TestCreateThirdRelease(t *testing.T) {
 		expectedContenderRelName,
 	}
 
-	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
+	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
 		{
-			Type:   shipperv1.ApplicationConditionTypeAborting,
+			Type:   shipper.ApplicationConditionTypeAborting,
 			Status: corev1.ConditionFalse,
 		},
 		{
-			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
+			Type:   shipper.ApplicationConditionTypeReleaseSynced,
 			Status: corev1.ConditionTrue,
 		},
 		{
-			Type:    shipperv1.ApplicationConditionTypeRollingOut,
+			Type:    shipper.ApplicationConditionTypeRollingOut,
 			Status:  corev1.ConditionTrue,
 			Message: fmt.Sprintf(TransitioningMessageFormat, incumbentRelName, expectedContenderRelName),
 		},
 		{
-			Type:   shipperv1.ApplicationConditionTypeValidHistory,
+			Type:   shipper.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
 	}
@@ -348,10 +348,10 @@ func TestCreateSecondRelease(t *testing.T) {
 	incumbentRel := newRelease(incumbentRelName, app)
 	releaseutil.SetGeneration(incumbentRel, 0)
 	releaseutil.SetIteration(incumbentRel, 0)
-	releaseutil.SetReleaseCondition(&incumbentRel.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
+	releaseutil.SetReleaseCondition(&incumbentRel.Status, *releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
 	incumbentRel.Spec.Environment.Chart.RepoURL = srv.URL()
 	incumbentRel.Spec.TargetStep = 2
-	incumbentRel.Status.AchievedStep = &shipperv1.AchievedStep{
+	incumbentRel.Status.AchievedStep = &shipper.AchievedStep{
 		Step: 2,
 		Name: incumbentRel.Spec.Environment.Strategy.Steps[2].Name,
 	}
@@ -359,15 +359,15 @@ func TestCreateSecondRelease(t *testing.T) {
 	f.objects = append(f.objects, incumbentRel)
 
 	app.Status.History = []string{incumbentRelName}
-	app.Spec.Template.ClusterRequirements = shipperv1.ClusterRequirements{
-		Regions: []shipperv1.RegionRequirement{{Name: "foo"}},
+	app.Spec.Template.ClusterRequirements = shipper.ClusterRequirements{
+		Regions: []shipper.RegionRequirement{{Name: "foo"}},
 	}
 
 	contenderEnvHash := hashReleaseEnvironment(app.Spec.Template)
 	contenderRelName := fmt.Sprintf("%s-%s-0", testAppName, contenderEnvHash)
 
 	contenderRel := newRelease(contenderRelName, app)
-	contenderRel.Labels[shipperv1.ReleaseEnvironmentHashLabel] = contenderEnvHash
+	contenderRel.Labels[shipper.ReleaseEnvironmentHashLabel] = contenderEnvHash
 	releaseutil.SetIteration(contenderRel, 0)
 	releaseutil.SetGeneration(contenderRel, 1)
 
@@ -378,22 +378,22 @@ func TestCreateSecondRelease(t *testing.T) {
 		contenderRelName,
 	}
 
-	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
+	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
 		{
-			Type:   shipperv1.ApplicationConditionTypeAborting,
+			Type:   shipper.ApplicationConditionTypeAborting,
 			Status: corev1.ConditionFalse,
 		},
 		{
-			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
+			Type:   shipper.ApplicationConditionTypeReleaseSynced,
 			Status: corev1.ConditionTrue,
 		},
 		{
-			Type:    shipperv1.ApplicationConditionTypeRollingOut,
+			Type:    shipper.ApplicationConditionTypeRollingOut,
 			Status:  corev1.ConditionTrue,
 			Message: fmt.Sprintf(TransitioningMessageFormat, incumbentRelName, contenderRelName),
 		},
 		{
-			Type:   shipperv1.ApplicationConditionTypeValidHistory,
+			Type:   shipper.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
 	}
@@ -421,9 +421,9 @@ func TestAbort(t *testing.T) {
 	// Highest observed is higher than any known release. We have an older release
 	// (gen 0) with a different cluster selector. We expect app template to be
 	// reverted.
-	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "1"
-	app.Spec.Template.ClusterRequirements = shipperv1.ClusterRequirements{
-		Regions: []shipperv1.RegionRequirement{{Name: "foo"}},
+	app.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "1"
+	app.Spec.Template.ClusterRequirements = shipper.ClusterRequirements{
+		Regions: []shipper.RegionRequirement{{Name: "foo"}},
 	}
 
 	f.objects = append(f.objects, app)
@@ -433,15 +433,15 @@ func TestAbort(t *testing.T) {
 
 	release := newRelease(relName, app)
 	release.Spec.Environment.Chart.RepoURL = srv.URL()
-	release.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
+	release.Annotations[shipper.ReleaseGenerationAnnotation] = "0"
 	release.Spec.TargetStep = 2
-	release.Status.AchievedStep = &shipperv1.AchievedStep{
+	release.Status.AchievedStep = &shipper.AchievedStep{
 		Step: 2,
 		Name: release.Spec.Environment.Strategy.Steps[2].Name,
 	}
 
-	release.Spec.Environment.ClusterRequirements = shipperv1.ClusterRequirements{
-		Regions: []shipperv1.RegionRequirement{{Name: "bar"}},
+	release.Spec.Environment.ClusterRequirements = shipper.ClusterRequirements{
+		Regions: []shipper.RegionRequirement{{Name: "bar"}},
 	}
 
 	f.objects = append(f.objects, release)
@@ -449,21 +449,21 @@ func TestAbort(t *testing.T) {
 	app.Status.History = []string{relName, "blorgblorgblorg"}
 
 	expectedApp := app.DeepCopy()
-	expectedApp.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
+	expectedApp.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "0"
 	// Should have overwritten the old template with the generation 0 one.
 	expectedApp.Spec.Template = release.Spec.Environment
 
 	expectedApp.Status.History = []string{relName}
 
-	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
+	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
 		{
-			Type:    shipperv1.ApplicationConditionTypeAborting,
+			Type:    shipper.ApplicationConditionTypeAborting,
 			Status:  corev1.ConditionTrue,
 			Reason:  "",
 			Message: fmt.Sprintf("abort in progress, returning state to release %q", relName),
 		},
 		{
-			Type:   shipperv1.ApplicationConditionTypeRollingOut,
+			Type:   shipper.ApplicationConditionTypeRollingOut,
 			Status: corev1.ConditionTrue,
 		},
 	}
@@ -488,7 +488,7 @@ func TestStateRollingOut(t *testing.T) {
 
 	app := newApplication(testAppName)
 	app.Spec.Template.Chart.RepoURL = srv.URL()
-	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "1"
+	app.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "1"
 
 	envHash := hashReleaseEnvironment(app.Spec.Template)
 	incumbentName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
@@ -498,17 +498,17 @@ func TestStateRollingOut(t *testing.T) {
 	f.objects = append(f.objects, app)
 
 	incumbent := newRelease(incumbentName, app)
-	incumbent.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
-	incumbent.Status.Conditions = []shipperv1.ReleaseCondition{
-		{Type: shipperv1.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
-		{Type: shipperv1.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
+	incumbent.Annotations[shipper.ReleaseGenerationAnnotation] = "0"
+	incumbent.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
+		{Type: shipper.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
 	}
 	f.objects = append(f.objects, incumbent)
 
 	contender := newRelease(contenderName, app)
-	contender.Annotations[shipperv1.ReleaseGenerationAnnotation] = "1"
+	contender.Annotations[shipper.ReleaseGenerationAnnotation] = "1"
 	contender.Spec.TargetStep = 1
-	contender.Status.AchievedStep = &shipperv1.AchievedStep{
+	contender.Status.AchievedStep = &shipper.AchievedStep{
 		Step: 0,
 		Name: contender.Spec.Environment.Strategy.Steps[0].Name,
 	}
@@ -517,22 +517,22 @@ func TestStateRollingOut(t *testing.T) {
 
 	appRollingOut := app.DeepCopy()
 
-	appRollingOut.Status.Conditions = []shipperv1.ApplicationCondition{
+	appRollingOut.Status.Conditions = []shipper.ApplicationCondition{
 		{
-			Type:   shipperv1.ApplicationConditionTypeAborting,
+			Type:   shipper.ApplicationConditionTypeAborting,
 			Status: corev1.ConditionFalse,
 		},
 		{
-			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
+			Type:   shipper.ApplicationConditionTypeReleaseSynced,
 			Status: corev1.ConditionTrue,
 		},
 		{
-			Type:    shipperv1.ApplicationConditionTypeRollingOut,
+			Type:    shipper.ApplicationConditionTypeRollingOut,
 			Status:  corev1.ConditionTrue,
 			Message: fmt.Sprintf(TransitioningMessageFormat, incumbent.Name, contender.Name),
 		},
 		{
-			Type:   shipperv1.ApplicationConditionTypeValidHistory,
+			Type:   shipper.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
 	}
@@ -549,13 +549,13 @@ func TestDeletingAbortedReleases(t *testing.T) {
 	f.objects = append(f.objects, app)
 
 	releaseFoo := newRelease("foo", app)
-	releaseFoo.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
+	releaseFoo.Annotations[shipper.ReleaseGenerationAnnotation] = "0"
 
 	releaseBar := newRelease("bar", app)
 	releaseutil.SetGeneration(releaseBar, 1)
-	releaseutil.SetReleaseCondition(&releaseBar.Status, *releaseutil.NewReleaseCondition(shipperv1.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
+	releaseutil.SetReleaseCondition(&releaseBar.Status, *releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
 	releaseBar.Spec.TargetStep = 2
-	releaseBar.Status.AchievedStep = &shipperv1.AchievedStep{
+	releaseBar.Status.AchievedStep = &shipper.AchievedStep{
 		Step: 2,
 		Name: releaseBar.Spec.Environment.Strategy.Steps[2].Name,
 	}
@@ -565,24 +565,24 @@ func TestDeletingAbortedReleases(t *testing.T) {
 	app.Status.History = []string{"foo", "bar"}
 
 	expectedApp := app.DeepCopy()
-	expectedApp.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "1"
+	expectedApp.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "1"
 
-	expectedApp.Status.Conditions = []shipperv1.ApplicationCondition{
+	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
 		{
-			Type:   shipperv1.ApplicationConditionTypeAborting,
+			Type:   shipper.ApplicationConditionTypeAborting,
 			Status: corev1.ConditionFalse,
 		},
 		{
-			Type:   shipperv1.ApplicationConditionTypeReleaseSynced,
+			Type:   shipper.ApplicationConditionTypeReleaseSynced,
 			Status: corev1.ConditionTrue,
 		},
 		{
-			Type:    shipperv1.ApplicationConditionTypeRollingOut,
+			Type:    shipper.ApplicationConditionTypeRollingOut,
 			Status:  corev1.ConditionFalse,
 			Message: fmt.Sprintf(ReleaseActiveMessageFormat, releaseBar.Name),
 		},
 		{
-			Type:   shipperv1.ApplicationConditionTypeValidHistory,
+			Type:   shipper.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
 	}
@@ -592,68 +592,68 @@ func TestDeletingAbortedReleases(t *testing.T) {
 	f.run()
 }
 
-func newRelease(releaseName string, app *shipperv1.Application) *shipperv1.Release {
-	return &shipperv1.Release{
+func newRelease(releaseName string, app *shipper.Application) *shipper.Release {
+	return &shipper.Release{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        releaseName,
 			Namespace:   app.GetNamespace(),
 			Annotations: map[string]string{},
 			Labels: map[string]string{
-				shipperv1.ReleaseLabel: releaseName,
-				shipperv1.AppLabel:     app.GetName(),
+				shipper.ReleaseLabel: releaseName,
+				shipper.AppLabel:     app.GetName(),
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: "shipper.booking.com/v1",
+					APIVersion: "shipper.booking.com/v1alpha1",
 					Kind:       "Application",
 					Name:       app.GetName(),
 				},
 			},
 		},
-		Spec: shipperv1.ReleaseSpec{
+		Spec: shipper.ReleaseSpec{
 			Environment: *(app.Spec.Template.DeepCopy()),
 		},
 	}
 }
 
-var vanguard = shipperv1.RolloutStrategy{
-	Steps: []shipperv1.RolloutStrategyStep{
+var vanguard = shipper.RolloutStrategy{
+	Steps: []shipper.RolloutStrategyStep{
 		{
 			Name:     "staging",
-			Capacity: shipperv1.RolloutStrategyStepValue{Incumbent: 100, Contender: 1},
-			Traffic:  shipperv1.RolloutStrategyStepValue{Incumbent: 100, Contender: 0},
+			Capacity: shipper.RolloutStrategyStepValue{Incumbent: 100, Contender: 1},
+			Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 100, Contender: 0},
 		},
 		{
 			Name:     "50/50",
-			Capacity: shipperv1.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
-			Traffic:  shipperv1.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
+			Capacity: shipper.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
+			Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
 		},
 		{
 			Name:     "full on",
-			Capacity: shipperv1.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
-			Traffic:  shipperv1.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+			Capacity: shipper.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+			Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
 		},
 	},
 }
 
-func newApplication(name string) *shipperv1.Application {
+func newApplication(name string) *shipper.Application {
 	five := int32(5)
-	return &shipperv1.Application{
+	return &shipper.Application{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
 			Namespace:   shippertesting.TestNamespace,
 			Annotations: map[string]string{},
 		},
-		Spec: shipperv1.ApplicationSpec{
+		Spec: shipper.ApplicationSpec{
 			RevisionHistoryLimit: &five,
-			Template: shipperv1.ReleaseEnvironment{
-				Chart: shipperv1.Chart{
+			Template: shipper.ReleaseEnvironment{
+				Chart: shipper.Chart{
 					Name:    "simple",
 					Version: "0.0.1",
 					RepoURL: "http://127.0.0.1:8879/charts",
 				},
-				ClusterRequirements: shipperv1.ClusterRequirements{},
-				Values:              &shipperv1.ChartValues{},
+				ClusterRequirements: shipper.ClusterRequirements{},
+				Values:              &shipper.ChartValues{},
 				Strategy:            &vanguard,
 			},
 		},
@@ -703,22 +703,22 @@ func (f *fixture) run() {
 	shippertesting.CheckActions(f.actions, actual, f.t)
 }
 
-func (f *fixture) expectReleaseCreate(rel *shipperv1.Release) {
-	gvr := shipperv1.SchemeGroupVersion.WithResource("releases")
+func (f *fixture) expectReleaseCreate(rel *shipper.Release) {
+	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 	action := kubetesting.NewCreateAction(gvr, rel.GetNamespace(), rel)
 
 	f.actions = append(f.actions, action)
 }
 
-func (f *fixture) expectReleaseDelete(rel *shipperv1.Release) {
-	gvr := shipperv1.SchemeGroupVersion.WithResource("releases")
+func (f *fixture) expectReleaseDelete(rel *shipper.Release) {
+	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 	action := kubetesting.NewDeleteAction(gvr, rel.GetNamespace(), rel.GetName())
 
 	f.actions = append(f.actions, action)
 }
 
-func (f *fixture) expectApplicationUpdate(app *shipperv1.Application) {
-	gvr := shipperv1.SchemeGroupVersion.WithResource("applications")
+func (f *fixture) expectApplicationUpdate(app *shipper.Application) {
+	gvr := shipper.SchemeGroupVersion.WithResource("applications")
 	action := kubetesting.NewUpdateAction(gvr, app.GetNamespace(), app)
 
 	f.actions = append(f.actions, action)

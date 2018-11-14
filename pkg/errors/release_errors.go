@@ -2,7 +2,7 @@ package errors
 
 import (
 	"fmt"
-	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 type ContenderNotFoundError struct {
@@ -44,7 +44,7 @@ type MissingGenerationAnnotationError struct {
 }
 
 func (e MissingGenerationAnnotationError) Error() string {
-	return fmt.Sprintf("missing label %q in release %q", v1.ReleaseGenerationAnnotation, e.relName)
+	return fmt.Sprintf("missing label %q in release %q", shipper.ReleaseGenerationAnnotation, e.relName)
 }
 
 func IsMissingGenerationAnnotationError(err error) bool {
@@ -62,7 +62,7 @@ type InvalidGenerationAnnotationError struct {
 }
 
 func (e *InvalidGenerationAnnotationError) Error() string {
-	return fmt.Sprintf("invalid value for label %q in release %q: %s", v1.ReleaseGenerationAnnotation, e.relName, e.err)
+	return fmt.Sprintf("invalid value for label %q in release %q: %s", shipper.ReleaseGenerationAnnotation, e.relName, e.err)
 }
 
 func IsInvalidGenerationAnnotationError(err error) bool {

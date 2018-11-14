@@ -14,7 +14,7 @@ import (
 	kubetesting "k8s.io/client-go/testing"
 	clienttesting "k8s.io/client-go/testing"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
@@ -189,8 +189,8 @@ func TestWeightCalculatedForJustOneApplication(t *testing.T) {
 	}
 
 	foreignAppLabels := map[string]string{
-		shipperv1.ReleaseLabel: "blorg",
-		shipperv1.AppLabel:     "someOtherApp",
+		shipper.ReleaseLabel: "blorg",
+		shipper.AppLabel:     "someOtherApp",
 	}
 	// add a pod for an unrelated application
 	pod := &corev1.Pod{
@@ -264,7 +264,7 @@ type podLabelShifterFixture struct {
 	client           *kubefake.Clientset
 	objects          []runtime.Object
 	pods             []*corev1.Pod
-	trafficTargets   []*shipperv1.TrafficTarget
+	trafficTargets   []*shipper.TrafficTarget
 	informers        kubeinformers.SharedInformerFactory
 }
 
@@ -297,8 +297,8 @@ func (f *podLabelShifterFixture) addPods(releaseName string, count int) {
 
 func (f *podLabelShifterFixture) addService() {
 	labels := map[string]string{
-		shipperv1.AppLabel: testApplicationName,
-		shipperv1.LBLabel:  shipperv1.LBForProduction,
+		shipper.AppLabel: testApplicationName,
+		shipper.LBLabel:  shipper.LBForProduction,
 	}
 
 	svc := &corev1.Service{
@@ -309,8 +309,8 @@ func (f *podLabelShifterFixture) addService() {
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
-				shipperv1.AppLabel:              testApplicationName,
-				shipperv1.PodTrafficStatusLabel: shipperv1.Enabled,
+				shipper.AppLabel:              testApplicationName,
+				shipper.PodTrafficStatusLabel: shipper.Enabled,
 			},
 		},
 	}
@@ -348,8 +348,8 @@ func buildPodPatchReactionFunc(informers kubeinformers.SharedInformerFactory) cl
 				// exist in order to issue a replace; that's the reason that
 				// patchPodTrafficStatusLabel determines the operation based on
 				// the presence of the PodTrafficStatusLabel.
-				if p.Path == fmt.Sprintf("/metadata/labels/%s", shipperv1.PodTrafficStatusLabel) {
-					pod.Labels[shipperv1.PodTrafficStatusLabel] = p.Value
+				if p.Path == fmt.Sprintf("/metadata/labels/%s", shipper.PodTrafficStatusLabel) {
+					pod.Labels[shipper.PodTrafficStatusLabel] = p.Value
 				}
 			}
 
@@ -441,7 +441,7 @@ func (f *podLabelShifterFixture) checkReleasePodsWithTraffic(release string, exp
 				panic(fmt.Sprintf(`Couldn't find Pod in informer: %s`, name))
 			}
 
-			podRelease, ok := p.Labels[shipperv1.ReleaseLabel]
+			podRelease, ok := p.Labels[shipper.ReleaseLabel]
 			if !ok || podRelease != release {
 				break
 			}
@@ -456,21 +456,21 @@ func (f *podLabelShifterFixture) checkReleasePodsWithTraffic(release string, exp
 	}
 }
 
-func newTrafficTarget(release string, clusterWeights map[string]uint32) *shipperv1.TrafficTarget {
-	tt := &shipperv1.TrafficTarget{
+func newTrafficTarget(release string, clusterWeights map[string]uint32) *shipper.TrafficTarget {
+	tt := &shipper.TrafficTarget{
 		ObjectMeta: metav1.ObjectMeta{
 			// NOTE(btyler): using release name for TTs?
 			Name:      release,
 			Namespace: shippertesting.TestNamespace,
 			Labels:    releaseLabels(release),
 		},
-		Spec: shipperv1.TrafficTargetSpec{
-			Clusters: []shipperv1.ClusterTrafficTarget{},
+		Spec: shipper.TrafficTargetSpec{
+			Clusters: []shipper.ClusterTrafficTarget{},
 		},
 	}
 
 	for cluster, weight := range clusterWeights {
-		tt.Spec.Clusters = append(tt.Spec.Clusters, shipperv1.ClusterTrafficTarget{
+		tt.Spec.Clusters = append(tt.Spec.Clusters, shipper.ClusterTrafficTarget{
 			Name:   cluster,
 			Weight: weight,
 		})
@@ -494,8 +494,8 @@ func newReleasePods(release string, count int) []*corev1.Pod {
 
 func releaseLabels(releaseName string) map[string]string {
 	labels := map[string]string{
-		shipperv1.AppLabel:     testApplicationName,
-		shipperv1.ReleaseLabel: releaseName,
+		shipper.AppLabel:     testApplicationName,
+		shipper.ReleaseLabel: releaseName,
 	}
 	return labels
 }

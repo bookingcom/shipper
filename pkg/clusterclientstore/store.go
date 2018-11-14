@@ -17,8 +17,8 @@ import (
 	kubecache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipperv1informer "github.com/bookingcom/shipper/pkg/client/informers/externalversions/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shipperinformer "github.com/bookingcom/shipper/pkg/client/informers/externalversions/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore/cache"
 )
 
@@ -33,7 +33,7 @@ type Store struct {
 	cache       cache.CacheServer
 
 	secretInformer  corev1informer.SecretInformer
-	clusterInformer shipperv1informer.ClusterInformer
+	clusterInformer shipperinformer.ClusterInformer
 
 	secretWorkqueue  workqueue.RateLimitingInterface
 	clusterWorkqueue workqueue.RateLimitingInterface
@@ -53,7 +53,7 @@ type Store struct {
 func NewStore(
 	buildClient ClientBuilderFunc,
 	secretInformer corev1informer.SecretInformer,
-	clusterInformer shipperv1informer.ClusterInformer,
+	clusterInformer shipperinformer.ClusterInformer,
 	ns string,
 	restTimeout *time.Duration,
 ) *Store {
@@ -222,7 +222,7 @@ func (s *Store) syncSecret(key string) error {
 		return err
 	}
 
-	checksum, ok := secret.GetAnnotations()[shipperv1.SecretChecksumAnnotation]
+	checksum, ok := secret.GetAnnotations()[shipper.SecretChecksumAnnotation]
 	if !ok {
 		return fmt.Errorf("Secret %q looks like a cluster secret but doesn't have a checksum", key)
 	}
@@ -247,8 +247,8 @@ func (s *Store) syncSecret(key string) error {
 	return s.create(clusterObj, secret)
 }
 
-func (s *Store) create(cluster *shipperv1.Cluster, secret *corev1.Secret) error {
-	checksum, ok := secret.GetAnnotations()[shipperv1.SecretChecksumAnnotation]
+func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
+	checksum, ok := secret.GetAnnotations()[shipper.SecretChecksumAnnotation]
 	// Programmer error: this is filtered for at the informer level.
 	if !ok {
 		panic(fmt.Sprintf("Secret %q doesn't have a checksum annotation. this should be checked before calling 'create'", secret.Name))
@@ -341,12 +341,12 @@ func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration)
 		config.KeyData = key
 	}
 
-	if encodedInsecureSkipTlsVerify, ok := secret.Annotations[shipperv1.SecretClusterSkipTlsVerifyAnnotation]; ok {
+	if encodedInsecureSkipTlsVerify, ok := secret.Annotations[shipper.SecretClusterSkipTlsVerifyAnnotation]; ok {
 		if insecureSkipTlsVerify, err := strconv.ParseBool(encodedInsecureSkipTlsVerify); err == nil {
-			glog.Infof("found %q annotation with value %q for host %q", shipperv1.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify, host)
+			glog.Infof("found %q annotation with value %q for host %q", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify, host)
 			config.Insecure = insecureSkipTlsVerify
 		} else {
-			glog.Infof("found %q annotation with value %q for host %q but failed to decode a bool from it, ignoring it", shipperv1.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify, host)
+			glog.Infof("found %q annotation with value %q for host %q but failed to decode a bool from it, ignoring it", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify, host)
 		}
 	}
 

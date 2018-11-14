@@ -21,7 +21,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/helm/pkg/repo/repotest"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
@@ -55,32 +55,32 @@ var (
 	globalTimeout    time.Duration
 )
 
-var allIn = shipperv1.RolloutStrategy{
-	Steps: []shipperv1.RolloutStrategyStep{
+var allIn = shipper.RolloutStrategy{
+	Steps: []shipper.RolloutStrategyStep{
 		{
 			Name:     "full on",
-			Capacity: shipperv1.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
-			Traffic:  shipperv1.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+			Capacity: shipper.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+			Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
 		},
 	},
 }
 
-var vanguard = shipperv1.RolloutStrategy{
-	Steps: []shipperv1.RolloutStrategyStep{
+var vanguard = shipper.RolloutStrategy{
+	Steps: []shipper.RolloutStrategyStep{
 		{
 			Name:     "staging",
-			Capacity: shipperv1.RolloutStrategyStepValue{Incumbent: 100, Contender: 1},
-			Traffic:  shipperv1.RolloutStrategyStepValue{Incumbent: 100, Contender: 0},
+			Capacity: shipper.RolloutStrategyStepValue{Incumbent: 100, Contender: 1},
+			Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 100, Contender: 0},
 		},
 		{
 			Name:     "50/50",
-			Capacity: shipperv1.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
-			Traffic:  shipperv1.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
+			Capacity: shipper.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
+			Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
 		},
 		{
 			Name:     "full on",
-			Capacity: shipperv1.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
-			Traffic:  shipperv1.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+			Capacity: shipper.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+			Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
 		},
 	},
 }
@@ -139,11 +139,11 @@ func TestNewAppAllIn(t *testing.T) {
 	}()
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
-	newApp.Spec.Template.Values = &shipperv1.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
-	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Create(newApp)
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
 		t.Fatalf("could not create application %q: %q", appName, err)
 	}
@@ -155,7 +155,7 @@ func TestNewAppAllIn(t *testing.T) {
 	f.waitForComplete(rel.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
 	f.checkPods(relName, targetReplicas)
-	err = shipperClient.ShipperV1().Applications(ns.GetName()).Delete(newApp.GetName(), &metav1.DeleteOptions{})
+	err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Delete(newApp.GetName(), &metav1.DeleteOptions{})
 	if err != nil {
 		t.Fatalf("could not DELETE application %q: %q", appName, err)
 	}
@@ -181,11 +181,11 @@ func TestRolloutAllIn(t *testing.T) {
 	}()
 
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Spec.Template.Values = &shipperv1.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
-	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Create(app)
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
 		t.Fatalf("could not create application %q: %q", appName, err)
 	}
@@ -199,13 +199,13 @@ func TestRolloutAllIn(t *testing.T) {
 	f.checkPods(relName, targetReplicas)
 
 	// refetch so that the update has a fresh version to work with
-	app, err = shipperClient.ShipperV1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
+	app, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("could not refetch app: %q", err)
 	}
 
 	app.Spec.Template.Chart.Version = "0.0.2"
-	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Update(app)
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Update(app)
 	if err != nil {
 		t.Fatalf("could not update application %q: %q", appName, err)
 	}
@@ -237,11 +237,11 @@ func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
 	}()
 
 	newApp := newApplication(ns.GetName(), appName, &vanguard)
-	newApp.Spec.Template.Values = &shipperv1.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
-	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Create(newApp)
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
 		t.Fatalf("could not create application %q: %q", appName, err)
 	}
@@ -305,11 +305,11 @@ func testRolloutVanguard(targetReplicas int, t *testing.T) {
 
 	// start with allIn to jump through the first release
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Spec.Template.Values = &shipperv1.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
-	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Create(app)
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
 		t.Fatalf("could not create application %q: %q", appName, err)
 	}
@@ -320,14 +320,14 @@ func testRolloutVanguard(targetReplicas int, t *testing.T) {
 	f.checkPods(incumbentName, targetReplicas)
 
 	// Refetch so that the update has a fresh version to work with.
-	app, err = shipperClient.ShipperV1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
+	app, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("could not refetch app: %q", err)
 	}
 
 	app.Spec.Template.Strategy = &vanguard
 	app.Spec.Template.Chart.Version = "0.0.2"
-	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Update(app)
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Update(app)
 	if err != nil {
 		t.Fatalf("could not update application %q: %q", appName, err)
 	}
@@ -389,11 +389,11 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 	}()
 
 	app := newApplication(ns.GetName(), appName, &vanguard)
-	app.Spec.Template.Values = &shipperv1.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
-	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Create(app)
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
 		t.Fatalf("could not create application %q: %q", appName, err)
 	}
@@ -437,11 +437,11 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 
 	// start with allIn to jump through the first release
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Spec.Template.Values = &shipperv1.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
-	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Create(app)
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
 		t.Fatalf("could not create application %q: %q", appName, err)
 	}
@@ -452,14 +452,14 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 	f.checkPods(incumbentName, targetReplicas)
 
 	// Refetch so that the update has a fresh version to work with.
-	app, err = shipperClient.ShipperV1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
+	app, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("could not refetch app: %q", err)
 	}
 
 	app.Spec.Template.Strategy = &vanguard
 	app.Spec.Template.Chart.Version = "0.0.2"
-	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Update(app)
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Update(app)
 	if err != nil {
 		t.Fatalf("could not update application %q: %q", appName, err)
 	}
@@ -518,11 +518,11 @@ func TestNewApplicationAbort(t *testing.T) {
 	}()
 
 	app := newApplication(ns.GetName(), appName, &vanguard)
-	app.Spec.Template.Values = &shipperv1.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
-	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Create(app)
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
 		t.Fatalf("could not create application %q: %q", appName, err)
 	}
@@ -546,7 +546,7 @@ func TestNewApplicationAbort(t *testing.T) {
 
 	t.Logf("Preparing to remove the release %q", relName)
 
-	err = shipperClient.ShipperV1().Releases(ns.GetName()).Delete(relName, &metav1.DeleteOptions{})
+	err = shipperClient.ShipperV1alpha1().Releases(ns.GetName()).Delete(relName, &metav1.DeleteOptions{})
 	if err != nil {
 		t.Fatalf("failed to delete release %q", relName)
 	}
@@ -580,11 +580,11 @@ func TestRolloutAbort(t *testing.T) {
 
 	// start with allIn to jump through the first release
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Spec.Template.Values = &shipperv1.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
-	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Create(app)
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
 		t.Fatalf("could not create application %q: %q", appName, err)
 	}
@@ -595,14 +595,14 @@ func TestRolloutAbort(t *testing.T) {
 	f.checkPods(incumbentName, targetReplicas)
 
 	// Refetch so that the update has a fresh version to work with.
-	app, err = shipperClient.ShipperV1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
+	app, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("could not refetch app: %q", err)
 	}
 
 	app.Spec.Template.Strategy = &vanguard
 	app.Spec.Template.Chart.Version = "0.0.2"
-	_, err = shipperClient.ShipperV1().Applications(ns.GetName()).Update(app)
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Update(app)
 	if err != nil {
 		t.Fatalf("could not update application %q: %q", appName, err)
 	}
@@ -632,7 +632,7 @@ func TestRolloutAbort(t *testing.T) {
 		f.checkPods(incumbentName, int(expectedIncumbentCapacity))
 	}
 
-	err = shipperClient.ShipperV1().Releases(ns.GetName()).Delete(contenderName, &metav1.DeleteOptions{})
+	err = shipperClient.ShipperV1alpha1().Releases(ns.GetName()).Delete(contenderName, &metav1.DeleteOptions{})
 	if err != nil {
 		t.Fatalf("failed to remove the old release %q: %q", contenderName, err)
 	}
@@ -676,14 +676,14 @@ func newFixture(ns string, t *testing.T) *fixture {
 
 func (f *fixture) targetStep(step int, relName string) {
 	patch := fmt.Sprintf(`{"spec": {"targetStep": %d}}`, step)
-	_, err := shipperClient.ShipperV1().Releases(f.namespace).Patch(relName, types.MergePatchType, []byte(patch))
+	_, err := shipperClient.ShipperV1alpha1().Releases(f.namespace).Patch(relName, types.MergePatchType, []byte(patch))
 	if err != nil {
 		f.t.Fatalf("could not patch release with targetStep %v: %q", step, err)
 	}
 }
 
 func (f *fixture) checkPods(relName string, expectedCount int) {
-	selector := labels.Set{shipperv1.ReleaseLabel: relName}.AsSelector()
+	selector := labels.Set{shipper.ReleaseLabel: relName}.AsSelector()
 	podList, err := targetKubeClient.CoreV1().Pods(f.namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		f.t.Fatalf("could not list pods %q: %q", f.namespace, err)
@@ -707,14 +707,14 @@ func (f *fixture) checkPods(relName string, expectedCount int) {
 	}
 }
 
-func (f *fixture) waitForRelease(appName string, historyIndex int) *shipperv1.Release {
-	var newRelease *shipperv1.Release
+func (f *fixture) waitForRelease(appName string, historyIndex int) *shipper.Release {
+	var newRelease *shipper.Release
 	start := time.Now()
 	// Not logging because we poll pretty fast and that'd be a bunch of garbage to
 	// read through.
 	var state string
 	err := poll(globalTimeout, func() (bool, error) {
-		app, err := shipperClient.ShipperV1().Applications(f.namespace).Get(appName, metav1.GetOptions{})
+		app, err := shipperClient.ShipperV1alpha1().Applications(f.namespace).Get(appName, metav1.GetOptions{})
 		if err != nil {
 			f.t.Fatalf("failed to fetch app: %q", appName)
 		}
@@ -725,7 +725,7 @@ func (f *fixture) waitForRelease(appName string, historyIndex int) *shipperv1.Re
 		}
 
 		relName := app.Status.History[historyIndex]
-		rel, err := shipperClient.ShipperV1().Releases(f.namespace).Get(relName, metav1.GetOptions{})
+		rel, err := shipperClient.ShipperV1alpha1().Releases(f.namespace).Get(relName, metav1.GetOptions{})
 		if err != nil {
 			f.t.Fatalf("release which was in app history was not fetched: %q: %q", relName, err)
 		}
@@ -755,7 +755,7 @@ func (f *fixture) waitForReleaseStrategyState(waitingFor string, releaseName str
 				state = newState
 			}
 		}()
-		rel, err := shipperClient.ShipperV1().Releases(f.namespace).Get(releaseName, metav1.GetOptions{})
+		rel, err := shipperClient.ShipperV1alpha1().Releases(f.namespace).Get(releaseName, metav1.GetOptions{})
 		if err != nil {
 			f.t.Fatalf("failed to fetch release: %q: %q", releaseName, err)
 		}
@@ -773,18 +773,18 @@ func (f *fixture) waitForReleaseStrategyState(waitingFor string, releaseName str
 		condAchieved := false
 		switch waitingFor {
 		case "installation":
-			condAchieved = rel.Status.Strategy.State.WaitingForInstallation == shipperv1.StrategyStateTrue
+			condAchieved = rel.Status.Strategy.State.WaitingForInstallation == shipper.StrategyStateTrue
 		case "capacity":
-			condAchieved = rel.Status.Strategy.State.WaitingForCapacity == shipperv1.StrategyStateTrue
+			condAchieved = rel.Status.Strategy.State.WaitingForCapacity == shipper.StrategyStateTrue
 		case "traffic":
-			condAchieved = rel.Status.Strategy.State.WaitingForTraffic == shipperv1.StrategyStateTrue
+			condAchieved = rel.Status.Strategy.State.WaitingForTraffic == shipper.StrategyStateTrue
 		case "command":
-			condAchieved = rel.Status.Strategy.State.WaitingForCommand == shipperv1.StrategyStateTrue
+			condAchieved = rel.Status.Strategy.State.WaitingForCommand == shipper.StrategyStateTrue
 		case "none":
-			condAchieved = rel.Status.Strategy.State.WaitingForInstallation == shipperv1.StrategyStateFalse &&
-				rel.Status.Strategy.State.WaitingForCapacity == shipperv1.StrategyStateFalse &&
-				rel.Status.Strategy.State.WaitingForTraffic == shipperv1.StrategyStateFalse &&
-				rel.Status.Strategy.State.WaitingForCommand == shipperv1.StrategyStateFalse
+			condAchieved = rel.Status.Strategy.State.WaitingForInstallation == shipper.StrategyStateFalse &&
+				rel.Status.Strategy.State.WaitingForCapacity == shipper.StrategyStateFalse &&
+				rel.Status.Strategy.State.WaitingForTraffic == shipper.StrategyStateFalse &&
+				rel.Status.Strategy.State.WaitingForCommand == shipper.StrategyStateFalse
 
 		}
 
@@ -815,7 +815,7 @@ func (f *fixture) waitForReleaseStrategyState(waitingFor string, releaseName str
 func (f *fixture) waitForComplete(releaseName string) {
 	start := time.Now()
 	err := poll(globalTimeout, func() (bool, error) {
-		rel, err := shipperClient.ShipperV1().Releases(f.namespace).Get(releaseName, metav1.GetOptions{})
+		rel, err := shipperClient.ShipperV1alpha1().Releases(f.namespace).Get(releaseName, metav1.GetOptions{})
 		if err != nil {
 			f.t.Fatalf("failed to fetch release: %q", releaseName)
 		}
@@ -937,12 +937,12 @@ func buildManagementClients(masterURL, kubeconfig string) (kubernetes.Interface,
 }
 
 func buildTargetClient(clusterName string) kubernetes.Interface {
-	secret, err := kubeClient.CoreV1().Secrets(shipperv1.ShipperNamespace).Get(clusterName, metav1.GetOptions{})
+	secret, err := kubeClient.CoreV1().Secrets(shipper.ShipperNamespace).Get(clusterName, metav1.GetOptions{})
 	if err != nil {
 		glog.Fatalf("could not build target kubeclient for cluster %q: problem fetching secret: %q", clusterName, err)
 	}
 
-	cluster, err := shipperClient.ShipperV1().Clusters().Get(clusterName, metav1.GetOptions{})
+	cluster, err := shipperClient.ShipperV1alpha1().Clusters().Get(clusterName, metav1.GetOptions{})
 	if err != nil {
 		glog.Fatalf("could not build target kubeclient for cluster %q: problem fetching cluster: %q", clusterName, err)
 	}
@@ -962,12 +962,12 @@ func buildTargetClient(clusterName string) kubernetes.Interface {
 	config.CertData = secret.Data["tls.crt"]
 	config.KeyData = secret.Data["tls.key"]
 
-	if encodedInsecureSkipTlsVerify, ok := secret.Annotations[shipperv1.SecretClusterSkipTlsVerifyAnnotation]; ok {
+	if encodedInsecureSkipTlsVerify, ok := secret.Annotations[shipper.SecretClusterSkipTlsVerifyAnnotation]; ok {
 		if insecureSkipTlsVerify, err := strconv.ParseBool(encodedInsecureSkipTlsVerify); err == nil {
-			glog.Infof("found %q annotation with value %q", shipperv1.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
+			glog.Infof("found %q annotation with value %q", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
 			config.Insecure = insecureSkipTlsVerify
 		} else {
-			glog.Infof("found %q annotation with value %q, failed to decode a bool from it, ignoring it", shipperv1.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
+			glog.Infof("found %q annotation with value %q, failed to decode a bool from it, ignoring it", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
 		}
 	}
 
@@ -978,23 +978,23 @@ func buildTargetClient(clusterName string) kubernetes.Interface {
 	return client
 }
 
-func newApplication(namespace, name string, strategy *shipperv1.RolloutStrategy) *shipperv1.Application {
-	return &shipperv1.Application{
+func newApplication(namespace, name string, strategy *shipper.RolloutStrategy) *shipper.Application {
+	return &shipper.Application{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
-		Spec: shipperv1.ApplicationSpec{
-			Template: shipperv1.ReleaseEnvironment{
-				Chart: shipperv1.Chart{
+		Spec: shipper.ApplicationSpec{
+			Template: shipper.ReleaseEnvironment{
+				Chart: shipper.Chart{
 					RepoURL: chartRepo,
 				},
 				Strategy: strategy,
 				// TODO(btyler): implement enough cluster selector stuff to only pick the
 				// target cluster we care about (or just panic if that cluster isn't
 				// listed).
-				ClusterRequirements: shipperv1.ClusterRequirements{Regions: []shipperv1.RegionRequirement{{Name: regionFromMinikubePerlScript}}},
-				Values:              &shipperv1.ChartValues{},
+				ClusterRequirements: shipper.ClusterRequirements{Regions: []shipper.RegionRequirement{{Name: regionFromMinikubePerlScript}}},
+				Values:              &shipper.ChartValues{},
 			},
 		},
 	}
