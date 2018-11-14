@@ -57,7 +57,7 @@ func TestCreateFirstRelease(t *testing.T) {
 	f := newFixture(t)
 	app := newApplication(testAppName)
 	app.Spec.Template.Chart.RepoURL = "127.0.0.1"
-
+	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
 	envHash := hashReleaseEnvironment(app.Spec.Template)
 	expectedRelName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
 
@@ -93,6 +93,7 @@ func TestCreateFirstRelease(t *testing.T) {
 	expectedRelease.Labels[shipperv1.ReleaseEnvironmentHashLabel] = envHash
 	expectedRelease.Annotations[shipperv1.ReleaseTemplateIterationAnnotation] = "0"
 	expectedRelease.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
+	expectedRelease.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
 
 	f.expectReleaseCreate(expectedRelease)
 	f.expectApplicationUpdate(expectedApp)
@@ -595,9 +596,11 @@ func TestDeletingAbortedReleases(t *testing.T) {
 func newRelease(releaseName string, app *shipperv1.Application) *shipperv1.Release {
 	return &shipperv1.Release{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        releaseName,
-			Namespace:   app.GetNamespace(),
-			Annotations: map[string]string{},
+			Name:      releaseName,
+			Namespace: app.GetNamespace(),
+			Annotations: map[string]string{
+				shipperv1.AppHighestObservedGenerationAnnotation: app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation],
+			},
 			Labels: map[string]string{
 				shipperv1.ReleaseLabel: releaseName,
 				shipperv1.AppLabel:     app.GetName(),
