@@ -4,11 +4,11 @@ import (
 	"strconv"
 
 	"github.com/bookingcom/shipper/pkg/errors"
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
-func GetGeneration(release *shipperv1.Release) (int, error) {
-	rawGen, ok := release.GetAnnotations()[shipperv1.ReleaseGenerationAnnotation]
+func GetGeneration(release *shipper.Release) (int, error) {
+	rawGen, ok := release.GetAnnotations()[shipper.ReleaseGenerationAnnotation]
 	if !ok {
 		return 0, errors.NewMissingGenerationAnnotationError(release.Name)
 	}
@@ -20,10 +20,10 @@ func GetGeneration(release *shipperv1.Release) (int, error) {
 	return generation, nil
 }
 
-func SetGeneration(release *shipperv1.Release, generation int) {
-	release.Annotations[shipperv1.ReleaseGenerationAnnotation] = strconv.Itoa(generation)
+func SetGeneration(release *shipper.Release, generation int) {
+	release.Annotations[shipper.ReleaseGenerationAnnotation] = strconv.Itoa(generation)
 }
 
-func SetIteration(release *shipperv1.Release, iteration int) {
-	release.Annotations[shipperv1.ReleaseTemplateIterationAnnotation] = strconv.Itoa(iteration)
+func SetIteration(release *shipper.Release, iteration int) {
+	release.Annotations[shipper.ReleaseTemplateIterationAnnotation] = strconv.Itoa(iteration)
 }

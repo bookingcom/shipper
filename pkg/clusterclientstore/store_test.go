@@ -14,7 +14,7 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore/cache"
@@ -272,8 +272,8 @@ func (f *fixture) newStore() (*Store, kubeinformers.SharedInformerFactory, shipp
 			return kubernetes.NewForConfig(config)
 		},
 		kubeInformerFactory.Core().V1().Secrets(),
-		shipperInformerFactory.Shipper().V1().Clusters(),
-		shipperv1.ShipperNamespace,
+		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
+		shipper.ShipperNamespace,
 		f.restTimeout,
 	)
 
@@ -285,11 +285,11 @@ func (f *fixture) addSecret(secret *corev1.Secret) {
 }
 
 func (f *fixture) addCluster(name string) {
-	cluster := &shipperv1.Cluster{
+	cluster := &shipper.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
-		Spec: shipperv1.ClusterSpec{
+		Spec: shipper.ClusterSpec{
 			Capabilities: []string{},
 			Region:       "eu",
 			APIMaster:    testClusterHost,
@@ -311,10 +311,10 @@ func newSecret(name string, crt, key, checksum []byte) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: shipperv1.ShipperNamespace,
+			Namespace: shipper.ShipperNamespace,
 			Annotations: map[string]string{
-				shipperv1.SecretClusterNameAnnotation: name,
-				shipperv1.SecretChecksumAnnotation:    string(checksum),
+				shipper.SecretClusterNameAnnotation: name,
+				shipper.SecretChecksumAnnotation:    string(checksum),
 			},
 		},
 		Data: map[string][]byte{

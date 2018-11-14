@@ -3,10 +3,10 @@ package release
 import (
 	"fmt"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
-func ApplicationNameForRelease(rel *shipperv1.Release) (string, error) {
+func ApplicationNameForRelease(rel *shipper.Release) (string, error) {
 	if len(rel.OwnerReferences) != 1 {
 		return "", fmt.Errorf("release %q has a weird number of owners: %d", rel.Name, len(rel.OwnerReferences))
 	}

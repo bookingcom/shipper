@@ -18,17 +18,17 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 )
 
 const AgentName = "janitor-controller"
 
 type Controller struct {
-	shipperClientset   shipper.Interface
+	shipperClientset   shipperclient.Interface
 	workqueue          workqueue.RateLimitingInterface
 	clusterClientStore clusterclientstore.Interface
 	recorder           record.EventRecorder
@@ -42,13 +42,13 @@ const AnchorSuffix = "-anchor"
 const InstallationTargetUID = "InstallationTargetUID"
 
 func NewController(
-	shipperclientset shipper.Interface,
+	shipperclientset shipperclient.Interface,
 	shipperInformerFactory shipperinformers.SharedInformerFactory,
 	store clusterclientstore.Interface,
 	recorder record.EventRecorder,
 ) *Controller {
 
-	itInformer := shipperInformerFactory.Shipper().V1().InstallationTargets()
+	itInformer := shipperInformerFactory.Shipper().V1alpha1().InstallationTargets()
 
 	controller := &Controller{
 		recorder:           recorder,
@@ -72,8 +72,8 @@ func NewController(
 				runtime.HandleError(err)
 				return
 			} else {
-				it := obj.(*shipperv1.InstallationTarget)
-				releaseName := it.GetLabels()[shipperv1.ReleaseLabel]
+				it := obj.(*shipper.InstallationTarget)
+				releaseName := it.GetLabels()[shipper.ReleaseLabel]
 				wi := &InstallationTargetWorkItem{
 					ObjectMeta: *it.ObjectMeta.DeepCopy(),
 					Key:        key,
@@ -98,14 +98,14 @@ func NewController(
 	store.AddEventHandlerCallback(func(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
 		informerFactory.Core().V1().ConfigMaps().Informer().AddEventHandler(
 			cache.FilteringResourceEventHandler{
-				// Anchor objects are basically config maps with the shipperV1.ReleaseLabel
+				// Anchor objects are basically config maps with the shipper.ReleaseLabel
 				// label, so we want to filter to this constraint. Additionally we check
 				// whether the config map's Data field has the InstallationTargetUID key,
 				// ignoring those config maps that don't have it.
 				FilterFunc: func(obj interface{}) bool {
 					cm := obj.(*corev1.ConfigMap)
 					hasRightName := strings.HasSuffix(cm.GetName(), AnchorSuffix)
-					_, hasReleaseLabel := cm.GetLabels()[shipperv1.ReleaseLabel]
+					_, hasReleaseLabel := cm.GetLabels()[shipper.ReleaseLabel]
 					_, hasUID := cm.Data[InstallationTargetUID]
 					if hasRightName && hasReleaseLabel && !hasUID {
 						controller.recorder.Eventf(cm,
@@ -116,7 +116,7 @@ func NewController(
 					return hasRightName && hasReleaseLabel && hasUID
 				},
 				Handler: cache.ResourceEventHandlerFuncs{
-					// Enqueue all the config maps that have a shipperV1.ReleaseLabel,
+					// Enqueue all the config maps that have a shipper.ReleaseLabel,
 					// extracting all the information required for the worker to, well, work.
 					UpdateFunc: func(oldObj, newObj interface{}) {
 						cm := newObj.(*corev1.ConfigMap)
@@ -128,10 +128,10 @@ func NewController(
 							return
 						} else {
 							// In theory, if we are in this block it means that the
-							// object has a shipperV1.ReleaseLabel label *and* the
+							// object has a shipper.ReleaseLabel label *and* the
 							// InstallationTargetUID key in Data, so it should be
 							// fine to just get them both.
-							releaseName := cm.GetLabels()[shipperv1.ReleaseLabel]
+							releaseName := cm.GetLabels()[shipper.ReleaseLabel]
 							uid := cm.Data[InstallationTargetUID]
 							wi := &AnchorWorkItem{
 								ObjectMeta:            *cm.ObjectMeta.DeepCopy(),
@@ -139,8 +139,8 @@ func NewController(
 								Name:                  name,
 								ClusterName:           clusterName,
 								InstallationTargetUID: uid,
-								Key:         key,
-								ReleaseName: releaseName,
+								Key:                   key,
+								ReleaseName:           releaseName,
 							}
 							controller.workqueue.Add(wi)
 						}
@@ -313,7 +313,7 @@ func (c *Controller) syncInstallationTarget(item *InstallationTargetWorkItem) er
 	for _, clusterName := range item.Clusters {
 		wg.Add(1)
 		go func(clusterName string) {
-			installationTarget := &shipperv1.InstallationTarget{ObjectMeta: item.ObjectMeta}
+			installationTarget := &shipper.InstallationTarget{ObjectMeta: item.ObjectMeta}
 			if ok, err := c.removeAnchor(clusterName, item.Namespace, item.AnchorName); err != nil {
 				err.Broadcast(installationTarget, c.recorder)
 			} else if ok {

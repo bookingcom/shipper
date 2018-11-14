@@ -9,7 +9,7 @@ import (
 	kubecache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 func (s *Store) clusterWorker() {
@@ -32,8 +32,8 @@ func (s *Store) bindEventHandlers() {
 			}
 			// This is a bit aggressive, but I think it makes sense; otherwise we get
 			// logs about the service account token.
-			_, ok = secret.GetAnnotations()[shipperv1.SecretChecksumAnnotation]
-			return ok && secret.Namespace == shipperv1.ShipperNamespace
+			_, ok = secret.GetAnnotations()[shipper.SecretChecksumAnnotation]
+			return ok && secret.Namespace == shipper.ShipperNamespace
 		},
 		Handler: kubecache.ResourceEventHandlerFuncs{
 			AddFunc: enqueueSecret,
@@ -66,14 +66,14 @@ func (s *Store) bindEventHandlers() {
 			enqueueCluster(new)
 		},
 		DeleteFunc: func(obj interface{}) {
-			cluster, ok := obj.(*shipperv1.Cluster)
+			cluster, ok := obj.(*shipper.Cluster)
 			if !ok {
 				tombstone, ok := obj.(kubecache.DeletedFinalStateUnknown)
 				if !ok {
 					runtime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
 					return
 				}
-				cluster, ok = tombstone.Obj.(*shipperv1.Cluster)
+				cluster, ok = tombstone.Obj.(*shipper.Cluster)
 				if !ok {
 					runtime.HandleError(fmt.Errorf("Tombstone contained object that is not a Cluster %#v", obj))
 					return

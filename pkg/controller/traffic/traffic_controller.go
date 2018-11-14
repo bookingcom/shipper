@@ -18,10 +18,10 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
-	shipper "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/conditions"
 )
@@ -38,7 +38,7 @@ const (
 
 // Controller is the controller implementation for TrafficTarget resources.
 type Controller struct {
-	shipperclientset     shipper.Interface
+	shipperclientset     shipperclient.Interface
 	clusterClientStore   *clusterclientstore.Store
 	trafficTargetsLister listers.TrafficTargetLister
 	trafficTargetsSynced cache.InformerSynced
@@ -48,14 +48,14 @@ type Controller struct {
 
 // NewController returns a new TrafficTarget controller.
 func NewController(
-	shipperclientset shipper.Interface,
+	shipperclientset shipperclient.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
 	store *clusterclientstore.Store,
 	recorder record.EventRecorder,
 ) *Controller {
 
 	// Obtain references to shared index informers for the TrafficTarget type.
-	trafficTargetInformer := shipperInformerFactory.Shipper().V1().TrafficTargets()
+	trafficTargetInformer := shipperInformerFactory.Shipper().V1alpha1().TrafficTargets()
 
 	controller := &Controller{
 		shipperclientset:   shipperclientset,
@@ -173,25 +173,25 @@ func (c *Controller) syncHandler(key string) bool {
 		return true
 	}
 
-	syncingReleaseName, ok := syncingTT.Labels[shipperv1.ReleaseLabel]
+	syncingReleaseName, ok := syncingTT.Labels[shipper.ReleaseLabel]
 	if !ok {
 		// This needs human intervention or a Shipper fix so not retrying here.
 		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will not retry): no %q label",
-			key, shipperv1.ReleaseLabel))
+			key, shipper.ReleaseLabel))
 		// TODO(asurikov): log an event.
 		return false
 	}
 
-	appName, ok := syncingTT.Labels[shipperv1.AppLabel]
+	appName, ok := syncingTT.Labels[shipper.AppLabel]
 	if !ok {
 		// This needs human intervention or a Shipper fix so not retrying here.
 		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will not retry): no %q label",
-			key, shipperv1.AppLabel))
+			key, shipper.AppLabel))
 		// TODO(asurikov): log an event.
 		return false
 	}
 
-	appSelector := labels.Set{shipperv1.AppLabel: appName}.AsSelector()
+	appSelector := labels.Set{shipper.AppLabel: appName}.AsSelector()
 	list, err := c.trafficTargetsLister.TrafficTargets(namespace).List(appSelector)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will retry): %s", key, err))
@@ -207,12 +207,12 @@ func (c *Controller) syncHandler(key string) bool {
 		return false
 	}
 
-	var statuses []*shipperv1.ClusterTrafficStatus
+	var statuses []*shipper.ClusterTrafficStatus
 	for _, cluster := range shifter.Clusters() {
 		var achievedReleaseWeight uint32
 		var achievedWeights map[string]uint32
 		var clientset kubernetes.Interface
-		var clusterConditions []shipperv1.ClusterTrafficCondition
+		var clusterConditions []shipper.ClusterTrafficCondition
 		var errs []error
 		var informerFactory kubeinformers.SharedInformerFactory
 
@@ -222,7 +222,7 @@ func (c *Controller) syncHandler(key string) bool {
 			}
 		}
 
-		clusterStatus := &shipperv1.ClusterTrafficStatus{
+		clusterStatus := &shipper.ClusterTrafficStatus{
 			Name:       cluster,
 			Conditions: clusterConditions,
 		}
@@ -233,13 +233,13 @@ func (c *Controller) syncHandler(key string) bool {
 		if err == nil {
 			clusterStatus.Conditions = conditions.SetTrafficCondition(
 				clusterStatus.Conditions,
-				shipperv1.ClusterConditionTypeOperational,
+				shipper.ClusterConditionTypeOperational,
 				corev1.ConditionTrue,
 				"", "")
 		} else {
 			clusterStatus.Conditions = conditions.SetTrafficCondition(
 				clusterStatus.Conditions,
-				shipperv1.ClusterConditionTypeOperational,
+				shipper.ClusterConditionTypeOperational,
 				corev1.ConditionFalse,
 				conditions.ServerError,
 				err.Error())
@@ -251,14 +251,14 @@ func (c *Controller) syncHandler(key string) bool {
 		if err == nil {
 			clusterStatus.Conditions = conditions.SetTrafficCondition(
 				clusterStatus.Conditions,
-				shipperv1.ClusterConditionTypeOperational,
+				shipper.ClusterConditionTypeOperational,
 				corev1.ConditionTrue,
 				"", "")
 
 		} else {
 			clusterStatus.Conditions = conditions.SetTrafficCondition(
 				clusterStatus.Conditions,
-				shipperv1.ClusterConditionTypeOperational,
+				shipper.ClusterConditionTypeOperational,
 				corev1.ConditionFalse,
 				conditions.ServerError,
 				err.Error())
@@ -275,28 +275,28 @@ func (c *Controller) syncHandler(key string) bool {
 			case TargetClusterServiceError:
 				clusterStatus.Conditions = conditions.SetTrafficCondition(
 					clusterStatus.Conditions,
-					shipperv1.ClusterConditionTypeReady,
+					shipper.ClusterConditionTypeReady,
 					corev1.ConditionFalse,
 					conditions.MissingService,
 					err.Error())
 			case TargetClusterPodListingError, TargetClusterTrafficError:
 				clusterStatus.Conditions = conditions.SetTrafficCondition(
 					clusterStatus.Conditions,
-					shipperv1.ClusterConditionTypeReady,
+					shipper.ClusterConditionTypeReady,
 					corev1.ConditionFalse,
 					conditions.ServerError,
 					err.Error())
 			case TargetClusterMathError:
 				clusterStatus.Conditions = conditions.SetTrafficCondition(
 					clusterStatus.Conditions,
-					shipperv1.ClusterConditionTypeReady,
+					shipper.ClusterConditionTypeReady,
 					corev1.ConditionFalse,
 					conditions.InternalError,
 					err.Error())
 			default:
 				clusterStatus.Conditions = conditions.SetTrafficCondition(
 					clusterStatus.Conditions,
-					shipperv1.ClusterConditionTypeReady,
+					shipper.ClusterConditionTypeReady,
 					corev1.ConditionFalse,
 					conditions.UnknownError,
 					err.Error())
@@ -309,7 +309,7 @@ func (c *Controller) syncHandler(key string) bool {
 			if len(errs) == 0 {
 				clusterStatus.Conditions = conditions.SetTrafficCondition(
 					clusterStatus.Conditions,
-					shipperv1.ClusterConditionTypeReady,
+					shipper.ClusterConditionTypeReady,
 					corev1.ConditionTrue,
 					"", "")
 
@@ -324,7 +324,7 @@ func (c *Controller) syncHandler(key string) bool {
 
 				clusterStatus.Conditions = conditions.SetTrafficCondition(
 					clusterStatus.Conditions,
-					shipperv1.ClusterConditionTypeReady,
+					shipper.ClusterConditionTypeReady,
 					corev1.ConditionFalse,
 					conditions.PodsNotReady,
 					clusterStatus.Status)
@@ -343,7 +343,7 @@ func (c *Controller) syncHandler(key string) bool {
 		specClusters[specCluster.Name] = struct{}{}
 	}
 
-	filteredStatuses := make([]*shipperv1.ClusterTrafficStatus, 0, len(statuses))
+	filteredStatuses := make([]*shipper.ClusterTrafficStatus, 0, len(statuses))
 	for _, statusCluster := range statuses {
 		_, ok := specClusters[statusCluster.Name]
 		if ok {
@@ -352,11 +352,11 @@ func (c *Controller) syncHandler(key string) bool {
 	}
 
 	ttCopy := syncingTT.DeepCopy()
-	ttCopy.Status = shipperv1.TrafficTargetStatus{
+	ttCopy.Status = shipper.TrafficTargetStatus{
 		Clusters: filteredStatuses,
 	}
 
-	_, err = c.shipperclientset.ShipperV1().TrafficTargets(namespace).Update(ttCopy)
+	_, err = c.shipperclientset.ShipperV1alpha1().TrafficTargets(namespace).Update(ttCopy)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will retry): %s", key, err))
 		return true

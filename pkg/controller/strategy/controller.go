@@ -17,10 +17,10 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	"github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1"
+	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
@@ -60,19 +60,19 @@ func NewController(
 	dynamicClientPool dynamic.ClientPool,
 	recorder record.EventRecorder,
 ) *Controller {
-	releaseInformer := informerFactory.Shipper().V1().Releases()
-	capacityTargetInformer := informerFactory.Shipper().V1().CapacityTargets()
-	trafficTargetInformer := informerFactory.Shipper().V1().TrafficTargets()
-	installationTargetInformer := informerFactory.Shipper().V1().InstallationTargets()
+	releaseInformer := informerFactory.Shipper().V1alpha1().Releases()
+	capacityTargetInformer := informerFactory.Shipper().V1alpha1().CapacityTargets()
+	trafficTargetInformer := informerFactory.Shipper().V1alpha1().TrafficTargets()
+	installationTargetInformer := informerFactory.Shipper().V1alpha1().InstallationTargets()
 
 	controller := &Controller{
 		clientset:                 shipperClient,
-		capacityTargetsLister:     informerFactory.Shipper().V1().CapacityTargets().Lister(),
-		installationTargetsLister: informerFactory.Shipper().V1().InstallationTargets().Lister(),
-		trafficTargetsLister:      informerFactory.Shipper().V1().TrafficTargets().Lister(),
-		applicationsLister:        informerFactory.Shipper().V1().Applications().Lister(),
+		capacityTargetsLister:     informerFactory.Shipper().V1alpha1().CapacityTargets().Lister(),
+		installationTargetsLister: informerFactory.Shipper().V1alpha1().InstallationTargets().Lister(),
+		trafficTargetsLister:      informerFactory.Shipper().V1alpha1().TrafficTargets().Lister(),
+		applicationsLister:        informerFactory.Shipper().V1alpha1().Applications().Lister(),
 		releasesLister:            releaseInformer.Lister(),
-		applicationsSynced:        informerFactory.Shipper().V1().Applications().Informer().HasSynced,
+		applicationsSynced:        informerFactory.Shipper().V1alpha1().Applications().Informer().HasSynced,
 		releasesSynced:            releaseInformer.Informer().HasSynced,
 		capacityTargetsSynced:     capacityTargetInformer.Informer().HasSynced,
 		trafficTargetsSynced:      trafficTargetInformer.Informer().HasSynced,
@@ -122,9 +122,9 @@ func NewController(
 	return controller
 }
 
-func (c *Controller) sortedReleasesForApp(app *v1.Application) ([]*v1.Release, error) {
+func (c *Controller) sortedReleasesForApp(app *shipper.Application) ([]*shipper.Release, error) {
 	selector := labels.Set{
-		v1.AppLabel: app.GetName(),
+		shipper.AppLabel: app.GetName(),
 	}.AsSelector()
 
 	releases, err := c.releasesLister.Releases(app.GetNamespace()).List(selector)
@@ -140,7 +140,7 @@ func (c *Controller) sortedReleasesForApp(app *v1.Application) ([]*v1.Release, e
 	return sorted, nil
 }
 
-func (c *Controller) getWorkingReleasePair(app *v1.Application) (*v1.Release, *v1.Release, error) {
+func (c *Controller) getWorkingReleasePair(app *shipper.Application) (*shipper.Release, *shipper.Release, error) {
 	appReleases, err := c.sortedReleasesForApp(app)
 	if err != nil {
 		return nil, nil, err
@@ -155,7 +155,7 @@ func (c *Controller) getWorkingReleasePair(app *v1.Application) (*v1.Release, *v
 
 	// Walk backwards until we find a scheduled release. There may be pending
 	// releases ahead of the actual contender, that's not we're looking for.
-	var contender *v1.Release
+	var contender *shipper.Release
 	for i := len(appReleases) - 1; i >= 0; i-- {
 		if releaseutil.ReleaseScheduled(appReleases[i]) {
 			contender = appReleases[i]
@@ -168,7 +168,7 @@ func (c *Controller) getWorkingReleasePair(app *v1.Application) (*v1.Release, *v
 			shippercontroller.MetaKey(app))
 	}
 
-	var incumbent *v1.Release
+	var incumbent *shipper.Release
 	// Walk backwards until we find an installed release that isn't the head of
 	// history. Ffor releases A -> B -> C, if B was never finished this allows C to
 	// ignore it and let it get deleted so the transition is A->C.
@@ -183,7 +183,7 @@ func (c *Controller) getWorkingReleasePair(app *v1.Application) (*v1.Release, *v
 	return incumbent, contender, nil
 }
 
-func (c *Controller) getAssociatedApplicationKey(rel *v1.Release) (string, error) {
+func (c *Controller) getAssociatedApplicationKey(rel *shipper.Release) (string, error) {
 	if n := len(rel.OwnerReferences); n != 1 {
 		return "", shippercontroller.NewMultipleOwnerReferencesError(shippercontroller.MetaKey(rel), n)
 	}
@@ -441,7 +441,7 @@ func (c *Controller) clientForGroupVersionKind(
 	return client.Resource(resource, ns), nil
 }
 
-func (c *Controller) buildReleaseInfo(release *v1.Release) (*releaseInfo, error) {
+func (c *Controller) buildReleaseInfo(release *shipper.Release) (*releaseInfo, error) {
 	installationTarget, err := c.installationTargetsLister.InstallationTargets(release.Namespace).Get(release.Name)
 	if err != nil {
 		return nil, NewRetrievingInstallationTargetForReleaseError(shippercontroller.MetaKey(release), err)
@@ -465,7 +465,7 @@ func (c *Controller) buildReleaseInfo(release *v1.Release) (*releaseInfo, error)
 	}, nil
 }
 
-func (c *Controller) buildExecutor(incumbentRelease, contenderRelease *v1.Release, recorder record.EventRecorder) (*Executor, error) {
+func (c *Controller) buildExecutor(incumbentRelease, contenderRelease *shipper.Release, recorder record.EventRecorder) (*Executor, error) {
 	if !releaseutil.ReleaseScheduled(contenderRelease) {
 		return nil, NewNotWorkingOnStrategyError(shippercontroller.MetaKey(contenderRelease))
 	}
@@ -500,9 +500,9 @@ func (c *Controller) buildExecutor(incumbentRelease, contenderRelease *v1.Releas
 }
 
 func (c *Controller) enqueueInstallationTarget(obj interface{}) {
-	it, ok := obj.(*v1.InstallationTarget)
+	it, ok := obj.(*shipper.InstallationTarget)
 	if !ok {
-		runtime.HandleError(fmt.Errorf("not a shipperv1.InstallationTarget: %#v", obj))
+		runtime.HandleError(fmt.Errorf("not a shipper.InstallationTarget: %#v", obj))
 		return
 	}
 
@@ -516,9 +516,9 @@ func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 }
 
 func (c *Controller) enqueueTrafficTarget(obj interface{}) {
-	tt, ok := obj.(*v1.TrafficTarget)
+	tt, ok := obj.(*shipper.TrafficTarget)
 	if !ok {
-		runtime.HandleError(fmt.Errorf("not a shipperv1.TrafficTarget: %#v", obj))
+		runtime.HandleError(fmt.Errorf("not a shipper.TrafficTarget: %#v", obj))
 		return
 	}
 
@@ -532,9 +532,9 @@ func (c *Controller) enqueueTrafficTarget(obj interface{}) {
 }
 
 func (c *Controller) enqueueCapacityTarget(obj interface{}) {
-	ct, ok := obj.(*v1.CapacityTarget)
+	ct, ok := obj.(*shipper.CapacityTarget)
 	if !ok {
-		runtime.HandleError(fmt.Errorf("not a shipperv1.CapacityTarget: %#v", obj))
+		runtime.HandleError(fmt.Errorf("not a shipper.CapacityTarget: %#v", obj))
 		return
 	}
 
@@ -548,9 +548,9 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 }
 
 func (c *Controller) enqueueRelease(obj interface{}) {
-	rel, ok := obj.(*v1.Release)
+	rel, ok := obj.(*shipper.Release)
 	if !ok {
-		runtime.HandleError(fmt.Errorf("not a shipperv1.Release: %#v", obj))
+		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", obj))
 		return
 	}
 

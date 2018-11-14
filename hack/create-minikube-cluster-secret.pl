@@ -96,7 +96,7 @@ metadata:
     shipper.booking.com/cluster-secret.checksum: some_checksum_hash
 type: Opaque
 ---
-apiVersion: shipper.booking.com/v1
+apiVersion: shipper.booking.com/v1alpha1
 kind: Cluster
 metadata:
   name: %s

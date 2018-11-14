@@ -10,7 +10,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
-	shipperv1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
@@ -137,7 +137,7 @@ func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
 		Key:         key,
 		Name:        configMap.Name,
 		Namespace:   configMap.GetNamespace(),
-		ReleaseName: configMap.GetLabels()[shipperv1.ReleaseLabel],
+		ReleaseName: configMap.GetLabels()[shipper.ReleaseLabel],
 	}
 
 	// Execute c.syncAnchor() here since I couldn't find an API to trigger the
@@ -208,7 +208,7 @@ func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
 		Key:         key,
 		Name:        configMap.GetName(),
 		Namespace:   configMap.GetNamespace(),
-		ReleaseName: configMap.GetLabels()[shipperv1.ReleaseLabel],
+		ReleaseName: configMap.GetLabels()[shipper.ReleaseLabel],
 	}
 
 	// Execute c.syncAnchor() here since I couldn't find an API to trigger the
@@ -279,7 +279,7 @@ func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
 		Key:         key,
 		Name:        configMap.Name,
 		Namespace:   configMap.GetNamespace(),
-		ReleaseName: configMap.GetLabels()[shipperv1.ReleaseLabel],
+		ReleaseName: configMap.GetLabels()[shipper.ReleaseLabel],
 	}
 
 	// Execute c.syncAnchor() here since I couldn't find an API to trigger the
