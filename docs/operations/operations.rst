@@ -4,8 +4,9 @@ Operations and administration
 =============================
 
 .. toctree::
-    :maxdepth: 2
+    :maxdepth: 1
 
     shipperctl
     deployment
+    cicd
     troubleshooting

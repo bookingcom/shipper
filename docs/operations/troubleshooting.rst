@@ -3,6 +3,11 @@
 Troubleshooting Shipper
 =======================
 
+Prerequisites
+-------------
+
+To troubleshoot deployments effectively you need to be familiar with `core Kubernetes <https://kubernetes.io/docs/concepts/>`_) and Shipper concepts (*very briefly* explained below) and be comfortable running `kubectl` commands.
+
 Fundamentals
 ------------
 
@@ -18,11 +23,12 @@ Shipper objects form a hierarchy:
     CapacityTarget
     TrafficTarget
 
-You already know Applications and Releases, but there's more. Below Release
-you have what we call "target objects". Each represents an important chunk of
-work we do when rolling out:
+You already know Applications and Releases, but there's more. Below Release you
+have what we call "target objects". Each represents an important chunk of work
+we do when rolling out:
 
 .. list-table::
+    :widths: 1 1 98
     :header-rows: 1
 
     * - Kind
@@ -43,25 +49,24 @@ The list is ordered (e.g. we can't manipulate traffic before there are pods).
 The universal troubleshooting algorithm
 ---------------------------------------
 
-Shipper is a fairly complex system that runs on top of an even more complex
-one. Things can fail in many different way. It's not really feasible for us
-to list all the possible problems and solutions for them. Instead, we'll give
-you a rough algorithm that should help you deal with commonly encountered
-problems.
+Shipper is a fairly complex system that runs on top of an even more complex one.
+Things can fail in many different way. It's not really feasible for us to list
+all the possible problems and solutions for them. Instead, we'll give you a
+rough algorithm that should help you deal with commonly encountered problems.
 
 To summarise, the algorithm is roughly:
 
 1. Find what stage you're at by looking at Release conditions and state
-1. Inspect the corresponding target object's conditions
-1. Act accordingly
+2. Inspect the corresponding target object's conditions
+3. Act accordingly
 
 In the next sections we'll explain in more detail how to do that.
 
 Finding where you are
 ~~~~~~~~~~~~~~~~~~~~~
 
-Before we attempt to fix anything we need to make sure we know where we are
-in the rollout process. The starting point is almost always looking at your
+Before we attempt to fix anything we need to make sure we know where we are in
+the rollout process. The starting point is almost always looking at your
 Release's status:
 
 .. code-block:: shell
@@ -91,12 +96,10 @@ Release's status:
           Waiting For Traffic:       False
     ...
 
-We already looked at `status.strategy.status.waitingForCommand` but there are
-more fields there: one for every type of target objects. If your rollout
-isn't finished and not waiting for input, these fields tell you which stage
-you're at.
+We already looked at `status.strategy.status.waitingForCommand` but there are more fields there: one for every type of target objects. If your rollout isn't finished and not waiting for input, these fields tell you which stage you're at.
 
 .. list-table::
+    :widths: 25 75
     :header-rows: 1
 
     * - Field
@@ -106,12 +109,14 @@ you're at.
     * - ``waitingForCapacity``
       - Waiting for the contender to scale up and/or the incumbent to scale down
     * - ``waitingForTraffic``
-      - Waiting for the contender traffic to increase and/or the incumbent to decrease
+      - Waiting for the contender traffic to increase and/or the incumbent to
+        decrease
 
 Release conditions and strategy conditions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
+    :widths: 25 75
     :header-rows: 1
 
     * - Category
@@ -119,19 +124,14 @@ Release conditions and strategy conditions
     * - Object conditions
       - Conditions that apply to the object itself. **All** objects have this.
     * - Strategy conditions
-      - | Conditions that apply to the strategy of the Release that's being rolled out.
-        | Only **Releases** have this.
+      - Conditions that apply to the strategy of the Release that's being rolled out. Only **Releases** have this.
 
-In the example above, under ``.status.strategy`` we can find a condition called
-``ContenderAchievedCapacity``, saying there're still clusters pending capacity
-adjustments.
+In the example above, under ``.status.strategy`` we can find a condition called ``ContenderAchievedCapacity``, saying there're still clusters pending capacity adjustments.
 
 Target objects
 ~~~~~~~~~~~~~~
 
-The next step would be to look at the corresponding target object. Since
-we're waiting for capacity, we'll be looking at CapacityTarget. The object
-will have the same name as the release but different kind:
+The next step would be to look at the corresponding target object. Since we're waiting for capacity, we'll be looking at CapacityTarget. The object will have the same name as the release but different kind:
 
 .. code-block:: shell
 
@@ -176,19 +176,14 @@ will have the same name as the release but different kind:
     For installation the command would be ``kubectl describe it <release name>``,
     for traffic ``kubectl describe tt <release name>``.
 
-If we inspect `.status.conditions` of the InstallationTarget we'll notice a
-condition called `Ready` which has status `False` and reason `PodsNotReady`.
-Further inspection will reveal that we have a pod called
-`nginx-vj7sn-7cb440f1-0-nginx-9b5c4d7c9-2gjwl` and that we can't pull the
-Docker image for one if its containers:
+If we inspect ``.status.conditions`` of the InstallationTarget we'll notice a condition called ``Ready`` which has status ``False`` and reason ``PodsNotReady``. Further inspection will reveal that we have a pod called ``nginx-vj7sn-7cb440f1-0-nginx-9b5c4d7c9-2gjwl`` and that Kubernetes can't pull the Docker image for one if its containers:
 
 .. code-block:: text
 
     Message:    Back-off pulling image "nginx:boom"
     Reason:     ImagePullBackOff
 
-The "boom" Docker tag clearly looks wrong. To fix this you can simply edit
-the application object and set the correct tag in `.spec.template.values`.
+The "boom" Docker tag clearly looks wrong. To fix this you can simply edit the application object and set the correct tag in `.spec.template.values`.
 
 Other sources of useful information
 -----------------------------------
@@ -207,15 +202,16 @@ Typical failure scenarios
 While we can't list all the possible failures we can list the ones that we
 think happen more often than others:
 
-+-------------------------+--------------------------------------------------------------------------------------------+
-| Failure                 |  Detection                                                                                 |
-+=========================+============================================================================================+
-| Can't pull Docker image | Strategy condition ``ContenderAchievedCapacity`` is false, InstallationTarget's ``Ready``  |
-|                         | condition is false and the message is something like "Back-off pulling image "nginx:boom"" |
-+-------------------------+--------------------------------------------------------------------------------------------+
-| Can't fetch Helm chart  | Release condition ``Scheduled`` is false and the message is something like                 |
-|                         | "download https://charts.example.com/charts/nginx-0.1.42.tgz: 404"                    |
-+-------------------------+--------------------------------------------------------------------------------------------+
+.. list-table::
+    :widths: 25 75
+    :header-rows: 1
+
+    * - Failure
+      - Description
+    * - | Can't pull Docker image
+      - Strategy condition ``ContenderAchievedCapacity`` is false, InstallationTarget's ``Ready`` condition is false and the message is something like "Back-off pulling image "nginx:boom""
+    * - Can't fetch Helm chart
+      - Release condition ``Scheduled`` is false and the message is something like "download https://charts.example.com/charts/nginx-0.1.42.tgz: 404"
 
 Make sure you're on the right cluster !
 ---------------------------------------

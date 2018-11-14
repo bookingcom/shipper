@@ -7,5 +7,5 @@ Shipper documentation
     about_docs
     intro/intro
     start/start
-    install/install
     operations/operations
+    install/install

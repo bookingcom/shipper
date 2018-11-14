@@ -7,3 +7,4 @@ Building and installation
     :maxdepth: 2
 
     building
+    installing
