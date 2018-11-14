@@ -57,7 +57,7 @@ func TestCreateFirstRelease(t *testing.T) {
 	f := newFixture(t)
 	app := newApplication(testAppName)
 	app.Spec.Template.Chart.RepoURL = "127.0.0.1"
-	app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
+	app.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "0"
 	envHash := hashReleaseEnvironment(app.Spec.Template)
 	expectedRelName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
 
@@ -598,7 +598,7 @@ func newRelease(releaseName string, app *shipper.Application) *shipper.Release {
 			Name:      releaseName,
 			Namespace: app.GetNamespace(),
 			Annotations: map[string]string{
-				shipperv1.AppHighestObservedGenerationAnnotation: app.Annotations[shipperv1.AppHighestObservedGenerationAnnotation],
+				shipper.AppHighestObservedGenerationAnnotation: app.Annotations[shipper.AppHighestObservedGenerationAnnotation],
 			},
 			Labels: map[string]string{
 				shipper.ReleaseLabel: releaseName,
