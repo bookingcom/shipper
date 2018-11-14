@@ -93,7 +93,6 @@ func TestCreateFirstRelease(t *testing.T) {
 	expectedRelease.Labels[shipperv1.ReleaseEnvironmentHashLabel] = envHash
 	expectedRelease.Annotations[shipperv1.ReleaseTemplateIterationAnnotation] = "0"
 	expectedRelease.Annotations[shipperv1.ReleaseGenerationAnnotation] = "0"
-	expectedRelease.Annotations[shipperv1.AppHighestObservedGenerationAnnotation] = "0"
 
 	f.expectReleaseCreate(expectedRelease)
 	f.expectApplicationUpdate(expectedApp)
