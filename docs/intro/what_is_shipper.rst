@@ -23,7 +23,7 @@ Deploying to Multiple Clusters
 
 Shipper deploys your application on multiple clusters in different geographical regions and availability zones within those regions.
 
-Since it is compatible with Kubernetes, it works with other Kubernetes providers outside of B.Platform such as Google Kubernetes Engine as well. If you can use ``kubectl`` with it, chances are, you can use Shipper with it as well.
+Since it is compatible with Kubernetes, it works with any Kubernetes providers such as Google Kubernetes Engine as well. If you can use ``kubectl`` with it, chances are, you can use Shipper with it as well.
 
 Shipper also provides a general summary of how your pods are doing across all the clusters they are deployed to. If there is a problem, Shipper makes it easier to find it.
 
