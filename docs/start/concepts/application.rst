@@ -29,6 +29,21 @@ the deployment system will not interact with that Secret: it is outside of
 the deployment system's control because it is not associated with an
 Application object.
 
+Writing an Application Spec
+---------------------------
+
+Revision History Limit
+~~~~~~~~~~~~~~~~~~~~~~
+
+``.spec.revisionHistoryLimit`` is an optional field that represents the number of associated :ref:`Release <concepts_release>` objects in ``.status.history``.
+
+Release Template
+~~~~~~~~~~~~~~~~
+
+The ``.spec.template`` is the only required field of the ``.spec``.
+
+The ``.spec.template`` is a release template. It has the same schema as :ref:`Release environment <concepts_release_environment>`.
+
 Application Example
 -------------------
 
@@ -37,21 +52,22 @@ Application Example
     apiVersion: shipper.booking.com/v1
     kind: Application
     metadata:
-      name: reviewsapi # canonical name of the application.
+      name: reviews-api
     spec:
+      revisionHistoryLimit: 10
       template:
+        chart:
+          name: reviews-api
+          repoUrl: https://charts.example.com
+          version: 0.0.1
         clusterRequirements:
-          regions:
-          - name: eu-ams
-          - name: us-west-1
           capabilities:
           - gpu
           - pci
-        chart:
-          name: reviewsapi
-          version: 0.0.1
-        strategy:
-          name: vanguard
+          regions:
+          - name: eu-ams
+          - name: us-west-1
+        strategy: {}
         values:
           perl:
             image:

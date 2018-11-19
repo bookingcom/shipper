@@ -27,43 +27,72 @@ responsibilities to modify the field to activate the next phase.
 The ``release`` label is used to further identify all the Kubernetes objects
 that were created by this particular release.
 
+Writing a Release Spec
+----------------------
+
+.. _concepts_release_environment:
+
+Release Environment
+~~~~~~~~~~~~~~~~~~~
+
+The ``.spec.environment`` is the only required field of the ``.spec``.
+
+The ``.spec.environment`` contains all the information required for an application to be deployed with Shipper.
+
+Chart
+#####
+
+.. literalinclude:: release-example.yaml
+    :caption: Chart example
+    :language: yaml
+    :lines: 7-10
+    :dedent: 4
+    :linenos:
+
+``.spec.environment.chart`` is a required field that specifies a chart to be rendered by Shipper when installing the Release.
+
+``.spec.environment.chart.name`` is a required field that specifies the name of the chart to be rendered.
+
+``.spec.environment.chart.version`` is a required field that specifies the chart version to be rendered.
+
+``.spec.environment.chart.repoUrl`` is a required field that specifies the Helm chart repository where the find the chart to be rendered.
+
+
+Cluster Requirements
+####################
+
+.. literalinclude:: release-example.yaml
+    :caption: Cluster requirements example
+    :language: yaml
+    :lines: 11-17
+    :dedent: 4
+    :linenos:
+
+``.spec.environment.clusterRequirements`` is a required field that specifies cluster regions and capabilities to be able to host the application.
+
+``.spec.environment.clusterRequirements.regions`` is a required field that specifies region requirements for a cluster to be able to host the application.
+
+Strategy
+########
+
+.. literalinclude:: release-example.yaml
+    :caption: Vanguard strategy example
+    :language: yaml
+    :lines: 18-40
+    :dedent: 4
+    :linenos:
+
+``.spec.environment.strategy`` is a required field that specifies the deployment strategy to be used when deploying the release.
+
+Values
+######
+
+``.spec.environment.values`` is an optional field that specifies values to be informed when rendering the release's chart.
+
 Release Example
 ---------------
 
-.. code-block:: yaml
-
-    apiVersion: shipper.booking.com/v1
-    kind: Release
-    metadata:
-      name: v0.0.1 # a SHA1 or git tag from the CI/CD pipeline
-      labels:
-        release: reviewsapi-4
-    environment:
-      replicas: 20
-      clusters:
-        - eu-ams-a
-        - eu-ams-b
-        - us-las-a
-      chart:
-        name: reviewsapi
-        version: 0.0.1
-        repoUrl: localhost
-      clusterRequirements: ...
-      strategy:
-        name: vanguard
-      values: ...
-      sidecars:
-        - name: envoy
-          version: 2.1
-        - name: telegraf
-          version: 0.99
-    spec:
-      targetStep: 1
-    status:
-      phase: WaitingForStrategy
-      achievedStep: 0
-      conditions:
-      - lastTransitionTime: 2018-01-11T13:17:22Z
-        type: WaitingForStrategy
-      - lastTransitionTime: 2018-01-11T13:17:19Z
-        type: WaitingForScheduling
+.. literalinclude:: release-example.yaml
+    :caption: Release example
+    :language: yaml
+    :linenos:

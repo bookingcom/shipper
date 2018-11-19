@@ -1,0 +1,41 @@
+apiVersion: shipper.booking.com/v1
+kind: Release
+metadata:
+  name: reviews-api-deadbeef-1
+spec:
+  environment:
+    chart:
+      name: reviews-api
+      version: 0.0.1
+      repoUrl: https://charts.example.com
+    clusterRequirements:
+      capabilities:
+      - gpu
+      - highBandwidth
+      regions:
+      - name: eu-ams
+        replicas: 20
+    strategy:
+      steps:
+      - name: staging
+        capacity:
+          incumbent: 100
+          contender: 1
+        traffic:
+          incumbent: 100
+          contender: 0
+      - name: 50/50
+        capacity:
+          incumbent: 50
+          contender: 50
+        traffic:
+          incumbent: 50
+          contender: 50
+      - name: full on
+        capacity:
+          incumbent: 0
+          contender: 100
+        traffic:
+          incumbent: 0
+          contender: 100
+    values: {}
