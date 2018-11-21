@@ -29,8 +29,7 @@ import (
 )
 
 const (
-	appName                      = "my-test-app"
-	regionFromMinikubePerlScript = "eu-west"
+	appName = "my-test-app"
 )
 
 var (
@@ -39,20 +38,21 @@ var (
 		"",
 		"The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.",
 	)
-	runEndToEnd   = flag.Bool("e2e", false, "Set this flag to enable E2E tests against the local minikube")
-	testCharts    = flag.String("testcharts", "testdata/*.tgz", "Glob expression (escape the *!) pointing to the charts for the test")
-	inspectFailed = flag.Bool("inspectfailed", false, "Set this flag to skip deleting the namespaces for failed tests. Useful for debugging.")
-	kubeconfig    = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
-	targetCluster = flag.String("targetcluster", "minikube", "The application cluster that E2E tests will check to determine success/failure")
-	timeoutFlag   = flag.String("progresstimeout", "30s", "timeout when waiting for things to change")
+	runEndToEnd    = flag.Bool("e2e", false, "Set this flag to enable E2E tests against the local minikube")
+	testCharts     = flag.String("testcharts", "testdata/*.tgz", "Glob expression (escape the *!) pointing to the charts for the test")
+	inspectFailed  = flag.Bool("inspectfailed", false, "Set this flag to skip deleting the namespaces for failed tests. Useful for debugging.")
+	kubeconfig     = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
+	appClusterName = flag.String("appcluster", "minikube", "The application cluster that E2E tests will check to determine success/failure")
+	timeoutFlag    = flag.String("progresstimeout", "30s", "timeout when waiting for things to change")
 )
 
 var (
-	targetKubeClient kubernetes.Interface
-	kubeClient       kubernetes.Interface
-	shipperClient    shipperclientset.Interface
-	chartRepo        string
-	globalTimeout    time.Duration
+	appKubeClient kubernetes.Interface
+	kubeClient    kubernetes.Interface
+	shipperClient shipperclientset.Interface
+	chartRepo     string
+	testRegion    string
+	globalTimeout time.Duration
 )
 
 var allIn = shipper.RolloutStrategy{
@@ -99,7 +99,14 @@ func TestMain(m *testing.M) {
 			glog.Fatalf("could not build a client: %v", err)
 		}
 
-		targetKubeClient = buildTargetClient(*targetCluster)
+		appCluster, err := shipperClient.ShipperV1alpha1().Clusters().Get(*appClusterName, metav1.GetOptions{})
+		if err != nil {
+			glog.Fatalf("could not fetch cluster object for cluster %q: %q", *appClusterName, err)
+		}
+
+		testRegion = appCluster.Spec.Region
+
+		appKubeClient = buildApplicationClient(appCluster)
 		purgeTestNamespaces()
 	}
 
@@ -684,7 +691,7 @@ func (f *fixture) targetStep(step int, relName string) {
 
 func (f *fixture) checkPods(relName string, expectedCount int) {
 	selector := labels.Set{shipper.ReleaseLabel: relName}.AsSelector()
-	podList, err := targetKubeClient.CoreV1().Pods(f.namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	podList, err := appKubeClient.CoreV1().Pods(f.namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		f.t.Fatalf("could not list pods %q: %q", f.namespace, err)
 	}
@@ -936,15 +943,10 @@ func buildManagementClients(masterURL, kubeconfig string) (kubernetes.Interface,
 	return newKubeClient, newShipperClient, nil
 }
 
-func buildTargetClient(clusterName string) kubernetes.Interface {
-	secret, err := kubeClient.CoreV1().Secrets(shipper.ShipperNamespace).Get(clusterName, metav1.GetOptions{})
+func buildApplicationClient(cluster *shipper.Cluster) kubernetes.Interface {
+	secret, err := kubeClient.CoreV1().Secrets(shipper.ShipperNamespace).Get(cluster.Name, metav1.GetOptions{})
 	if err != nil {
-		glog.Fatalf("could not build target kubeclient for cluster %q: problem fetching secret: %q", clusterName, err)
-	}
-
-	cluster, err := shipperClient.ShipperV1alpha1().Clusters().Get(clusterName, metav1.GetOptions{})
-	if err != nil {
-		glog.Fatalf("could not build target kubeclient for cluster %q: problem fetching cluster: %q", clusterName, err)
+		glog.Fatalf("could not build target kubeclient for cluster %q: problem fetching secret: %q", cluster.Name, err)
 	}
 
 	config := &rest.Config{
@@ -973,7 +975,7 @@ func buildTargetClient(clusterName string) kubernetes.Interface {
 
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		glog.Fatalf("could not build target kubeclient for cluster %q: problem fetching cluster: %q", clusterName, err)
+		glog.Fatalf("could not build target kubeclient for cluster %q: problem fetching cluster: %q", cluster.Name, err)
 	}
 	return client
 }
@@ -993,7 +995,7 @@ func newApplication(namespace, name string, strategy *shipper.RolloutStrategy) *
 				// TODO(btyler): implement enough cluster selector stuff to only pick the
 				// target cluster we care about (or just panic if that cluster isn't
 				// listed).
-				ClusterRequirements: shipper.ClusterRequirements{Regions: []shipper.RegionRequirement{{Name: regionFromMinikubePerlScript}}},
+				ClusterRequirements: shipper.ClusterRequirements{Regions: []shipper.RegionRequirement{{Name: testRegion}}},
 				Values:              &shipper.ChartValues{},
 			},
 		},
