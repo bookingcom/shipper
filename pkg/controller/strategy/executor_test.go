@@ -202,7 +202,7 @@ func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 
 	rel := &shipper.Release{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1alpha1",
+			APIVersion: shipper.SchemeGroupVersion.String(),
 			Kind:       "Release",
 		},
 		ObjectMeta: metav1.ObjectMeta{
@@ -210,7 +210,7 @@ func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 			Namespace: namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
-					APIVersion: "shipper.booking.com/v1alpha1",
+					APIVersion: shipper.SchemeGroupVersion.String(),
 					Kind:       "Application",
 					Name:       app.GetName(),
 					UID:        app.GetUID(),
@@ -244,14 +244,14 @@ func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 
 	installationTarget := &shipper.InstallationTarget{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1alpha1",
+			APIVersion: shipper.SchemeGroupVersion.String(),
 			Kind:       "InstallationTarget",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      incumbentName,
 			Namespace: namespace,
 			OwnerReferences: []metav1.OwnerReference{metav1.OwnerReference{
-				APIVersion: "shipper.booking.com/v1alpha1",
+				APIVersion: shipper.SchemeGroupVersion.String(),
 				Name:       rel.Name,
 				Kind:       "Release",
 				UID:        rel.UID,
@@ -272,14 +272,14 @@ func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 
 	capacityTarget := &shipper.CapacityTarget{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1alpha1",
+			APIVersion: shipper.SchemeGroupVersion.String(),
 			Kind:       "CapacityTarget",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      incumbentName,
 			OwnerReferences: []metav1.OwnerReference{metav1.OwnerReference{
-				APIVersion: "shipper.booking.com/v1alpha1",
+				APIVersion: shipper.SchemeGroupVersion.String(),
 				Name:       rel.Name,
 				Kind:       "Release",
 				UID:        rel.UID,
@@ -306,14 +306,14 @@ func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 
 	trafficTarget := &shipper.TrafficTarget{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1alpha1",
+			APIVersion: shipper.SchemeGroupVersion.String(),
 			Kind:       "TrafficTarget",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      incumbentName,
 			OwnerReferences: []metav1.OwnerReference{metav1.OwnerReference{
-				APIVersion: "shipper.booking.com/v1alpha1",
+				APIVersion: shipper.SchemeGroupVersion.String(),
 				Name:       rel.Name,
 				Kind:       "Release",
 				UID:        rel.UID,
@@ -350,7 +350,7 @@ func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 func buildContender(totalReplicaCount uint) *releaseInfo {
 	rel := &shipper.Release{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1alpha1",
+			APIVersion: shipper.SchemeGroupVersion.String(),
 			Kind:       "Release",
 		},
 		ObjectMeta: metav1.ObjectMeta{
@@ -358,7 +358,7 @@ func buildContender(totalReplicaCount uint) *releaseInfo {
 			Namespace: namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
-					APIVersion: "shipper.booking.com/v1alpha1",
+					APIVersion: shipper.SchemeGroupVersion.String(),
 					Kind:       "Application",
 					Name:       app.GetName(),
 					UID:        app.GetUID(),
@@ -387,14 +387,14 @@ func buildContender(totalReplicaCount uint) *releaseInfo {
 
 	installationTarget := &shipper.InstallationTarget{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1alpha1",
+			APIVersion: shipper.SchemeGroupVersion.String(),
 			Kind:       "InstallationTarget",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      contenderName,
 			OwnerReferences: []metav1.OwnerReference{metav1.OwnerReference{
-				APIVersion: "shipper.booking.com/v1alpha1",
+				APIVersion: shipper.SchemeGroupVersion.String(),
 				Name:       rel.Name,
 				Kind:       "Release",
 				UID:        rel.UID,
@@ -415,14 +415,14 @@ func buildContender(totalReplicaCount uint) *releaseInfo {
 
 	capacityTarget := &shipper.CapacityTarget{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1alpha1",
+			APIVersion: shipper.SchemeGroupVersion.String(),
 			Kind:       "CapacityTarget",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      contenderName,
 			OwnerReferences: []metav1.OwnerReference{metav1.OwnerReference{
-				APIVersion: "shipper.booking.com/v1alpha1",
+				APIVersion: shipper.SchemeGroupVersion.String(),
 				Name:       rel.Name,
 				Kind:       "Release",
 				UID:        rel.UID,
@@ -449,14 +449,14 @@ func buildContender(totalReplicaCount uint) *releaseInfo {
 
 	trafficTarget := &shipper.TrafficTarget{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1alpha1",
+			APIVersion: shipper.SchemeGroupVersion.String(),
 			Kind:       "TrafficTarget",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      contenderName,
 			OwnerReferences: []metav1.OwnerReference{metav1.OwnerReference{
-				APIVersion: "shipper.booking.com/v1alpha1",
+				APIVersion: shipper.SchemeGroupVersion.String(),
 				Name:       rel.Name,
 				Kind:       "Release",
 				UID:        rel.UID,

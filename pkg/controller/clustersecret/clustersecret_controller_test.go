@@ -161,7 +161,7 @@ func newClusterSecret(cluster *shipper.Cluster, p tls.Pair) *corev1.Secret {
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
-					APIVersion: "shipper.booking.com/v1alpha1",
+					APIVersion: shipper.SchemeGroupVersion.String(),
 					Kind:       "Cluster",
 					Name:       name,
 					UID:        cluster.GetUID(),

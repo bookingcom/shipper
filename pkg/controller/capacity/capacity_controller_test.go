@@ -201,7 +201,11 @@ func (f *fixture) expectCapacityTargetStatusUpdate(capacityTarget *shipper.Capac
 	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, clusterStatus)
 
 	updateAction := kubetesting.NewUpdateAction(
-		schema.GroupVersionResource{Group: "shipper.booking.com", Version: "v1alpha1", Resource: "capacitytargets"},
+		schema.GroupVersionResource{
+			Group:    shipper.SchemeGroupVersion.Group,
+			Version:  shipper.SchemeGroupVersion.Version,
+			Resource: "capacitytargets",
+		},
 		capacityTarget.GetNamespace(),
 		capacityTarget,
 	)
@@ -231,7 +235,7 @@ func newCapacityTarget(totalReplicaCount, percent int32) *shipper.CapacityTarget
 			Labels:    metaLabels,
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
-					APIVersion: "shipper.booking.com/v1alpha1",
+					APIVersion: shipper.SchemeGroupVersion.String(),
 					Kind:       "Release",
 					Name:       "0.0.1",
 				},

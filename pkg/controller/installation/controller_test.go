@@ -123,7 +123,11 @@ func TestInstallOneCluster(t *testing.T) {
 		},
 	}
 	expectedActions = []kubetesting.Action{
-		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1alpha1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
+		kubetesting.NewUpdateAction(schema.GroupVersionResource{
+			Resource: "installationtargets",
+			Version:  shipper.SchemeGroupVersion.Version,
+			Group:    shipper.SchemeGroupVersion.Group,
+		}, release.GetNamespace(), it),
 	}
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
@@ -219,7 +223,11 @@ func TestInstallMultipleClusters(t *testing.T) {
 		},
 	}
 	expectedActions = []kubetesting.Action{
-		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1alpha1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
+		kubetesting.NewUpdateAction(schema.GroupVersionResource{
+			Resource: "installationtargets",
+			Version:  shipper.SchemeGroupVersion.Version,
+			Group:    shipper.SchemeGroupVersion.Group,
+		}, release.GetNamespace(), it),
 	}
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
@@ -336,7 +344,11 @@ func TestClientError(t *testing.T) {
 		},
 	}
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1alpha1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
+		kubetesting.NewUpdateAction(schema.GroupVersionResource{
+			Resource: "installationtargets",
+			Version:  shipper.SchemeGroupVersion.Version,
+			Group:    shipper.SchemeGroupVersion.Group,
+		}, release.GetNamespace(), it),
 	}
 	var filteredActions []kubetesting.Action
 	for _, a := range shipperclientset.Actions() {
@@ -413,7 +425,11 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 		},
 	}
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1alpha1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
+		kubetesting.NewUpdateAction(schema.GroupVersionResource{
+			Resource: "installationtargets",
+			Version:  shipper.SchemeGroupVersion.Version,
+			Group:    shipper.SchemeGroupVersion.Group,
+		}, release.GetNamespace(), it),
 	}
 	var filteredActions []kubetesting.Action
 	for _, a := range shipperclientset.Actions() {
@@ -491,7 +507,11 @@ func TestManagementServerMissesCluster(t *testing.T) {
 		},
 	}
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(schema.GroupVersionResource{Resource: "installationtargets", Version: "v1alpha1", Group: "shipper.booking.com"}, release.GetNamespace(), it),
+		kubetesting.NewUpdateAction(schema.GroupVersionResource{
+			Resource: "installationtargets",
+			Version:  shipper.SchemeGroupVersion.Version,
+			Group:    shipper.SchemeGroupVersion.Group,
+		}, release.GetNamespace(), it),
 	}
 	var filteredActions []kubetesting.Action
 	for _, a := range shipperclientset.Actions() {

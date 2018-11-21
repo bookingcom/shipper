@@ -135,7 +135,7 @@ func createOwnerRefFromApplication(app *shipper.Application) metav1.OwnerReferen
 	// https://github.com/kubernetes/client-go/issues/60#issuecomment-281747911 for
 	// context.
 	return metav1.OwnerReference{
-		APIVersion: "shipper.booking.com/v1alpha1",
+		APIVersion: shipper.SchemeGroupVersion.String(),
 		Kind:       "Application",
 		Name:       app.GetName(),
 		UID:        app.GetUID(),

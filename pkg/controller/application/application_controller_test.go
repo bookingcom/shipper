@@ -604,7 +604,7 @@ func newRelease(releaseName string, app *shipper.Application) *shipper.Release {
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: "shipper.booking.com/v1alpha1",
+					APIVersion: shipper.SchemeGroupVersion.String(),
 					Kind:       "Application",
 					Name:       app.GetName(),
 				},

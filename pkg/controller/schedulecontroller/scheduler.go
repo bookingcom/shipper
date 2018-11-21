@@ -489,7 +489,7 @@ func validateClusterRequirements(requirements shipper.ClusterRequirements) error
 // some potential context.
 func createOwnerRefFromRelease(r *shipper.Release) metav1.OwnerReference {
 	return metav1.OwnerReference{
-		APIVersion: "shipper.booking.com/v1alpha1",
+		APIVersion: shipper.SchemeGroupVersion.String(),
 		Kind:       "Release",
 		Name:       r.GetName(),
 		UID:        r.GetUID(),

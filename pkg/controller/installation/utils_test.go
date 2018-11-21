@@ -259,7 +259,7 @@ func buildInstallationTargetWithOwner(ownerName, ownerUID, namespace, appName st
 			Namespace: namespace,
 			OwnerReferences: []v1.OwnerReference{
 				{
-					APIVersion: "shipper.booking.com/v1alpha1",
+					APIVersion: shipper.SchemeGroupVersion.String(),
 					Kind:       "Release",
 					Name:       ownerName,
 					UID:        types.UID(ownerUID),

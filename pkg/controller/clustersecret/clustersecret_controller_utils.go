@@ -80,7 +80,7 @@ func (c *Controller) createSecretForCluster(cluster *shipper.Cluster, crt, key, 
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
-					APIVersion: "shipper.booking.com/v1alpha1",
+					APIVersion: shipper.SchemeGroupVersion.String(),
 					Kind:       "Cluster",
 					Name:       cluster.GetName(),
 					UID:        cluster.GetUID(),
