@@ -163,13 +163,19 @@ func (i *Installer) patchService(
 	ownerReference *metav1.OwnerReference,
 ) (runtime.Object, error) {
 
+	// TODO(btyler): this check and this error are a blocker for using Releases
+	// without Applications. I expect we should just blanket-apply all of the
+	// Release's labels and cope with the fact that some of those are going to be
+	// a little weird on application-lifetime objects like stably named Services
 	requiredLabels := []string{shipper.AppLabel}
 	for _, label := range requiredLabels {
 		if _, ok := labelsToInject[label]; !ok {
-			// If we reach this point, it is fine to panic() since there's nothing
-			// much to do if we don't have the mandatory labels.
 			return nil, controller.NewInvalidChartError(
-				fmt.Sprintf("Programmer error, label %q should always be present", label))
+				fmt.Sprintf(
+					"Service is missing label %q. This means the Release is also missing it. You might be trying to use Releases without Applications, Shipper isn't ready for this yet.",
+					label,
+				),
+			)
 		}
 	}
 
