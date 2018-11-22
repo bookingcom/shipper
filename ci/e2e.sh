@@ -12,7 +12,7 @@ go run cmd/create-cluster-secret/main.go --api-server http://127.0.0.1:8080
 go run cmd/shipper/*.go --kubeconfig ~/.kube/config --disable clustersecret --resync "$1" --log_dir /tmp &
 SHIPPER_PID=$!
 
-go test ./test/e2e --test.v --e2e --kubeconfig ~/.kube/config --testcharts $PWD/test/e2e/testdata/\*.tgz --progresstimeout=2m --targetcluster local
+go test ./test/e2e --test.v --e2e --kubeconfig ~/.kube/config --testcharts $PWD/test/e2e/testdata/\*.tgz --progresstimeout=2m --appcluster local
 TEST_STATUS=$?
 
 set +e
