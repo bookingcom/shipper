@@ -2,6 +2,7 @@ package installation
 
 import (
 	"reflect"
+	"regexp"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -10,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/diff"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -122,7 +124,7 @@ func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObject
 	filteredActions := filterActions(fakePair.fakeDynamicClient.Actions(), "create")
 	validateAction(t, filteredActions[0], "ConfigMap")
 	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
-	validateDeploymentCreateAction(t, validateAction(t, filteredActions[2], "Deployment"))
+	validateDeploymentCreateAction(t, validateAction(t, filteredActions[2], "Deployment"), map[string]string{"app": "reviews-api"})
 }
 
 func extractUnstructuredContent(scheme *runtime.Scheme, obj runtime.Object) (*unstructured.Unstructured, map[string]interface{}) {
@@ -167,8 +169,6 @@ func validateServiceCreateAction(t *testing.T, existingService *corev1.Service, 
 	uMetadata := unstructuredContent["metadata"].(map[string]interface{})
 	sMetadata := expectedUnstructuredServiceContent["metadata"].(map[string]interface{})
 
-	delete(uMetadata, "labels")
-	delete(sMetadata, "labels")
 	if !reflect.DeepEqual(uMetadata, sMetadata) {
 		t.Fatalf("%s",
 			diff.ObjectGoPrintDiff(uMetadata, sMetadata),
@@ -184,7 +184,7 @@ func validateServiceCreateAction(t *testing.T, existingService *corev1.Service, 
 	}
 }
 
-func validateDeploymentCreateAction(t *testing.T, obj runtime.Object) {
+func validateDeploymentCreateAction(t *testing.T, obj runtime.Object, validateLabels map[string]string) {
 	scheme := kubescheme.Scheme
 
 	u := &unstructured.Unstructured{}
@@ -202,29 +202,29 @@ func validateDeploymentCreateAction(t *testing.T, obj runtime.Object) {
 	}
 
 	if _, ok := deployment.Spec.Selector.MatchLabels[shipper.ReleaseLabel]; !ok {
-		t.Fatal("deployment .spec.selector.matchLabels doesn't contain shipper.ReleaseLabel")
+		t.Fatal("deployment .spec.selector.matchLabels doesn't contain shipperV1.ReleaseLabel")
 	}
 
 	if _, ok := deployment.Spec.Template.Labels[shipper.ReleaseLabel]; !ok {
-		t.Fatal("deployment .spec.template.labels doesn't contain shipper.ReleaseLabel")
+		t.Fatal("deployment .spec.template.labels doesn't contain shipperV1.ReleaseLabel")
 	}
 
-	const (
-		existingChartLabel      = "app"
-		existingChartLabelValue = "reviews-api"
-	)
+	// If provided, we ensure the labels from the list present in the
+	// produced deployment object.
+	for labelName, labelValue := range validateLabels {
+		actualChartLabelValue, ok := deployment.Spec.Template.Labels[labelName]
+		if !ok {
+			t.Fatalf("deployment .spec.template.labels doesn't contain a label (%q) which was present in the chart", labelName)
+		}
 
-	actualChartLabelValue, ok := deployment.Spec.Template.Labels[existingChartLabel]
-	if !ok {
-		t.Fatalf("deployment .spec.template.labels doesn't contain a label (%q) which was present in the chart", existingChartLabel)
+		if actualChartLabelValue != labelValue {
+			t.Fatalf(
+				"deployment .spec.template.labels has the right previously-existing label (%q) but wrong value. Expected %q but got %q",
+				labelName, labelValue, actualChartLabelValue,
+			)
+		}
 	}
 
-	if actualChartLabelValue != existingChartLabelValue {
-		t.Fatalf(
-			"deployment .spec.template.labels has the right previously-existing label (%q) but wrong value. Expected %q but got %q",
-			existingChartLabel, existingChartLabelValue, actualChartLabelValue,
-		)
-	}
 }
 
 func filterActions(actions []kubetesting.Action, verb string) []kubetesting.Action {
@@ -301,5 +301,264 @@ func TestInstallerBrokenChartContents(t *testing.T) {
 	restConfig := &rest.Config{}
 	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
 		t.Fatal("installRelease should fail, invalid k8s objects")
+	}
+}
+
+func TestInstallerSingleServiceNoLB(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+	release.Spec.Environment.Chart.Version = "single-service-no-lb"
+
+	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
+	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
+	if err != nil {
+		panic(err)
+	}
+	installer := newInstaller(release, it)
+	svc := loadService("baseline")
+	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+
+	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
+
+	fakePair := clientsPerCluster[cluster.Name]
+
+	restConfig := &rest.Config{}
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
+	}
+
+	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+		t.Fatal(err)
+	}
+
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeDynamicClient.Actions(), t)
+
+	filteredActions := filterActions(fakePair.fakeDynamicClient.Actions(), "create")
+	validateAction(t, filteredActions[0], "ConfigMap")
+	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
+	validateDeploymentCreateAction(t, validateAction(t, filteredActions[2], "Deployment"), map[string]string{"app": "reviews-api"})
+}
+
+func TestInstallerSingleServiceWithLB(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+	release.Spec.Environment.Chart.Version = "single-service-with-lb"
+
+	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
+	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
+	if err != nil {
+		panic(err)
+	}
+	installer := newInstaller(release, it)
+	svc := loadService("baseline")
+	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+
+	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
+
+	fakePair := clientsPerCluster[cluster.Name]
+
+	restConfig := &rest.Config{}
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
+	}
+
+	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+		t.Fatal(err)
+	}
+
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeDynamicClient.Actions(), t)
+
+	filteredActions := filterActions(fakePair.fakeDynamicClient.Actions(), "create")
+	validateAction(t, filteredActions[0], "ConfigMap")
+	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
+	validateDeploymentCreateAction(t, validateAction(t, filteredActions[2], "Deployment"), map[string]string{"app": "reviews-api"})
+}
+
+func TestInstallerMultiServiceNoLB(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+	release.Spec.Environment.Chart.Version = "multi-service-no-lb"
+
+	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
+	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
+	if err != nil {
+		panic(err)
+	}
+	installer := newInstaller(release, it)
+	svc := loadService("baseline")
+	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+
+	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
+
+	fakePair := clientsPerCluster[cluster.Name]
+
+	restConfig := &rest.Config{}
+
+	err = installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder)
+	if err == nil {
+		t.Fatal("Expected an error, none raised")
+	}
+	if matched, err := regexp.MatchString("one and only one .* object .* is required", err.Error()); err != nil {
+		t.Fatalf("Failed to test error against the regex: %s", err)
+	} else if !matched {
+		t.Fatalf("Unexpected error raised: %s", err)
+	}
+}
+
+func TestInstallerMultiServiceWithLB(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+	release.Spec.Environment.Chart.Version = "multi-service-with-lb"
+
+	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
+	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
+	if err != nil {
+		panic(err)
+	}
+	installer := newInstaller(release, it)
+	svc := loadService("baseline")
+	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+
+	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
+
+	fakePair := clientsPerCluster[cluster.Name]
+
+	restConfig := &rest.Config{}
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api-staging"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
+	}
+
+	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+		t.Fatal(err)
+	}
+
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeDynamicClient.Actions(), t)
+
+	filteredActions := filterActions(fakePair.fakeDynamicClient.Actions(), "create")
+	validateAction(t, filteredActions[0], "ConfigMap")
+	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
+	validateDeploymentCreateAction(t, validateAction(t, filteredActions[3], "Deployment"), map[string]string{"app": "reviews-api"})
+}
+
+func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := &shipper.Release{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "nginx",
+			Namespace: "nginx",
+			UID:       types.UID("deadbeef"),
+			Labels: map[string]string{
+				shipper.AppLabel:     "nginx",
+				shipper.ReleaseLabel: "nginx",
+			},
+			Annotations: map[string]string{
+				shipper.ReleaseGenerationAnnotation: "0",
+			},
+		},
+		Spec: shipper.ReleaseSpec{
+			Environment: shipper.ReleaseEnvironment{
+				Chart: shipper.Chart{
+					Name:    "nginx",
+					Version: "0.1.0",
+					RepoURL: "localhost",
+				},
+			},
+		},
+	}
+
+	it := buildInstallationTarget(release, "nginx", "nginx", []string{cluster.Name})
+
+	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
+	if err != nil {
+		panic(err)
+	}
+	installer := newInstaller(release, it)
+	primarySvc := loadService("nginx-primary")
+	secondarySvc := loadService("nginx-secondary")
+	primarySvc.SetOwnerReferences(append(primarySvc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+	secondarySvc.SetOwnerReferences(append(secondarySvc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+
+	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
+
+	fakePair := clientsPerCluster[cluster.Name]
+
+	restConfig := &rest.Config{}
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.1.0-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.1.0-nginx"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.1.0-nginx-staging"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.1.0-nginx"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
+	}
+
+	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+		t.Fatal(err)
+	}
+
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeDynamicClient.Actions(), t)
+
+	filteredActions := filterActions(fakePair.fakeDynamicClient.Actions(), "create")
+	validateAction(t, filteredActions[0], "ConfigMap")
+	validateServiceCreateAction(t, primarySvc, validateAction(t, filteredActions[1], "Service"))
+	validateServiceCreateAction(t, secondarySvc, validateAction(t, filteredActions[2], "Service"))
+	validateDeploymentCreateAction(t, validateAction(t, filteredActions[3], "Deployment"), map[string]string{})
+}
+
+func TestInstallerServiceWithReleaseNoWorkaround(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+
+	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
+
+	// Disabling the helm workaround
+	delete(it.ObjectMeta.Labels, shipper.HelmWorkaroundLabel)
+
+	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
+	if err != nil {
+		panic(err)
+	}
+
+	installer := newInstaller(release, it)
+	svc := loadService("baseline")
+	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+
+	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
+
+	fakePair := clientsPerCluster[cluster.Name]
+
+	restConfig := &rest.Config{}
+
+	err = installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder)
+	if err == nil {
+		t.Fatal("Expected error, none raised")
+	}
+	if matched, regexErr := regexp.MatchString("This will break shipper traffic shifting logic", err.Error()); regexErr != nil {
+		t.Fatalf("Failed to match the error message against the regex: %s", regexErr)
+	} else if !matched {
+		t.Fatalf("Unexpected error: %s", err)
 	}
 }

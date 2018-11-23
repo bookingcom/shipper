@@ -248,7 +248,7 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 		return nil
 	}
 
-	handler := NewInstaller(c.chartFetchFunc, release, it)
+	installer := NewInstaller(c.chartFetchFunc, release, it)
 
 	// Build .status over based on the current .spec.clusters.
 	newClusterStatuses := make([]*shipper.ClusterInstallationStatus, 0, len(it.Spec.Clusters))
@@ -302,7 +302,7 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 		// otherwise arrives.
 		status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeOperational, corev1.ConditionTrue, "", "")
 
-		if err = handler.installRelease(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
+		if err = installer.installRelease(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
 			status.Status = shipper.InstallationStatusFailed
 			status.Message = err.Error()
 			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeReady, corev1.ConditionFalse, reasonForReadyCondition(err), err.Error())
