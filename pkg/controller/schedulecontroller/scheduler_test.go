@@ -28,7 +28,7 @@ func init() {
 func buildRelease() *shipper.Release {
 	return &shipper.Release{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "shipper.booking.com/v1alpha1",
+			APIVersion: shipper.SchemeGroupVersion.String(),
 			Kind:       "Release",
 		},
 		ObjectMeta: metav1.ObjectMeta{
@@ -37,7 +37,7 @@ func buildRelease() *shipper.Release {
 			Annotations: map[string]string{},
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: "shipper.booking.com/v1alpha1",
+					APIVersion: shipper.SchemeGroupVersion.String(),
 					Kind:       "Application",
 					Name:       "test-application",
 				},
@@ -875,7 +875,7 @@ func generateReleaseForTestCase(reqs shipper.ClusterRequirements) *shipper.Relea
 			Namespace: shippertesting.TestNamespace,
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: "shipper.booking.com/v1alpha1",
+					APIVersion: shipper.SchemeGroupVersion.String(),
 					Kind:       "Application",
 					Name:       "test-application",
 				},

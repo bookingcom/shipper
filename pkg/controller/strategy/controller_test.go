@@ -513,7 +513,7 @@ func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerF
 	f.discovery = fakeDiscovery
 	f.discovery.Resources = []*metav1.APIResourceList{
 		{
-			GroupVersion: "shipper.booking.com/v1alpha1",
+			GroupVersion: shipper.SchemeGroupVersion.String(),
 			APIResources: []metav1.APIResource{
 				{
 					Kind:       "Application",
