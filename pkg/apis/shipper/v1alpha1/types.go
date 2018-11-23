@@ -51,6 +51,10 @@ const (
 
 	HelmReleaseLabel    = "release"
 	HelmWorkaroundLabel = "enable-helm-release-workaround"
+
+	RBACDomainLabel       = "shipper-rbac-domain"
+	RBACManagementDomain  = "management"
+	RBACApplicationDomain = "application"
 )
 
 // +genclient

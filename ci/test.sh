@@ -6,6 +6,7 @@ dep status -v
 
 gometalinter \
     --vendor \
+    --exclude=^vendor\/ \
     --skip=pkg/apis/shipper/v1alpha1 \
     --skip=pkg/client \
     --disable-all \
