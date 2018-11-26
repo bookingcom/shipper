@@ -3,31 +3,46 @@
 Application
 ===========
 
-An *Application* represents a single deployable application in Shipper. It
-resides in a single namespace. If this object does not exist for a given user
-application, the deployment system does not manage or deploy that application.
+An *Application* represents a single application [#]_ Shipper can manage on
+a user's behalf.
 
-It is the primary interface for kicking off new deployments. This is
-accomplished by editing (``kubectl replace|apply|edit``) the ``template``
-section of the ``spec``: this ``template`` is for new *Release* objects. This is
-comparable to a Kubernetes ``Deployment`` object and its ``template`` for pods.
+The Application object is the primary interface to interact with Shipper. This
+is accomplished by editing an application's ``.spec.template`` field. The
+*template* field is input that Shipper will use to create a
+*Release* object, which is comparable to a Kubernetes
+*Deployment* object and its ``.spec.template`` field, which is used as template
+for *Pod* objects.
 
-The ``template`` can express all of the fields present in ``.metadata.environment`` for a *Release*. Some are optional: for example, clusters may be left off to allow the Schedule Controller to automatically select clusters.
+The ``.spec.template`` field will be copied to a new *Release*
+object under the ``.spec.environment`` field during deployment.
 
 Scope of control
 ----------------
 
-The deployment system only manages target cluster resources which
-are associated with an Application in the corresponding management cluster
-namespace. The deployment system does not manage entire namespaces.
+*Application* objects own *Release* objects through Kubernetes
+`owner and dependents <https://kubernetes.io/docs/concepts/workloads/controllers/garbage-collection/#owners-and-dependents>`_
+mechanism in the management cluster. No other objects are directly associated
+with *Application* objects. Through Kubernetes garbage collection mechanism,
+*Release* and its dependent objects are disposed when *Application* objects
+are removed from the management cluster.
 
-For example: the deployment system deploys chart ``reviewsapi-0.0.1`` to target cluster
-namespace ``usercontent`` based on an application ``reviewsapi`` in management
-cluster namespace ``usercontent``. The ``reviewsapi-0.0.1`` chart contains only
-a Deployment and a ConfigMap. If there is a Secret ``foobar`` in ``usercontent``,
-the deployment system will not interact with that Secret: it is outside of
-the deployment system's control because it is not associated with an
-Application object.
+After a user successfully creates an *Application* object on the management
+cluster, Shipper starts to work on it by creating the application's first
+*Release* object. As stated earlier, the contents of the application's
+``.spec.template`` are used when creating this new *Release* object. The
+action of creating a new release triggers other Shipper processes (which we'll
+be covering in `here <concepts_release>`_).
+
+Every modification in an application's ``.spec.template`` field will,
+unconditionally, create a new *Release* object.
+
+In the case the latest release object hasn't been fully deployed, a
+new *Release* object will be created and the incomplete one **removed**.
+This was designed to allow users to fix a broken release (for example,
+fixing the Docker image's tag) without having to remove the existing
+release.
+
+TODO: Describe what happens when ``.spec.template`` changes having a completed release.
 
 Writing an Application Spec
 ---------------------------
@@ -73,3 +88,6 @@ Application Example
             image:
               name: myorg/my-cool-app
               version: SHA256
+
+.. rubric:: Footnotes
+.. [#] https://en.wikipedia.org/wiki/Application_software
