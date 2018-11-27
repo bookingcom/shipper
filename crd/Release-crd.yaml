@@ -32,97 +32,101 @@ spec:
         spec:
           type: object
           required:
+          - environment
           - targetStep
           properties:
             targetStep:
               type: integer
               minimum: 0
-        environment:
-          type: object
-          required:
-          - chart
-          - strategy
-          - values
-          - clusterRequirements
-          properties:
-            chart:
+            environment:
               type: object
               required:
-              - name
-              - version
+              - chart
+              - strategy
+              - values
+              - clusterRequirements
               properties:
-                name:
-                  type: string
-                version:
-                  type: string
-            sidecars:
-              type: array
-              items:
-                type: object
-                required:
-                - name
-                - version
-                properties:
-                  name:
-                    type: string
-                  version:
-                    type: string
-            clusterRequirements:
-              type: object
-              required:
-              - regions
-              properties:
-                regions:
-                  type: array
-                  items:
-                    type: object
-                capabilities:
-                  type: array
-                  items:
-                    type: string
-            strategy:
-              type: object
-              required:
-              - steps
-              properties:
-                steps:
+                chart:
+                  type: object
+                  required:
+                  - name
+                  - version
+                  - repoUrl
+                  properties:
+                    name:
+                      type: string
+                    version:
+                      type: string
+                    repoUrl:
+                      type: string
+                sidecars:
                   type: array
                   items:
                     type: object
                     required:
                     - name
-                    - traffic
-                    - capacity
+                    - version
                     properties:
                       name:
                         type: string
-                      capacity:
+                      version:
+                        type: string
+                clusterRequirements:
+                  type: object
+                  required:
+                  - regions
+                  properties:
+                    regions:
+                      type: array
+                      items:
+                        type: object
+                    capabilities:
+                      type: array
+                      items:
+                        type: string
+                strategy:
+                  type: object
+                  required:
+                  - steps
+                  properties:
+                    steps:
+                      type: array
+                      items:
                         type: object
                         required:
-                        - incumbent
-                        - contender
+                        - name
+                        - traffic
+                        - capacity
                         properties:
-                          incumbent:
-                            type: integer
-                            minimum: 0
-                            maximum: 100
-                          contender:
-                            type: integer
-                            minimum: 0
-                            maximum: 100
-                      traffic:
-                        type: object
-                        required:
-                        - incumbent
-                        - contender
-                        properties:
-                          incumbent:
-                            type: integer
-                            minimum: 0
-                            maximum: 100
-                          contender:
-                            type: integer
-                            minimum: 0
-                            maximum: 100
-            values:
-              type: object
+                          name:
+                            type: string
+                          capacity:
+                            type: object
+                            required:
+                            - incumbent
+                            - contender
+                            properties:
+                              incumbent:
+                                type: integer
+                                minimum: 0
+                                maximum: 100
+                              contender:
+                                type: integer
+                                minimum: 0
+                                maximum: 100
+                          traffic:
+                            type: object
+                            required:
+                            - incumbent
+                            - contender
+                            properties:
+                              incumbent:
+                                type: integer
+                                minimum: 0
+                                maximum: 100
+                              contender:
+                                type: integer
+                                minimum: 0
+                                maximum: 100
+                values:
+                  type: object
