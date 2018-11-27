@@ -37,10 +37,24 @@ spec:
             template:
               type: object
               required:
+              - chart
               - clusterRequirements
               - strategy
               - values
               properties:
+                chart:
+                  type: object
+                  required:
+                  - name
+                  - version
+                  - repoUrl
+                  properties:
+                    name:
+                      type: string
+                    version:
+                      type: string
+                    repoUrl:
+                      type: string
                 clusterRequirements:
                   type: object
                   required:
