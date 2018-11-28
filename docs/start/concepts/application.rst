@@ -42,7 +42,14 @@ This was designed to allow users to fix a broken release (for example,
 fixing the Docker image's tag) without having to remove the existing
 release.
 
-TODO: Describe what happens when ``.spec.template`` changes having a completed release.
+In the case the latest release object **has been** fully deployed, a new
+*Release* object will be created and a **transition** will start, from the
+current deployed *Release* object (the **incumbent** release) to the newly
+created *Release* object (the **contender** release).
+
+.. note:: Please check the `Release <concepts_release>`_ documentation to
+          learn how to **abort** an ongoing release deployment, or how to **revert**
+          to a previous, already deployed *Release* object.
 
 Writing an Application Spec
 ---------------------------
