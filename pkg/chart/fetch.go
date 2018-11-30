@@ -24,6 +24,19 @@ type FetchFunc func(shipper.Chart) (*helmchart.Chart, error)
 // This fits ~2k distinct charts into 10gb of disk.
 const DefaultCacheLimit = 5 * 1024 * 1024
 
+func FetchRemotePullPolicy(dir string, perChartFamilyByteLimit int) FetchFunc {
+	fetchRemoteWithCache := FetchRemoteWithCache(dir, perChartFamilyByteLimit)
+	fetchRemote := FetchRemote()
+
+	return func(chart shipper.Chart) (*helmchart.Chart, error) {
+		if chart.PullPolicy == shipper.ChartPullPolicyTypeAlways {
+			return fetchRemote(chart)
+		}
+
+		return fetchRemoteWithCache(chart)
+	}
+}
+
 func FetchRemoteWithCache(dir string, perChartFamilyByteLimit int) FetchFunc {
 	cache := chartcache.NewFilesystemCache(dir, perChartFamilyByteLimit)
 	return func(chart shipper.Chart) (*helmchart.Chart, error) {

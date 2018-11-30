@@ -198,7 +198,7 @@ func main() {
 		recorder: recorder,
 
 		store:          store,
-		chartFetchFunc: chart.FetchRemoteWithCache(*chartCacheDir, chart.DefaultCacheLimit),
+		chartFetchFunc: chart.FetchRemotePullPolicy(*chartCacheDir, chart.DefaultCacheLimit),
 
 		certPath: *certPath,
 		keyPath:  *keyPath,

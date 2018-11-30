@@ -108,10 +108,18 @@ type ApplicationCondition struct {
 	Message            string                   `json:"message,omitempty"`
 }
 
+type ChartPullPolicyType string
+
+const (
+	ChartPullPolicyTypeIfNotPresent ChartPullPolicyType = "IfNotPresent"
+	ChartPullPolicyTypeAlways       ChartPullPolicyType = "Always"
+)
+
 type Chart struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-	RepoURL string `json:"repoUrl"`
+	Name       string              `json:"name"`
+	Version    string              `json:"version"`
+	RepoURL    string              `json:"repoUrl"`
+	PullPolicy ChartPullPolicyType `json:"pullPolicy"`
 }
 
 type ChartValues map[string]interface{}

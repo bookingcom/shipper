@@ -123,3 +123,55 @@ func TestFetchCacheRemoteGoneAway(t *testing.T) {
 		t.Fatalf("remote chart and cached chart are not the same: %v and %v", remoteChart, cachedChart)
 	}
 }
+
+func TestFetchPullPolicy(t *testing.T) {
+	_ = os.RemoveAll(cache)
+	defer func() {
+		_ = os.RemoveAll(cache)
+	}()
+
+	fetch := FetchRemotePullPolicy(cache, tenMb)
+
+	srv, hh, err := repotest.NewTempServer("testdata/*.tgz")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	inChartIfNotPresent := shipper.Chart{
+		Name:       testFetchChartName,
+		Version:    testFetchChartVersion,
+		RepoURL:    srv.URL(),
+		PullPolicy: shipper.ChartPullPolicyTypeIfNotPresent,
+	}
+
+	remoteChart, err := fetch(inChartIfNotPresent)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Terminate the server and fetch again: it should work, and it should be the
+	// same.
+	srv.Stop()
+	os.RemoveAll(hh.String())
+
+	cachedChart, err := fetch(inChartIfNotPresent)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(remoteChart, cachedChart) {
+		t.Fatalf("remote chart and cached chart are not the same: %v and %v", remoteChart, cachedChart)
+	}
+
+	inChartAlways := shipper.Chart{
+		Name:       testFetchChartName,
+		Version:    testFetchChartVersion,
+		RepoURL:    srv.URL(),
+		PullPolicy: shipper.ChartPullPolicyTypeAlways,
+	}
+
+	_, err = fetch(inChartAlways)
+	if err == nil {
+		t.Fatalf("pullPolicy=Always successed when remote repo is gone, expect it to fail")
+	}
+}

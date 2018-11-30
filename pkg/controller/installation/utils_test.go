@@ -30,7 +30,7 @@ import (
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
-var chartFetchFunc = chart.FetchRemoteWithCache("testdata/chart-cache", chart.DefaultCacheLimit)
+var chartFetchFunc = chart.FetchRemotePullPolicy("testdata/chart-cache", chart.DefaultCacheLimit)
 
 // FakeClientProvider implements clusterclientstore.ClientProvider.
 type FakeClientProvider struct {
