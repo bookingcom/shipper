@@ -16,6 +16,8 @@ for *Pod* objects.
 The ``.spec.template`` field will be copied to a new *Release*
 object under the ``.spec.environment`` field during deployment.
 
+.. _concepts_application_scope_of_control:
+
 Scope of control
 ----------------
 

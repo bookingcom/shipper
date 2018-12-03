@@ -3,29 +3,39 @@
 Release
 =======
 
-A *Release* encodes all of the information required to rollout (or rollback) a
-particular version of an application. It represents the transition from the
-incumbent version to the candidate version.
+A *Release* contains all the information required for Shipper to run a
+particular version of an application.
 
-It consists primarily of an immutable ``.metadata.environment`` from the
-Application ``template``. This environment is annotated by the Schedule
-controller to transform ``clusterRequirements`` into concrete clusters; it may
-also contain mandatory sidecars or anything else required to install or upgrade
-the application in a cluster.
+To aid both the human and other users in finding resources related to a
+particular *Release* object, the following labels are expected to be present
+in a newly created *Release* and propagated to all of its related objects
+(both in the **management** and **application** clusters):
 
-Additionally, its ``spec`` is the interface used by the outside world to indicate
-that it is safe to proceed with a release strategy.
+shipper-app
+    The name of the *Application* object owning the *Release*.
 
-Its ``status`` sub-object is used by various controllers to encode the position
-of this operation in the overall release state machine.
+shipper-release
+    The name of the *Release* object.
 
-The *Phase* field in the Status object indicates the deployment/release phase
-the system is waiting for completion, and it is up to the aforementioned various
-controllers to determine whether there is work to be done, and also is their
-responsibilities to modify the field to activate the next phase.
 
-The ``release`` label is used to further identify all the Kubernetes objects
-that were created by this particular release.
+
+Scope of control
+----------------
+
+*Release* objects are owned by *Application* objects through Kubernetes
+`owner and dependents <https://kubernetes.io/docs/concepts/workloads/controllers/garbage-collection/#owners-and-dependents>`_
+mechanism in the management cluster, and are created based on modifications
+made to an application ``.spec.template`` field (read
+:ref:`here <concepts_application_scope_of_control>` for more information about
+an application's scope of control).
+
+A *Release* object owns
+*InstallationTarget*, *CapacityTarget* and *TrafficTarget* objects
+through Kubernetes
+`owner and dependents <https://kubernetes.io/docs/concepts/workloads/controllers/garbage-collection/#owners-and-dependents>`_
+mechanism in the management cluster. Through Kubernetes garbage collection
+mechanism, those objects are disposed when *Release* objects are removed from
+the management cluster.
 
 Writing a Release Spec
 ----------------------
@@ -37,7 +47,14 @@ Release Environment
 
 The ``.spec.environment`` is the only required field of the ``.spec``.
 
-The ``.spec.environment`` contains all the information required for an application to be deployed with Shipper.
+The ``.spec.environment`` contains all the information required for an
+application to be deployed with Shipper.
+
+.. important::
+    *Roll-forwards* and *roll-backs* have no difference from Shipper's
+    perspective, so a roll-back can be performed simply by replacing an
+    Application's ``.spec.template`` field with the ``.spec.environment``
+    field of the Release you want to roll-back to.
 
 Chart
 #####
@@ -82,7 +99,38 @@ Strategy
     :dedent: 4
     :linenos:
 
-``.spec.environment.strategy`` is a required field that specifies the deployment strategy to be used when deploying the release.
+``.spec.environment.strategy`` is a required field that specifies the
+deployment strategy to be used when deploying the release.
+
+``.spec.environment.strategy.steps`` contains a list of steps that must
+be executed in order to complete a release. The following table displays
+the keys a step entry should have:
+
+.. list-table::
+    :widths: 1 99
+    :header-rows: 1
+
+    * - Key
+      - Description
+
+    * - ``.name``
+      - The step name, meant for human users. For example, ``staging``, ``50/50`` or ``full on``.
+
+    * - ``.capacity.incumbent``
+      - The percentage of replicas, from the total number of required replicas
+        the **incumbent Release** should have at this step.
+
+    * - ``.capacity.contender``
+      - The percentage of replicas, from the total number of required replicas
+        the **contender Release** should have at this step.
+
+    * - ``.traffic.incumbent``
+      - The weight the **incumbent Release** has when load balancing traffic
+        through all Release objects of the given Application.
+
+    * - ``.traffic.contender``
+      - The weight the **contender Release** has when load balancing traffic
+        through all Release objects of the given Application.
 
 Values
 ######
