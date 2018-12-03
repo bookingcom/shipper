@@ -61,6 +61,7 @@ spec:
                       type: string
                 sidecars:
                   type: array
+                  nullable: true
                   items:
                     type: object
                     required:
