@@ -59,19 +59,6 @@ spec:
                       type: string
                     repoUrl:
                       type: string
-                sidecars:
-                  type: array
-                  nullable: true
-                  items:
-                    type: object
-                    required:
-                    - name
-                    - version
-                    properties:
-                      name:
-                        type: string
-                      version:
-                        type: string
                 clusterRequirements:
                   type: object
                   required:
