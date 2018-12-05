@@ -847,11 +847,6 @@ func (in *ReleaseEnvironment) DeepCopyInto(out *ReleaseEnvironment) {
 			(*in).DeepCopyInto(*out)
 		}
 	}
-	if in.Sidecars != nil {
-		in, out := &in.Sidecars, &out.Sidecars
-		*out = make([]Sidecar, len(*in))
-		copy(*out, *in)
-	}
 	in.ClusterRequirements.DeepCopyInto(&out.ClusterRequirements)
 	if in.Strategy != nil {
 		in, out := &in.Strategy, &out.Strategy

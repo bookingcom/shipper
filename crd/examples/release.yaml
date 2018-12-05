@@ -26,11 +26,6 @@ metadata:
         image:
           name: reviewsapi/app
           version: 6bbb0da1891646e58eb3e6a63af3a6fc3c8eb5a0d44824cba581d2e14a0450cf
-    sidecars:
-    - name: envoy
-      version: "2.1"
-    - name: telegraf
-      version: "0.99"
     strategy:
       steps:
       - name: staging
