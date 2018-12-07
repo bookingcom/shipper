@@ -19,7 +19,7 @@ shipper-release
 
 
 
-Scope of control
+Scope of Control
 ----------------
 
 *Release* objects are owned by *Application* objects through Kubernetes
