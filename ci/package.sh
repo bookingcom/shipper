@@ -25,6 +25,15 @@ docker push bookingcom/shipper:$TRAVIS_COMMIT
 docker build -t bookingcom/shipper-state-metrics:$TRAVIS_COMMIT -f Dockerfile.metrics .
 docker push bookingcom/shipper-state-metrics:$TRAVIS_COMMIT
 
+# building a tagged release
+if [ "$TRAVIS_BRANCH" == "$TRAVIS_TAG" ]; then
+    docker tag bookingcom/shipper-state-metrics:$TRAVIS_COMMIT bookingcom/shipper-state-metrics:$TRAVIS_TAG
+    docker push bookingcom/shipper-state-metrics:$TRAVIS_TAG
+
+    docker tag bookingcom/shipper:$TRAVIS_COMMIT bookingcom/shipper:$TRAVIS_TAG
+    docker push bookingcom/shipper:$TRAVIS_TAG
+fi
+
 docker logout
 
 unset DOCKER_USERNAME

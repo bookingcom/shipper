@@ -4,3 +4,4 @@ e2e.test
 .vscode/
 pkg/chart/testdata/chartmuseum
 pkg/chart/testdata/index.yaml
+docs/generated

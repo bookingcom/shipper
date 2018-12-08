@@ -1,0 +1,42 @@
+apiVersion: shipper.booking.com/v1alpha1
+kind: Application
+metadata:
+  name: reviews-api
+spec:
+  revisionHistoryLimit: 1
+  template:
+    chart:
+      name: reviews-api
+      version: 0.0.1
+      repoUrl: https://charts.example.com
+    clusterRequirements:
+      capabilities:
+      - gpu
+      - high-memory-nodes
+      regions:
+      - name: us-east1
+    strategy:
+      steps:
+      - name: staging
+        capacity:
+          incumbent: 100
+          contender: 1
+        traffic:
+          incumbent: 100
+          contender: 0
+      - name: canary
+        capacity:
+          incumbent: 10
+          contender: 90
+        traffic:
+          incumbent: 10
+          contender: 90
+      - name: full on
+        capacity:
+          incumbent: 0
+          contender: 100
+        traffic:
+          incumbent: 0
+          contender: 100
+    values:
+      replicaCount: 2

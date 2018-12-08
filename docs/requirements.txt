@@ -1,0 +1,4 @@
+sphinx==1.8.1
+sphinxcontrib-httpdomain==1.6.1
+sphinx_rtd_theme==0.4.2
+sphinx-autobuild==0.7.1
