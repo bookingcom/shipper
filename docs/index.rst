@@ -5,7 +5,7 @@ Shipper documentation
     :maxdepth: 2
 
     about_docs
-    intro/intro
+    intro/index
     start/start
     operations/operations
     install/install
