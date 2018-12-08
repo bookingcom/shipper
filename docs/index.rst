@@ -7,6 +7,6 @@ Shipper documentation
     about_docs
     intro/index
     start/install
-    operations/operations
-    install/install
+    user/index
+    operations/index
     api-reference/index

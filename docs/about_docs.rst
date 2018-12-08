@@ -7,8 +7,6 @@ Documentation overview
 
 * :ref:`User guide <user>`: Using Shipper to deploy your code
 
-* :ref:`Operator/administrator guide <operations>`: Production installation, monitoring, and managing a fleet of Kubernetes clusters with Shipper
-
-* :ref:`Contributor/developer guide <developer>`: How to build Shipper and contribute to the project
+* :ref:`Administrator guide <operations>`: Production installation, monitoring, and cluster fleet management
 
 * :ref:`API Reference <api-reference>`: Detailed reference on the Shipper resources

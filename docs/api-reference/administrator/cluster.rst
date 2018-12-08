@@ -15,7 +15,7 @@ They serve two purposes:
 The second point allows administrators to perform tasks like load balancing
 workloads between clusters, shift workloads from one cluster to another, or
 drain clusters for risky maintenance. For examples of these tasks, see the
-:ref:`administrator's guide <administrator_guide>`.
+:ref:`administrator's guide <operations_fleet-management>`.
 
 *******
 Example
@@ -72,7 +72,7 @@ Applications on one cluster to another specific cluster. Default:
 ``.metadata.name``.
 
 More information on how to use these fields to manage a fleet of clusters can
-be found in the :ref:`Operator guide <operator_guide>`.
+be found in the :ref:`Administrator's guide <operations_fleet-management>`.
 
 ******
 Status

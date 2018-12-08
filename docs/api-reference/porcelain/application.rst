@@ -1,4 +1,5 @@
 .. _api-reference_application:
+
 ###########
 Application
 ###########
@@ -7,7 +8,7 @@ An *Application* object represents a single application Shipper can manage on
 a user's behalf. In this case, the term "application" means 'a collection of
 Kubernetes objects installed by a single Helm chart'.
 
-Application objects are a :ref:`user interface <user_guide>`, and are the
+Application objects are a :ref:`user interface <user>`, and are the
 primary way that application developers trigger new rollouts.
 
 This is accomplished by editing an Application's ``.spec.template`` field. The
@@ -35,7 +36,7 @@ Spec
 ==============================
 
 ``revisionHistoryLimit`` is an optional field that represents the number
-of associated :ref:`Release <concepts_release>` objects in ``.status.history``.
+of associated :ref:`Release <api-reference_release>` objects in ``.status.history``.
 
 If you're using Shipper to configure development environments,
 ``revisionHistoryLimit`` can be a small value, like ``1``. In a production
