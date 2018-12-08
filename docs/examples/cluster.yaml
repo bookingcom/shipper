@@ -1,0 +1,15 @@
+apiVersion: shipper.booking.com/v1alpha1
+kind: Cluster
+metadata:
+  name: kube-us-east1-a
+  namespace: ""
+spec:
+  apiMaster: https://10.0.0.1
+  capabilities:
+  - gpu
+  - ssd
+  - high-memory-nodes
+  region: us-east1
+  scheduler:
+    unschedulable: false
+    weight: 100

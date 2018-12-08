@@ -9,3 +9,4 @@ Shipper documentation
     start/start
     operations/operations
     install/install
+    api-reference/index

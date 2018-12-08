@@ -1,0 +1,37 @@
+apiVersion: shipper.booking.com/v1alpha1
+kind: Application
+metadata:
+  name: reviews-api
+spec:
+  template:
+    # helm chart for this application
+    chart:
+      name: reviews-api
+      version: 0.0.1
+      repoUrl: https://charts.example.com
+    # how to select clusters to deploy to
+    clusterRequirements:
+      regions:
+      - name: us-east1
+    # the rollout strategy
+    strategy:
+      steps:
+      - name: canary
+        capacity:
+          incumbent: 100
+          contender: 10
+        traffic:
+          incumbent: 9
+          contender: 1
+      - name: all-in
+        capacity:
+          incumbent: 0
+          contender: 100
+        traffic:
+          incumbent: 0
+          contender: 10
+    # the values for the helm chart
+    values:
+      image:
+        repository: image-registry.example.com/reviews-api
+        tag: v0.1.0
