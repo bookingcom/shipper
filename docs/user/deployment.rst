@@ -1,120 +1,176 @@
-.. _operations_deployment:
+.. _user_deployment:
 
+########################
 Deployments with Shipper
-========================
+########################
 
-To deploy your service using _Shipper_ you need to create an `Application <_getting_started_Application>`_ object.
+Rollouts with Shipper are all about transitioning from an old *Release*, the
+**incumbent**, to a new *Release*, the **contender**. If you're rolling out
+an *Application* for the very first time, then there is no **incumbent**, only
+a **contender**.
 
-Required Fields
-~~~~~~~~~~~~~~~
+In general Shipper tries to present a familiar interface for people accustomed
+to *Deployment* objects.
 
-In your Application's object you'll find the following fields, just like any Kubernetes object:
+******************
+Application object
+******************
 
-``apiVersion``
-    Which version of the _Shipper_ API you're using (default: `shipper.booking.com/v1`)
-``kind``
-    What kind of object you want to create
-``metadata``
-    Data that helps uniquely identify the object, including a `name` String.
-``spec``
-    Specification of the desired behavior of the Shipper Application.
+Here's the Application object we'll use:
 
-Metadata
-~~~~~~~~
+.. code-block:: yaml
 
-Standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata.
+  apiVersion: shipper.booking.com/v1alpha1
+  kind: Application
+  metadata:
+    name: super-server
+  spec:
+    revisionHistoryLimit: 3
+    template:
+      chart:
+        name: nginx
+        repoUrl: https://storage.googleapis.com/shipper-demo
+        version: 0.0.1
+      clusterRequirements:
+        regions:
+        - name: local
+      strategy:
+        steps:
+        - capacity:
+            contender: 1
+            incumbent: 100
+          name: staging
+          traffic:
+            contender: 0
+            incumbent: 100
+        - capacity:
+            contender: 100
+            incumbent: 0
+          name: full on
+          traffic:
+            contender: 100
+            incumbent: 0
+      values:
+        replicaCount: 3
 
-``name``
-    The name of your application.
-``labels``
-    Map of string keys and values that can be used to organize and categorize (scope and select) objects. All chart objects created by a Release of this application will inherit labels from the Application. More info: http://kubernetes.io/docs/user-guide/labels.
+Copy this to a file called ``app.yaml`` and apply it to our Kubernetes cluster:
 
-Specification
-~~~~~~~~~~~~~
+.. code-block:: shell
 
-``revisionHistoryLimit``
-    The number of old Release objects to keep around to retain to allow rollback. This is a pointer to distinguish between explicit zero and not specified. In development we don't need to keep any history, so value would be one, while in a production environment you'd likely want some rollback targets.
-``template``
-    Is a mold for stamping out new Release objects, one per rollout. Every time you cange the template for your Application in the cluster, *Shipper* will create a Release and perform a rollout.
+    $ kubectl apply -f app.yaml
 
-Cluster Requirements
-********************
+This will create an *Application* and *Release* object. Shortly thereafter, you
+should also see the set of Chart objects: a *Deployment*, a *Service*, and
+a *Pod*.
 
-In Application's  ``.spec.template`` field we can define the clusters where our application should be deployed. This information is provided in the `clusterRequirements` field.
+*****************
+Checking progress
+*****************
 
-``clusterRequirements.regions``
-    A list of objects representing regions with Kubernetes clusters available.
+There are a few different ways to figure out how your rollout is going.
 
-``clusterRequirements.regions[].name``
-    Name of the region to pick a cluster from.
+We can check in on the *Release* to see what kind of progress we're making:
 
-``clusterRequirements.regions[].replicas``
-    Determines how many clusters your application should be scheduled on in this region.
+``.status.achievedStep``
+------------------------
 
-``clusterRequirements.capabilities``
-    Clusters have capabilities, which are a list of arbitrary strings representing different features available to workloads in that cluster. For example, perhaps a subset of clusters are provisioned with SSD backed local storage. As a workload, you can require that any cluster you're assigned to have a particular set of capabilities.
+This field is the definitive answer for whether Shipper considers a given step in
+a rollout strategy complete.
 
-Chart
-*****
+.. code-block:: shell
 
-Inside the ``template`` section we can define the base chart that our application is going to use. This information is provided in the ``chart`` section. A chart is a package of templates for kubernetes configuration files (please refer to `this document <https://docs.helm.sh/developing_charts/>`_ on how to create your own chart). As your application grows and becomes more specialized, you can change this to be a chart specific to your application. You shouldn't need to change this too often: the most dynamic parts of the config are contained in 'values'
+	$ kubectl get rel super-server-83e4eedd-0 -o json | jq .status.achievedStep
+	null
+	$ # "null" means Shipper has not written the achievedStep key, because it hasn't finished the first step
+	$ kubectl get rel -o json | jq .items[0].status.achievedStep
+	{
+	  "name": "staging",
+	  "step": 0
+	}
 
-``chart.name``
-    Chart's name
+If everything is working, you should see one *Pod* active/ready. 
 
-``chart.version``
-    Chart's version
+``.status.strategy.conditions``
+-------------------------------
 
-``chart.repoUrl``
-    Chart repository to retrieve the chart.
+For a more detailed view of what's happening while things are in between
+states, you can use the Strategy conditions.
 
-.. note:: Shipper will cache this chart version internally after fetching to protect against repository outages. This means that if you need to change your chart, you need to tag it with a different version.
+.. code-block:: shell
+    
+    $ kubectl get rel super-server-83e4eedd-0 -o json | jq .status.strategy.conditions
+    [
+      {
+        "lastTransitionTime": "2018-12-09T10:00:55Z",
+        "message": "clusters pending capacity adjustments: [microk8s]",
+        "reason": "ClustersNotReady",
+        "status": "False",
+        "type": "ContenderAchievedCapacity"
+      },
+      {
+        "lastTransitionTime": "2018-12-09T10:00:55Z",
+        "status": "True",
+        "type": "ContenderAchievedInstallation"
+      }
+    ]
 
-Values
-******
+These will tell you which part of the step Shipper is currently working on. In
+this example, Shipper is waiting for the desired capacity in the microk8s
+cluster. This means that Pods aren't ready yet.
 
-Inside the ``template`` section ``values`` apply to the defined ``chart``.
+``.status.strategy.state``
+--------------------------
 
-``values``
-    Are what the chart templates get as parameters when they render. Some of these will likely change every rollout as you update the tag of the docker image you want to deploy.
+Finally, because the Strategy conditions can be kind of a lot to parse, they
+are summarized into ``estatus.strategy.state``.
+ 
+.. code-block:: shell
 
-  These are specific to the Chart you are deploying. Below you can find some examples:
+	$ kubectl get rel super-server-83e4eedd-0 -o json | jq .status.strategy.state
+	{
+	  "waitingForCapacity": "True",
+	  "waitingForCommand": "False",
+	  "waitingForInstallation": "False",
+	  "waitingForTraffic": "False"
+	}
 
-    ``name``
-        Usually matches ``metadata.name``, used for...
+The :ref:`troubleshooting guide <user_troubleshooting>` has more information on
+how to dig deep into what's going on with any given *Release*.
 
-    ``replicaCount``
-        Determines how many pods should be scheduled in each cluster.
+*********************
+Advancing the rollout
+*********************
 
-    ``image.repository``
-        Points to the docker-registry repository where the docker image of your application is stored.
+So now that we've checked on our *Release* and seen that Shipper considers step
+0 achieved, let's advance the rollout:
 
-    ``image.tag``
-        Informs Kubernetes which Docker image's tag to use when deploying your application.
+.. code-block:: shell
 
-Strategy
-********
+    $ kubectl patch rel super-server-83e4eedd-0 --type=merge -p '{"spec":{"targetStep":1}}'
 
-Depending on the environment we may want to define a more simple or complex strategy, which translates to a strategy with one or more steps. This is configured using the the ``strategy`` field, which defines the rollout strategy of your application.
+I'm using ``patch`` here to keep things concise, but any means of modifying
+objects will work just fine.
 
-``strategy.steps[]``
-    In a development environment we don't need too much of a rollout strategy, so a single step will be enough, while in production we may want to have multiple steps as `staging`, `canary` and `full on` (more here (note: point to example of each strategy for copy-pasta)).
+Now we should be able to see 2 more pods spin up:
 
-``strategy.steps[].name``
-    Step name, some typical examples would be `staging`, `canary` and `full on`.
+.. code-block:: shell
 
-``strategy.steps[].capacity.contender``
-    These values are percentages of the capacity for the contender Release for a strategy step, which will be translated to a concrete number of Pods when deploying your application.
+    $ kubectl get po
+    NAME                                             READY STATUS  RESTARTS AGE
+    super-server-83e4eedd-0-nginx-5775885bf6-76l6g   1/1   Running 0        7s
+    super-server-83e4eedd-0-nginx-5775885bf6-9hdn5   1/1   Running 0        7s
+    super-server-83e4eedd-0-nginx-5775885bf6-dkqbh   1/1   Running 0        3m55s
 
-``strategy.steps[].capacity.incumbent``
-    These values are percentages of the capacity for the incumbent Release (if any) for a strategy step, which will be translated to a concrete number of Pods when deploying your application.
+And confirm that Shipper believes this rollout to be done:
 
-    .. important:: Percentages are always rounded up to the nearest whole Pod, ensuring that capacity should be provided for calculations that end up resulting in fractions of a single Pod.
+.. code-block:: shell
 
-    .. note:: *Contender* is a Release Shipper is busy deploying (for example, after you've modified the Application's ``template`` field. *Incumbent*, on the other hand, is a Release Shipper has been deployed before and is currently being phased out in favor of the *contender* Release.
+	$ kubectl get rel -o json | jq .items[0].status.achievedStep
+	{
+	  "name": "full on",
+	  "step": 1
+	}
 
-``strategy.steps[].traffic.contender``
-    How much traffic should this Release get? These values are weights, not percentages: they could just as well be '9' and '1' or '900' and '100'. They specify the relative traffic weight for the pods belonging to a given Release, __incumbent__ (old) or __contender__ (new).
-
-You can have as many steps in your Strategy as you want. The default offering
-has 3 steps, staging, canary, and full on.
+That's it! Doing another rollout is as simple as editing the *Application*
+object, just like you would with a *Deployment*. The main principle is
+patching the *Release* object to move from step to step.
