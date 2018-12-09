@@ -1,4 +1,4 @@
-.. _building:
+.. _developer_building:
 
 Building Shipper yourself
 =========================
@@ -10,7 +10,7 @@ Shipper uses ``go build`` to produce binaries. All dependencies are present in S
 Requirements
 ------------
 
-* Go 1.10
+* Go 1.10+
 * Go dep
 
 Building Shipper
