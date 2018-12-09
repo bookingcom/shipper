@@ -21,26 +21,11 @@ continuing.
 Step 1: get ``shipperctl``
 **************************
 
-``shipperctl`` automates setting up clusters for Shipper.
+``shipperctl`` automates setting up clusters for Shipper. Grab the tarball for
+your operating system, extract it, and stick it in your ``PATH`` somewhere.
 
-Linux
-^^^^^
-.. code-block:: shell
-
-    $ curl -LO https://github.com/bookingcom/shipper/releases/download/v0.1.0/shipperctl-0.1.0.linux-amd64.tar.gz
-
-MacOS
-^^^^^
-.. code-block:: shell
-
-    $ curl -LO https://github.com/bookingcom/shipper/releases/download/v0.1.0/shipperctl-0.1.0.darwin-amd64.tar.gz
-
-Windows
-^^^^^^^
-.. code-block:: shell
-
-    $ curl -LO https://github.com/bookingcom/shipper/releases/download/v0.1.0/shipperctl-0.1.0.windows-amd64.tar.gz
-
+You can find the binaries on the `GitHub Releases page for
+Shipper <https://github.com/bookingcom/shipper/releases>`_.
 
 ********************************
 Step 2: write a cluster manifest
@@ -114,12 +99,102 @@ service accounts, and so on, let's create the Shipper *Deployment*:
 
 This will create an instance of Shipper in the ``shipper-system`` namespace.
 
-*****************
-Step 5: do stuff!
-*****************
+*********************
+Step 5: do a rollout!
+*********************
 
-Now we should have a working Shipper installation. Let's do a deployment!
+Now we should have a working Shipper installation. Let's roll something out!
 
-TODO: find a public chart repo with a suitable chart, with or without the
-workaround. bitnami nginx is very close, just lacks 'replicas', so you can't
-see the rollout really doing anything.
+Here's the Application object we'll use:
+
+.. code-block:: yaml
+
+  apiVersion: shipper.booking.com/v1alpha1
+  kind: Application
+  metadata:
+    name: super-server
+  spec:
+    revisionHistoryLimit: 3
+    template:
+      chart:
+        name: nginx
+        repoUrl: https://storage.googleapis.com/shipper-demo
+        version: 0.0.1
+      clusterRequirements:
+        regions:
+        - name: local
+      strategy:
+        steps:
+        - capacity:
+            contender: 1
+            incumbent: 100
+          name: staging
+          traffic:
+            contender: 0
+            incumbent: 100
+        - capacity:
+            contender: 100
+            incumbent: 0
+          name: full on
+          traffic:
+            contender: 100
+            incumbent: 0
+      values:
+        replicaCount: 3
+
+Copy this to a file called ``app.yaml`` and apply it to our Kubernetes cluster:
+
+.. code-block:: shell
+
+    $ kubectl apply -f app.yaml
+
+This will create an *Application* and *Release* object. Shortly thereafter, you
+should also see the set of Chart objects: a *Deployment*, a *Service*, and
+a *Pod*.
+
+We can check in on the *Release* to see what kind of progress we're making:
+
+.. code-block:: shell
+
+	$ kubectl get rel super-server-83e4eedd-0 -o json | jq .status.achievedStep
+	null
+	$ # "null" means Shipper has not written the achievedStep key, because it hasn't finished the first step
+	$ kubectl get rel -o json | jq .items[0].status.achievedStep
+	{
+	  "name": "staging",
+	  "step": 0
+	}
+
+If everything is working, you should see one *Pod* active/ready. Let's advance
+the rollout:
+
+.. code-block:: shell
+
+    $ kubectl patch rel super-server-83e4eedd-0 --type=merge -p '{"spec":{"targetStep":1}}'
+
+I'm using ``patch`` here to keep things concise, but any means of modifying
+objects will work just fine.
+
+Now we should be able to see 2 more pods spin up:
+
+.. code-block:: shell
+
+    $ kubectl get po
+    NAME                                             READY STATUS  RESTARTS AGE
+    super-server-83e4eedd-0-nginx-5775885bf6-76l6g   1/1   Running 0        7s
+    super-server-83e4eedd-0-nginx-5775885bf6-9hdn5   1/1   Running 0        7s
+    super-server-83e4eedd-0-nginx-5775885bf6-dkqbh   1/1   Running 0        3m55s
+
+And confirm that Shipper believes this rollout to be done:
+
+.. code-block:: shell
+
+	$ kubectl get rel -o json | jq .items[0].status.achievedStep
+	{
+	  "name": "full on",
+	  "step": 1
+	}
+
+That's it! Doing another rollout is as simple as editing the *Application*
+object, just like you would with a *Deployment*. The main principle is
+patching the *Release* object to move from step to step.
