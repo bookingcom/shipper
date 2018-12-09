@@ -9,4 +9,5 @@ Shipper documentation
     start/install
     user/index
     operations/index
+    limitations
     api-reference/index
