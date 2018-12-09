@@ -6,5 +6,5 @@ User guide
 .. toctree::
     :maxdepth: 1
 
-    deployment
+    rolling-out
     troubleshooting

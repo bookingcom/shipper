@@ -103,4 +103,4 @@ This will create an instance of Shipper in the ``shipper-system`` namespace.
 Step 5: do a rollout!
 *********************
 
-Now we should have a working Shipper installation. :ref:`Let's roll something out! <user_deployment>`
+Now we should have a working Shipper installation. :ref:`Let's roll something out! <user_rolling-out>`
