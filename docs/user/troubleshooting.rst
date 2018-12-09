@@ -1,4 +1,4 @@
-.. _operations_troubleshooting:
+.. _user_troubleshooting:
 
 Troubleshooting Shipper
 =======================

@@ -64,6 +64,13 @@ templates for this *Release*. ``name``, ``version``, and ``repoUrl`` are all
 required. ``repoUrl`` is the Helm Chart repository that Shipper should
 download the chart from.
 
+.. note::
+
+    Shipper will cache this chart version internally after fetching it, just
+    like ``pullPolicy: IfNotPresent`` for Docker images in Kubernetes. This
+    protects against chart repository outages. However, it means that if you
+    need to change your chart, you need to tag it with a different version.
+
 ``.spec.environment.clusterRequirements``
 -----------------------------------------
 
@@ -130,6 +137,9 @@ exactly equivalent to a ``values.yaml`` file provided to the ``helm install -f
 values.yaml`` invocation. Like ``values.yaml`` it is technically optional, but
 almost all rollouts are likely to include some dynamic values for the chart,
 like the image tag.
+
+Almost all Charts will expect some **values** like ``replicaCount``,
+``image.repository``, and ``image.tag``.
 
 ******
 Status
