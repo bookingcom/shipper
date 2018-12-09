@@ -9,4 +9,6 @@ Documentation overview
 
 * :ref:`Administrator guide <operations>`: Production installation, monitoring, and cluster fleet management
 
+* :ref:`Limitations and known issues <limitations>`
+
 * :ref:`API Reference <api-reference>`: Detailed reference on the Shipper resources
