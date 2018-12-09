@@ -1,7 +1,7 @@
-.. _user_deployment:
+.. _user_rolling-out:
 
 ########################
-Deployments with Shipper
+Rolling out with Shipper
 ########################
 
 Rollouts with Shipper are all about transitioning from an old *Release*, the
