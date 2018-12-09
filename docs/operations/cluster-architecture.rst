@@ -18,6 +18,8 @@ enable Shipper to connect to the **application** clusters.
 
 Typically you have one of these per large deployment, or one with a standby.
 
+.. _operations_cluster-architecture_application-cluster:
+
 ********************
 Application clusters
 ********************

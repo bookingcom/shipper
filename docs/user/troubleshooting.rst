@@ -36,7 +36,7 @@ we do when rolling out:
       - Description
     * - InstallationTarget
       - it
-      - Install charts in `application clusters </kubernetes/concepts/architecture.html#cluster-types>`_
+      - Install charts in :ref:`application clusters <operations_cluster-architecture_application-cluster>`
     * - CapacityTarget
       - ct
       - Scale deployments up and down to reach desired number of pods
@@ -213,8 +213,8 @@ think happen more often than others:
     * - Can't fetch Helm chart
       - Release condition ``Scheduled`` is false and the message is something like "download https://charts.example.com/charts/nginx-0.1.42.tgz: 404"
 
-Make sure you're on the right cluster !
----------------------------------------
+Make sure you're on the right cluster!
+--------------------------------------
 
 There are cases where the user is checking on the wrong cluster and can't see the pods etc. To make sure you're on the right one:
 
