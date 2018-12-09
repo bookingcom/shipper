@@ -8,4 +8,3 @@ User guide
 
     deployment
     troubleshooting
-    cicd
