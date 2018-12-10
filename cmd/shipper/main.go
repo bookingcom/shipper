@@ -40,6 +40,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller/janitor"
 	"github.com/bookingcom/shipper/pkg/controller/release"
 	"github.com/bookingcom/shipper/pkg/controller/traffic"
+	"github.com/bookingcom/shipper/pkg/controller/webhook"
 	"github.com/bookingcom/shipper/pkg/metrics/instrumentedclient"
 	shippermetrics "github.com/bookingcom/shipper/pkg/metrics/prometheus"
 )
@@ -52,6 +53,7 @@ var controllers = []string{
 	"capacity",
 	"traffic",
 	"janitor",
+	"webhook",
 }
 
 const defaultRESTTimeout time.Duration = 10 * time.Second
@@ -355,6 +357,7 @@ func buildInitializers() map[string]initFunc {
 	controllers["capacity"] = startCapacityController
 	controllers["traffic"] = startTrafficController
 	controllers["janitor"] = startJanitorController
+	controllers["webhook"] = startWebhookController
 	return controllers
 }
 
@@ -501,6 +504,23 @@ func startTrafficController(cfg *cfg) (bool, error) {
 	cfg.wg.Add(1)
 	go func() {
 		c.Run(cfg.workers, cfg.stopCh)
+		cfg.wg.Done()
+	}()
+
+	return true, nil
+}
+
+func startWebhookController(cfg *cfg) (bool, error) {
+	enabled := cfg.enabledControllers["webhook"]
+	if !enabled {
+		return false, nil
+	}
+
+	c := webhook.NewController()
+
+	cfg.wg.Add(1)
+	go func() {
+		c.Run(cfg.stopCh)
 		cfg.wg.Done()
 	}()
 
