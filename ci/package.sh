@@ -7,7 +7,7 @@ if [ "$TRAVIS_PULL_REQUEST" != "false" ]; then
     exit 0
 fi
 
-if [ "$TRAVIS_BRANCH" != "master" ]; then
+if [ "$TRAVIS_BRANCH" != "master" ] && [ "$TRAVIS_TAG" == "" ]; then
     echo "Not running packaging for branch '$TRAVIS_BRANCH'"
     exit 0
 fi
