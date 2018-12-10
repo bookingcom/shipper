@@ -37,6 +37,10 @@ required = ["k8s.io/code-generator/cmd/client-gen"]
   name = "github.com/spf13/pflag"
   version = "1.0.3"
 
+[[override]]
+  name = "github.com/Azure/go-autorest"
+  revision = "e14a70c556c8e0db173358d1a903dca345a8e75e"
+
 [[constraint]]
   version = "kubernetes-1.11.4"
   name = "k8s.io/apiextensions-apiserver"

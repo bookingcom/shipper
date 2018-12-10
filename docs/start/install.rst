@@ -12,7 +12,8 @@ The rest of this document assumes that you have access to a Kubernetes cluster
 and admin privileges on it. If you don't have this, check out `microk8s
 <https://microk8s.io/>`_ or `minikube
 <https://github.com/kubernetes/minikube>`_. Cloud clusters like GKE are also
-fine. Shipper requires Kubernetes 1.11 or later.
+fine. Shipper requires Kubernetes 1.11 or later, and you'll need to be an admin
+on the cluster you're working with. [#f1]_
 
 Make sure that ``kubectl`` works and can connect to your cluster before
 continuing.
@@ -104,3 +105,7 @@ Step 5: do a rollout!
 *********************
 
 Now we should have a working Shipper installation. :ref:`Let's roll something out! <user_rolling-out>`
+
+.. rubric:: Footnotes
+
+.. [#f1] For example, on GKE you need to `bind yourself to cluster-admin <https://stackoverflow.com/a/52972588>`_ before ``shipperctl`` will work.
