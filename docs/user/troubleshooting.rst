@@ -6,7 +6,7 @@ Troubleshooting Shipper
 Prerequisites
 -------------
 
-To troubleshoot deployments effectively you need to be familiar with `core Kubernetes <https://kubernetes.io/docs/concepts/>`_) and Shipper concepts (*very briefly* explained below) and be comfortable running `kubectl` commands.
+To troubleshoot deployments effectively you need to be familiar with `core Kubernetes <https://kubernetes.io/docs/concepts/>`_ and Shipper concepts (*very briefly* explained below) and be comfortable running `kubectl` commands.
 
 Fundamentals
 ------------
