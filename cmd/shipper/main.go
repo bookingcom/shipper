@@ -72,6 +72,10 @@ var (
 	chartCacheDir       = flag.String("cachedir", filepath.Join(os.TempDir(), "chart-cache"), "location for the local cache of downloaded charts")
 	resync              = flag.Duration("resync", defaultResync, "Informer's cache re-sync in Go's duration format.")
 	restTimeout         = flag.Duration("rest-timeout", defaultRESTTimeout, "Timeout value for management and target REST clients. Does not affect informer watches.")
+	webhookCertPath     = flag.String("webhook-cert", "", "Path to the TLS certificate for the webhook controller.")
+	webhookKeyPath      = flag.String("webhook-key", "", "Path to the TLS private key for the webhook controller.")
+	webhookBindAddr     = flag.String("webhook-addr", "0.0.0.0", "Addr to bind the webhook controller.")
+	webhookBindPort     = flag.String("webhook-port", "9443", "Port to bind the webhook controller.")
 )
 
 type metricsCfg struct {
@@ -100,6 +104,9 @@ type cfg struct {
 	certPath, keyPath string
 	ns                string
 	workers           int
+
+	webhookCertPath, webhookKeyPath  string
+	webhookBindAddr, webhookBindPort string
 
 	wg     *sync.WaitGroup
 	stopCh <-chan struct{}
@@ -202,6 +209,11 @@ func main() {
 		keyPath:  *keyPath,
 		ns:       *ns,
 		workers:  *workers,
+
+		webhookCertPath: *webhookCertPath,
+		webhookKeyPath:  *webhookKeyPath,
+		webhookBindAddr: *webhookBindAddr,
+		webhookBindPort: *webhookBindPort,
 
 		wg:     wg,
 		stopCh: stopCh,
@@ -516,7 +528,7 @@ func startWebhookController(cfg *cfg) (bool, error) {
 		return false, nil
 	}
 
-	c := webhook.NewController()
+	c := webhook.NewController(cfg.webhookBindAddr, cfg.webhookBindPort, cfg.webhookKeyPath, cfg.webhookCertPath)
 
 	cfg.wg.Add(1)
 	go func() {
