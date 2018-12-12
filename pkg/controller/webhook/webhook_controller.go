@@ -31,18 +31,22 @@ var (
 	deserializer  = codecs.UniversalDeserializer()
 )
 
-func NewController() *Controller {
+func NewController(bindAddr, bindPort, tlsPrivateKeyFile, tlsCertFile string) *Controller {
 	return &Controller{
-		bindAddr: "0.0.0.0",
-		// bindPort must be 443 even if not serving TLS.
-		bindPort: "9443",
+		bindAddr:          bindAddr,
+		bindPort:          bindPort,
+		tlsPrivateKeyFile: tlsPrivateKeyFile,
+		tlsCertFile:       tlsCertFile,
 	}
 }
 
 func (c *Controller) Run(stopCh <-chan struct{}) {
 	addr := c.bindAddr + ":" + c.bindPort
 	mux := c.initializeHandlers()
-	server := &http.Server{Addr: addr, Handler: mux}
+	server := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
 
 	go func() {
 		var serverError error = nil
@@ -90,7 +94,8 @@ func adaptHandler(handler func(*admission_v1beta1.AdmissionReview) *admission_v1
 		}
 
 		contentType := r.Header.Get("Content-Type")
-		if contentType != "applicaton/json" {
+
+		if contentType != "application/json" {
 			http.Error(w, "invalid Content-Type, expect `application/json`", http.StatusUnsupportedMediaType)
 			return
 		}
@@ -134,6 +139,21 @@ func (c *Controller) validateHandlerFunc(review *admission_v1beta1.AdmissionRevi
 	case "Application":
 		var application shipper_v1alpha1.Application
 		err = json.Unmarshal(request.Object.Raw, &application)
+	case "Release":
+		var release shipper_v1alpha1.Release
+		err = json.Unmarshal(request.Object.Raw, &release)
+	case "Cluster":
+		var cluster shipper_v1alpha1.Cluster
+		err = json.Unmarshal(request.Object.Raw, &cluster)
+	case "InstallationTarget":
+		var installationTarget shipper_v1alpha1.InstallationTarget
+		err = json.Unmarshal(request.Object.Raw, &installationTarget)
+	case "CapacityTarget":
+		var capacityTarget shipper_v1alpha1.CapacityTarget
+		err = json.Unmarshal(request.Object.Raw, &capacityTarget)
+	case "TrafficTarget":
+		var trafficTarget shipper_v1alpha1.TrafficTarget
+		err = json.Unmarshal(request.Object.Raw, &trafficTarget)
 	}
 
 	if err != nil {
