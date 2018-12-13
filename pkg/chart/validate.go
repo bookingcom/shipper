@@ -31,10 +31,15 @@ func ValidateServices(decoded []runtime.Object) error {
 		}
 	}
 
+	// If there is only 1 service manifest and it was not labeled
+	// as shipper-lb=production, we can do it automatically.
 	if len(lbs) == 0 && len(services) == 1 {
 		lbs = services
 	}
 
+	// If there is more or less than exactly 1 prod LB service,
+	// shipper does not really know how to disambiguate this.
+	// Returning an error.
 	if len(lbs) != 1 {
 		return fmt.Errorf(
 			"one and only one v1.Service object with label %q is required, but %d found instead",
