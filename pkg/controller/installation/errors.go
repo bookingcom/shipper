@@ -69,6 +69,10 @@ type RenderManifestError error
 
 type IncompleteReleaseError error
 
+type FetchChartError error
+
+type ValidationChartError error
+
 func NewIncompleteReleaseError(format string, args ...interface{}) IncompleteReleaseError {
 	return IncompleteReleaseError(fmt.Errorf(format, args...))
 }

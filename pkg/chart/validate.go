@@ -45,7 +45,6 @@ func ValidateServices(decoded []runtime.Object) error {
 }
 
 func Validate(helmChart *helmchart.Chart) error {
-
 	manifests, renderErr := doRender(helmChart)
 	if renderErr != nil {
 		return renderErr

@@ -17,6 +17,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
@@ -51,13 +52,8 @@ func NewInstaller(chartFetchFunc shipperchart.FetchFunc,
 
 // renderManifests returns a list of rendered manifests for the given release and
 // cluster, or an error.
-func (i *Installer) renderManifests(_ *shipper.Cluster) ([]string, error) {
+func (i *Installer) renderManifests(chart *helmchart.Chart) ([]string, error) {
 	rel := i.Release
-	chart, err := i.fetchChart(rel.Spec.Environment.Chart)
-	if err != nil {
-		return nil, RenderManifestError(err)
-	}
-
 	rendered, err := shipperchart.Render(
 		chart,
 		rel.GetName(),
@@ -309,10 +305,7 @@ func (i *Installer) installManifests(
 		labels  map[string]string
 	}, 0, len(manifests))
 
-	var (
-		productionLoadBalancerServices []*corev1.Service
-		allServices                    []*corev1.Service
-	)
+	var prodLBService, lastSeenService *corev1.Service
 
 	// Try to install all the rendered objects in the target cluster. We should
 	// fail in the first error to report that this cluster has an issue. Since the
@@ -336,19 +329,17 @@ func (i *Installer) installManifests(
 		// be used later on to determine whether or not an invalid error should
 		// be returned to the caller.
 		if svc, ok := decodedObj.(*corev1.Service); ok {
-			allServices = append(allServices, svc)
-			// Looking for a Service marked as the production LB
 			if lbValue, ok := svc.Labels[shipper.LBLabel]; ok && lbValue == shipper.LBForProduction {
-				// If we have already seen a service marked as a prod LB, it's an error
-				if len(productionLoadBalancerServices) > 0 {
+				if prodLBService != nil {
 					return controller.NewInvalidChartError(
 						fmt.Sprintf("Object %#v contains %q label, but %#v claims"+
 							" it is the production LB. This looks like a misconfig:"+
 							" only 1 service is allowed to be the production LB.",
-							decodedObj, shipper.LBLabel, productionLoadBalancerServices[0]))
+							decodedObj, shipper.LBLabel, prodLBService))
 				}
-				productionLoadBalancerServices = append(productionLoadBalancerServices, svc)
+				prodLBService = svc
 			}
+			lastSeenService = svc
 		}
 
 		preparedObjects = append(preparedObjects, struct {
@@ -357,23 +348,12 @@ func (i *Installer) installManifests(
 		}{decoded: decodedObj, labels: i.Release.Labels})
 	}
 
-	// If we have observed only 1 Service object and it was not marked
-	// with shipper-lb=production label, we can do it ourselves.
-	if len(productionLoadBalancerServices) == 0 && len(allServices) == 1 {
-		productionLoadBalancerServices = allServices
+	if prodLBService == nil {
+		prodLBService = lastSeenService
 	}
-
-	// If, after all, we still can not identify a single Service which will
-	// be the production LB, there is nothing else to do rather than bail out
-	if len(productionLoadBalancerServices) != 1 {
-		return controller.NewInvalidChartError(
-			fmt.Sprintf(
-				"one and only one v1.Service object with label %q is required, but %d found instead",
-				shipper.LBLabel, len(productionLoadBalancerServices)))
+	if prodLBService != nil {
+		prodLBService.Labels[shipper.LBLabel] = shipper.LBForProduction
 	}
-
-	chosenService := productionLoadBalancerServices[0]
-	chosenService.Labels[shipper.LBLabel] = shipper.LBForProduction
 
 	// The second loop is meant to install all the decoded and transformed
 	// manifests once we assume it the Chart is in good shape.
@@ -384,7 +364,7 @@ func (i *Installer) installManifests(
 		}
 
 		// This is the Service object we picked as the production LB
-		if decodedObj == chosenService {
+		if decodedObj == prodLBService {
 			if svc, ok := decodedObj.(*corev1.Service); ok {
 				decodedObj, err = i.modifyServiceSelector(svc)
 				if err != nil {
@@ -502,7 +482,17 @@ func (i *Installer) installRelease(
 	dynamicClientBuilder DynamicClientBuilderFunc,
 ) error {
 
-	renderedManifests, err := i.renderManifests(cluster)
+	rel := i.Release
+	chart, err := i.fetchChart(rel.Spec.Environment.Chart)
+	if err != nil {
+		return FetchChartError(err)
+	}
+
+	if err := shipperchart.Validate(chart); err != nil {
+		return ValidationChartError(err)
+	}
+
+	renderedManifests, err := i.renderManifests(chart)
 	if err != nil {
 		return err
 	}
