@@ -579,6 +579,7 @@
   digest = "1:519666bb550a93c7574d7c8dfca3d47bb33f7614a77064206fbba1de9f56abc3"
   name = "k8s.io/api"
   packages = [
+    "admission/v1beta1",
     "admissionregistration/v1alpha1",
     "admissionregistration/v1beta1",
     "apps/v1",
@@ -920,6 +921,7 @@
     "github.com/satori/go.uuid",
     "github.com/spf13/cobra",
     "gopkg.in/yaml.v2",
+    "k8s.io/api/admission/v1beta1",
     "k8s.io/api/apps/v1",
     "k8s.io/api/core/v1",
     "k8s.io/api/rbac/v1",
