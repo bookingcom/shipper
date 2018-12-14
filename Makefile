@@ -14,7 +14,9 @@ shipper-state-metrics:
 	docker push localhost:32000/shipper-state-metrics:latest
 
 restart:
-	$(KUBECTL) get po -o jsonpath='{.items[*].metadata.name}' | xargs $(KUBECTL) delete po
+	# Delete all Pods in namespace, to force the ReplicaSet to spawn new ones
+	# with the new latest image (assuming that imagePullPolicy is set to Always).
+	$(KUBECTL) delete po --all
 
 certs:
 	./hack/webhook/webhook-create-signed-cert.sh --namespace $(SHIPPER_NAMESPACE)
