@@ -1,7 +1,10 @@
 .testCoverage.txt
-e2e.test
 .vscode/
 pkg/chart/testdata/chartmuseum
 pkg/chart/testdata/index.yaml
 docs/generated
-build/
+
+# Binaries generated when building Shipper
+./shipper
+./shipper-state-metrics
+./e2e.test

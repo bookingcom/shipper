@@ -4,12 +4,12 @@ KUBECTL = kubectl -n $(SHIPPER_NAMESPACE)
 .PHONY: shipper
 
 shipper:
-	GOARCH=amd64 CGO_ENABLED=0 GOOS=linux go build -o build/shipper ./cmd/shipper/*.go
+	GOARCH=amd64 CGO_ENABLED=0 GOOS=linux go build -o shipper ./cmd/shipper/*.go
 	docker build -f Dockerfile.shipper -t localhost:32000/shipper:latest --build-arg HTTP_PROXY=$(HTTP_PROXY) --build-arg HTTPS_PROXY=$(HTTPS_PROXY) .
 	docker push localhost:32000/shipper:latest
 
 shipper-state-metrics:
-	GOARCH=amd64 CGO_ENABLED=0 GOOS=linux go build -o build/shipper-state-metrics ./cmd/shipper-state-metrics/*.go
+	GOARCH=amd64 CGO_ENABLED=0 GOOS=linux go build -o shipper-state-metrics ./cmd/shipper-state-metrics/*.go
 	docker build -f Dockerfile.shipper-state-metrics -t localhost:32000/shipper-state-metrics:latest --build-arg HTTP_PROXY=$(HTTP_PROXY) --build-arg HTTPS_PROXY=$(HTTPS_PROXY) .
 	docker push localhost:32000/shipper-state-metrics:latest
 
