@@ -49,7 +49,7 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 	}
 
 	go func() {
-		var serverError error = nil
+		var serverError error
 		if c.tlsCertFile == "" || c.tlsPrivateKeyFile == "" {
 			serverError = server.ListenAndServe()
 		} else {
