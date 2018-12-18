@@ -61,10 +61,6 @@ func (i *Installer) renderManifests(chart *helmchart.Chart) ([]string, error) {
 		rel.Spec.Environment.Values,
 	)
 
-	if err != nil {
-		err = RenderManifestError(err)
-	}
-
 	for _, v := range rendered {
 		glog.V(10).Infof("Rendered object:\n%s", v)
 	}
@@ -485,11 +481,11 @@ func (i *Installer) installRelease(
 	rel := i.Release
 	chart, err := i.fetchChart(rel.Spec.Environment.Chart)
 	if err != nil {
-		return FetchChartError(err)
+		return err
 	}
 
 	if err := shipperchart.Validate(chart); err != nil {
-		return ValidationChartError(err)
+		return err
 	}
 
 	renderedManifests, err := i.renderManifests(chart)

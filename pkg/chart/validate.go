@@ -3,11 +3,12 @@ package chart
 import (
 	"fmt"
 
-	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
+
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 func ValidateServices(decoded []runtime.Object) error {
@@ -20,11 +21,10 @@ func ValidateServices(decoded []runtime.Object) error {
 			if lbValue, ok := svc.Labels[shipper.LBLabel]; ok && lbValue == shipper.LBForProduction {
 				lbs = append(lbs, svc)
 				if len(lbs) > 1 {
-					return fmt.Errorf(
-						fmt.Sprintf("Object %#v contains %q label, but %#v claims"+
-							" it is the production LB. This looks like a misconfig:"+
-							" only 1 service is allowed to be the production LB.",
-							decodedObj, shipper.LBLabel, lbs[0]))
+					return fmt.Errorf("Object [%s %s] contains %q label, but %#v claims"+
+						" it is the production LB. This looks like a misconfig:"+
+						" only 1 service is allowed to be the production LB.",
+						svc.GroupVersionKind(), svc.Name, shipper.LBLabel, lbs[0])
 				}
 
 			}

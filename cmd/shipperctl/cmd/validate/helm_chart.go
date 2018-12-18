@@ -3,9 +3,10 @@ package validate
 import (
 	"fmt"
 
-	shipperchart "github.com/bookingcom/shipper/pkg/chart"
 	"github.com/spf13/cobra"
 	"k8s.io/helm/pkg/chartutil"
+
+	shipperchart "github.com/bookingcom/shipper/pkg/chart"
 )
 
 var helmChartCmd = &cobra.Command{
