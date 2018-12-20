@@ -68,6 +68,17 @@ the unit of configuration deployment. Shipper's Application object provides an
 interface for specifying values to a Chart just like the `helm` command line
 tool.
 
+### Relationship to Tiller
+
+[Tiller](https://docs.helm.sh/architecture/#components) is the server-side
+component of Helm 2 which installs Charts into the cluster, and keeps track of
+releases. Shipper does not use Tiller: it replaces Tiller entirely.
+
+Shipper consumes Charts directly from a Chart repository like ChartMuseum, and
+installs objects into clusters itself. This has the nice property that regular
+Kubernetes authentication and RBAC controls can be used to manage access to
+Shipper APIs.
+
 ## Documentation and Support
 
 Visit [docs.shipper-k8s.io](https://docs.shipper-k8s.io) for the full documentation,
