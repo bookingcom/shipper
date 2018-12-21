@@ -9,9 +9,29 @@ var environmentValidation = apiextensionv1beta1.JSONSchemaProps{
 	Required: []string{
 		"clusterRequirements",
 		"strategy",
+		"chart",
 		"values",
 	},
 	Properties: map[string]apiextensionv1beta1.JSONSchemaProps{
+		"chart": apiextensionv1beta1.JSONSchemaProps{
+			Type: "object",
+			Required: []string{
+				"name",
+				"version",
+				"repoUrl",
+			},
+			Properties: map[string]apiextensionv1beta1.JSONSchemaProps{
+				"name": apiextensionv1beta1.JSONSchemaProps{
+					Type: "string",
+				},
+				"version": apiextensionv1beta1.JSONSchemaProps{
+					Type: "string",
+				},
+				"repoUrl": apiextensionv1beta1.JSONSchemaProps{
+					Type: "string",
+				},
+			},
+		},
 		"clusterRequirements": apiextensionv1beta1.JSONSchemaProps{
 			Type: "object",
 			Required: []string{
