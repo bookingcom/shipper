@@ -49,6 +49,8 @@ func (c *Controller) createReleaseForApplication(app *shipper.Application, relea
 		newRelease.Labels[k] = v
 	}
 
+	// TODO inject chart version lookup
+
 	glog.V(4).Infof("Release %q labels: %v", controller.MetaKey(app), newRelease.Labels)
 	glog.V(4).Infof("Release %q annotations: %v", controller.MetaKey(app), newRelease.Annotations)
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/bookingcom/shipper/pkg/chart/repo"
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -14,7 +15,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	"github.com/bookingcom/shipper/pkg/chart"
 	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
@@ -45,16 +45,16 @@ type Controller struct {
 	capacityTargetLister     shipperlisters.CapacityTargetLister
 	trafficTargetLister      shipperlisters.TrafficTargetLister
 
-	workqueue      workqueue.RateLimitingInterface
-	chartFetchFunc chart.FetchFunc
-	recorder       record.EventRecorder
+	workqueue   workqueue.RateLimitingInterface
+	repoCatalog *repo.Catalog
+	recorder    record.EventRecorder
 }
 
 // NewController returns a new Schedule controller.
 func NewController(
 	shipperclientset shipperclient.Interface,
 	shipperInformerFactory shipperinformers.SharedInformerFactory,
-	chartFetchFunc chart.FetchFunc,
+	repoCatalog *repo.Catalog,
 	recorder record.EventRecorder,
 ) *Controller {
 
@@ -78,9 +78,9 @@ func NewController(
 		capacityTargetLister:     capacityTargetLister,
 		trafficTargetLister:      trafficTargetLister,
 
-		workqueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "schedule_controller_releases"),
-		chartFetchFunc: chartFetchFunc,
-		recorder:       recorder,
+		workqueue:   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "schedule_controller_releases"),
+		repoCatalog: repoCatalog,
+		recorder:    recorder,
 	}
 
 	glog.Info("Setting up event handlers")
@@ -191,7 +191,7 @@ func (c *Controller) syncOne(key string) bool {
 		c.installationTargerLister,
 		c.capacityTargetLister,
 		c.trafficTargetLister,
-		c.chartFetchFunc,
+		c.repoCatalog,
 		c.recorder,
 	)
 

@@ -5,6 +5,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/bookingcom/shipper/pkg/chart/repo"
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -50,13 +51,15 @@ type Controller struct {
 	relLister listers.ReleaseLister
 	relSynced cache.InformerSynced
 
-	recorder record.EventRecorder
+	repoCatalog *repo.Catalog
+	recorder    record.EventRecorder
 }
 
 // NewController returns a new Application controller.
 func NewController(
 	shipperClientset clientset.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
+	repoCatalog *repo.Catalog,
 	recorder record.EventRecorder,
 ) *Controller {
 	appInformer := shipperInformerFactory.Shipper().V1alpha1().Applications()

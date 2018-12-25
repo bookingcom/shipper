@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/bookingcom/shipper/pkg/chart/repo"
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -17,7 +18,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	shipperchart "github.com/bookingcom/shipper/pkg/chart"
 	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
@@ -54,7 +54,7 @@ type Controller struct {
 	releaseLister             shipperlisters.ReleaseLister
 	releaseSynced             cache.InformerSynced
 	dynamicClientBuilderFunc  DynamicClientBuilderFunc
-	chartFetchFunc            shipperchart.FetchFunc
+	repoCatalog               *repo.Catalog
 	recorder                  record.EventRecorder
 }
 
@@ -64,7 +64,7 @@ func NewController(
 	shipperInformerFactory shipperinformers.SharedInformerFactory,
 	store clusterclientstore.ClientProvider,
 	dynamicClientBuilderFunc DynamicClientBuilderFunc,
-	chartFetchFunc shipperchart.FetchFunc,
+	repoCatalog *repo.Catalog,
 	recorder record.EventRecorder,
 ) *Controller {
 
@@ -86,7 +86,7 @@ func NewController(
 		installationTargetsSynced: installationTargetInformer.Informer().HasSynced,
 		dynamicClientBuilderFunc:  dynamicClientBuilderFunc,
 		workqueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "installation_controller_installationtargets"),
-		chartFetchFunc:            chartFetchFunc,
+		repoCatalog:               repoCatalog,
 		recorder:                  recorder,
 	}
 
@@ -248,7 +248,7 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 		return nil
 	}
 
-	installer := NewInstaller(c.chartFetchFunc, release, it)
+	installer := NewInstaller(c.repoCatalog, release, it)
 
 	// Build .status over based on the current .spec.clusters.
 	newClusterStatuses := make([]*shipper.ClusterInstallationStatus, 0, len(it.Spec.Clusters))

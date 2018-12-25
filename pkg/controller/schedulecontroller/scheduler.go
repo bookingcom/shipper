@@ -14,6 +14,7 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
+	"github.com/bookingcom/shipper/pkg/chart/repo"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/controller"
@@ -31,8 +32,8 @@ type Scheduler struct {
 	installationTargetLister listers.InstallationTargetLister
 	capacityTargetLister     listers.CapacityTargetLister
 
-	fetchChart shipperchart.FetchFunc
-	recorder   record.EventRecorder
+	repoCatalog *repo.Catalog
+	recorder    record.EventRecorder
 }
 
 // NewScheduler returns a new Scheduler instance that knows how to
@@ -44,7 +45,7 @@ func NewScheduler(
 	installationTargetLister listers.InstallationTargetLister,
 	capacityTargetLister listers.CapacityTargetLister,
 	trafficTargetLister listers.TrafficTargetLister,
-	chartFetchFunc shipperchart.FetchFunc,
+	repoCatalog *repo.Catalog,
 	recorder record.EventRecorder,
 ) *Scheduler {
 	return &Scheduler{
@@ -57,8 +58,8 @@ func NewScheduler(
 		capacityTargetLister:     capacityTargetLister,
 		trafficTargetLister:      trafficTargetLister,
 
-		fetchChart: chartFetchFunc,
-		recorder:   recorder,
+		repoCatalog: repoCatalog,
+		recorder:    recorder,
 	}
 }
 
@@ -151,12 +152,23 @@ func (c *Scheduler) UpdateRelease() (*shipper.Release, error) {
 }
 
 func (c *Scheduler) fetchChartAndExtractReplicaCount() (int32, error) {
-	chart, err := c.fetchChart(c.Release.Spec.Environment.Chart)
+	chartMeta := c.Release.Spec.Environment.Chart
+	repo, err := c.repoCatalog.CreateRepoIfNotExist(chartMeta.RepoURL)
 	if err != nil {
 		return 0, NewChartFetchFailureError(
-			c.Release.Spec.Environment.Chart.Name,
-			c.Release.Spec.Environment.Chart.Version,
-			c.Release.Spec.Environment.Chart.RepoURL,
+			chartMeta.Name,
+			chartMeta.Version,
+			chartMeta.RepoURL,
+			err,
+		)
+	}
+
+	chart, err := repo.FetchIfNotCached(chartMeta.Name, chartMeta.Version)
+	if err != nil {
+		return 0, NewChartFetchFailureError(
+			chartMeta.Name,
+			chartMeta.Version,
+			chartMeta.RepoURL,
 			err,
 		)
 	}

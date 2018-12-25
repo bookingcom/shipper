@@ -28,7 +28,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	"github.com/bookingcom/shipper/pkg/chart"
+	"github.com/bookingcom/shipper/pkg/chart/repo"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
@@ -93,8 +93,8 @@ type cfg struct {
 
 	recorder func(string) record.EventRecorder
 
-	store          *clusterclientstore.Store
-	chartFetchFunc chart.FetchFunc
+	store       *clusterclientstore.Store
+	repoCatalog *repo.Catalog
 
 	certPath, keyPath string
 	ns                string
@@ -197,8 +197,11 @@ func main() {
 
 		recorder: recorder,
 
-		store:          store,
-		chartFetchFunc: chart.FetchRemoteWithCache(*chartCacheDir, chart.DefaultCacheLimit),
+		store: store,
+		repoCatalog: repo.NewCatalog(func(name string) (repo.Cache, error) {
+			dir := filepath.Join(*chartCacheDir, name)
+			return repo.NewFilesystemCache(dir, 0) // TODO set limit
+		}),
 
 		certPath: *certPath,
 		keyPath:  *keyPath,
@@ -369,6 +372,7 @@ func startApplicationController(cfg *cfg) (bool, error) {
 	c := application.NewController(
 		buildShipperClient(cfg.restCfg, application.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
+		cfg.repoCatalog,
 		cfg.recorder(application.AgentName),
 	)
 
@@ -415,7 +419,7 @@ func startScheduleController(cfg *cfg) (bool, error) {
 	c := schedulecontroller.NewController(
 		buildShipperClient(cfg.restCfg, schedulecontroller.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
-		cfg.chartFetchFunc,
+		cfg.repoCatalog,
 		cfg.recorder(schedulecontroller.AgentName),
 	)
 
@@ -476,7 +480,7 @@ func startInstallationController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		cfg.store,
 		dynamicClientBuilderFunc,
-		cfg.chartFetchFunc,
+		cfg.repoCatalog,
 		cfg.recorder(installation.AgentName),
 	)
 

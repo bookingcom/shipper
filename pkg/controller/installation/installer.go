@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"sort"
 
+	"github.com/bookingcom/shipper/pkg/chart/repo"
 	"github.com/golang/glog"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -29,7 +30,7 @@ type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *res
 // Installer is an object that knows how to install Helm charts directly into
 // Kubernetes clusters.
 type Installer struct {
-	fetchChart shipperchart.FetchFunc
+	repoCatalog *repo.Catalog
 
 	Release            *shipper.Release
 	InstallationTarget *shipper.InstallationTarget
@@ -37,12 +38,13 @@ type Installer struct {
 }
 
 // NewInstaller returns a new Installer.
-func NewInstaller(chartFetchFunc shipperchart.FetchFunc,
+func NewInstaller(
+	repoCatalog *repo.Catalog,
 	release *shipper.Release,
 	it *shipper.InstallationTarget,
 ) *Installer {
 	return &Installer{
-		fetchChart:         chartFetchFunc,
+		repoCatalog:        repoCatalog,
 		Release:            release,
 		InstallationTarget: it,
 		Scheme:             kubescheme.Scheme,
@@ -53,7 +55,13 @@ func NewInstaller(chartFetchFunc shipperchart.FetchFunc,
 // cluster, or an error.
 func (i *Installer) renderManifests(_ *shipper.Cluster) ([]string, error) {
 	rel := i.Release
-	chart, err := i.fetchChart(rel.Spec.Environment.Chart)
+	chartMeta := rel.Spec.Environment.Chart
+	repo, err := i.repoCatalog.CreateRepoIfNotExist(chartMeta.RepoURL)
+	if err != nil {
+		return nil, RenderManifestError(err)
+	}
+
+	chart, err := repo.FetchIfNotCached(chartMeta.Name, chartMeta.Version)
 	if err != nil {
 		return nil, RenderManifestError(err)
 	}
