@@ -29,7 +29,7 @@ func (c *Controller) createReleaseForApplication(app *shipper.Application, relea
 			Labels: map[string]string{
 				shipper.ReleaseLabel:                releaseName,
 				shipper.AppLabel:                    app.Name,
-				shipper.ReleaseEnvironmentHashLabel: hashReleaseEnvironment(app.Spec.Template),
+				shipper.ReleaseEnvironmentHashLabel: hashReleaseEnvironment(app.Spec.Template), // TODO check logic
 			},
 			Annotations: map[string]string{
 				shipper.ReleaseTemplateIterationAnnotation: strconv.Itoa(iteration),
@@ -49,7 +49,10 @@ func (c *Controller) createReleaseForApplication(app *shipper.Application, relea
 		newRelease.Labels[k] = v
 	}
 
-	// TODO inject chart version lookup
+	// application may contain semver range, need to convert it into a specific version
+	if err := c.resolveChartVersion(newRelease); err != nil {
+		return nil, fmt.Errorf("create Release for Application %q: %s", controller.MetaKey(app), err)
+	}
 
 	glog.V(4).Infof("Release %q labels: %v", controller.MetaKey(app), newRelease.Labels)
 	glog.V(4).Infof("Release %q annotations: %v", controller.MetaKey(app), newRelease.Annotations)
@@ -59,6 +62,26 @@ func (c *Controller) createReleaseForApplication(app *shipper.Application, relea
 		return nil, fmt.Errorf("create Release for Application %q: %s", controller.MetaKey(app), err)
 	}
 	return rel, nil
+}
+
+func (c *Controller) resolveChartVersion(rel *shipper.Release) error {
+	chart := rel.Spec.Environment.Chart
+	repo, err := c.repoCatalog.CreateRepoIfNotExist(chart.RepoURL)
+	if err != nil {
+		return fmt.Errorf("failed to create repo object: %v", err)
+	}
+
+	if err := repo.RefreshIndex(); err != nil {
+		// TODO add condition
+	}
+
+	cv, err := repo.ResolveVersion(chart.Name, chart.Version)
+	if err != nil {
+		return fmt.Errorf("failed to resolve chart version: %v", err)
+	}
+
+	rel.Spec.Environment.Chart.Version = cv.Version
+	return nil
 }
 
 func (c *Controller) releaseNameForApplication(app *shipper.Application) (string, int, error) {
