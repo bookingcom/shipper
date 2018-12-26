@@ -90,7 +90,7 @@ func (r *Repo) RefreshIndex() error {
 	return nil
 }
 
-func (r *Repo) ResolveRange(chart, version string) (*repo.ChartVersion, error) {
+func (r *Repo) ResolveVersion(chart, version string) (*repo.ChartVersion, error) {
 	data, err := r.cache.Fetch("index.yaml")
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch index.yaml from cache: %v", err)
@@ -161,7 +161,7 @@ func (r *Repo) FetchIfNotCached(chart, version string) (*chart.Chart, error) {
 		return nil, fmt.Errorf("failed to fetch %q from cache: %v", filename, err)
 	}
 
-	cv, err := r.ResolveRange(chart, version)
+	cv, err := r.ResolveVersion(chart, version)
 	if err == ErrInvalidConstraint {
 		return nil, fmt.Errorf("failed to resolve chart %s %s in repo index: %v", chart, version, err)
 	} else if err != nil {
@@ -169,7 +169,7 @@ func (r *Repo) FetchIfNotCached(chart, version string) (*chart.Chart, error) {
 			return nil, fmt.Errorf("failed to refresh index: %v", err)
 		}
 
-		cv, err = r.ResolveRange(chart, version)
+		cv, err = r.ResolveVersion(chart, version)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve chart %s %s in repo index: %v", chart, version, err)
 		}
