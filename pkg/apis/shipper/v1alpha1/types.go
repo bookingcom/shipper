@@ -340,12 +340,16 @@ type ClusterCapacityReportContainerBreakdownExample struct {
 	Pod string `json:"pod"`
 }
 
-type ClusterCapacityReportContainerBreakdown struct {
+type ClusterCapacityReportContainerStateBreakdown struct {
 	Count   uint32                                         `json:"count"`
 	Example ClusterCapacityReportContainerBreakdownExample `json:"example"`
-	Name    string                                         `json:"name"`
 	Reason  string                                         `json:"reason,omitempty"`
 	Type    string                                         `json:"type"`
+}
+
+type ClusterCapacityReportContainerBreakdown struct {
+	Name   string                                         `json:"name"`
+	States []ClusterCapacityReportContainerStateBreakdown `json:"states"`
 }
 
 type ClusterCapacityReportBreakdown struct {
