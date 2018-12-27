@@ -195,7 +195,7 @@ func (c *Controller) syncOne(key string) bool {
 		c.recorder,
 	)
 
-	if err := scheduler.scheduleRelease(); err != nil {
+	if err := scheduler.ScheduleRelease(); err != nil {
 		c.recorder.Eventf(
 			scheduler.Release,
 			corev1.EventTypeWarning,
@@ -203,7 +203,7 @@ func (c *Controller) syncOne(key string) bool {
 			err.Error(),
 		)
 
-		reason, shouldRetry := classifyError(err)
+		reason, shouldRetry := ClassifyError(err)
 		condition := releaseutil.NewReleaseCondition(
 			shipper.ReleaseConditionTypeScheduled,
 			corev1.ConditionFalse,

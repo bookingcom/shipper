@@ -1,4 +1,4 @@
-package schedulecontroller
+package release
 
 import (
 	"fmt"
@@ -24,6 +24,8 @@ import (
 func init() {
 	releaseutil.ConditionsShouldDiscardTimestamps = true
 }
+
+var chartRepoURL string
 
 func buildRelease() *shipper.Release {
 	return &shipper.Release{
