@@ -205,6 +205,8 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 			ct.Status.Clusters = append(ct.Status.Clusters, *clusterStatus)
 		}
 
+		clusterStatus.Reports = []shipper.ClusterCapacityReport{}
+
 		// all the below functions add conditions to the clusterStatus as they do
 		// their business, hence we're passing them a pointer.
 		targetDeployment, err := c.findTargetDeploymentForClusterSpec(clusterSpec, targetNamespace, selector, clusterStatus)
@@ -234,6 +236,11 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 		}
 
 		clusterStatus.SadPods = sadPods
+
+		report, err := c.getReport(targetDeployment, clusterStatus)
+		if err == nil {
+			clusterStatus.Reports = append(clusterStatus.Reports, *report)
+		}
 
 		if len(sadPods) > 0 {
 			continue
@@ -335,6 +342,27 @@ func (c *Controller) getSadPods(targetDeployment *appsv1.Deployment, clusterStat
 	}
 
 	return sadPods, nil
+}
+
+func (c *Controller) getReport(targetDeployment *appsv1.Deployment, clusterStatus *shipper.ClusterCapacityStatus) (*shipper.ClusterCapacityReport, error) {
+	targetClusterInformer, clusterErr := c.clusterClientStore.GetInformerFactory(clusterStatus.Name)
+	if clusterErr != nil {
+		// Not sure if each method should report operational conditions for
+		// the cluster it is operating on.
+		return nil, clusterErr
+	}
+
+	selector := labels.Set(targetDeployment.Spec.Template.Labels).AsSelector()
+	podsList, clusterErr := targetClusterInformer.Core().V1().Pods().Lister().Pods(targetDeployment.Namespace).List(selector)
+	if clusterErr != nil {
+		return nil, clusterErr
+	}
+
+	containerStateEntries := buildContainerStateEntries(podsList)
+	conditionSummaries := summarizeContainerStatesByCondition(containerStateEntries)
+	report := buildReport(targetDeployment.Name, conditionSummaries)
+
+	return report, nil
 }
 
 func (c *Controller) findTargetDeploymentForClusterSpec(clusterSpec shipper.ClusterCapacityTarget, targetNamespace string, selector labels.Selector, clusterStatus *shipper.ClusterCapacityStatus) (*appsv1.Deployment, error) {

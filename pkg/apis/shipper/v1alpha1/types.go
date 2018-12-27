@@ -336,12 +336,41 @@ type CapacityTargetStatus struct {
 	Clusters []ClusterCapacityStatus `json:"clusters,omitempty"`
 }
 
+type ClusterCapacityReportContainerBreakdownExample struct {
+	Pod string `json:"pod"`
+}
+
+type ClusterCapacityReportContainerBreakdown struct {
+	Count   uint32                                         `json:"count"`
+	Example ClusterCapacityReportContainerBreakdownExample `json:"example"`
+	Name    string                                         `json:"name"`
+	Reason  string                                         `json:"reason,omitempty"`
+	Type    string                                         `json:"type"`
+}
+
+type ClusterCapacityReportBreakdown struct {
+	Containers []ClusterCapacityReportContainerBreakdown `json:"containers,omitempty"`
+	Reason     string                                    `json:"reason,omitempty"`
+	Status     string                                    `json:"status"`
+	Type       string                                    `json:"type"`
+}
+
+type ClusterCapacityReportOwner struct {
+	Name string `json:"name"`
+}
+
+type ClusterCapacityReport struct {
+	Owner     ClusterCapacityReportOwner       `json:"owner"`
+	Breakdown []ClusterCapacityReportBreakdown `json:"breakdown,omitempty"`
+}
+
 type ClusterCapacityStatus struct {
 	Name              string                     `json:"name"`
 	AvailableReplicas int32                      `json:"availableReplicas"`
 	AchievedPercent   int32                      `json:"achievedPercent"`
 	SadPods           []PodStatus                `json:"sadPods,omitempty"`
 	Conditions        []ClusterCapacityCondition `json:"conditions,omitempty"`
+	Reports           []ClusterCapacityReport    `json:"reports,omitempty"`
 }
 
 type ClusterConditionType string
