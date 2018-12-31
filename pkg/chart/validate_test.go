@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"k8s.io/helm/pkg/chartutil"
+
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 func TestValidate(t *testing.T) {
@@ -29,7 +31,8 @@ func TestValidate(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to load chart: %s", err)
 			}
-			err = Validate(chart)
+			var values *shipper.ChartValues
+			err = Validate(chart, "test name", "test namespace", values)
 			if err != nil && testcase.isvalid {
 				t.Errorf("Chart %q is expected to be valid, unexpected validation error returned: %s", testcase.chartname, err)
 			}

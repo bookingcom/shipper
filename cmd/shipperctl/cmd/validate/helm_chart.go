@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/helm/pkg/chartutil"
 
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
 )
 
@@ -27,7 +28,9 @@ func runValidateHelmChartCommand(cmd *cobra.Command, args []string) error {
 		if loadErr != nil {
 			return fmt.Errorf("Failed to load chart under path %q: %s", chartPath, loadErr.Error())
 		}
-		if validateErr := shipperchart.Validate(chart); validateErr != nil {
+		name, namespace := "shipperctl", "shipperctl"
+		var values *shipper.ChartValues
+		if validateErr := shipperchart.Validate(chart, name, namespace, values); validateErr != nil {
 			return fmt.Errorf("Chart validation failed: %s\n", validateErr.Error())
 		} else {
 			cmd.Printf("Chart %s successfully passed all validation checks\n", chartPath)

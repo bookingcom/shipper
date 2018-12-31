@@ -52,14 +52,8 @@ func NewInstaller(chartFetchFunc shipperchart.FetchFunc,
 
 // renderManifests returns a list of rendered manifests for the given release and
 // cluster, or an error.
-func (i *Installer) renderManifests(chart *helmchart.Chart) ([]string, error) {
-	rel := i.Release
-	rendered, err := shipperchart.Render(
-		chart,
-		rel.GetName(),
-		rel.GetNamespace(),
-		rel.Spec.Environment.Values,
-	)
+func (i *Installer) renderManifests(chart *helmchart.Chart, name, namespace string, values *shipper.ChartValues) ([]string, error) {
+	rendered, err := shipperchart.Render(chart, name, namespace, values)
 
 	for _, v := range rendered {
 		glog.V(10).Infof("Rendered object:\n%s", v)
@@ -484,11 +478,14 @@ func (i *Installer) installRelease(
 		return err
 	}
 
-	if err := shipperchart.Validate(chart); err != nil {
+	name, namespace := rel.GetName(), rel.GetNamespace()
+	values := rel.Spec.Environment.Values
+
+	if err := shipperchart.Validate(chart, name, namespace, values); err != nil {
 		return err
 	}
 
-	renderedManifests, err := i.renderManifests(chart)
+	renderedManifests, err := i.renderManifests(chart, name, namespace, values)
 	if err != nil {
 		return err
 	}

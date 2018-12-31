@@ -49,8 +49,8 @@ func ValidateServices(decoded []runtime.Object) error {
 	return nil
 }
 
-func Validate(helmChart *helmchart.Chart) error {
-	manifests, renderErr := doRender(helmChart)
+func Validate(helmChart *helmchart.Chart, name, namespace string, values *shipper.ChartValues) error {
+	manifests, renderErr := Render(helmChart, name, namespace, values)
 	if renderErr != nil {
 		return renderErr
 	}
@@ -65,17 +65,6 @@ func Validate(helmChart *helmchart.Chart) error {
 	}
 
 	return nil
-}
-
-func doRender(helmChart *helmchart.Chart) ([]string, error) {
-	manifests, renderErr := Render(
-		helmChart,
-		"release name",
-		"release namespace",
-		nil,
-	)
-
-	return manifests, renderErr
 }
 
 func doDecode(manifests []string) ([]runtime.Object, error) {
