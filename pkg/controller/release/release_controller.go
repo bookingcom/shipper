@@ -91,11 +91,12 @@ func NewReleaseController(
 		appSynced:  appInformer.Informer().HasSynced,
 		capSynced:  capInformer.Informer().HasSynced,
 		clusSynced: clusInformer.Informer().HasSynced,
+		instSynced: instInformer.Informer().HasSynced,
 		relSynced:  relInformer.Informer().HasSynced,
 		trafSynced: trafInformer.Informer().HasSynced,
 
-		relQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "release_controller_apps"),
-		appQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "release_controller_releases"),
+		relQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "release_controller_release_queue"),
+		appQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "release_controller_app_queue"),
 
 		dynamicClientPool: dynamicClientPool,
 		recorder:          recorder,
@@ -155,6 +156,7 @@ func (rc *ReleaseController) Run(threadiness int, stopCh <-chan struct{}) {
 		rc.appSynced,
 		rc.capSynced,
 		rc.clusSynced,
+		rc.instSynced,
 		rc.relSynced,
 		rc.trafSynced,
 	)
@@ -194,45 +196,55 @@ func (rc *ReleaseController) processNextReleaseWorkItem() bool {
 
 	key, ok := obj.(string)
 	if !ok {
+		fmt.Println("bad key")
 		runtime.HandleError(fmt.Errorf("Invalid object key (will not retry): %#v", obj))
 		return true
 	}
 
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
+		fmt.Println("bad namespace")
 		runtime.HandleError(fmt.Errorf("Invalid object key (will not retry): %q", key))
 		return true
 	}
 
 	rel, err := rc.relLister.Releases(ns).Get(name)
 	if err != nil {
+		fmt.Println("bad release")
 		runtime.HandleError(fmt.Errorf("Error syncing Release %q (will not retry): %s", key, err))
 		return true
 	}
 
 	if releaseutil.IsEmpty(rel) {
+		fmt.Println("empty release env")
 		glog.V(1).Infof("Release %q has an empty Envieonment, bailing out", key)
-		return false
-	}
-
-	if !releaseutil.ReleaseScheduled(rel) {
-		// Schedule controller path
-		wantRetry, err := rc.scheduleRelease(rel)
-		if err != nil {
-			if wantRetry {
-				if rc.relQueue.NumRequeues(key) >= maxRetries {
-					glog.Warningf("Release %q has been retried too many times, dropping from the queue", key)
-					rc.relQueue.Forget(key)
-					return true
-				}
-				rc.relQueue.AddRateLimited(key)
-			}
-		}
-		//TODO(olegs): should we re-enqueue here or push to another queue?
 		return true
 	}
+
+	if releaseutil.ReleaseScheduled(rel) {
+		fmt.Println("already scheduled")
+		glog.V(4).Infof("Release %q has already been scheduled, ignoring", key)
+		return true
+	}
+
+	if wantRetry, err := rc.scheduleRelease(rel); err != nil {
+		if wantRetry {
+			if rc.relQueue.NumRequeues(key) >= maxRetries {
+				glog.Warningf("Release %q has been retried too many times, dropping from the queue", key)
+				// do I need it here even though defer will clean it up?
+				rc.relQueue.Forget(key)
+				fmt.Println("reenqueue")
+				return true
+			}
+			rc.relQueue.AddRateLimited(key)
+		}
+		fmt.Println("error, no retry")
+		return true
+	}
+
+	fmt.Println("I am here!")
+
 	// Strategy controller path
-	//TODO
 
 	appKey, err := rc.getAssociatedApplicationKey(rel)
 	if err != nil {

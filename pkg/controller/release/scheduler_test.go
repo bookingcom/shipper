@@ -27,51 +27,51 @@ func init() {
 
 var chartRepoURL string
 
-func buildRelease() *shipper.Release {
-	return &shipper.Release{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: shipper.SchemeGroupVersion.String(),
-			Kind:       "Release",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        "test-release",
-			Namespace:   shippertesting.TestNamespace,
-			Annotations: map[string]string{},
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: shipper.SchemeGroupVersion.String(),
-					Kind:       "Application",
-					Name:       "test-application",
-				},
-			},
-		},
-		Spec: shipper.ReleaseSpec{
-			Environment: shipper.ReleaseEnvironment{
-				Chart: shipper.Chart{
-					Name:    "simple",
-					Version: "0.0.1",
-					RepoURL: chartRepoURL,
-				},
-				ClusterRequirements: shipper.ClusterRequirements{
-					Regions: []shipper.RegionRequirement{{Name: shippertesting.TestRegion}},
-				},
-			},
-		},
-	}
-}
-
-func buildCluster(name string) *shipper.Cluster {
-	return &shipper.Cluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-		},
-		Spec: shipper.ClusterSpec{
-			APIMaster:    "https://127.0.0.1",
-			Capabilities: []string{},
-			Region:       shippertesting.TestRegion,
-		},
-	}
-}
+// func buildRelease() *shipper.Release {
+// 	return &shipper.Release{
+// 		TypeMeta: metav1.TypeMeta{
+// 			APIVersion: shipper.SchemeGroupVersion.String(),
+// 			Kind:       "Release",
+// 		},
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name:        "test-release",
+// 			Namespace:   shippertesting.TestNamespace,
+// 			Annotations: map[string]string{},
+// 			OwnerReferences: []metav1.OwnerReference{
+// 				{
+// 					APIVersion: shipper.SchemeGroupVersion.String(),
+// 					Kind:       "Application",
+// 					Name:       "test-application",
+// 				},
+// 			},
+// 		},
+// 		Spec: shipper.ReleaseSpec{
+// 			Environment: shipper.ReleaseEnvironment{
+// 				Chart: shipper.Chart{
+// 					Name:    "simple",
+// 					Version: "0.0.1",
+// 					RepoURL: chartRepoURL,
+// 				},
+// 				ClusterRequirements: shipper.ClusterRequirements{
+// 					Regions: []shipper.RegionRequirement{{Name: shippertesting.TestRegion}},
+// 				},
+// 			},
+// 		},
+// 	}
+// }
+//
+// func buildCluster(name string) *shipper.Cluster {
+// 	return &shipper.Cluster{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name: name,
+// 		},
+// 		Spec: shipper.ClusterSpec{
+// 			APIMaster:    "https://127.0.0.1",
+// 			Capabilities: []string{},
+// 			Region:       shippertesting.TestRegion,
+// 		},
+// 	}
+// }
 
 func newScheduler(
 	release *shipper.Release,
