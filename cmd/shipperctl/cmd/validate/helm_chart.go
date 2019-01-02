@@ -22,7 +22,7 @@ func HelmChartCmd() *cobra.Command {
 
 func runValidateHelmChartCommand(cmd *cobra.Command, args []string) error {
 	for _, chartPath := range args {
-		// TODO: make it understand remote chart URLs
+		// TODO(olegs): make it understand remote chart URLs
 		// use chart.downloadChart/3
 		chart, loadErr := chartutil.Load(chartPath)
 		if loadErr != nil {
@@ -30,8 +30,8 @@ func runValidateHelmChartCommand(cmd *cobra.Command, args []string) error {
 		}
 		name, namespace := "shipperctl", "shipperctl"
 		var values *shipper.ChartValues
-		if validateErr := shipperchart.Validate(chart, name, namespace, values); validateErr != nil {
-			return fmt.Errorf("Chart validation failed: %s\n", validateErr.Error())
+		if err := shipperchart.Validate(chart, name, namespace, values); err != nil {
+			return fmt.Errorf("Chart validation failed: %s\n", err.Error())
 		} else {
 			cmd.Printf("Chart %s successfully passed all validation checks\n", chartPath)
 		}
