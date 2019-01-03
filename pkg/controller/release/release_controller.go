@@ -99,6 +99,7 @@ func NewReleaseController(
 		appQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "release_controller_app_queue"),
 
 		dynamicClientPool: dynamicClientPool,
+		chartFetchFunc:    chartFetchFunc,
 		recorder:          recorder,
 	}
 

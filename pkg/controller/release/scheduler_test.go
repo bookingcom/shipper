@@ -25,7 +25,7 @@ func init() {
 	releaseutil.ConditionsShouldDiscardTimestamps = true
 }
 
-var chartRepoURL string
+// var chartRepoURL string
 
 // func buildRelease() *shipper.Release {
 // 	return &shipper.Release{
@@ -189,92 +189,92 @@ func TestScheduleSkipsUnschedulable(t *testing.T) {
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
-func buildExpectedActions(ns string, release *shipper.Release) []kubetesting.Action {
-	installationTarget := &shipper.InstallationTarget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      release.Name,
-			Namespace: ns,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: release.APIVersion,
-					Kind:       release.Kind,
-					Name:       release.Name,
-					UID:        release.UID,
-				},
-			},
-		},
-		Spec: shipper.InstallationTargetSpec{
-			Clusters: []string{"minikube-a"},
-		},
-	}
-
-	capacityTarget := &shipper.CapacityTarget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      release.Name,
-			Namespace: ns,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: release.APIVersion,
-					Kind:       release.Kind,
-					Name:       release.Name,
-					UID:        release.UID,
-				},
-			},
-		},
-		Spec: shipper.CapacityTargetSpec{
-			Clusters: []shipper.ClusterCapacityTarget{
-				{
-					Name:              "minikube-a",
-					Percent:           0,
-					TotalReplicaCount: 12,
-				},
-			},
-		},
-	}
-
-	trafficTarget := &shipper.TrafficTarget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      release.Name,
-			Namespace: ns,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: release.APIVersion,
-					Kind:       release.Kind,
-					Name:       release.Name,
-					UID:        release.UID,
-				},
-			},
-		},
-		Spec: shipper.TrafficTargetSpec{
-			Clusters: []shipper.ClusterTrafficTarget{
-				shipper.ClusterTrafficTarget{
-					Name: "minikube-a",
-				},
-			},
-		},
-	}
-
-	actions := []kubetesting.Action{
-		kubetesting.NewCreateAction(
-			shipper.SchemeGroupVersion.WithResource("installationtargets"),
-			ns,
-			installationTarget),
-		kubetesting.NewCreateAction(
-			shipper.SchemeGroupVersion.WithResource("traffictargets"),
-			ns,
-			trafficTarget),
-		kubetesting.NewCreateAction(
-			shipper.SchemeGroupVersion.WithResource("capacitytargets"),
-			ns,
-			capacityTarget,
-		),
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			ns,
-			release),
-	}
-	return actions
-}
+// func buildExpectedActions(ns string, release *shipper.Release) []kubetesting.Action {
+// 	installationTarget := &shipper.InstallationTarget{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name:      release.Name,
+// 			Namespace: ns,
+// 			OwnerReferences: []metav1.OwnerReference{
+// 				{
+// 					APIVersion: release.APIVersion,
+// 					Kind:       release.Kind,
+// 					Name:       release.Name,
+// 					UID:        release.UID,
+// 				},
+// 			},
+// 		},
+// 		Spec: shipper.InstallationTargetSpec{
+// 			Clusters: []string{"minikube-a"},
+// 		},
+// 	}
+//
+// 	capacityTarget := &shipper.CapacityTarget{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name:      release.Name,
+// 			Namespace: ns,
+// 			OwnerReferences: []metav1.OwnerReference{
+// 				{
+// 					APIVersion: release.APIVersion,
+// 					Kind:       release.Kind,
+// 					Name:       release.Name,
+// 					UID:        release.UID,
+// 				},
+// 			},
+// 		},
+// 		Spec: shipper.CapacityTargetSpec{
+// 			Clusters: []shipper.ClusterCapacityTarget{
+// 				{
+// 					Name:              "minikube-a",
+// 					Percent:           0,
+// 					TotalReplicaCount: 12,
+// 				},
+// 			},
+// 		},
+// 	}
+//
+// 	trafficTarget := &shipper.TrafficTarget{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name:      release.Name,
+// 			Namespace: ns,
+// 			OwnerReferences: []metav1.OwnerReference{
+// 				{
+// 					APIVersion: release.APIVersion,
+// 					Kind:       release.Kind,
+// 					Name:       release.Name,
+// 					UID:        release.UID,
+// 				},
+// 			},
+// 		},
+// 		Spec: shipper.TrafficTargetSpec{
+// 			Clusters: []shipper.ClusterTrafficTarget{
+// 				shipper.ClusterTrafficTarget{
+// 					Name: "minikube-a",
+// 				},
+// 			},
+// 		},
+// 	}
+//
+// 	actions := []kubetesting.Action{
+// 		kubetesting.NewCreateAction(
+// 			shipper.SchemeGroupVersion.WithResource("installationtargets"),
+// 			ns,
+// 			installationTarget),
+// 		kubetesting.NewCreateAction(
+// 			shipper.SchemeGroupVersion.WithResource("traffictargets"),
+// 			ns,
+// 			trafficTarget),
+// 		kubetesting.NewCreateAction(
+// 			shipper.SchemeGroupVersion.WithResource("capacitytargets"),
+// 			ns,
+// 			capacityTarget,
+// 		),
+// 		kubetesting.NewUpdateAction(
+// 			shipper.SchemeGroupVersion.WithResource("releases"),
+// 			ns,
+// 			release),
+// 	}
+// 	return actions
+// }
 
 func TestCreateAssociatedObjects(t *testing.T) {
 	cluster := buildCluster("minikube-a")
