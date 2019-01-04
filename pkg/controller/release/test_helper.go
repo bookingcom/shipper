@@ -4,14 +4,13 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	fakedynamic "k8s.io/client-go/dynamic/fake"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/chart"
-	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
+	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
@@ -62,17 +61,18 @@ func buildCluster(name string) *shipper.Cluster {
 	}
 }
 
-func buildExpectedActions(ns string, release *shipper.Release) []kubetesting.Action {
-	installationTarget := &shipper.InstallationTarget{
+func buildInstallationTarget(ns string, rel *shipper.Release) *shipper.InstallationTarget {
+	//TODO(olegs): clusters should be configurable
+	return &shipper.InstallationTarget{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      release.Name,
+			Name:      rel.Name,
 			Namespace: ns,
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: release.APIVersion,
-					Kind:       release.Kind,
-					Name:       release.Name,
-					UID:        release.UID,
+					APIVersion: rel.APIVersion,
+					Kind:       rel.Kind,
+					Name:       rel.Name,
+					UID:        rel.UID,
 				},
 			},
 		},
@@ -80,17 +80,19 @@ func buildExpectedActions(ns string, release *shipper.Release) []kubetesting.Act
 			Clusters: []string{"minikube-a"},
 		},
 	}
+}
 
-	capacityTarget := &shipper.CapacityTarget{
+func buildCapacityTarget(ns string, rel *shipper.Release) *shipper.CapacityTarget {
+	return &shipper.CapacityTarget{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      release.Name,
+			Name:      rel.Name,
 			Namespace: ns,
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: release.APIVersion,
-					Kind:       release.Kind,
-					Name:       release.Name,
-					UID:        release.UID,
+					APIVersion: rel.APIVersion,
+					Kind:       rel.Kind,
+					Name:       rel.Name,
+					UID:        rel.UID,
 				},
 			},
 		},
@@ -104,17 +106,19 @@ func buildExpectedActions(ns string, release *shipper.Release) []kubetesting.Act
 			},
 		},
 	}
+}
 
-	trafficTarget := &shipper.TrafficTarget{
+func buildTrafficTarget(ns string, rel *shipper.Release) *shipper.TrafficTarget {
+	return &shipper.TrafficTarget{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      release.Name,
+			Name:      rel.Name,
 			Namespace: ns,
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: release.APIVersion,
-					Kind:       release.Kind,
-					Name:       release.Name,
-					UID:        release.UID,
+					APIVersion: rel.APIVersion,
+					Kind:       rel.Kind,
+					Name:       rel.Name,
+					UID:        rel.UID,
 				},
 			},
 		},
@@ -126,6 +130,14 @@ func buildExpectedActions(ns string, release *shipper.Release) []kubetesting.Act
 			},
 		},
 	}
+}
+
+func buildExpectedActions(ns string, rel *shipper.Release) []kubetesting.Action {
+	installationTarget := buildInstallationTarget(ns, rel)
+
+	capacityTarget := buildCapacityTarget(ns, rel)
+
+	trafficTarget := buildTrafficTarget(ns, rel)
 
 	actions := []kubetesting.Action{
 		kubetesting.NewCreateAction(
@@ -144,13 +156,13 @@ func buildExpectedActions(ns string, release *shipper.Release) []kubetesting.Act
 		kubetesting.NewUpdateAction(
 			shipper.SchemeGroupVersion.WithResource("releases"),
 			ns,
-			release),
+			rel),
 	}
+
 	return actions
 }
 
-func newReleaseController(fixtures ...runtime.Object) *ReleaseController {
-	clientset := shipperfake.NewSimpleClientset(fixtures...)
+func newReleaseController(clientset shipperclient.Interface) *ReleaseController {
 	informerFactory := shipperinformers.NewSharedInformerFactory(clientset, time.Millisecond*0)
 	controller := NewReleaseController(
 		clientset,

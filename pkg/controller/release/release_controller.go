@@ -81,12 +81,12 @@ func NewReleaseController(
 	rc := &ReleaseController{
 		clientset: clientset,
 
-		appLister:  informerFactory.Shipper().V1alpha1().Applications().Lister(),
-		capLister:  informerFactory.Shipper().V1alpha1().CapacityTargets().Lister(),
-		clusLister: informerFactory.Shipper().V1alpha1().Clusters().Lister(),
-		instLister: informerFactory.Shipper().V1alpha1().InstallationTargets().Lister(),
-		relLister:  informerFactory.Shipper().V1alpha1().Releases().Lister(),
-		trafLister: informerFactory.Shipper().V1alpha1().TrafficTargets().Lister(),
+		appLister:  appInformer.Lister(),
+		capLister:  capInformer.Lister(),
+		clusLister: clusInformer.Lister(),
+		instLister: instInformer.Lister(),
+		relLister:  relInformer.Lister(),
+		trafLister: trafInformer.Lister(),
 
 		appSynced:  appInformer.Informer().HasSynced,
 		capSynced:  capInformer.Informer().HasSynced,
@@ -197,33 +197,28 @@ func (rc *ReleaseController) processNextReleaseWorkItem() bool {
 
 	key, ok := obj.(string)
 	if !ok {
-		fmt.Println("bad key")
 		runtime.HandleError(fmt.Errorf("Invalid object key (will not retry): %#v", obj))
 		return true
 	}
 
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		fmt.Println("bad namespace")
 		runtime.HandleError(fmt.Errorf("Invalid object key (will not retry): %q", key))
 		return true
 	}
 
 	rel, err := rc.relLister.Releases(ns).Get(name)
 	if err != nil {
-		fmt.Println("bad release")
 		runtime.HandleError(fmt.Errorf("Error syncing Release %q (will not retry): %s", key, err))
 		return true
 	}
 
 	if releaseutil.IsEmpty(rel) {
-		fmt.Println("empty release env")
-		glog.V(1).Infof("Release %q has an empty Envieonment, bailing out", key)
+		glog.V(1).Infof("Release %q has an empty Environment, bailing out", key)
 		return true
 	}
 
 	if releaseutil.ReleaseScheduled(rel) {
-		fmt.Println("already scheduled")
 		glog.V(4).Infof("Release %q has already been scheduled, ignoring", key)
 		return true
 	}
@@ -232,18 +227,14 @@ func (rc *ReleaseController) processNextReleaseWorkItem() bool {
 		if wantRetry {
 			if rc.relQueue.NumRequeues(key) >= maxRetries {
 				glog.Warningf("Release %q has been retried too many times, dropping from the queue", key)
-				// do I need it here even though defer will clean it up?
+				//TODO(olegs): do I need it here even though defer will clean it up?
 				rc.relQueue.Forget(key)
-				fmt.Println("reenqueue")
 				return true
 			}
 			rc.relQueue.AddRateLimited(key)
 		}
-		fmt.Println("error, no retry")
 		return true
 	}
-
-	fmt.Println("I am here!")
 
 	// Strategy controller path
 
