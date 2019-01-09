@@ -170,7 +170,7 @@ func (c *Controller) getWorkingReleasePair(app *shipper.Application) (*shipper.R
 
 	var incumbent *shipper.Release
 	// Walk backwards until we find an installed release that isn't the head of
-	// history. Ffor releases A -> B -> C, if B was never finished this allows C to
+	// history. For releases A -> B -> C, if B was never finished this allows C to
 	// ignore it and let it get deleted so the transition is A->C.
 	for i := len(appReleases) - 1; i >= 0; i-- {
 		if releaseutil.ReleaseComplete(appReleases[i]) && contender != appReleases[i] {

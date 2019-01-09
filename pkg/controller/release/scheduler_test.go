@@ -111,7 +111,7 @@ func TestSchedule(t *testing.T) {
 	// Fixtures
 	clusterA := buildCluster("minikube-a")
 	clusterB := buildCluster("minikube-b")
-	release := buildRelease()
+	release := buildRelease("test-release", app)
 	fixtures := []runtime.Object{clusterA, clusterB, release}
 	// Demand two clusters.
 	release.Spec.Environment.ClusterRequirements.Regions[0].Replicas = pint32(2)
@@ -156,7 +156,7 @@ func TestScheduleSkipsUnschedulable(t *testing.T) {
 	clusterA := buildCluster("minikube-a")
 	clusterB := buildCluster("minikube-b")
 	clusterB.Spec.Scheduler.Unschedulable = true
-	release := buildRelease()
+	release := buildRelease("test-release", app)
 	fixtures := []runtime.Object{clusterA, clusterB, release}
 
 	// The release should have, at the end of the business logic, a list of
@@ -278,7 +278,7 @@ func TestScheduleSkipsUnschedulable(t *testing.T) {
 
 func TestCreateAssociatedObjects(t *testing.T) {
 	cluster := buildCluster("minikube-a")
-	release := buildRelease()
+	release := buildRelease("test-release", app)
 	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
 	fixtures := []runtime.Object{release, cluster}
 
@@ -307,7 +307,7 @@ func TestCreateAssociatedObjects(t *testing.T) {
 
 func TestCreateAssociatedObjectsDuplicateInstallationTargetSameOwner(t *testing.T) {
 	cluster := buildCluster("minikube-a")
-	release := buildRelease()
+	release := buildRelease("test-release", app)
 	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
 
 	installationtarget := &shipper.InstallationTarget{
@@ -346,7 +346,7 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetSameOwner(t *testing.
 
 func TestCreateAssociatedObjectsDuplicateInstallationTargetNoOwner(t *testing.T) {
 	cluster := buildCluster("minikube-a")
-	release := buildRelease()
+	release := buildRelease("test-release", app)
 	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
 
 	installationtarget := &shipper.InstallationTarget{
@@ -381,7 +381,7 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetNoOwner(t *testing.T)
 func TestCreateAssociatedObjectsDuplicateTrafficTargetSameOwner(t *testing.T) {
 	// Fixtures
 	cluster := buildCluster("minikube-a")
-	release := buildRelease()
+	release := buildRelease("test-release", app)
 	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
 
 	traffictarget := &shipper.TrafficTarget{
@@ -421,7 +421,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetSameOwner(t *testing.T) {
 func TestCreateAssociatedObjectsDuplicateTrafficTargetNoOwner(t *testing.T) {
 	// Fixtures
 	cluster := buildCluster("minikube-a")
-	release := buildRelease()
+	release := buildRelease("test-release", app)
 	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
 
 	traffictarget := &shipper.TrafficTarget{
@@ -456,7 +456,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetNoOwner(t *testing.T) {
 func TestCreateAssociatedObjectsDuplicateCapacityTargetSameOwner(t *testing.T) {
 	// Fixtures
 	cluster := buildCluster("minikube-a")
-	release := buildRelease()
+	release := buildRelease("test-release", app)
 	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
 
 	capacitytarget := &shipper.CapacityTarget{
@@ -496,7 +496,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetSameOwner(t *testing.T) {
 func TestCreateAssociatedObjectsDuplicateCapacityTargetNoOwner(t *testing.T) {
 	// Fixtures
 	cluster := buildCluster("minikube-a")
-	release := buildRelease()
+	release := buildRelease("test-release", app)
 	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
 
 	capacitytarget := &shipper.CapacityTarget{

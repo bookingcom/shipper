@@ -15,22 +15,27 @@ import (
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
-func buildRelease() *shipper.Release {
+func buildRelease(relName string, app *shipper.Application) *shipper.Release {
 	return &shipper.Release{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: shipper.SchemeGroupVersion.String(),
 			Kind:       "Release",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "test-release",
+			Name:        relName,
 			Namespace:   shippertesting.TestNamespace,
 			Annotations: map[string]string{},
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: shipper.SchemeGroupVersion.String(),
 					Kind:       "Application",
-					Name:       "test-application",
+					Name:       app.GetName(),
+					UID:        app.GetUID(),
 				},
+			},
+			Labels: map[string]string{
+				shipper.ReleaseLabel: relName,
+				shipper.AppLabel:     app.GetName(),
 			},
 		},
 		Spec: shipper.ReleaseSpec{
@@ -75,6 +80,10 @@ func buildInstallationTarget(ns string, rel *shipper.Release) *shipper.Installat
 					UID:        rel.UID,
 				},
 			},
+			Labels: map[string]string{
+				shipper.ReleaseLabel: rel.Name,
+				shipper.AppLabel:     rel.OwnerReferences[0].Name,
+			},
 		},
 		Spec: shipper.InstallationTargetSpec{
 			Clusters: []string{"minikube-a"},
@@ -94,6 +103,10 @@ func buildCapacityTarget(ns string, rel *shipper.Release) *shipper.CapacityTarge
 					Name:       rel.Name,
 					UID:        rel.UID,
 				},
+			},
+			Labels: map[string]string{
+				shipper.ReleaseLabel: rel.Name,
+				shipper.AppLabel:     rel.OwnerReferences[0].Name,
 			},
 		},
 		Spec: shipper.CapacityTargetSpec{
@@ -120,6 +133,10 @@ func buildTrafficTarget(ns string, rel *shipper.Release) *shipper.TrafficTarget 
 					Name:       rel.Name,
 					UID:        rel.UID,
 				},
+			},
+			Labels: map[string]string{
+				shipper.ReleaseLabel: rel.Name,
+				shipper.AppLabel:     rel.OwnerReferences[0].Name,
 			},
 		},
 		Spec: shipper.TrafficTargetSpec{

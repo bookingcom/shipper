@@ -245,6 +245,7 @@ func (rc *ReleaseController) processNextReleaseWorkItem() bool {
 	}
 
 	glog.V(4).Infof("Successfully synced Release %q", key)
+
 	rc.appQueue.Add(appKey)
 
 	return true

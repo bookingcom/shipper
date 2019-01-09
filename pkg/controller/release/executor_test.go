@@ -21,27 +21,27 @@ const (
 	Incumbent
 )
 
-const (
-	clusterName   = "minikube"
-	namespace     = "test-namespace"
-	incumbentName = "0.0.1"
-	contenderName = "0.0.2"
-)
+// const (
+// 	clusterName   = "minikube"
+// 	namespace     = "test-namespace"
+// 	incumbentName = "0.0.1"
+// 	contenderName = "0.0.2"
+// )
 
 func init() {
 	conditions.StrategyConditionsShouldDiscardTimestamps = true
 }
 
-var app = &shipper.Application{
-	ObjectMeta: metav1.ObjectMeta{
-		Name:      "test-app",
-		Namespace: namespace,
-		UID:       "foobarbaz",
-	},
-	Status: shipper.ApplicationStatus{
-		History: []string{incumbentName, contenderName},
-	},
-}
+// var app = &shipper.Application{
+// 	ObjectMeta: metav1.ObjectMeta{
+// 		Name:      "test-app",
+// 		Namespace: namespace,
+// 		UID:       "foobarbaz",
+// 	},
+// 	Status: shipper.ApplicationStatus{
+// 		History: []string{incumbentName, contenderName},
+// 	},
+// }
 
 var vanguard = shipper.RolloutStrategy{
 	Steps: []shipper.RolloutStrategyStep{
@@ -68,10 +68,13 @@ var vanguard = shipper.RolloutStrategy{
 // incumbent and contender releases, checking if the generated patches were
 // the expected for the strategy at a given moment.
 func TestCompleteStrategyNoController(t *testing.T) {
+	ctx := newContext(t).withNamespace("test-namespace")
+
 	totalReplicaCount := uint(10)
+
 	executor := &Executor{
-		contender: buildContender(totalReplicaCount),
-		incumbent: buildIncumbent(totalReplicaCount),
+		contender: buildContender(ctx, totalReplicaCount),
+		incumbent: buildIncumbent(ctx, totalReplicaCount),
 		recorder:  record.NewFakeRecorder(42),
 		strategy:  vanguard,
 	}
@@ -205,7 +208,7 @@ func TestCompleteStrategyNoController(t *testing.T) {
 
 // buildIncumbent returns a releaseInfo with an incumbent release and
 // associated objects.
-func buildIncumbent(totalReplicaCount uint) *releaseInfo {
+func buildIncumbent(ctx *context, totalReplicaCount uint) *releaseInfo {
 
 	rel := &shipper.Release{
 		TypeMeta: metav1.TypeMeta{
@@ -214,18 +217,18 @@ func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      incumbentName,
-			Namespace: namespace,
+			Namespace: ctx.namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
 					APIVersion: shipper.SchemeGroupVersion.String(),
 					Kind:       "Application",
-					Name:       app.GetName(),
-					UID:        app.GetUID(),
+					Name:       ctx.app.GetName(),
+					UID:        ctx.app.GetUID(),
 				},
 			},
 			Labels: map[string]string{
 				shipper.ReleaseLabel: incumbentName,
-				shipper.AppLabel:     app.GetName(),
+				shipper.AppLabel:     ctx.app.GetName(),
 			},
 			Annotations: map[string]string{
 				shipper.ReleaseGenerationAnnotation: "0",
@@ -249,6 +252,14 @@ func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 		},
 	}
 
+	clusterInstallationStatuses := make([]*shipper.ClusterInstallationStatus, 0, len(ctx.clusters))
+	for _, clusterName := range ctx.clusters {
+		clusterInstallationStatuses = append(clusterInstallationStatuses, &shipper.ClusterInstallationStatus{
+			Name:   clusterName,
+			Status: shipper.InstallationStatusInstalled,
+		})
+	}
+
 	installationTarget := &shipper.InstallationTarget{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: shipper.SchemeGroupVersion.String(),
@@ -256,7 +267,7 @@ func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      incumbentName,
-			Namespace: namespace,
+			Namespace: ctx.namespace,
 			OwnerReferences: []metav1.OwnerReference{metav1.OwnerReference{
 				APIVersion: shipper.SchemeGroupVersion.String(),
 				Name:       rel.Name,
@@ -273,7 +284,7 @@ func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 			},
 		},
 		Spec: shipper.InstallationTargetSpec{
-			Clusters: []string{clusterName},
+			Clusters: ctx.clusters,
 		},
 	}
 
@@ -354,7 +365,7 @@ func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 
 // buildContender returns a releaseInfo with a contender release and
 // associated objects.
-func buildContender(totalReplicaCount uint) *releaseInfo {
+func buildContender(ctx *context, totalReplicaCount uint) *releaseInfo {
 	rel := &shipper.Release{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: shipper.SchemeGroupVersion.String(),
@@ -362,18 +373,18 @@ func buildContender(totalReplicaCount uint) *releaseInfo {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      contenderName,
-			Namespace: namespace,
+			Namespace: ctx.namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
 					APIVersion: shipper.SchemeGroupVersion.String(),
 					Kind:       "Application",
-					Name:       app.GetName(),
-					UID:        app.GetUID(),
+					Name:       ctx.app.GetName(),
+					UID:        ctx.app.GetUID(),
 				},
 			},
 			Labels: map[string]string{
 				shipper.ReleaseLabel: contenderName,
-				shipper.AppLabel:     app.GetName(),
+				shipper.AppLabel:     ctx.app.GetName(),
 			},
 			Annotations: map[string]string{
 				shipper.ReleaseGenerationAnnotation: "1",
@@ -392,13 +403,21 @@ func buildContender(totalReplicaCount uint) *releaseInfo {
 		},
 	}
 
+	clusterInstallationStatuses := make([]*shipper.ClusterInstallationStatus, 0, len(ctx.clusters))
+	for _, clusterName := range ctx.clusters {
+		clusterInstallationStatuses = append(clusterInstallationStatuses, &shipper.ClusterInstallationStatus{
+			Name:   clusterName,
+			Status: shipper.InstallationStatusInstalled,
+		})
+	}
+
 	installationTarget := &shipper.InstallationTarget{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: shipper.SchemeGroupVersion.String(),
 			Kind:       "InstallationTarget",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
+			Namespace: ctx.namespace,
 			Name:      contenderName,
 			OwnerReferences: []metav1.OwnerReference{metav1.OwnerReference{
 				APIVersion: shipper.SchemeGroupVersion.String(),
@@ -408,16 +427,28 @@ func buildContender(totalReplicaCount uint) *releaseInfo {
 			}},
 		},
 		Status: shipper.InstallationTargetStatus{
-			Clusters: []*shipper.ClusterInstallationStatus{
-				{
-					Name:   clusterName,
-					Status: shipper.InstallationStatusInstalled,
-				},
-			},
+			Clusters: clusterInstallationStatuses,
 		},
 		Spec: shipper.InstallationTargetSpec{
-			Clusters: []string{clusterName},
+			Clusters: ctx.clusters,
 		},
+	}
+
+	clusterCapacityStatuses := make([]shipper.ClusterCapacityStatus, 0, len(ctx.clusters))
+	for _, clusterName := range ctx.clusters {
+		clusterCapacityStatuses = append(clusterCapacityStatuses, shipper.ClusterCapacityStatus{
+			Name:            clusterName,
+			AchievedPercent: 100,
+		})
+	}
+
+	capacityTrafficSpecs := make([]shipper.ClusterCapacityTarget, 0, len(ctx.clusters))
+	for _, clusterName := range ctx.clusters {
+		capacityTrafficSpecs = append(capacityTrafficSpecs, shipper.ClusterCapacityTarget{
+			Name:              clusterName,
+			Percent:           0,
+			TotalReplicaCount: int32(totalReplicaCount),
+		})
 	}
 
 	capacityTarget := &shipper.CapacityTarget{
@@ -426,7 +457,7 @@ func buildContender(totalReplicaCount uint) *releaseInfo {
 			Kind:       "CapacityTarget",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
+			Namespace: ctx.namespace,
 			Name:      contenderName,
 			OwnerReferences: []metav1.OwnerReference{metav1.OwnerReference{
 				APIVersion: shipper.SchemeGroupVersion.String(),
@@ -436,21 +467,10 @@ func buildContender(totalReplicaCount uint) *releaseInfo {
 			}},
 		},
 		Status: shipper.CapacityTargetStatus{
-			Clusters: []shipper.ClusterCapacityStatus{
-				{
-					Name:            clusterName,
-					AchievedPercent: 100,
-				},
-			},
+			Clusters: clusterCapacityStatuses,
 		},
 		Spec: shipper.CapacityTargetSpec{
-			Clusters: []shipper.ClusterCapacityTarget{
-				{
-					Name:              clusterName,
-					Percent:           0,
-					TotalReplicaCount: int32(totalReplicaCount),
-				},
-			},
+			Clusters: capacityTrafficSpecs,
 		},
 	}
 
@@ -460,7 +480,7 @@ func buildContender(totalReplicaCount uint) *releaseInfo {
 			Kind:       "TrafficTarget",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
+			Namespace: ctx.namespace,
 			Name:      contenderName,
 			OwnerReferences: []metav1.OwnerReference{metav1.OwnerReference{
 				APIVersion: shipper.SchemeGroupVersion.String(),
