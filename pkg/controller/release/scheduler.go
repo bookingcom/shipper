@@ -1,6 +1,7 @@
 package release
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -70,17 +71,22 @@ func (s *Scheduler) ScheduleRelease() error {
 	if !s.HasClusters() {
 		clusterList, err := s.clustersLister.List(labels.Everything())
 		if err != nil {
+			fmt.Printf("*** cluster list fetch error: %s\n", err)
 			return NewFailedAPICallError("ListClusters", err)
 		}
 
+		fmt.Printf("*** release: %#v\n", s.Release)
+
 		clusters, err := computeTargetClusters(s.Release, clusterList)
 		if err != nil {
+			fmt.Printf("*** compute target clusters error: %s\n", err)
 			return err
 		}
 
 		s.SetClusters(clusters)
 		newRelease, err := s.UpdateRelease()
 		if err != nil {
+			fmt.Printf("*** update release error: %s\n", err)
 			return NewFailedAPICallError("UpdateRelease", err)
 		}
 		s.Release = newRelease
@@ -125,6 +131,7 @@ func (s *Scheduler) ScheduleRelease() error {
 	}
 
 	_, err = s.UpdateRelease()
+	fmt.Printf("##### done updating release. Error: %v\n", err)
 	return err
 }
 
@@ -227,6 +234,7 @@ func (s *Scheduler) CreateInstallationTarget() error {
 
 	_, err := s.shipperclientset.ShipperV1alpha1().InstallationTargets(s.Release.Namespace).Create(installationTarget)
 	if err != nil {
+
 		if errors.IsAlreadyExists(err) {
 			installationTarget, listerErr := s.installationTargetLister.InstallationTargets(s.Release.Namespace).Get(s.Release.Name)
 			if listerErr != nil {

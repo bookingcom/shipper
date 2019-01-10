@@ -223,7 +223,7 @@ func (rc *ReleaseController) processNextReleaseWorkItem() bool {
 		return true
 	}
 
-	if wantRetry, err := rc.scheduleRelease(rel); err != nil {
+	if _, wantRetry, err := rc.scheduleRelease(rel); err != nil {
 		if wantRetry {
 			if rc.relQueue.NumRequeues(key) >= maxRetries {
 				glog.Warningf("Release %q has been retried too many times, dropping from the queue", key)
@@ -234,6 +234,8 @@ func (rc *ReleaseController) processNextReleaseWorkItem() bool {
 			rc.relQueue.AddRateLimited(key)
 		}
 		return true
+	} else {
+
 	}
 
 	// Strategy controller path
@@ -251,9 +253,10 @@ func (rc *ReleaseController) processNextReleaseWorkItem() bool {
 	return true
 }
 
-func (rc *ReleaseController) scheduleRelease(rel *shipper.Release) (bool, error) {
+func (rc *ReleaseController) scheduleRelease(rel *shipper.Release) (*shipper.Release, bool, error) {
 	if releaseutil.ReleaseScheduled(rel) {
-		return NoRetry, fmt.Errorf("Release %q has already been scheduled", rel.Name)
+		fmt.Println("the release has already been scheduled")
+		return nil, NoRetry, fmt.Errorf("Release %q has already been scheduled", rel.Name)
 	}
 
 	scheduler := NewScheduler(
@@ -285,26 +288,28 @@ func (rc *ReleaseController) scheduleRelease(rel *shipper.Release) (bool, error)
 
 		if _, err := rc.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel); err != nil {
 			runtime.HandleError(fmt.Errorf("Error updating Release %q with condition (will retry): %s", rel.Name, err))
-			return WillRetry, err
+			return nil, WillRetry, err
 		}
 
 		if shouldRetry {
 			runtime.HandleError(fmt.Errorf("Error syncing Release %q (will retry): %s", rel.Name, err))
-			return WillRetry, err
+			return nil, WillRetry, err
 		}
 
 		runtime.HandleError(fmt.Errorf("Error syncing Release %q (will not retry): %s", rel.Name, err))
-		return NoRetry, err
+		return nil, NoRetry, err
 	}
 
-	return NoRetry, nil
+	return rel, NoRetry, nil
 }
 
 func (rc *ReleaseController) processNextAppWorkItem() bool {
+	fmt.Println("dequeueing from the app queue")
 	obj, quit := rc.appQueue.Get()
 	if quit {
 		return false
 	}
+	fmt.Printf("dequeued and object: %#v\n", obj)
 
 	defer rc.appQueue.Done(obj)
 
@@ -464,6 +469,7 @@ func (rc *ReleaseController) buildExecutor(incumbent, contender *shipper.Release
 
 func (rc *ReleaseController) getWorkingReleasePair(app *shipper.Application) (*shipper.Release, *shipper.Release, error) {
 	releases, err := rc.sortedReleasesForApp(app)
+
 	if err != nil {
 		return nil, nil, err
 	}
@@ -474,6 +480,9 @@ func (rc *ReleaseController) getWorkingReleasePair(app *shipper.Application) (*s
 
 	var contender *shipper.Release
 	for i := len(releases) - 1; i >= 0; i-- {
+
+		fmt.Printf("release: %#v\n\nscheduled: %t\n\n", releases[i], releaseutil.ReleaseScheduled(releases[i]))
+
 		if releaseutil.ReleaseScheduled(releases[i]) {
 			contender = releases[i]
 			break

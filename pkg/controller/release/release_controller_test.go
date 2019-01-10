@@ -141,13 +141,17 @@ func (ctx *context) buildContender(contenderName string, totalReplicaCount uint)
 		},
 		Status: shipper.ReleaseStatus{
 			Conditions: []shipper.ReleaseCondition{
-				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+				//{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 			},
 		},
 		Spec: shipper.ReleaseSpec{
 			TargetStep: 0,
 			Environment: shipper.ReleaseEnvironment{
 				Strategy: &vanguard,
+				Chart:    *ctx.chart,
+				ClusterRequirements: shipper.ClusterRequirements{
+					Regions: []shipper.RegionRequirement{{Name: shippertesting.TestRegion}},
+				},
 			},
 		},
 	}
@@ -312,6 +316,10 @@ func (ctx *context) buildIncumbent(incumbentName string, totalReplicaCount uint)
 			TargetStep: 2,
 			Environment: shipper.ReleaseEnvironment{
 				Strategy: &vanguard,
+				Chart:    *ctx.chart,
+				ClusterRequirements: shipper.ClusterRequirements{
+					Regions: []shipper.RegionRequirement{{Name: shippertesting.TestRegion}},
+				},
 			},
 		},
 	}
@@ -657,18 +665,18 @@ func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.
 		// Strategy specifies that step 0 the contender has a minimum number of pods
 		// (1), no traffic yet.
 
-		fmt.Printf("contender capacity targer: %#v\n", ctx.contender.capacityTarget.Spec)
-
 		ctx.contender.capacityTarget.Spec.Clusters[0].Percent = 1
 		ctx.contender.capacityTarget.Status.Clusters[0].AvailableReplicas = 1
 		ctx.incumbent.capacityTarget.Spec.Clusters[0].Percent = 100
 		ctx.incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(totalReplicaCount)
 
 		fixtures := []runtime.Object{
+			ctx.app,
+			buildCluster("minikube-a"),
+
+			// Scheduler should create capacity, installation and
+			// traffic targets
 			ctx.contender.release.DeepCopy(),
-			ctx.contender.capacityTarget.DeepCopy(),
-			ctx.contender.installationTarget.DeepCopy(),
-			ctx.contender.trafficTarget.DeepCopy(),
 
 			ctx.incumbent.release.DeepCopy(),
 			ctx.incumbent.capacityTarget.DeepCopy(),
@@ -683,7 +691,10 @@ func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.
 			buildController()
 
 		rel := ctx.contender.release.DeepCopy()
+		fmt.Printf("expecting to be waiting for the command")
 		expectReleaseWaitingForCommand(ctx, rel, 0)
+		fmt.Println("executing the context")
+
 		execute(ctx)
 
 		actual := shippertesting.FilterActions(ctx.clientPool.Actions())
@@ -696,11 +707,16 @@ func execute(ctx *context) {
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 
+	fmt.Println("starting informer factory")
+
 	ctx.informerFactory.Start(stopCh)
+
+	fmt.Println("waiting for cache to sync")
 	ctx.informerFactory.WaitForCacheSync(stopCh)
 
 	controller := ctx.controller
 
+	fmt.Println("polling")
 	wait.PollUntil(
 		10*time.Millisecond,
 		func() (bool, error) { return controller.relQueue.Len() >= 1, nil },
@@ -715,12 +731,16 @@ func execute(ctx *context) {
 		close(readyCh)
 	}()
 
+	fmt.Println("processing next release item")
 	controller.processNextReleaseWorkItem()
+
+	fmt.Println("processing next app item")
 	controller.processNextAppWorkItem()
+	fmt.Println("closing the event channel")
 	close(ctx.recorder.Events)
 	<-readyCh
 }
 
 func expectReleaseWaitingForCommand(ctx *context, release *shipper.Release, step int32) {
-	//TODO
+	//TODO, without this condition there might be a lot of race conditions
 }
