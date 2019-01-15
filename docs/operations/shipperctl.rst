@@ -52,6 +52,9 @@ For each item in the list of **management** or **application** clusters, you can
 Examples
 ^^^^^^^^
 
+Minimal Configuration
+~~~~~~~~~~~~~~~~~~~~~
+
 Here is a minimal configuration to set up a local *minikube* instance:
 
 .. code-block:: yaml
@@ -63,6 +66,9 @@ Here is a minimal configuration to set up a local *minikube* instance:
     region: eu-west
 
 This way, setting up an environment to run Shipper in *Docker For Desktop*, for example, is as easy as creating a list of ``managementClusters`` and a list of ``applicationClusters``, and specifying ``docker-for-desktop`` as the name.
+
+Specifying Cluster Fields
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Here is something more interesting: having 2 application clusters, and marking one of them as unschedulable:
 
@@ -77,6 +83,9 @@ Here is something more interesting: having 2 application clusters, and marking o
     region: eu-west
     scheduler:
       unschedulable: true
+
+Using Contexts That Are Not Valid As a Kubernetes Name
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If you're running on GKE, your cluster context names are likely to have underscores in them, like this: ``gke_ACCOUNT_ZONE_CLUSTERNAME``. ``shipperctl``'s usage of the context name as the name of the Cluster object will break, because Kubernetes objects are not allowed to have underscores in their names. To solve this, specify ``context`` explicitly in ``clusters.yaml``, like so:
 

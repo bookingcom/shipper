@@ -102,7 +102,7 @@ func runApplyClustersCommand(cmd *cobra.Command, args []string) error {
 func validateConfiguration(configuration *config.ClustersConfiguration) error {
 	for _, cluster := range configuration.ApplicationClusters {
 		if msgs := validation.IsDNS1123Subdomain(cluster.Name); len(msgs) > 0 {
-			return fmt.Errorf("\"%s\" is not a valid cluster name in Kubernetes. If this is the name of a context in your Kubernetes configuration, check out the relevant example at https://docs.shipper-k8s.io/en/latest/operations/shipperctl.html#examples", cluster.Name)
+			return fmt.Errorf("\"%s\" is not a valid cluster name in Kubernetes. If this is the name of a context in your Kubernetes configuration, check out the relevant example at https://docs.shipper-k8s.io/en/latest/operations/shipperctl.html#using-contexts-that-are-not-valid-as-a-kubernetes-name", cluster.Name)
 		}
 
 		if cluster.Region == "" {
