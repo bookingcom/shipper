@@ -373,6 +373,9 @@ func (i *Installer) installManifests(
 	}
 
 	chosenService := productionLoadBalancerServices[0]
+	if chosenService.Labels == nil {
+		chosenService.Labels = make(map[string]string)
+	}
 	chosenService.Labels[shipper.LBLabel] = shipper.LBForProduction
 
 	// The second loop is meant to install all the decoded and transformed
