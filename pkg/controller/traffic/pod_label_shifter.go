@@ -52,7 +52,7 @@ func newPodLabelShifter(
 
 func (p *podLabelShifter) Clusters() []string {
 	clusters := make([]string, 0, len(p.clusterReleaseWeights))
-	for cluster, _ := range p.clusterReleaseWeights {
+	for cluster := range p.clusterReleaseWeights {
 		clusters = append(clusters, cluster)
 	}
 	sort.Strings(clusters)
