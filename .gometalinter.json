@@ -1,6 +1,6 @@
 {
     "Vendor": true,
-    "Enable": ["vet", "vetshadow", "ineffassign", "deadcode", "errcheck", "goconst", "megacheck"],
+    "Enable": ["vet", "vetshadow", "ineffassign", "deadcode", "errcheck", "goconst", "staticcheck"],
     "Skip": ["pkg/client", "pkg/apis/shipper/v1alpha1"],
     "Deadline": "300s"
 }
