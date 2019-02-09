@@ -360,7 +360,7 @@ func createApplicationClusterObjectOnManagementCluster(cmd *cobra.Command, manag
 	cmd.Printf("Creating or updating the cluster object for cluster %s on the management cluster... ", applicationCluster.Name)
 	// Doing a priliminary validation
 	if applicationCluster.Region == "" {
-		return fmt.Errorf("You must specify region for cluster %s", applicationCluster.Name)
+		return fmt.Errorf("must specify region for cluster %s", applicationCluster.Name)
 	}
 
 	// Initialize the map of capabilities if it's null so that we

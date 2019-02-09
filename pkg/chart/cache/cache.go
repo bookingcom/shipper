@@ -92,7 +92,7 @@ func (f *fsCache) Store(data []byte, repo, name, version string) error {
 
 	if overhead > 0 {
 		return fmt.Errorf(
-			"all known versions of %q deleted, but still over the size limit (overhead left: %d). yikes!",
+			"all known versions of %q deleted, but still over the size limit (overhead left: %d)",
 			familyPath, overhead,
 		)
 	}

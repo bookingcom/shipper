@@ -45,12 +45,12 @@ func (s *Store) bindEventHandlers() {
 				if !ok {
 					tombstone, ok := obj.(kubecache.DeletedFinalStateUnknown)
 					if !ok {
-						runtime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
+						runtime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
 						return
 					}
 					secret, ok = tombstone.Obj.(*corev1.Secret)
 					if !ok {
-						runtime.HandleError(fmt.Errorf("Tombstone contained object that is not a Secret %#v", obj))
+						runtime.HandleError(fmt.Errorf("tombstone contained object that is not a Secret %#v", obj))
 						return
 					}
 				}
@@ -70,12 +70,12 @@ func (s *Store) bindEventHandlers() {
 			if !ok {
 				tombstone, ok := obj.(kubecache.DeletedFinalStateUnknown)
 				if !ok {
-					runtime.HandleError(fmt.Errorf("Couldn't get object from tombstone %#v", obj))
+					runtime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
 					return
 				}
 				cluster, ok = tombstone.Obj.(*shipper.Cluster)
 				if !ok {
-					runtime.HandleError(fmt.Errorf("Tombstone contained object that is not a Cluster %#v", obj))
+					runtime.HandleError(fmt.Errorf("tombstone contained object that is not a Cluster %#v", obj))
 					return
 				}
 			}

@@ -224,7 +224,7 @@ func (s *Store) syncSecret(key string) error {
 
 	checksum, ok := secret.GetAnnotations()[shipper.SecretChecksumAnnotation]
 	if !ok {
-		return fmt.Errorf("Secret %q looks like a cluster secret but doesn't have a checksum", key)
+		return fmt.Errorf("secret %q looks like a cluster secret but doesn't have a checksum", key)
 	}
 
 	cachedCluster, ok := s.cache.Fetch(secret.Name)
