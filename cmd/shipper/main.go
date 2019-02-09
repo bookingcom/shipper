@@ -252,7 +252,10 @@ func runMetrics(cfg *metricsCfg) {
 			},
 		),
 	}
-	srv.ListenAndServe()
+	err := srv.ListenAndServe()
+	if err != nil {
+		glog.Fatalf("could not start /metrics endpoint: %s", err)
+	}
 }
 
 func buildEnabledControllers(enabledControllers, disabledControllers string) map[string]bool {

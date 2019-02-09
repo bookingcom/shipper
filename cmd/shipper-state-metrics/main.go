@@ -92,7 +92,10 @@ func main() {
 				},
 			),
 		}
-		srv.ListenAndServe()
+		err := srv.ListenAndServe()
+		if err != nil {
+			glog.Fatalf("could not start /metrics endpoint: %s", err)
+		}
 	}()
 
 	<-stopCh
