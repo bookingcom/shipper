@@ -169,33 +169,47 @@ func prettyPrintAction(action kubetesting.Action) string {
 
 	template := fmt.Sprintf("Verb: %s\nGVK: %s\nNamespace: %s\n--------\n%%s", verb, gvk.String(), ns)
 
-	switch a := action.(type) {
+	// You might be tempted to use a type switch on 'action' here instead of
+	// strings. That's less good for the following reasons:
+	//
+	// 1) UpdateAction and CreateAction have the same interface, so the first
+	// one will always match the switch. Ditto 'GetAction' and 'DeleteAction'.
+	// This is surprising if you want to treat them differently.
+	//
+	// 2) You can't explicitly signal that they're the same in the switch case
+	// because Go does not allow 'fallthrough' in type switches.
+	switch verb {
 
-	case kubetesting.CreateAction:
-		obj, err := yaml.Marshal(a.GetObject())
+	case "create":
+		createAction := action.(kubetesting.CreateAction)
+		obj, err := yaml.Marshal(createAction.GetObject())
 		if err != nil {
-			panic(fmt.Sprintf("could not marshal %+v: %q", a.GetObject(), err))
+			panic(fmt.Sprintf("could not marshal %+v: %q", createAction.GetObject(), err))
 		}
 
 		return fmt.Sprintf(template, string(obj))
 
-	case kubetesting.UpdateAction:
-		obj, err := yaml.Marshal(a.GetObject())
+	case "update":
+		updateAction := action.(kubetesting.UpdateAction)
+		obj, err := yaml.Marshal(updateAction.GetObject())
 		if err != nil {
-			panic(fmt.Sprintf("could not marshal %+v: %q", a.GetObject(), err))
+			panic(fmt.Sprintf("could not marshal %+v: %q", updateAction.GetObject(), err))
 		}
 
 		return fmt.Sprintf(template, string(obj))
 
-	case kubetesting.PatchAction:
-		return fmt.Sprintf(template, string(a.GetPatch()))
+	case "patch":
+		patchAction := action.(kubetesting.PatchAction)
+		return fmt.Sprintf(template, string(patchAction.GetPatch()))
 
-	case kubetesting.GetAction:
-		message := fmt.Sprintf("(no object body: GET %s)", a.GetName())
+	case "get":
+		getAction := action.(kubetesting.GetAction)
+		message := fmt.Sprintf("(no object body: GET %s)", getAction.GetName())
 		return fmt.Sprintf(template, message)
 
-	case kubetesting.DeleteAction:
-		message := fmt.Sprintf("(no object body: DELETE %s)", a.GetName())
+	case "delete":
+		deleteAction := action.(kubetesting.DeleteAction)
+		message := fmt.Sprintf("(no object body: DELETE %s)", deleteAction.GetName())
 		return fmt.Sprintf(template, message)
 	}
 
