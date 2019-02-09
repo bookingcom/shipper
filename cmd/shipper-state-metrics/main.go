@@ -116,7 +116,7 @@ func setupSignalHandler() <-chan struct{} {
 
 type glogStdLogger struct{}
 
-func (_ glogStdLogger) Println(v ...interface{}) {
+func (glogStdLogger) Println(v ...interface{}) {
 	// Prometheus only logs errors (which aren't fatal so we downgrade them to
 	// warnings).
 	glog.Warning(v...)
