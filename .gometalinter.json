@@ -2,5 +2,6 @@
     "Vendor": true,
     "Enable": ["vet", "vetshadow", "ineffassign", "deadcode", "errcheck", "goconst", "staticcheck"],
     "Skip": ["pkg/client", "pkg/apis/shipper/v1alpha1"],
+    "Exclude": ["declaration of \"err\" shadows"],
     "Deadline": "300s"
 }
