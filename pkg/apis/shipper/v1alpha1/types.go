@@ -354,6 +354,7 @@ type ClusterCapacityReportContainerBreakdown struct {
 
 type ClusterCapacityReportBreakdown struct {
 	Containers []ClusterCapacityReportContainerBreakdown `json:"containers,omitempty"`
+	Count      uint32                                    `json:"count"`
 	Reason     string                                    `json:"reason,omitempty"`
 	Status     string                                    `json:"status"`
 	Type       string                                    `json:"type"`
