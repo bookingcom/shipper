@@ -6,6 +6,7 @@ import (
 
 	"github.com/golang/glog"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -32,8 +33,20 @@ type Controller struct {
 	chartFetchFunc chart.FetchFunc
 	recorder       record.EventRecorder
 
-	releaseLister shipperlisters.ReleaseLister
-	releaseSynced cache.InformerSynced
+	releaseLister  shipperlisters.ReleaseLister
+	releasesSynced cache.InformerSynced
+
+	clusterLister  shipperlisters.ClusterLister
+	clustersSynced cache.InformerSynced
+
+	installationTargetLister  shipperlisters.InstallationTargetLister
+	installationTargetsSynced cache.InformerSynced
+
+	trafficTargetLister  shipperlisters.TrafficTargetLister
+	trafficTargetsSynced cache.InformerSynced
+
+	capacityTargetLister  shipperlisters.CapacityTargetLister
+	capacityTargetsSynced cache.InformerSynced
 
 	workqueue workqueue.RateLimitingInterface
 }
@@ -46,6 +59,10 @@ func NewController(
 ) *Controller {
 
 	releaseInformer := informerFactory.Shipper().V1alpha1().Releases()
+	clusterInformer := informerFactory.Shipper().V1alpha1().Clusters()
+	installationTargetInformer := informerFactory.Shipper().V1alpha1().InstallationTargets()
+	trafficTargetInformer := informerFactory.Shipper().V1alpha1().TrafficTargets()
+	capacityTargetInformer := informerFactory.Shipper().V1alpha1().CapacityTargets()
 
 	glog.Info("Building a release controller")
 
@@ -54,8 +71,20 @@ func NewController(
 		chartFetchFunc: chartFetchFunc,
 		recorder:       recorder,
 
-		releaseLister: releaseInformer.Lister(),
-		releaseSynced: releaseInformer.Informer().HasSynced,
+		releaseLister:  releaseInformer.Lister(),
+		releasesSynced: releaseInformer.Informer().HasSynced,
+
+		clusterLister:  clusterInformer.Lister(),
+		clustersSynced: clusterInformer.Informer().HasSynced,
+
+		installationTargetLister:  installationTargetInformer.Lister(),
+		installationTargetsSynced: installationTargetInformer.Informer().HasSynced,
+
+		trafficTargetLister:  trafficTargetInformer.Lister(),
+		trafficTargetsSynced: trafficTargetInformer.Informer().HasSynced,
+
+		capacityTargetLister:  capacityTargetInformer.Lister(),
+		capacityTargetsSynced: capacityTargetInformer.Informer().HasSynced,
 
 		workqueue: workqueue.NewNamedRateLimitingQueue(
 			workqueue.DefaultControllerRateLimiter(),
@@ -83,7 +112,14 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	glog.V(2).Info("Starting Release controller")
 	defer glog.V(2).Info("Shutting down Release controller")
 
-	if ok := cache.WaitForCacheSync(stopCh, c.releaseSynced); !ok {
+	if ok := cache.WaitForCacheSync(
+		stopCh,
+		c.releasesSynced,
+		c.clustersSynced,
+		c.installationTargetsSynced,
+		c.trafficTargetsSynced,
+		c.capacityTargetsSynced,
+	); !ok {
 		runtime.HandleError(fmt.Errorf("Failed to wait for caches to sync"))
 		return
 	}
@@ -141,7 +177,7 @@ func (c *Controller) syncHandler(key string) bool {
 		runtime.HandleError(fmt.Errorf("Invalid object key (will not retry): %q", key))
 		return false
 	}
-	release, err := c.releaseLister.Releases(namespace).Get(name)
+	rel, err := c.releaseLister.Releases(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			glog.V(3).Infof("Release %q has been deleted", key)
@@ -153,12 +189,54 @@ func (c *Controller) syncHandler(key string) bool {
 		return true
 	}
 
-	if releaseutil.ReleaseScheduled(release) {
-		glog.V(4).Infof("Release %q has already been scheduled, ignoring", key)
-		return false
-	}
+	if !releaseutil.ReleaseScheduled(rel) {
 
-	//TODO(olegs): schedule the release
+		glog.V(4).Infof("Release %q is not scheduled yet, processing", key)
+
+		scheduler := NewScheduler(
+			c.clientset,
+			c.clusterLister,
+			c.installationTargetLister,
+			c.trafficTargetLister,
+			c.capacityTargetLister,
+			c.chartFetchFunc,
+			c.recorder,
+		)
+
+		_, err = scheduler.ScheduleRelease(rel)
+		if err != nil {
+			c.recorder.Eventf(
+				rel,
+				corev1.EventTypeWarning,
+				"FailedReleaseScheduling",
+				err.Error(),
+			)
+
+			reason, shouldRetry := classifyError(err)
+			condition := releaseutil.NewReleaseCondition(
+				shipper.ReleaseConditionTypeScheduled,
+				corev1.ConditionFalse,
+				reason,
+				err.Error(),
+			)
+			releaseutil.SetReleaseCondition(&rel.Status, *condition)
+
+			if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); err != nil {
+				// always retry failing to write the error out to the Release: we need to communicate this to the user
+				return true
+			}
+
+			if shouldRetry {
+				runtime.HandleError(fmt.Errorf("Error syncing Release %q (will retry): %s", key, err))
+				return true
+			}
+
+			runtime.HandleError(fmt.Errorf("Error syncing Release %q (will not retry): %s", key, err))
+
+			return false
+		}
+		glog.V(4).Infof("Release %q has been successfully scheduled", key)
+	}
 
 	return false
 }
