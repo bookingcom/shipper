@@ -30,7 +30,7 @@ func TestUpdatingCapacityTargetUpdatesDeployment(t *testing.T) {
 	f := NewFixture(t)
 
 	capacityTarget := newCapacityTarget(10, 50)
-	f.managementObjects = append(f.managementObjects, capacityTarget)
+	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
 	deployment := newDeployment(0, 0)
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment)
@@ -53,11 +53,203 @@ func TestUpdatingCapacityTargetUpdatesDeployment(t *testing.T) {
 	f.runCapacityTargetSyncHandler()
 }
 
+func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePod(t *testing.T) {
+	f := NewFixture(t)
+
+	capacityTarget := newCapacityTarget(1, 100)
+
+	deployment := newDeployment(1, 1)
+	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
+	podA := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-a",
+			Namespace: capacityTarget.GetNamespace(),
+			Labels:    podLabels,
+		},
+		Status: corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:  "app",
+					State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+				},
+			},
+			Conditions: []corev1.PodCondition{
+				{
+					Type: corev1.PodReady,
+				},
+			},
+		},
+	}
+	f.targetClusterObjects = append(f.targetClusterObjects, deployment, podA)
+
+	c := shipper.ClusterCapacityReport{
+		Owner: shipper.ClusterCapacityReportOwner{
+			Name: "nginx",
+		},
+		Breakdown: []shipper.ClusterCapacityReportBreakdown{
+			{
+				Count: 1,
+				Type:  string(corev1.PodReady),
+				Containers: []shipper.ClusterCapacityReportContainerBreakdown{
+					{
+						Name: "app",
+						States: []shipper.ClusterCapacityReportContainerStateBreakdown{
+							{
+								Count: 1,
+								Type:  "Running",
+								Example: shipper.ClusterCapacityReportContainerBreakdownExample{
+									Pod: "pod-a",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
+
+	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
+		Name:              "minikube",
+		Reports:           []shipper.ClusterCapacityReport{c},
+		AchievedPercent:   100,
+		AvailableReplicas: 1,
+		Conditions: []shipper.ClusterCapacityCondition{
+			{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
+			{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+		},
+	})
+
+	updateAction := kubetesting.NewUpdateAction(
+		schema.GroupVersionResource{
+			Group:    shipper.SchemeGroupVersion.Group,
+			Version:  shipper.SchemeGroupVersion.Version,
+			Resource: "capacitytargets",
+		},
+		capacityTarget.GetNamespace(),
+		capacityTarget,
+	)
+
+	f.managementClusterActions = append(f.managementClusterActions, updateAction)
+	f.runCapacityTargetSyncHandler()
+
+	// Calling the sync handler again with the updated capacity target object should yield the same results.
+	f.managementObjects = []runtime.Object{capacityTarget.DeepCopy()}
+	f.runCapacityTargetSyncHandler()
+}
+
+func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePods(t *testing.T) {
+	f := NewFixture(t)
+
+	capacityTarget := newCapacityTarget(2, 100)
+
+	deployment := newDeployment(2, 2)
+	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
+	podA := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-a",
+			Namespace: capacityTarget.GetNamespace(),
+			Labels:    podLabels,
+		},
+		Status: corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:  "app",
+					State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+				},
+			},
+			Conditions: []corev1.PodCondition{
+				{
+					Type: corev1.PodReady,
+				},
+			},
+		},
+	}
+	podB := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-b",
+			Namespace: capacityTarget.GetNamespace(),
+			Labels:    podLabels,
+		},
+		Status: corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:  "app",
+					State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+				},
+			},
+			Conditions: []corev1.PodCondition{
+				{
+					Type: corev1.PodReady,
+				},
+			},
+		},
+	}
+	f.targetClusterObjects = append(f.targetClusterObjects, deployment, podA, podB)
+
+	c := shipper.ClusterCapacityReport{
+		Owner: shipper.ClusterCapacityReportOwner{
+			Name: "nginx",
+		},
+		Breakdown: []shipper.ClusterCapacityReportBreakdown{
+			{
+				Count: 2,
+				Type:  string(corev1.PodReady),
+				Containers: []shipper.ClusterCapacityReportContainerBreakdown{
+					{
+						Name: "app",
+						States: []shipper.ClusterCapacityReportContainerStateBreakdown{
+							{
+								Count: 2,
+								Type:  "Running",
+								Example: shipper.ClusterCapacityReportContainerBreakdownExample{
+									Pod: "pod-a",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
+
+	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
+		Name:              "minikube",
+		Reports:           []shipper.ClusterCapacityReport{c},
+		AchievedPercent:   100,
+		AvailableReplicas: 2,
+		Conditions: []shipper.ClusterCapacityCondition{
+			{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
+			{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+		},
+	})
+
+	updateAction := kubetesting.NewUpdateAction(
+		schema.GroupVersionResource{
+			Group:    shipper.SchemeGroupVersion.Group,
+			Version:  shipper.SchemeGroupVersion.Version,
+			Resource: "capacitytargets",
+		},
+		capacityTarget.GetNamespace(),
+		capacityTarget,
+	)
+
+	f.managementClusterActions = append(f.managementClusterActions, updateAction)
+	f.runCapacityTargetSyncHandler()
+
+	// Calling the sync handler again with the updated capacity target object should yield the same results.
+	f.managementObjects = []runtime.Object{capacityTarget.DeepCopy()}
+	f.runCapacityTargetSyncHandler()
+}
+
 func TestUpdatingDeploymentsUpdatesTheCapacityTargetStatus(t *testing.T) {
 	f := NewFixture(t)
 
 	capacityTarget := newCapacityTarget(10, 50)
-	f.managementObjects = append(f.managementObjects, capacityTarget)
+	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
 	deployment := newDeployment(5, 5)
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment)
@@ -82,7 +274,7 @@ func TestSadPodsAreReflectedInCapacityTargetStatus(t *testing.T) {
 	f := NewFixture(t)
 
 	capacityTarget := newCapacityTarget(2, 100)
-	f.managementObjects = append(f.managementObjects, capacityTarget)
+	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
 	deployment := newDeployment(2, 1)
 	happyPod := createHappyPodForDeployment(deployment)
@@ -196,6 +388,12 @@ func (f *fixture) expectCapacityTargetStatusUpdate(capacityTarget *shipper.Capac
 		AchievedPercent:   achievedPercent,
 		Conditions:        clusterConditions,
 		SadPods:           sadPods,
+		Reports: []shipper.ClusterCapacityReport{
+			{
+				Owner:     shipper.ClusterCapacityReportOwner{Name: "nginx"},
+				Breakdown: []shipper.ClusterCapacityReportBreakdown{},
+			},
+		},
 	}
 
 	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, clusterStatus)
@@ -234,7 +432,7 @@ func newCapacityTarget(totalReplicaCount, percent int32) *shipper.CapacityTarget
 			Namespace: namespace,
 			Labels:    metaLabels,
 			OwnerReferences: []metav1.OwnerReference{
-				metav1.OwnerReference{
+				{
 					APIVersion: shipper.SchemeGroupVersion.String(),
 					Kind:       "Release",
 					Name:       "0.0.1",
@@ -277,6 +475,11 @@ func newDeployment(replicas int32, availableReplicas int32) *appsv1.Deployment {
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Selector: specSelector,
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: metaLabels,
+				},
+			},
 		},
 		Status: status,
 	}

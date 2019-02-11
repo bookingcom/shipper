@@ -1,8 +1,10 @@
 package capacity
 
 import (
-	core_v1 "k8s.io/api/core/v1"
+	"sort"
 	"strings"
+
+	core_v1 "k8s.io/api/core/v1"
 
 	shipper_v1alpha1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
@@ -11,6 +13,7 @@ type containerState struct {
 	cluster string
 	owner   string
 	pod     string
+	count   uint32
 
 	conditionType   *string
 	conditionStatus *string
@@ -68,6 +71,11 @@ func getContainerStateField(c core_v1.ContainerState, f string) string {
 func buildContainerStateEntries(podsList []*core_v1.Pod) []containerState {
 	containerStates := make([]containerState, 0, 0)
 
+	// Sort pods list to offer a stable pod as example.
+	sort.Slice(podsList, func(i, j int) bool {
+		return podsList[i].Name < podsList[j].Name
+	})
+
 	for _, pod := range podsList {
 		state := containerState{
 			cluster: "microk8s",
@@ -79,7 +87,7 @@ func buildContainerStateEntries(podsList []*core_v1.Pod) []containerState {
 			state.conditionType = string2ptr(string(cond.Type))
 			state.conditionStatus = string2ptr(string(cond.Status))
 			state.conditionReason = string2ptr(string(cond.Reason))
-
+			state.count = state.count + 1
 			for _, containerStatus := range pod.Status.ContainerStatuses {
 				state.containerName = string2ptr(containerStatus.Name)
 				state.containerStateType = string2ptr(getContainerStateField(containerStatus.State, "type"))
@@ -103,6 +111,7 @@ type containerStateSummary struct {
 }
 
 type conditionSummary struct {
+	count      uint32
 	containers map[string]containerStateSummary
 	reason     string
 	status     string
@@ -151,12 +160,14 @@ func summarizeContainerStateByCondition(conditionSummaries map[string]conditionS
 		}
 
 		conditionSummaries[conditionSummaryKey] = conditionSummary{
+			count:      1,
 			containers: containerStates,
 			status:     ptr2string(state.conditionStatus),
 			reason:     ptr2string(state.conditionReason),
 			typ:        ptr2string(state.conditionType),
 		}
 	} else {
+		summary.count = summary.count + 1
 		if existingState, ok := summary.containers[containerStateKey]; !ok {
 			summary.containers[containerStateKey] = containerStateSummary{
 				count:   1,
@@ -169,6 +180,8 @@ func summarizeContainerStateByCondition(conditionSummaries map[string]conditionS
 			existingState.count = existingState.count + 1
 			summary.containers[containerStateKey] = existingState
 		}
+
+		conditionSummaries[conditionSummaryKey] = summary
 	}
 }
 
@@ -191,6 +204,7 @@ func buildReport(ownerName string, conditionSummaries map[string]conditionSummar
 			Type:   cond.typ,
 			Status: cond.status,
 			Reason: cond.reason,
+			Count:  cond.count,
 		}
 
 		for _, container := range cond.containers {
