@@ -1,7 +1,6 @@
 package release
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 
@@ -98,11 +97,28 @@ func (s *Scheduler) ScheduleRelease(origrel *shipper.Release) (*shipper.Release,
 		return nil, err
 	}
 
-	//TODO(olegs)
+	if _, err := s.CreateTrafficTarget(rel); err != nil {
+		return nil, err
+	}
 
-	fmt.Println(replicaCount)
+	if _, err := s.CreateCapacityTarget(rel, replicaCount); err != nil {
+		return nil, err
+	}
 
-	return nil, nil
+	// If we get to this point, it means that the clusters have already been
+	// selected and persisted in the Release, and all the associated Releases have
+	// already been created.
+	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&rel.Status, *condition)
+
+	if len(rel.Status.Conditions) == 0 {
+		glog.Errorf(
+			"Conditions don't see right here for Release %q",
+			metaKey,
+		)
+	}
+
+	return s.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel)
 }
 
 func ReleaseHasClusters(rel *shipper.Release) bool {
@@ -163,6 +179,133 @@ func (s *Scheduler) CreateInstallationTarget(rel *shipper.Release) (*shipper.Ins
 	)
 
 	return installationTarget, nil
+}
+
+func (s *Scheduler) CreateTrafficTarget(rel *shipper.Release) (*shipper.TrafficTarget, error) {
+	clusterNames := strings.Split(rel.Annotations[shipper.ReleaseClustersAnnotation], ",")
+	if len(clusterNames) == 1 && clusterNames[0] == "" {
+		clusterNames = []string{}
+	}
+
+	trafficTargetClusters := make([]shipper.ClusterTrafficTarget, 0, len(clusterNames))
+	for _, clusterName := range clusterNames {
+		trafficTargetClusters = append(
+			trafficTargetClusters,
+			shipper.ClusterTrafficTarget{
+				Name:   clusterName,
+				Weight: 0,
+			})
+	}
+
+	tt := &shipper.TrafficTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      rel.Name,
+			Namespace: rel.Namespace,
+			Labels:    rel.Labels,
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(rel),
+			},
+		},
+		Spec: shipper.TrafficTargetSpec{Clusters: trafficTargetClusters},
+	}
+
+	trafficTarget, err := s.clientset.ShipperV1alpha1().TrafficTargets(rel.Namespace).Create(tt)
+	if err != nil {
+		if errors.IsAlreadyExists(err) {
+			trafficTarget, listerErr := s.trafficTargetLister.TrafficTargets(rel.Namespace).Get(rel.Name)
+			if listerErr != nil {
+				glog.Errorf("Failed to fetch traffic target: %s", listerErr)
+				return nil, listerErr
+			}
+			for _, ownerRef := range trafficTarget.GetOwnerReferences() {
+				if ownerRef.UID == rel.UID {
+					glog.Infof("TrafficTarget %q already exists but"+
+						" it belongs to current release, proceeding normally",
+						controller.MetaKey(rel))
+					return trafficTarget, nil
+				}
+			}
+			glog.Errorf("TrafficTarget %q already exists and it does not"+
+				" belong to the current release, bailing out", controller.MetaKey(trafficTarget))
+			return nil, err
+		}
+		return nil, NewFailedAPICallError("CreateTrafficTarget", err)
+	}
+
+	s.recorder.Eventf(
+		rel,
+		corev1.EventTypeNormal,
+		"ReleaseScheduled",
+		"Created TrafficTarget %q",
+		controller.MetaKey(trafficTarget),
+	)
+
+	return trafficTarget, nil
+}
+
+func (s *Scheduler) CreateCapacityTarget(rel *shipper.Release, totalReplicaCount int32) (*shipper.CapacityTarget, error) {
+	clusterNames := strings.Split(rel.Annotations[shipper.ReleaseClustersAnnotation], ",")
+	if len(clusterNames) == 1 && clusterNames[0] == "" {
+		clusterNames = []string{}
+	}
+	capacityTargetClusters := make([]shipper.ClusterCapacityTarget, 0, len(clusterNames))
+	for _, clusterName := range clusterNames {
+		capacityTargetClusters = append(
+			capacityTargetClusters,
+			shipper.ClusterCapacityTarget{
+				Name:              clusterName,
+				Percent:           0,
+				TotalReplicaCount: totalReplicaCount,
+			})
+	}
+
+	ct := &shipper.CapacityTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      rel.Name,
+			Namespace: rel.Namespace,
+			Labels:    rel.Labels,
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(rel),
+			},
+		},
+		Spec: shipper.CapacityTargetSpec{
+			Clusters: capacityTargetClusters,
+		},
+	}
+
+	capacityTarget, err := s.clientset.ShipperV1alpha1().CapacityTargets(rel.Namespace).Create(ct)
+	if err != nil {
+		if errors.IsAlreadyExists(err) {
+			capacityTarget, listerErr := s.capacityTargetLister.CapacityTargets(rel.Namespace).Get(rel.Name)
+			if listerErr != nil {
+				glog.Errorf("Failed to fetch capacity target: %s", listerErr)
+				return nil, listerErr
+			}
+			for _, ownerRef := range capacityTarget.GetOwnerReferences() {
+				if ownerRef.UID == rel.UID {
+					glog.Infof("CapacityTarget %q already exists but"+
+						" it belongs to current release, proceeding normally",
+						controller.MetaKey(rel))
+					return capacityTarget, nil
+				}
+			}
+			glog.Errorf("CapacityTarget %q already exists and it does not"+
+				" belong to the current release, bailing out", controller.MetaKey(capacityTarget))
+
+			return nil, err
+		}
+		return nil, NewFailedAPICallError("CreateCapacityTarget", err)
+	}
+
+	s.recorder.Eventf(
+		rel,
+		corev1.EventTypeNormal,
+		"ReleaseScheduled",
+		"Created Capacity Target %q",
+		controller.MetaKey(capacityTarget),
+	)
+
+	return capacityTarget, nil
 }
 
 // computeTargetClusters picks out the clusters from the given list which match
