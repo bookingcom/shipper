@@ -20,7 +20,6 @@ const (
 
 type containerState struct {
 	cluster string
-	owner   string
 	pod     string
 	count   uint32
 
@@ -94,7 +93,7 @@ func getContainerStateField(c core_v1.ContainerState, f ContainerStateField) str
 	panic("Programmer error: a container state must be either Running, Waiting or Terminated.")
 }
 
-func buildContainerStateEntries(podsList []*core_v1.Pod) []containerState {
+func buildContainerStateEntries(clusterName string, podsList []*core_v1.Pod) []containerState {
 	containerStates := make([]containerState, 0)
 
 	// Sort pods list to offer a stable pod as example.
@@ -104,8 +103,7 @@ func buildContainerStateEntries(podsList []*core_v1.Pod) []containerState {
 
 	for _, pod := range podsList {
 		state := containerState{
-			cluster: "microk8s",
-			owner:   "shipper-deployment",
+			cluster: clusterName,
 			pod:     pod.Name,
 		}
 
