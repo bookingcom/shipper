@@ -228,13 +228,13 @@ func (c *Scheduler) CreateInstallationTarget() error {
 	_, err := c.shipperclientset.ShipperV1alpha1().InstallationTargets(c.Release.Namespace).Create(installationTarget)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			installationTarget, listerErr := c.installationTargetLister.InstallationTargets(c.Release.Namespace).Get(c.Release.Name)
+			existingInstallationTarget, listerErr := c.installationTargetLister.InstallationTargets(c.Release.Namespace).Get(c.Release.Name)
 			if listerErr != nil {
 				glog.Errorf("Failed to fetch installation target: %s", listerErr)
 				return listerErr
 			}
 
-			for _, ownerRef := range installationTarget.GetOwnerReferences() {
+			for _, ownerRef := range existingInstallationTarget.GetOwnerReferences() {
 				if ownerRef.UID == c.Release.UID {
 					glog.Infof("InstallationTarget %q already exists but"+
 						" it belongs to current release, proceeding normally",
@@ -244,7 +244,7 @@ func (c *Scheduler) CreateInstallationTarget() error {
 			}
 
 			glog.Errorf("InstallationTarget %q already exists and it does not"+
-				" belong to the current release, bailing out", controller.MetaKey(installationTarget))
+				" belong to the current release, bailing out", controller.MetaKey(existingInstallationTarget))
 
 			return err
 		}
@@ -287,12 +287,12 @@ func (c *Scheduler) CreateCapacityTarget(totalReplicaCount int32) error {
 	_, err := c.shipperclientset.ShipperV1alpha1().CapacityTargets(c.Release.Namespace).Create(capacityTarget)
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
-			capacityTarget, listerErr := c.capacityTargetLister.CapacityTargets(c.Release.Namespace).Get(c.Release.Name)
+			existingCapacityTarget, listerErr := c.capacityTargetLister.CapacityTargets(c.Release.Namespace).Get(c.Release.Name)
 			if listerErr != nil {
 				glog.Errorf("Failed to fetch capacity target: %s", listerErr)
 				return listerErr
 			}
-			for _, ownerRef := range capacityTarget.GetOwnerReferences() {
+			for _, ownerRef := range existingCapacityTarget.GetOwnerReferences() {
 				if ownerRef.UID == c.Release.UID {
 					glog.Infof("CapacityTarget %q already exists but"+
 						" it belongs to current release, proceeding normally",
@@ -301,7 +301,7 @@ func (c *Scheduler) CreateCapacityTarget(totalReplicaCount int32) error {
 				}
 			}
 			glog.Errorf("CapacityTarget %q already exists and it does not"+
-				" belong to the current release, bailing out", controller.MetaKey(capacityTarget))
+				" belong to the current release, bailing out", controller.MetaKey(existingCapacityTarget))
 
 			return err
 		}
@@ -344,12 +344,12 @@ func (c *Scheduler) CreateTrafficTarget() error {
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
 
-			trafficTarget, listerErr := c.trafficTargetLister.TrafficTargets(c.Release.Namespace).Get(c.Release.Name)
+			existingTrafficTarget, listerErr := c.trafficTargetLister.TrafficTargets(c.Release.Namespace).Get(c.Release.Name)
 			if listerErr != nil {
 				glog.Errorf("Failed to fetch traffic target: %s", listerErr)
 				return listerErr
 			}
-			for _, ownerRef := range trafficTarget.GetOwnerReferences() {
+			for _, ownerRef := range existingTrafficTarget.GetOwnerReferences() {
 				if ownerRef.UID == c.Release.UID {
 					glog.Infof("TrafficTarget %q already exists but"+
 						" it belongs to current release, proceeding normally",
@@ -358,7 +358,7 @@ func (c *Scheduler) CreateTrafficTarget() error {
 				}
 			}
 			glog.Errorf("TrafficTarget %q already exists and it does not"+
-				" belong to the current release, bailing out", controller.MetaKey(trafficTarget))
+				" belong to the current release, bailing out", controller.MetaKey(existingTrafficTarget))
 
 			return err
 		}

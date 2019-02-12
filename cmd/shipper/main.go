@@ -231,7 +231,7 @@ func main() {
 
 type glogStdLogger struct{}
 
-func (_ glogStdLogger) Println(v ...interface{}) {
+func (glogStdLogger) Println(v ...interface{}) {
 	// Prometheus only logs errors (which aren't fatal so we downgrade them to
 	// warnings).
 	glog.Warning(v...)
@@ -252,7 +252,10 @@ func runMetrics(cfg *metricsCfg) {
 			},
 		),
 	}
-	srv.ListenAndServe()
+	err := srv.ListenAndServe()
+	if err != nil {
+		glog.Fatalf("could not start /metrics endpoint: %s", err)
+	}
 }
 
 func buildEnabledControllers(enabledControllers, disabledControllers string) map[string]bool {

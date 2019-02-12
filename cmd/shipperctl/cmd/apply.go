@@ -41,11 +41,20 @@ const (
 )
 
 func init() {
-	applyCmd.Flags().StringVarP(&configFile, "file", "f", "clusters.yaml", "config file")
-	applyCmd.Flags().StringVar(&kubeConfigFile, "kube-config", "~/.kube/config", "the path to the Kubernetes configuration file")
+	fileFlagName := "file"
+	kubeConfigFlagName := "kube-config"
+	applyCmd.Flags().StringVarP(&configFile, fileFlagName, "f", "clusters.yaml", "config file")
+	applyCmd.Flags().StringVar(&kubeConfigFile, kubeConfigFlagName, "~/.kube/config", "the path to the Kubernetes configuration file")
 	applyCmd.Flags().StringVarP(&shipperSystemNamespace, "shipper-system-namespace", "n", shipper.ShipperNamespace, "the namespace where Shipper is running")
-	applyCmd.MarkFlagFilename("config", "yaml")
-	applyCmd.MarkFlagFilename("kube-config", "yaml")
+
+	err := applyCmd.MarkFlagFilename(fileFlagName, "yaml")
+	if err != nil {
+		applyCmd.Printf("warning: could not mark %q for filename autocompletion: %s\n", fileFlagName, err)
+	}
+	err = applyCmd.MarkFlagFilename(kubeConfigFlagName, "yaml")
+	if err != nil {
+		applyCmd.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
+	}
 }
 
 func runApplyClustersCommand(cmd *cobra.Command, args []string) error {
@@ -360,7 +369,7 @@ func createApplicationClusterObjectOnManagementCluster(cmd *cobra.Command, manag
 	cmd.Printf("Creating or updating the cluster object for cluster %s on the management cluster... ", applicationCluster.Name)
 	// Doing a priliminary validation
 	if applicationCluster.Region == "" {
-		return fmt.Errorf("You must specify region for cluster %s", applicationCluster.Name)
+		return fmt.Errorf("must specify region for cluster %s", applicationCluster.Name)
 	}
 
 	// Initialize the map of capabilities if it's null so that we
@@ -384,7 +393,10 @@ func loadClustersConfiguration() (*config.ClustersConfiguration, error) {
 	}
 
 	configuration := &config.ClustersConfiguration{}
-	yaml.Unmarshal(configBytes, configuration)
+	err = yaml.Unmarshal(configBytes, configuration)
+	if err != nil {
+		return nil, err
+	}
 
 	return configuration, nil
 }

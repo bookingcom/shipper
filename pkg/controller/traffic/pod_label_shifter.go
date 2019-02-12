@@ -52,7 +52,7 @@ func newPodLabelShifter(
 
 func (p *podLabelShifter) Clusters() []string {
 	clusters := make([]string, 0, len(p.clusterReleaseWeights))
-	for cluster, _ := range p.clusterReleaseWeights {
+	for cluster := range p.clusterReleaseWeights {
 		clusters = append(clusters, cluster)
 	}
 	sort.Strings(clusters)
@@ -283,14 +283,14 @@ func buildClusterReleaseWeights(trafficTargets []*shipper.TrafficTarget) (cluste
 		release, ok := tt.Labels[shipper.ReleaseLabel]
 		if !ok {
 			return nil, fmt.Errorf(
-				"TrafficTarget '%s/%s' needs a 'release' label in order to select resources in the target clusters.",
+				"trafficTarget '%s/%s' needs a 'release' label in order to select resources in the target clusters",
 				tt.Namespace, tt.Name,
 			)
 		}
 		existingTT, ok := releaseTT[release]
 		if ok {
 			return nil, fmt.Errorf(
-				"TrafficTargets %q and %q in namespace %q both operate on release %q. This is wrong, please fix",
+				"trafficTargets %q and %q in namespace %q both operate on release %q",
 				existingTT.Name, tt.Name, tt.Namespace, release,
 			)
 		}

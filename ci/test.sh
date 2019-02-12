@@ -14,7 +14,7 @@ gometalinter \
     --enable=ineffassign \
     --enable=deadcode \
     --enable=goconst \
-    --enable=megacheck \
+    --enable=staticcheck \
     ./...
 
 go test -v $(go list ./... | grep -v /vendor/)
