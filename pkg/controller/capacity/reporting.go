@@ -221,7 +221,17 @@ func buildReport(ownerName string, conditionSummaries map[string]conditionSummar
 		Breakdown: []shipper_v1alpha1.ClusterCapacityReportBreakdown{},
 	}
 
-	for _, cond := range conditionSummaries {
+	var conditionSummaryKeys = []string{}
+	for k := range conditionSummaries {
+		conditionSummaryKeys = append(conditionSummaryKeys, k)
+	}
+
+	sort.Slice(conditionSummaryKeys, func(i, j int) bool {
+		return conditionSummaries[conditionSummaryKeys[i]].typ < conditionSummaries[conditionSummaryKeys[j]].typ
+	})
+
+	for _, k := range conditionSummaryKeys {
+		cond := conditionSummaries[k]
 		breakdown := shipper_v1alpha1.ClusterCapacityReportBreakdown{
 			Type:   cond.typ,
 			Status: cond.status,
