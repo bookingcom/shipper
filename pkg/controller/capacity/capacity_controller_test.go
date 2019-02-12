@@ -2,6 +2,7 @@ package capacity
 
 import (
 	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -243,6 +244,168 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePods(t *testin
 	// Calling the sync handler again with the updated capacity target object should yield the same results.
 	f.managementObjects = []runtime.Object{capacityTarget.DeepCopy()}
 	f.runCapacityTargetSyncHandler()
+}
+
+func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePodsWithDifferentConditions(t *testing.T) {
+	f := NewFixture(t)
+
+	capacityTarget := newCapacityTarget(2, 100)
+
+	deployment := newDeployment(2, 2)
+	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
+	podA := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-a",
+			Namespace: capacityTarget.GetNamespace(),
+			Labels:    podLabels,
+		},
+		Status: corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:  "app",
+					State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"}},
+				},
+			},
+			Conditions: []corev1.PodCondition{
+				{
+					Type:   corev1.PodReady,
+					Status: corev1.ConditionFalse,
+					Reason: "ContainersNotReady",
+				},
+			},
+		},
+	}
+	podB := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-b",
+			Namespace: capacityTarget.GetNamespace(),
+			Labels:    podLabels,
+		},
+		Status: corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:  "app",
+					State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Completed"}},
+				},
+			},
+			Conditions: []corev1.PodCondition{
+				{
+					Type:   corev1.PodReady,
+					Status: corev1.ConditionFalse,
+					Reason: "ContainersNotReady",
+				},
+			},
+		},
+	}
+	f.targetClusterObjects = append(f.targetClusterObjects, deployment, podA, podB)
+
+	c := shipper.ClusterCapacityReport{
+		Owner: shipper.ClusterCapacityReportOwner{
+			Name: "nginx",
+		},
+		Breakdown: []shipper.ClusterCapacityReportBreakdown{
+			{
+				Count:  2,
+				Type:   string(corev1.PodReady),
+				Status: string(corev1.ConditionFalse),
+				Reason: "ContainersNotReady",
+				Containers: []shipper.ClusterCapacityReportContainerBreakdown{
+					{
+						Name: "app",
+						States: []shipper.ClusterCapacityReportContainerStateBreakdown{
+							{
+								Count:  1,
+								Type:   "Terminated",
+								Reason: "Completed",
+								Example: shipper.ClusterCapacityReportContainerBreakdownExample{
+									Pod: "pod-b",
+								},
+							},
+							{
+								Count:  1,
+								Type:   "Waiting",
+								Reason: "ContainerCreating",
+								Example: shipper.ClusterCapacityReportContainerBreakdownExample{
+									Pod: "pod-a",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
+
+	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
+		Name:              "minikube",
+		Reports:           []shipper.ClusterCapacityReport{c},
+		AchievedPercent:   100,
+		AvailableReplicas: 2,
+		Conditions: []shipper.ClusterCapacityCondition{
+			{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionFalse, Reason: conditions.PodsNotReady, Message: "there are 2 sad pods"},
+		},
+		SadPods: []shipper.PodStatus{
+			{
+				Condition: corev1.PodCondition{
+					Type:   corev1.PodReady,
+					Status: corev1.ConditionFalse,
+					Reason: "ContainersNotReady",
+				},
+				Containers: []corev1.ContainerStatus{
+					{
+						Name: "app",
+						State: corev1.ContainerState{
+							Terminated: &corev1.ContainerStateTerminated{
+								Reason: "Completed",
+							},
+						},
+					},
+				},
+				Name: "pod-b",
+			},
+			{
+				Condition: corev1.PodCondition{
+					Type:   corev1.PodReady,
+					Status: corev1.ConditionFalse,
+					Reason: "ContainersNotReady",
+				},
+				Containers: []corev1.ContainerStatus{
+					{
+						Name: "app",
+						State: corev1.ContainerState{
+							Waiting: &corev1.ContainerStateWaiting{
+								Reason: "ContainerCreating",
+							},
+						},
+					},
+				},
+				Name: "pod-a",
+			},
+		},
+	})
+
+	sort.Slice(capacityTarget.Status.Clusters[0].SadPods, func(i, j int) bool {
+		return capacityTarget.Status.Clusters[0].SadPods[i].Name < capacityTarget.Status.Clusters[0].SadPods[j].Name
+	})
+
+	updateAction := kubetesting.NewUpdateAction(
+		schema.GroupVersionResource{
+			Group:    shipper.SchemeGroupVersion.Group,
+			Version:  shipper.SchemeGroupVersion.Version,
+			Resource: "capacitytargets",
+		},
+		capacityTarget.GetNamespace(),
+		capacityTarget,
+	)
+
+	f.managementClusterActions = append(f.managementClusterActions, updateAction)
+	f.runCapacityTargetSyncHandler()
+
+	//// Calling the sync handler again with the updated capacity target object should yield the same results.
+	//f.managementObjects = []runtime.Object{capacityTarget.DeepCopy()}
+	//f.runCapacityTargetSyncHandler()
 }
 
 func TestUpdatingDeploymentsUpdatesTheCapacityTargetStatus(t *testing.T) {

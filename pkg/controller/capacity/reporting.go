@@ -21,7 +21,6 @@ const (
 type containerState struct {
 	cluster string
 	pod     string
-	count   uint32
 
 	conditionType   *string
 	conditionStatus *string
@@ -111,7 +110,6 @@ func buildContainerStateEntries(clusterName string, podsList []*core_v1.Pod) []c
 			state.conditionType = string2ptr(string(cond.Type))
 			state.conditionStatus = string2ptr(string(cond.Status))
 			state.conditionReason = string2ptr(string(cond.Reason))
-			state.count = state.count + 1
 			for _, containerStatus := range pod.Status.ContainerStatuses {
 				state.containerName = string2ptr(containerStatus.Name)
 				state.containerStateType = string2ptr(getContainerStateField(containerStatus.State, ContainerStateFieldType))
@@ -127,15 +125,15 @@ func buildContainerStateEntries(clusterName string, podsList []*core_v1.Pod) []c
 }
 
 type containerStateSummary struct {
-	count   uint32
-	example shipper_v1alpha1.ClusterCapacityReportContainerBreakdownExample
-	name    string
-	reason  string
-	typ     string
+	containerCount uint32
+	example        shipper_v1alpha1.ClusterCapacityReportContainerBreakdownExample
+	name           string
+	reason         string
+	typ            string
 }
 
 type conditionSummary struct {
-	count      uint32
+	podCount   uint32
 	containers map[string]containerStateSummary
 	reason     string
 	status     string
@@ -176,35 +174,35 @@ func summarizeContainerStateByCondition(conditionSummaries map[string]conditionS
 		containerStates := make(map[string]containerStateSummary)
 
 		containerStates[containerStateKey] = containerStateSummary{
-			count:   1,
-			example: shipper_v1alpha1.ClusterCapacityReportContainerBreakdownExample{Pod: state.pod},
-			name:    ptr2string(state.containerName),
-			reason:  ptr2string(state.containerStateReason),
-			typ:     ptr2string(state.containerStateType),
+			containerCount: 1,
+			example:        shipper_v1alpha1.ClusterCapacityReportContainerBreakdownExample{Pod: state.pod},
+			name:           ptr2string(state.containerName),
+			reason:         ptr2string(state.containerStateReason),
+			typ:            ptr2string(state.containerStateType),
 		}
 
 		conditionSummaries[conditionSummaryKey] = conditionSummary{
-			count:      1,
+			podCount:   1,
 			containers: containerStates,
 			status:     ptr2string(state.conditionStatus),
 			reason:     ptr2string(state.conditionReason),
 			typ:        ptr2string(state.conditionType),
 		}
 	} else {
-		summary.count = summary.count + 1
 		if existingState, ok := summary.containers[containerStateKey]; !ok {
 			summary.containers[containerStateKey] = containerStateSummary{
-				count:   1,
-				example: shipper_v1alpha1.ClusterCapacityReportContainerBreakdownExample{Pod: state.pod},
-				name:    ptr2string(state.containerName),
-				reason:  ptr2string(state.containerStateReason),
-				typ:     ptr2string(state.containerStateType),
+				containerCount: 1,
+				example:        shipper_v1alpha1.ClusterCapacityReportContainerBreakdownExample{Pod: state.pod},
+				name:           ptr2string(state.containerName),
+				reason:         ptr2string(state.containerStateReason),
+				typ:            ptr2string(state.containerStateType),
 			}
 		} else {
-			existingState.count = existingState.count + 1
+			existingState.containerCount = existingState.containerCount + 1
 			summary.containers[containerStateKey] = existingState
 		}
 
+		summary.podCount = summary.podCount + 1
 		conditionSummaries[conditionSummaryKey] = summary
 	}
 }
@@ -228,15 +226,16 @@ func buildReport(ownerName string, conditionSummaries map[string]conditionSummar
 			Type:   cond.typ,
 			Status: cond.status,
 			Reason: cond.reason,
-			Count:  cond.count,
+			Count:  cond.podCount,
 		}
 
 		for _, container := range cond.containers {
 			var containerBreakdown *shipper_v1alpha1.ClusterCapacityReportContainerBreakdown
 
-			for _, c := range breakdown.Containers {
+			for i, c := range breakdown.Containers {
 				if c.Name == container.name {
 					containerBreakdown = &c
+					breakdown.Containers = append(breakdown.Containers[:i], breakdown.Containers[i+1:]...)
 					break
 				}
 			}
@@ -250,8 +249,12 @@ func buildReport(ownerName string, conditionSummaries map[string]conditionSummar
 			containerBreakdown.States = append(containerBreakdown.States, shipper_v1alpha1.ClusterCapacityReportContainerStateBreakdown{
 				Reason:  container.reason,
 				Type:    container.typ,
-				Count:   container.count,
+				Count:   container.containerCount,
 				Example: container.example,
+			})
+
+			sort.Slice(containerBreakdown.States, func(i, j int) bool {
+				return containerBreakdown.States[i].Type < containerBreakdown.States[j].Type
 			})
 
 			breakdown.Containers = append(breakdown.Containers, *containerBreakdown)

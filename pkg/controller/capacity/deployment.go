@@ -3,6 +3,7 @@ package capacity
 import (
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/golang/glog"
 	appsv1 "k8s.io/api/apps/v1"
@@ -182,6 +183,10 @@ func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployme
 			sadPods = append(sadPods, sadPod)
 		}
 	}
+
+	sort.Slice(sadPods, func(i, j int) bool {
+		return sadPods[i].Name < sadPods[j].Name
+	})
 
 	return len(pods), len(sadPods), sadPods, nil
 }
