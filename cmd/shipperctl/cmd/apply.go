@@ -106,7 +106,7 @@ func validateConfiguration(configuration *config.ClustersConfiguration) error {
 		}
 
 		if cluster.Region == "" {
-			return fmt.Errorf("You must specify region for cluster %s", cluster.Name)
+			return fmt.Errorf("you must specify region for cluster %s", cluster.Name)
 		}
 	}
 
