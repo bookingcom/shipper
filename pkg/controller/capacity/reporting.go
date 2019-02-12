@@ -215,23 +215,33 @@ func summarizeContainerStatesByCondition(containerStates []containerState) map[s
 	return conditionSummaries
 }
 
-func buildReport(ownerName string, conditionSummaries map[string]conditionSummary) *shipper_v1alpha1.ClusterCapacityReport {
+type conditionSummaryMap map[string]conditionSummary
+
+func (c conditionSummaryMap) SortedByKeyAsc() []conditionSummary {
+	var keys = []string{}
+	for k := range c {
+		keys = append(keys, k)
+	}
+
+	sort.Slice(keys, func(i, j int) bool {
+		return c[keys[i]].typ < c[keys[j]].typ
+	})
+
+	var conds = []conditionSummary{}
+	for k := range keys {
+		conds = append(conds, c[keys[k]])
+	}
+
+	return conds
+}
+
+func buildReport(ownerName string, conditionSummaries conditionSummaryMap) *shipper_v1alpha1.ClusterCapacityReport {
 	report := &shipper_v1alpha1.ClusterCapacityReport{
 		Owner:     shipper_v1alpha1.ClusterCapacityReportOwner{Name: ownerName},
 		Breakdown: []shipper_v1alpha1.ClusterCapacityReportBreakdown{},
 	}
 
-	var conditionSummaryKeys = []string{}
-	for k := range conditionSummaries {
-		conditionSummaryKeys = append(conditionSummaryKeys, k)
-	}
-
-	sort.Slice(conditionSummaryKeys, func(i, j int) bool {
-		return conditionSummaries[conditionSummaryKeys[i]].typ < conditionSummaries[conditionSummaryKeys[j]].typ
-	})
-
-	for _, k := range conditionSummaryKeys {
-		cond := conditionSummaries[k]
+	for _, cond := range conditionSummaries.SortedByKeyAsc() {
 		breakdown := shipper_v1alpha1.ClusterCapacityReportBreakdown{
 			Type:   cond.typ,
 			Status: cond.status,
