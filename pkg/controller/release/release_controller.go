@@ -8,6 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -19,6 +20,7 @@ import (
 	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
+	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
@@ -28,10 +30,18 @@ const (
 	maxRetries = 11
 )
 
+const (
+	retry   = true
+	noRetry = false
+)
+
 type Controller struct {
 	clientset      shipperclient.Interface
 	chartFetchFunc chart.FetchFunc
 	recorder       record.EventRecorder
+
+	applicationLister  shipperlisters.ApplicationLister
+	applicationsSynced cache.InformerSynced
 
 	releaseLister  shipperlisters.ReleaseLister
 	releasesSynced cache.InformerSynced
@@ -48,7 +58,21 @@ type Controller struct {
 	capacityTargetLister  shipperlisters.CapacityTargetLister
 	capacityTargetsSynced cache.InformerSynced
 
-	workqueue workqueue.RateLimitingInterface
+	releaseWorkqueue     workqueue.RateLimitingInterface
+	applicationWorkqueue workqueue.RateLimitingInterface
+}
+
+type releaseInfo struct {
+	release            *shipper.Release
+	installationTarget *shipper.InstallationTarget
+	trafficTarget      *shipper.TrafficTarget
+	capacityTarget     *shipper.CapacityTarget
+}
+
+type ReleaseStrategyStateTransition struct {
+	State    string
+	Previous shipper.StrategyState
+	New      shipper.StrategyState
 }
 
 func NewController(
@@ -58,6 +82,7 @@ func NewController(
 	recorder record.EventRecorder,
 ) *Controller {
 
+	applicationInformer := informerFactory.Shipper().V1alpha1().Applications()
 	releaseInformer := informerFactory.Shipper().V1alpha1().Releases()
 	clusterInformer := informerFactory.Shipper().V1alpha1().Clusters()
 	installationTargetInformer := informerFactory.Shipper().V1alpha1().InstallationTargets()
@@ -70,6 +95,9 @@ func NewController(
 		clientset:      clientset,
 		chartFetchFunc: chartFetchFunc,
 		recorder:       recorder,
+
+		applicationLister:  applicationInformer.Lister(),
+		applicationsSynced: applicationInformer.Informer().HasSynced,
 
 		releaseLister:  releaseInformer.Lister(),
 		releasesSynced: releaseInformer.Informer().HasSynced,
@@ -86,9 +114,13 @@ func NewController(
 		capacityTargetLister:  capacityTargetInformer.Lister(),
 		capacityTargetsSynced: capacityTargetInformer.Informer().HasSynced,
 
-		workqueue: workqueue.NewNamedRateLimitingQueue(
+		releaseWorkqueue: workqueue.NewNamedRateLimitingQueue(
 			workqueue.DefaultControllerRateLimiter(),
-			"release_controller_workqueue",
+			"release_controller_releases",
+		),
+		applicationWorkqueue: workqueue.NewNamedRateLimitingQueue(
+			workqueue.DefaultControllerRateLimiter(),
+			"release_controller_applications",
 		),
 	}
 
@@ -107,13 +139,15 @@ func NewController(
 
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
-	defer c.workqueue.ShutDown()
+	defer c.releaseWorkqueue.ShutDown()
+	defer c.applicationWorkqueue.ShutDown()
 
 	glog.V(2).Info("Starting Release controller")
 	defer glog.V(2).Info("Shutting down Release controller")
 
 	if ok := cache.WaitForCacheSync(
 		stopCh,
+		c.applicationsSynced,
 		c.releasesSynced,
 		c.clustersSynced,
 		c.installationTargetsSynced,
@@ -125,7 +159,8 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	}
 
 	for i := 0; i < threadiness; i++ {
-		go wait.Until(c.runWorker, time.Second, stopCh)
+		go wait.Until(c.runReleaseWorker, time.Second, stopCh)
+		go wait.Until(c.runApplicationWorker, time.Second, stopCh)
 	}
 
 	glog.V(4).Info("Started Release controller")
@@ -133,60 +168,102 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
-func (c *Controller) runWorker() {
-	for c.processNextRelease() {
+func (c *Controller) runReleaseWorker() {
+	for c.processNextReleaseWorkItem() {
 	}
 }
 
-func (c *Controller) processNextRelease() bool {
-	obj, shutdown := c.workqueue.Get()
+func (c *Controller) runApplicationWorker() {
+	for c.processNextApplicationWorkItem() {
+	}
+}
+
+func (c *Controller) processNextReleaseWorkItem() bool {
+	obj, shutdown := c.releaseWorkqueue.Get()
 	if shutdown {
 		return false
 	}
 
-	defer c.workqueue.Done(obj)
+	defer c.releaseWorkqueue.Done(obj)
 
 	if _, ok := obj.(string); !ok {
-		c.workqueue.Forget(obj)
+		c.releaseWorkqueue.Forget(obj)
 		runtime.HandleError(fmt.Errorf("Invalid object key (will not retry): %#v", obj))
 	}
 	key := obj.(string)
 
-	if shouldRetry := c.syncHandler(key); shouldRetry {
-		if c.workqueue.NumRequeues(key) >= maxRetries {
+	if shouldRetry := c.syncReleaseHandler(key); shouldRetry {
+		if c.releaseWorkqueue.NumRequeues(key) >= maxRetries {
 			glog.Warningf("Release %q has been retried too many times, droppping from the queue", key)
-			c.workqueue.Forget(key)
+			c.releaseWorkqueue.Forget(key)
 
 			return true
 		}
 
-		c.workqueue.AddRateLimited(key)
+		c.releaseWorkqueue.AddRateLimited(key)
 
 		return true
 	}
 
-	c.workqueue.Forget(obj)
-	glog.V(4).Infof("Successfully synced release %q", key)
+	c.releaseWorkqueue.Forget(obj)
+	glog.V(4).Infof("Successfully synced Release %q", key)
 
 	return true
 }
 
-func (c *Controller) syncHandler(key string) bool {
+func (c *Controller) processNextApplicationWorkItem() bool {
+	obj, shutdown := c.applicationWorkqueue.Get()
+	if shutdown {
+		return false
+	}
+	defer c.applicationWorkqueue.Done(obj)
+
+	if _, ok := obj.(string); !ok {
+		c.applicationWorkqueue.Forget(obj)
+		runtime.HandleError(fmt.Errorf("Invalid object key (will not retry): %#v", obj))
+	}
+	key := obj.(string)
+
+	if shouldRetry := c.syncApplicationHandler(key); shouldRetry {
+		if c.applicationWorkqueue.NumRequeues(key) >= maxRetries {
+			glog.Warningf("Application %q has been retried too many times, droppping from the queue", key)
+			c.applicationWorkqueue.Forget(key)
+
+			return true
+		}
+
+		c.applicationWorkqueue.AddRateLimited(key)
+
+		return true
+	}
+
+	c.applicationWorkqueue.Forget(obj)
+	glog.V(4).Infof("Successfully synced Application %q", key)
+
+	return true
+}
+
+func (c *Controller) syncReleaseHandler(key string) bool {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("Invalid object key (will not retry): %q", key))
-		return false
+		return noRetry
 	}
 	rel, err := c.releaseLister.Releases(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			glog.V(3).Infof("Release %q has been deleted", key)
-			return false
+			return noRetry
 		}
 
 		runtime.HandleError(fmt.Errorf("Failed to process release %q (will retry): %s", key, err))
 
-		return true
+		return retry
+	}
+
+	if !releaseutil.IsEmpty(rel) {
+		glog.Infof("Release %q has an empty Environment, bailing out", key)
+		return noRetry
 	}
 
 	if !releaseutil.ReleaseScheduled(rel) {
@@ -223,22 +300,206 @@ func (c *Controller) syncHandler(key string) bool {
 
 			if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); err != nil {
 				// always retry failing to write the error out to the Release: we need to communicate this to the user
-				return true
+				return retry
 			}
 
 			if shouldRetry {
 				runtime.HandleError(fmt.Errorf("Error syncing Release %q (will retry): %s", key, err))
-				return true
+				return retry
 			}
 
 			runtime.HandleError(fmt.Errorf("Error syncing Release %q (will not retry): %s", key, err))
 
-			return false
+			return noRetry
 		}
 		glog.V(4).Infof("Release %q has been successfully scheduled", key)
 	}
 
-	return false
+	appKey, err := c.getAssociatedApplicationKey(rel)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("Error fetching Application key for release %q (will not retry): %s", key, err))
+		return noRetry
+	}
+
+	glog.V(4).Infof("Scheduling Application key %q", appKey)
+	c.applicationWorkqueue.Add(appKey)
+
+	glog.V(4).Infof("Done processing Release %q", key)
+
+	return noRetry
+}
+
+func (c *Controller) syncApplicationHandler(key string) bool {
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("Invalid object key (will not retry): %q", key))
+		return noRetry
+	}
+	app, err := c.applicationLister.Applications(namespace).Get(name)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			glog.V(3).Infof("Application %q has been deleted", key)
+			return noRetry
+		}
+
+		runtime.HandleError(fmt.Errorf("Failed to process Application %q (will retry): %s", key, err))
+
+		return retry
+	}
+
+	glog.V(4).Infof("Fetching release pair for Application %q", key)
+	incumbent, contender, err := c.getWorkingReleasePair(app)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("Error syncing Application %q (will retry): %s", key, err))
+		return retry
+	}
+
+	glog.V(4).Infof("Building a strategy excecutor for Application %q", key)
+	strategyExecutor, err := c.buildExecutor(incumbent, contender)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("Error syncing Application %q (will retry): %s", key, err))
+		return retry
+	}
+
+	// glog.V(4).Infof("Executing the strategy on Application %q", key)
+	// res, transitions, err := strategyExecutor.execute()
+	// if err != nil {
+	// 	runtime.HandleError(fmt.Errorf("Error syncing Application %q (will not retry): %s", key, err))
+	// }
+
+	//TODO(olegs)
+	return noRetry
+}
+
+func (c *Controller) buildExecutor(incumbentRelease, contenderRelease *shipper.Release) (*Executor, error) {
+	if !releaseutil.ReleaseScheduled(contenderRelease) {
+		return nil, NewNotWorkingOnStrategyError(shippercontroller.MetaKey(contenderRelease))
+	}
+
+	contenderReleaseInfo, err := c.buildReleaseInfo(contenderRelease)
+	if err != nil {
+		return nil, err
+	}
+
+	strategy := *contenderReleaseInfo.release.Spec.Environment.Strategy
+
+	// No incumbent, only this contender: a new application.
+	if incumbentRelease == nil {
+		return &Executor{
+			contender: contenderReleaseInfo,
+			recorder:  c.recorder,
+			strategy:  strategy,
+		}, nil
+	}
+
+	incumbentReleaseInfo, err := c.buildReleaseInfo(incumbentRelease)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Executor{
+		contender: contenderReleaseInfo,
+		incumbent: incumbentReleaseInfo,
+		recorder:  c.recorder,
+		strategy:  strategy,
+	}, nil
+}
+
+func (c *Controller) getAssociatedApplicationKey(rel *shipper.Release) (string, error) {
+	if n := len(rel.OwnerReferences); n != 1 {
+		return "", shippercontroller.NewMultipleOwnerReferencesError(
+			shippercontroller.MetaKey(rel), n)
+	}
+
+	appref := rel.OwnerReferences[0]
+	appKey := fmt.Sprintf("%s/%s", rel.Namespace, appref.Name)
+
+	return appKey, nil
+}
+
+func (c *Controller) sortedReleasesForApp(app *shipper.Application) ([]*shipper.Release, error) {
+	selector := labels.Set{
+		shipper.AppLabel: app.GetName(),
+	}.AsSelector()
+
+	releases, err := c.releaseLister.Releases(app.GetNamespace()).List(selector)
+	if err != nil {
+		return nil, err
+	}
+
+	sorted, err := shippercontroller.SortReleasesByGeneration(releases)
+	if err != nil {
+		return nil, err
+	}
+
+	return sorted, nil
+}
+
+func (c *Controller) getWorkingReleasePair(app *shipper.Application) (*shipper.Release, *shipper.Release, error) {
+	appReleases, err := c.sortedReleasesForApp(app)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(appReleases) == 0 {
+		return nil, nil, fmt.Errorf(
+			"zero release records in app %q: will not execute strategy",
+			shippercontroller.MetaKey(app),
+		)
+	}
+
+	// Walk backwards until we find a scheduled release. There may be pending
+	// releases ahead of the actual contender, that's not we're looking for.
+	var contender *shipper.Release
+	for i := len(appReleases) - 1; i >= 0; i-- {
+		if releaseutil.ReleaseScheduled(appReleases[i]) {
+			contender = appReleases[i]
+			break
+		}
+	}
+
+	if contender == nil {
+		return nil, nil, fmt.Errorf("couldn't find a contender for Application %q",
+			shippercontroller.MetaKey(app))
+	}
+
+	var incumbent *shipper.Release
+	// Walk backwards until we find an installed release that isn't the head of
+	// history. Ffor releases A -> B -> C, if B was never finished this allows C to
+	// ignore it and let it get deleted so the transition is A->C.
+	for i := len(appReleases) - 1; i >= 0; i-- {
+		if releaseutil.ReleaseComplete(appReleases[i]) && contender != appReleases[i] {
+			incumbent = appReleases[i]
+			break
+		}
+	}
+
+	// It is OK if incumbent is nil. It just means this is our first rollout.
+	return incumbent, contender, nil
+}
+
+func (c *Controller) buildReleaseInfo(rel *shipper.Release) (*releaseInfo, error) {
+	installationTarget, err := c.installationTargetLister.InstallationTargets(rel.Namespace).Get(rel.Name)
+	if err != nil {
+		return nil, NewRetrievingInstallationTargetForReleaseError(shippercontroller.MetaKey(rel), err)
+	}
+
+	capacityTarget, err := c.capacityTargetLister.CapacityTargets(rel.Namespace).Get(rel.Name)
+	if err != nil {
+		return nil, NewRetrievingCapacityTargetForReleaseError(shippercontroller.MetaKey(rel), err)
+	}
+
+	trafficTarget, err := c.trafficTargetLister.TrafficTargets(rel.Namespace).Get(rel.Name)
+	if err != nil {
+		return nil, NewRetrievingTrafficTargetForReleaseError(shippercontroller.MetaKey(rel), err)
+	}
+
+	return &releaseInfo{
+		release:            rel,
+		installationTarget: installationTarget,
+		trafficTarget:      trafficTarget,
+		capacityTarget:     capacityTarget,
+	}, nil
 }
 
 func (c *Controller) enqueueRelease(obj interface{}) {
@@ -254,5 +515,5 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 		return
 	}
 
-	c.workqueue.Add(key)
+	c.releaseWorkqueue.Add(key)
 }
