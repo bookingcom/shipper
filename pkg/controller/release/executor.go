@@ -41,7 +41,7 @@ func (s *Executor) event(obj runtime.Object, format string, args ...interface{})
 // be performed into some of the associated Release objects and an error if an error
 // has happened. Currently if both values are nil it means that the operation was
 // successful but no modifications are required.
-func (s *Executor) execute() ([]ExecutorResult, []ReleaseStrategyStateTransition, error) {
+func (s *Executor) Execute() ([]ExecutorResult, []ReleaseStrategyStateTransition, error) {
 	targetStep := s.contender.release.Spec.TargetStep
 
 	if targetStep >= int32(len(s.strategy.Steps)) {

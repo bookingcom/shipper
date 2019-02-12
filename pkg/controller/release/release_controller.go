@@ -8,9 +8,13 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -60,6 +64,8 @@ type Controller struct {
 
 	releaseWorkqueue     workqueue.RateLimitingInterface
 	applicationWorkqueue workqueue.RateLimitingInterface
+
+	dynamicClientPool dynamic.ClientPool
 }
 
 type releaseInfo struct {
@@ -80,6 +86,7 @@ func NewController(
 	informerFactory shipperinformers.SharedInformerFactory,
 	chartFetchFunc chart.FetchFunc,
 	recorder record.EventRecorder,
+	dynamicClientPool dynamic.ClientPool,
 ) *Controller {
 
 	applicationInformer := informerFactory.Shipper().V1alpha1().Applications()
@@ -122,6 +129,8 @@ func NewController(
 			workqueue.DefaultControllerRateLimiter(),
 			"release_controller_applications",
 		),
+
+		dynamicClientPool: dynamicClientPool,
 	}
 
 	glog.Info("Setting up event handlers")
@@ -361,13 +370,46 @@ func (c *Controller) syncApplicationHandler(key string) bool {
 		return retry
 	}
 
-	// glog.V(4).Infof("Executing the strategy on Application %q", key)
-	// res, transitions, err := strategyExecutor.execute()
-	// if err != nil {
-	// 	runtime.HandleError(fmt.Errorf("Error syncing Application %q (will not retry): %s", key, err))
-	// }
+	glog.V(4).Infof("Executing the strategy on Application %q", key)
+	patches, transitions, err := strategyExecutor.Execute()
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("Error syncing Application %q (will not retry): %s", key, err))
 
-	//TODO(olegs)
+		return noRetry
+	}
+
+	for _, t := range transitions {
+		c.recorder.Eventf(
+			strategyExecutor.contender.release,
+			corev1.EventTypeNormal,
+			"ReleaseStateTransitioned",
+			"Release %q had its state %q transitioned to %q",
+			shippercontroller.MetaKey(strategyExecutor.contender.release),
+			t.State,
+			t.New,
+		)
+	}
+
+	if len(patches) == 0 {
+		glog.V(4).Infof("Strategy verified, nothing to patch")
+		return noRetry
+	}
+
+	glog.V(4).Infof("Strategy has been executed, applying patches")
+	for _, patch := range patches {
+		name, gvk, b := patch.PatchSpec()
+		client, err := c.clientForGroupVersionKind(gvk, namespace)
+		if err != nil {
+			runtime.HandleError(fmt.Errorf("Error syncing Application %q (will not retry): %s", key, err))
+			return noRetry
+		}
+
+		if _, err := client.Patch(name, types.MergePatchType, b); err != nil {
+			runtime.HandleError(fmt.Errorf("Error syncing Application %q (will retry): %s", key, err))
+			return retry
+		}
+	}
+
 	return noRetry
 }
 
@@ -516,4 +558,36 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 	}
 
 	c.releaseWorkqueue.Add(key)
+}
+
+func (c *Controller) clientForGroupVersionKind(
+	gvk schema.GroupVersionKind,
+	ns string,
+) (dynamic.ResourceInterface, error) {
+	client, err := c.dynamicClientPool.ClientForGroupVersionKind(gvk)
+	if err != nil {
+		return nil, err
+	}
+
+	// This is sort of stupid, there might exist some better way to get the
+	// APIResource here...
+	var resource *metav1.APIResource
+	gv := gvk.GroupVersion().String()
+
+	if resources, err := c.clientset.Discovery().ServerResourcesForGroupVersion(gv); err != nil {
+		return nil, err
+	} else {
+		for _, r := range resources.APIResources {
+			if r.Kind == gvk.Kind {
+				resource = &r
+				break
+			}
+		}
+	}
+
+	if resource == nil {
+		return nil, fmt.Errorf("could not find the specified resource %q", gvk)
+	}
+
+	return client.Resource(resource, ns), nil
 }
