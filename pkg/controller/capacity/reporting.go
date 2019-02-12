@@ -91,8 +91,7 @@ func getContainerStateField(c core_v1.ContainerState, f ContainerStateField) str
 		return getTerminatedContainerStateField(c.Terminated, f)
 	}
 
-	// TODO: f should be a constant somehow.
-	panic("Programmer error: should be one of 'type', 'reason' or 'message'")
+	panic("Programmer error: a container state must be either Running, Waiting or Terminated.")
 }
 
 func buildContainerStateEntries(podsList []*core_v1.Pod) []containerState {
