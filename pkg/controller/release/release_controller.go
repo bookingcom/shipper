@@ -85,8 +85,8 @@ func NewController(
 	clientset shipperclient.Interface,
 	informerFactory shipperinformers.SharedInformerFactory,
 	chartFetchFunc chart.FetchFunc,
-	recorder record.EventRecorder,
 	dynamicClientPool dynamic.ClientPool,
+	recorder record.EventRecorder,
 ) *Controller {
 
 	applicationInformer := informerFactory.Shipper().V1alpha1().Applications()
