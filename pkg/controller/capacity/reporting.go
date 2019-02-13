@@ -235,53 +235,30 @@ func (c conditionSummaryMap) SortedByKeyAsc() []conditionSummary {
 	return conds
 }
 
+type ContainerBreakdownBuilderMap map[string]*ContainerBreakdownBuilder
+
+func (c ContainerBreakdownBuilderMap) Get(containerName string) *ContainerBreakdownBuilder {
+	var cbBuilder *ContainerBreakdownBuilder
+	var ok bool
+	if cbBuilder, ok = c[containerName]; !ok {
+		cbBuilder = newContainerBreakdownBuilder(containerName)
+		c[containerName] = cbBuilder
+	}
+	return cbBuilder
+}
+
 func buildReport(ownerName string, conditionSummaries conditionSummaryMap) *shipper_v1alpha1.ClusterCapacityReport {
-	report := &shipper_v1alpha1.ClusterCapacityReport{
-		Owner:     shipper_v1alpha1.ClusterCapacityReportOwner{Name: ownerName},
-		Breakdown: []shipper_v1alpha1.ClusterCapacityReportBreakdown{},
-	}
-
+	reportBuilder := newReportBuilder(ownerName)
+	containerBreakdownBuilders := make(ContainerBreakdownBuilderMap)
 	for _, cond := range conditionSummaries.SortedByKeyAsc() {
-		breakdown := shipper_v1alpha1.ClusterCapacityReportBreakdown{
-			Type:   cond.typ,
-			Status: cond.status,
-			Reason: cond.reason,
-			Count:  cond.podCount,
-		}
-
+		breakdownBuilder := newBreakdownBuilder(cond.podCount, cond.typ, cond.status, cond.reason)
 		for _, container := range cond.containers {
-			var containerBreakdown *shipper_v1alpha1.ClusterCapacityReportContainerBreakdown
-
-			for i, c := range breakdown.Containers {
-				if c.Name == container.name {
-					containerBreakdown = &c
-					breakdown.Containers = append(breakdown.Containers[:i], breakdown.Containers[i+1:]...)
-					break
-				}
-			}
-
-			if containerBreakdown == nil {
-				containerBreakdown = &shipper_v1alpha1.ClusterCapacityReportContainerBreakdown{
-					Name: container.name,
-				}
-			}
-
-			containerBreakdown.States = append(containerBreakdown.States, shipper_v1alpha1.ClusterCapacityReportContainerStateBreakdown{
-				Reason:  container.reason,
-				Type:    container.typ,
-				Count:   container.containerCount,
-				Example: container.example,
-			})
-
-			sort.Slice(containerBreakdown.States, func(i, j int) bool {
-				return containerBreakdown.States[i].Type < containerBreakdown.States[j].Type
-			})
-
-			breakdown.Containers = append(breakdown.Containers, *containerBreakdown)
+			containerBreakdownBuilders.Get(container.name).AddState(container.containerCount, container.example.Pod, container.typ, container.reason)
 		}
-
-		report.Breakdown = append(report.Breakdown, breakdown)
+		for _, v := range containerBreakdownBuilders {
+			breakdownBuilder.AddContainerBreakdown(v.Build())
+		}
+		reportBuilder.AddBreakdown(breakdownBuilder.Build())
 	}
-
-	return report
+	return reportBuilder.Build()
 }

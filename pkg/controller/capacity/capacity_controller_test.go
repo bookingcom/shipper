@@ -107,7 +107,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePod(t *testing.T
 
 	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
 		Name:              "minikube",
-		Reports:           []shipper.ClusterCapacityReport{c},
+		Reports:           []shipper.ClusterCapacityReport{*c},
 		AchievedPercent:   100,
 		AvailableReplicas: 1,
 		Conditions: []shipper.ClusterCapacityCondition{
@@ -195,7 +195,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePods(t *testin
 
 	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
 		Name:              "minikube",
-		Reports:           []shipper.ClusterCapacityReport{c},
+		Reports:           []shipper.ClusterCapacityReport{*c},
 		AchievedPercent:   100,
 		AvailableReplicas: 2,
 		Conditions: []shipper.ClusterCapacityCondition{
@@ -345,7 +345,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePodsWithDiffer
 
 	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
 		Name:              "minikube",
-		Reports:           []shipper.ClusterCapacityReport{c},
+		Reports:           []shipper.ClusterCapacityReport{*c},
 		AchievedPercent:   100,
 		AvailableReplicas: 3,
 		Conditions: []shipper.ClusterCapacityCondition{

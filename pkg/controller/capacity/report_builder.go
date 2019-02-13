@@ -24,7 +24,7 @@ func (c *reportBreakdownBuilder) AddContainerBreakdown(container v1alpha1.Cluste
 	return c
 }
 
-func (c *reportBuilder) Build() v1alpha1.ClusterCapacityReport {
+func (c *reportBuilder) Build() *v1alpha1.ClusterCapacityReport {
 
 	sort.Slice(c.breakdowns, func(i, j int) bool {
 		return c.breakdowns[i].Type < c.breakdowns[j].Type
@@ -36,7 +36,7 @@ func (c *reportBuilder) Build() v1alpha1.ClusterCapacityReport {
 		},
 		Breakdown: c.breakdowns,
 	}
-	return report
+	return &report
 }
 
 type reportBreakdownBuilder struct {
@@ -94,33 +94,42 @@ func (c *reportBreakdownBuilder) Build() v1alpha1.ClusterCapacityReportBreakdown
 	}
 }
 
-type containerBreakdownBuilder struct {
+type ContainerBreakdownBuilder struct {
 	containerName string
 	states        []v1alpha1.ClusterCapacityReportContainerStateBreakdown
 }
 
-func newContainerBreakdownBuilder(containerName string) *containerBreakdownBuilder {
-	return &containerBreakdownBuilder{containerName: containerName}
+func newContainerBreakdownBuilder(containerName string) *ContainerBreakdownBuilder {
+	return &ContainerBreakdownBuilder{containerName: containerName}
 }
 
-func (c *containerBreakdownBuilder) AddState(
+func (c *ContainerBreakdownBuilder) AddState(
 	containerCount uint32,
 	podExampleName string,
 	containerConditionType string,
 	containerConditionReason string,
-) *containerBreakdownBuilder {
-	c.states = append(c.states, v1alpha1.ClusterCapacityReportContainerStateBreakdown{
+) *ContainerBreakdownBuilder {
+
+	breakdown := v1alpha1.ClusterCapacityReportContainerStateBreakdown{
 		Count:  containerCount,
 		Type:   containerConditionType,
 		Reason: containerConditionReason,
 		Example: v1alpha1.ClusterCapacityReportContainerBreakdownExample{
 			Pod: podExampleName,
 		},
-	})
+	}
+
+	for _, s := range c.states {
+		if s == breakdown {
+			return c
+		}
+	}
+
+	c.states = append(c.states, breakdown)
 	return c
 }
 
-func (c *containerBreakdownBuilder) Build() v1alpha1.ClusterCapacityReportContainerBreakdown {
+func (c *ContainerBreakdownBuilder) Build() v1alpha1.ClusterCapacityReportContainerBreakdown {
 	sort.Slice(c.states, func(i, j int) bool {
 		return c.states[i].Type < c.states[j].Type
 	})
