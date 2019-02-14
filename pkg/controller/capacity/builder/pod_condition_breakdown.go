@@ -21,7 +21,6 @@ type PodConditionBreakdown struct {
 	podCount           uint32
 	podConditionType   string
 	podConditionStatus string
-	name               string
 	podConditionReason string
 
 	containerStateBreakdownBuilders containerStateBreakdownBuilders
@@ -73,7 +72,7 @@ func (p *PodConditionBreakdown) Build() v1alpha1.ClusterCapacityReportBreakdown 
 	}
 
 	sort.Slice(orderedContainers, func(i, j int) bool {
-		return orderedContainers[i].Name < orderedContainers[i].Name
+		return orderedContainers[i].Name < orderedContainers[j].Name
 	})
 
 	return v1alpha1.ClusterCapacityReportBreakdown{
