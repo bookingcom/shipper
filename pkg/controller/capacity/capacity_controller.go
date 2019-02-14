@@ -354,9 +354,7 @@ func (c *Controller) getReport(targetDeployment *appsv1.Deployment, clusterStatu
 		return nil, clusterErr
 	}
 
-	containerStateEntries := buildContainerStateEntries(clusterStatus.Name, podsList)
-	conditionSummaries := summarizeContainerStatesByCondition(containerStateEntries)
-	report := buildReport(targetDeployment.Name, conditionSummaries)
+	report := buildReport(targetDeployment.Name, podsList)
 
 	return report, nil
 }

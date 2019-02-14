@@ -7,7 +7,7 @@ import (
 
 type ContainerStateBreakdown struct {
 	containerName string
-	states        []v1alpha1.ClusterCapacityReportContainerStateBreakdown
+	states        []*v1alpha1.ClusterCapacityReportContainerStateBreakdown
 }
 
 func NewContainerBreakdown(containerName string) *ContainerStateBreakdown {
@@ -31,22 +31,29 @@ func (c *ContainerStateBreakdown) AddState(
 	}
 
 	for _, s := range c.states {
-		if s == breakdown {
+		if s.Type == breakdown.Type && s.Reason == breakdown.Reason {
+			s.Count += 1
 			return c
 		}
 	}
 
-	c.states = append(c.states, breakdown)
+	c.states = append(c.states, &breakdown)
 	return c
 }
 
 func (c *ContainerStateBreakdown) Build() v1alpha1.ClusterCapacityReportContainerBreakdown {
-	sort.Slice(c.states, func(i, j int) bool {
-		return c.states[i].Type < c.states[j].Type
+	stateCount := len(c.states)
+	orderedStates := make([]v1alpha1.ClusterCapacityReportContainerStateBreakdown, stateCount)
+	for i, v := range c.states {
+		orderedStates[i] = *v
+	}
+
+	sort.Slice(orderedStates, func(i, j int) bool {
+		return orderedStates[i].Type < orderedStates[j].Type
 	})
 
 	return v1alpha1.ClusterCapacityReportContainerBreakdown{
 		Name:   c.containerName,
-		States: c.states,
+		States: orderedStates,
 	}
 }

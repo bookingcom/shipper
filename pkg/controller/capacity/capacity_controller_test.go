@@ -50,7 +50,7 @@ func TestUpdatingCapacityTargetUpdatesDeployment(t *testing.T) {
 		},
 	}
 
-	f.expectCapacityTargetStatusUpdate(capacityTarget, 0, 0, expectedClusterConditions)
+	f.expectCapacityTargetStatusUpdate(capacityTarget, 0, 0, expectedClusterConditions, []shipper.ClusterCapacityReport{*builder.NewReport("nginx").Build()})
 
 	f.runCapacityTargetSyncHandler()
 }
@@ -74,41 +74,24 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePod(t *testing.T
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment, podA)
 
 	c := builder.NewReport("nginx").
-		AddBreakdown(
-			builder.NewPodConditionBreakdown(1, "ContainersReady", string(corev1.ConditionTrue), "").
-				AddContainerBreakdown(
-					builder.NewContainerBreakdown("app").
-						AddState(1, "pod-a", "Running", "").
-						Build()).
-				Build()).
-		AddBreakdown(
-			builder.NewPodConditionBreakdown(1, string(corev1.PodInitialized), string(corev1.ConditionTrue), "").
-				AddContainerBreakdown(
-					builder.NewContainerBreakdown("app").
-						AddState(1, "pod-a", "Running", "").
-						Build()).
-				Build()).
-		AddBreakdown(
-			builder.NewPodConditionBreakdown(1, string(corev1.PodScheduled), string(corev1.ConditionTrue), "").
-				AddContainerBreakdown(
-					builder.NewContainerBreakdown("app").
-						AddState(1, "pod-a", "Running", "").
-						Build()).
-				Build()).
-		AddBreakdown(
-			builder.NewPodConditionBreakdown(1, "Ready", string(corev1.ConditionTrue), "").
-				AddContainerBreakdown(
-					builder.NewContainerBreakdown("app").
-						AddState(1, "pod-a", "Running", "").
-						Build()).
-				Build()).
-		Build()
+		AddPodConditionBreakdownBuilder(
+			builder.NewPodConditionBreakdown(1, "ContainersReady", "True", "").
+				AddContainerState("app", 1, "pod-a", "Running", "")).
+		AddPodConditionBreakdownBuilder(
+			builder.NewPodConditionBreakdown(1, "Initialized", "True", "").
+				AddContainerState("app", 1, "pod-a", "Running", "")).
+		AddPodConditionBreakdownBuilder(
+			builder.NewPodConditionBreakdown(1, "PodScheduled", "True", "").
+				AddContainerState("app", 1, "pod-a", "Running", "")).
+		AddPodConditionBreakdownBuilder(
+			builder.NewPodConditionBreakdown(1, "Ready", "True", "").
+				AddContainerState("app", 1, "pod-a", "Running", ""))
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
 	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
 		Name:              "minikube",
-		Reports:           []shipper.ClusterCapacityReport{*c},
+		Reports:           []shipper.ClusterCapacityReport{*c.Build()},
 		AchievedPercent:   100,
 		AvailableReplicas: 1,
 		Conditions: []shipper.ClusterCapacityCondition{
@@ -162,41 +145,24 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePods(t *testin
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment, podA, podB)
 
 	c := builder.NewReport("nginx").
-		AddBreakdown(
-			builder.NewPodConditionBreakdown(2, "ContainersReady", string(corev1.ConditionTrue), "").
-				AddContainerBreakdown(
-					builder.NewContainerBreakdown("app").
-						AddState(2, "pod-a", "Running", "").
-						Build()).
-				Build()).
-		AddBreakdown(
-			builder.NewPodConditionBreakdown(2, string(corev1.PodInitialized), string(corev1.ConditionTrue), "").
-				AddContainerBreakdown(
-					builder.NewContainerBreakdown("app").
-						AddState(2, "pod-a", "Running", "").
-						Build()).
-				Build()).
-		AddBreakdown(
-			builder.NewPodConditionBreakdown(2, string(corev1.PodScheduled), string(corev1.ConditionTrue), "").
-				AddContainerBreakdown(
-					builder.NewContainerBreakdown("app").
-						AddState(2, "pod-a", "Running", "").
-						Build()).
-				Build()).
-		AddBreakdown(
-			builder.NewPodConditionBreakdown(2, "Ready", string(corev1.ConditionTrue), "").
-				AddContainerBreakdown(
-					builder.NewContainerBreakdown("app").
-						AddState(2, "pod-a", "Running", "").
-						Build()).
-				Build()).
-		Build()
+		AddPodConditionBreakdownBuilder(
+			builder.NewPodConditionBreakdown(2, "ContainersReady", "True", "").
+				AddContainerState("app", 2, "pod-a", "Running", "")).
+		AddPodConditionBreakdownBuilder(
+			builder.NewPodConditionBreakdown(2, "Initialized", "True", "").
+				AddContainerState("app", 2, "pod-a", "Running", "")).
+		AddPodConditionBreakdownBuilder(
+			builder.NewPodConditionBreakdown(2, "PodScheduled", "True", "").
+				AddContainerState("app", 2, "pod-a", "Running", "")).
+		AddPodConditionBreakdownBuilder(
+			builder.NewPodConditionBreakdown(2, "Ready", "True", "").
+				AddContainerState("app", 2, "pod-a", "Running", ""))
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
 	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
 		Name:              "minikube",
-		Reports:           []shipper.ClusterCapacityReport{*c},
+		Reports:           []shipper.ClusterCapacityReport{*c.Build()},
 		AchievedPercent:   100,
 		AvailableReplicas: 2,
 		Conditions: []shipper.ClusterCapacityCondition{
@@ -255,31 +221,18 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePodsWithDiffer
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment, podA, podB, podC)
 
 	c := builder.NewReport("nginx").
-		AddBreakdown(
+		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(3, string(corev1.PodInitialized), string(corev1.ConditionTrue), "").
-				AddContainerBreakdown(
-					builder.NewContainerBreakdown("app").
-						AddState(2, "pod-a", "Waiting", "ContainerCreating").
-						AddState(1, "pod-c", "Terminated", "Completed").
-						Build()).
-				Build()).
-		AddBreakdown(
-			builder.NewPodConditionBreakdown(3, string(corev1.PodReady), string(corev1.ConditionFalse), "ContainersNotReady").
-				AddContainerBreakdown(
-					builder.NewContainerBreakdown("app").
-						AddState(2, "pod-a", "Waiting", "ContainerCreating").
-						AddState(1, "pod-c", "Terminated", "Completed").
-						Build()).
-				Build()).
-		AddBreakdown(
+				AddContainerState("app", 2, "pod-a", "Waiting", "ContainerCreating").
+				AddContainerState("app", 1, "pod-c", "Terminated", "Completed")).
+		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(3, string(corev1.PodScheduled), string(corev1.ConditionTrue), "").
-				AddContainerBreakdown(
-					builder.NewContainerBreakdown("app").
-						AddState(2, "pod-a", "Waiting", "ContainerCreating").
-						AddState(1, "pod-c", "Terminated", "Completed").
-						Build()).
-				Build()).
-		Build()
+				AddContainerState("app", 2, "pod-a", "Waiting", "ContainerCreating").
+				AddContainerState("app", 1, "pod-c", "Terminated", "Completed")).
+		AddPodConditionBreakdownBuilder(
+			builder.NewPodConditionBreakdown(3, string(corev1.PodReady), string(corev1.ConditionFalse), "ContainersNotReady").
+				AddContainerState("app", 2, "pod-a", "Waiting", "ContainerCreating").
+				AddContainerState("app", 1, "pod-c", "Terminated", "Completed"))
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
@@ -346,7 +299,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePodsWithDiffer
 
 	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
 		Name:              "minikube",
-		Reports:           []shipper.ClusterCapacityReport{*c},
+		Reports:           []shipper.ClusterCapacityReport{*c.Build()},
 		AchievedPercent:   100,
 		AvailableReplicas: 3,
 		Conditions: []shipper.ClusterCapacityCondition{
@@ -394,7 +347,7 @@ func TestUpdatingDeploymentsUpdatesTheCapacityTargetStatus(t *testing.T) {
 			Message: "expected 5 replicas but have 0",
 		},
 	}
-	f.expectCapacityTargetStatusUpdate(capacityTarget, 5, 50, clusterConditions)
+	f.expectCapacityTargetStatusUpdate(capacityTarget, 5, 50, clusterConditions, []shipper.ClusterCapacityReport{*builder.NewReport("nginx").Build()})
 
 	f.runCapacityTargetSyncHandler()
 }
@@ -421,7 +374,14 @@ func TestSadPodsAreReflectedInCapacityTargetStatus(t *testing.T) {
 			Message: "there are 1 sad pods",
 		},
 	}
-	f.expectCapacityTargetStatusUpdate(capacityTarget, 1, 50, clusterConditions, createSadPodConditionFromPod(sadPod))
+
+	c := builder.NewReport("nginx").
+		AddPodConditionBreakdownBuilder(
+			builder.NewPodConditionBreakdown(1, string(corev1.PodReady), string(corev1.ConditionFalse), "ExpectedFail")).
+		AddPodConditionBreakdownBuilder(
+			builder.NewPodConditionBreakdown(1, string(corev1.PodReady), string(corev1.ConditionTrue), ""))
+
+	f.expectCapacityTargetStatusUpdate(capacityTarget, 1, 50, clusterConditions, []shipper.ClusterCapacityReport{*c.Build()}, createSadPodConditionFromPod(sadPod))
 
 	f.runCapacityTargetSyncHandler()
 }
@@ -513,19 +473,14 @@ func (f *fixture) ExpectDeploymentPatchWithReplicas(deployment *appsv1.Deploymen
 	f.targetClusterActions = append(f.targetClusterActions, patchAction)
 }
 
-func (f *fixture) expectCapacityTargetStatusUpdate(capacityTarget *shipper.CapacityTarget, availableReplicas, achievedPercent int32, clusterConditions []shipper.ClusterCapacityCondition, sadPods ...shipper.PodStatus) {
+func (f *fixture) expectCapacityTargetStatusUpdate(capacityTarget *shipper.CapacityTarget, availableReplicas, achievedPercent int32, clusterConditions []shipper.ClusterCapacityCondition, reports []shipper.ClusterCapacityReport, sadPods ...shipper.PodStatus) {
 	clusterStatus := shipper.ClusterCapacityStatus{
 		Name:              capacityTarget.Spec.Clusters[0].Name,
 		AvailableReplicas: availableReplicas,
 		AchievedPercent:   achievedPercent,
 		Conditions:        clusterConditions,
 		SadPods:           sadPods,
-		Reports: []shipper.ClusterCapacityReport{
-			{
-				Owner:     shipper.ClusterCapacityReportOwner{Name: "nginx"},
-				Breakdown: []shipper.ClusterCapacityReportBreakdown{},
-			},
-		},
+		Reports:           reports,
 	}
 
 	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, clusterStatus)
