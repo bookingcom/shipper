@@ -143,6 +143,30 @@ func NewController(
 			},
 		})
 
+	installationTargetInformer.Informer().AddEventHandler(
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: controller.enqueueInstallationTarget,
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				controller.enqueueInstallationTarget(newObj)
+			},
+		})
+
+	capacityTargetInformer.Informer().AddEventHandler(
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: controller.enqueueCapacityTarget,
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				controller.enqueueCapacityTarget(newObj)
+			},
+		})
+
+	trafficTargetInformer.Informer().AddEventHandler(
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: controller.enqueueTrafficTarget,
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				controller.enqueueTrafficTarget(newObj)
+			},
+		})
+
 	return controller
 }
 
@@ -183,7 +207,7 @@ func (c *Controller) runReleaseWorker() {
 }
 
 func (c *Controller) runApplicationWorker() {
-	for c.processNextApplicationWorkItem() {
+	for c.processNextAppWorkItem() {
 	}
 }
 
@@ -220,7 +244,7 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 	return true
 }
 
-func (c *Controller) processNextApplicationWorkItem() bool {
+func (c *Controller) processNextAppWorkItem() bool {
 	obj, shutdown := c.applicationWorkqueue.Get()
 	if shutdown {
 		return false
@@ -459,6 +483,16 @@ func (c *Controller) getAssociatedApplicationKey(rel *shipper.Release) (string, 
 	return appKey, nil
 }
 
+func (c *Controller) getAssociatedReleaseKey(obj *metav1.ObjectMeta) (string, error) {
+	if n := len(obj.OwnerReferences); n != 1 {
+		return "", shippercontroller.NewMultipleOwnerReferencesError(obj.Name, n)
+	}
+
+	owner := obj.OwnerReferences[0]
+
+	return fmt.Sprintf("%s/%s", obj.Namespace, owner.Name), nil
+}
+
 func (c *Controller) sortedReleasesForApp(app *shipper.Application) ([]*shipper.Release, error) {
 	selector := labels.Set{
 		shipper.AppLabel: app.GetName(),
@@ -558,6 +592,54 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 	}
 
 	c.releaseWorkqueue.Add(key)
+}
+
+func (c *Controller) enqueueInstallationTarget(obj interface{}) {
+	it, ok := obj.(*shipper.InstallationTarget)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.InstallationTarget: %#v", obj))
+		return
+	}
+
+	releaseKey, err := c.getAssociatedReleaseKey(&it.ObjectMeta)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	c.releaseWorkqueue.Add(releaseKey)
+}
+
+func (c *Controller) enqueueCapacityTarget(obj interface{}) {
+	ct, ok := obj.(*shipper.CapacityTarget)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.CapacityTarget: %#v", obj))
+		return
+	}
+
+	releaseKey, err := c.getAssociatedReleaseKey(&ct.ObjectMeta)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	c.releaseWorkqueue.Add(releaseKey)
+}
+
+func (c *Controller) enqueueTrafficTarget(obj interface{}) {
+	tt, ok := obj.(*shipper.TrafficTarget)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.TrafficTarget: %#v", obj))
+		return
+	}
+
+	releaseKey, err := c.getAssociatedReleaseKey(&tt.ObjectMeta)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	c.releaseWorkqueue.Add(releaseKey)
 }
 
 func (c *Controller) clientForGroupVersionKind(
