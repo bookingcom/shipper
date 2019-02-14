@@ -24,7 +24,6 @@ func (c podConditionBreakdownBuilders) Get(typ, status, reason string) *PodCondi
 
 type Report struct {
 	ownerName                     string
-	breakdowns                    []v1alpha1.ClusterCapacityReportBreakdown
 	podConditionBreakdownBuilders podConditionBreakdownBuilders
 }
 
