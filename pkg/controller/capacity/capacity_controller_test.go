@@ -2,6 +2,7 @@ package capacity
 
 import (
 	"fmt"
+	"github.com/bookingcom/shipper/pkg/controller/capacity/builder"
 	"sort"
 	"testing"
 	"time"
@@ -72,32 +73,32 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePod(t *testing.T
 
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment, podA)
 
-	c := newReportBuilder("nginx").
+	c := builder.NewReport("nginx").
 		AddBreakdown(
-			newBreakdownBuilder(1, "ContainersReady", string(corev1.ConditionTrue), "").
+			builder.NewPodConditionBreakdown(1, "ContainersReady", string(corev1.ConditionTrue), "").
 				AddContainerBreakdown(
-					newContainerBreakdownBuilder("app").
+					builder.NewContainerBreakdown("app").
 						AddState(1, "pod-a", "Running", "").
 						Build()).
 				Build()).
 		AddBreakdown(
-			newBreakdownBuilder(1, string(corev1.PodInitialized), string(corev1.ConditionTrue), "").
+			builder.NewPodConditionBreakdown(1, string(corev1.PodInitialized), string(corev1.ConditionTrue), "").
 				AddContainerBreakdown(
-					newContainerBreakdownBuilder("app").
+					builder.NewContainerBreakdown("app").
 						AddState(1, "pod-a", "Running", "").
 						Build()).
 				Build()).
 		AddBreakdown(
-			newBreakdownBuilder(1, string(corev1.PodScheduled), string(corev1.ConditionTrue), "").
+			builder.NewPodConditionBreakdown(1, string(corev1.PodScheduled), string(corev1.ConditionTrue), "").
 				AddContainerBreakdown(
-					newContainerBreakdownBuilder("app").
+					builder.NewContainerBreakdown("app").
 						AddState(1, "pod-a", "Running", "").
 						Build()).
 				Build()).
 		AddBreakdown(
-			newBreakdownBuilder(1, "Ready", string(corev1.ConditionTrue), "").
+			builder.NewPodConditionBreakdown(1, "Ready", string(corev1.ConditionTrue), "").
 				AddContainerBreakdown(
-					newContainerBreakdownBuilder("app").
+					builder.NewContainerBreakdown("app").
 						AddState(1, "pod-a", "Running", "").
 						Build()).
 				Build()).
@@ -160,32 +161,32 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePods(t *testin
 
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment, podA, podB)
 
-	c := newReportBuilder("nginx").
+	c := builder.NewReport("nginx").
 		AddBreakdown(
-			newBreakdownBuilder(2, "ContainersReady", string(corev1.ConditionTrue), "").
+			builder.NewPodConditionBreakdown(2, "ContainersReady", string(corev1.ConditionTrue), "").
 				AddContainerBreakdown(
-					newContainerBreakdownBuilder("app").
+					builder.NewContainerBreakdown("app").
 						AddState(2, "pod-a", "Running", "").
 						Build()).
 				Build()).
 		AddBreakdown(
-			newBreakdownBuilder(2, string(corev1.PodInitialized), string(corev1.ConditionTrue), "").
+			builder.NewPodConditionBreakdown(2, string(corev1.PodInitialized), string(corev1.ConditionTrue), "").
 				AddContainerBreakdown(
-					newContainerBreakdownBuilder("app").
+					builder.NewContainerBreakdown("app").
 						AddState(2, "pod-a", "Running", "").
 						Build()).
 				Build()).
 		AddBreakdown(
-			newBreakdownBuilder(2, string(corev1.PodScheduled), string(corev1.ConditionTrue), "").
+			builder.NewPodConditionBreakdown(2, string(corev1.PodScheduled), string(corev1.ConditionTrue), "").
 				AddContainerBreakdown(
-					newContainerBreakdownBuilder("app").
+					builder.NewContainerBreakdown("app").
 						AddState(2, "pod-a", "Running", "").
 						Build()).
 				Build()).
 		AddBreakdown(
-			newBreakdownBuilder(2, "Ready", string(corev1.ConditionTrue), "").
+			builder.NewPodConditionBreakdown(2, "Ready", string(corev1.ConditionTrue), "").
 				AddContainerBreakdown(
-					newContainerBreakdownBuilder("app").
+					builder.NewContainerBreakdown("app").
 						AddState(2, "pod-a", "Running", "").
 						Build()).
 				Build()).
@@ -253,27 +254,27 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePodsWithDiffer
 
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment, podA, podB, podC)
 
-	c := newReportBuilder("nginx").
+	c := builder.NewReport("nginx").
 		AddBreakdown(
-			newBreakdownBuilder(3, string(corev1.PodInitialized), string(corev1.ConditionTrue), "").
+			builder.NewPodConditionBreakdown(3, string(corev1.PodInitialized), string(corev1.ConditionTrue), "").
 				AddContainerBreakdown(
-					newContainerBreakdownBuilder("app").
+					builder.NewContainerBreakdown("app").
 						AddState(2, "pod-a", "Waiting", "ContainerCreating").
 						AddState(1, "pod-c", "Terminated", "Completed").
 						Build()).
 				Build()).
 		AddBreakdown(
-			newBreakdownBuilder(3, string(corev1.PodReady), string(corev1.ConditionFalse), "ContainersNotReady").
+			builder.NewPodConditionBreakdown(3, string(corev1.PodReady), string(corev1.ConditionFalse), "ContainersNotReady").
 				AddContainerBreakdown(
-					newContainerBreakdownBuilder("app").
+					builder.NewContainerBreakdown("app").
 						AddState(2, "pod-a", "Waiting", "ContainerCreating").
 						AddState(1, "pod-c", "Terminated", "Completed").
 						Build()).
 				Build()).
 		AddBreakdown(
-			newBreakdownBuilder(3, string(corev1.PodScheduled), string(corev1.ConditionTrue), "").
+			builder.NewPodConditionBreakdown(3, string(corev1.PodScheduled), string(corev1.ConditionTrue), "").
 				AddContainerBreakdown(
-					newContainerBreakdownBuilder("app").
+					builder.NewContainerBreakdown("app").
 						AddState(2, "pod-a", "Waiting", "ContainerCreating").
 						AddState(1, "pod-c", "Terminated", "Completed").
 						Build()).

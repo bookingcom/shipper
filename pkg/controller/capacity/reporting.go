@@ -2,6 +2,7 @@ package capacity
 
 import (
 	"fmt"
+	"github.com/bookingcom/shipper/pkg/controller/capacity/builder"
 	"sort"
 	"strings"
 
@@ -235,27 +236,28 @@ func (c conditionSummaryMap) SortedByKeyAsc() []conditionSummary {
 	return conds
 }
 
-type ContainerBreakdownBuilderMap map[string]*ContainerBreakdownBuilder
+type containerStateBreakdownBuilders map[string]*builder.ContainerStateBreakdown
 
-func (c ContainerBreakdownBuilderMap) Get(containerName string) *ContainerBreakdownBuilder {
-	var cbBuilder *ContainerBreakdownBuilder
+func (c containerStateBreakdownBuilders) Get(containerName string) *builder.ContainerStateBreakdown {
+	var b *builder.ContainerStateBreakdown
 	var ok bool
-	if cbBuilder, ok = c[containerName]; !ok {
-		cbBuilder = newContainerBreakdownBuilder(containerName)
-		c[containerName] = cbBuilder
+	if b, ok = c[containerName]; !ok {
+		b = builder.NewContainerBreakdown(containerName)
+		c[containerName] = b
 	}
-	return cbBuilder
+	return b
 }
 
 func buildReport(ownerName string, conditionSummaries conditionSummaryMap) *shipper_v1alpha1.ClusterCapacityReport {
-	reportBuilder := newReportBuilder(ownerName)
-	containerBreakdownBuilders := make(ContainerBreakdownBuilderMap)
+	reportBuilder := builder.NewReport(ownerName)
+	containerStateBreakdownBuilders := make(containerStateBreakdownBuilders)
+
 	for _, cond := range conditionSummaries.SortedByKeyAsc() {
-		breakdownBuilder := newBreakdownBuilder(cond.podCount, cond.typ, cond.status, cond.reason)
+		breakdownBuilder := builder.NewPodConditionBreakdown(cond.podCount, cond.typ, cond.status, cond.reason)
 		for _, container := range cond.containers {
-			containerBreakdownBuilders.Get(container.name).AddState(container.containerCount, container.example.Pod, container.typ, container.reason)
+			containerStateBreakdownBuilders.Get(container.name).AddState(container.containerCount, container.example.Pod, container.typ, container.reason)
 		}
-		for _, v := range containerBreakdownBuilders {
+		for _, v := range containerStateBreakdownBuilders {
 			breakdownBuilder.AddContainerBreakdown(v.Build())
 		}
 		reportBuilder.AddBreakdown(breakdownBuilder.Build())
