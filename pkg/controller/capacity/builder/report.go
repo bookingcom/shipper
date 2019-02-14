@@ -54,7 +54,20 @@ func (r *Report) AddPod(pod *core_v1.Pod) {
 }
 
 func (r *Report) Build() *v1alpha1.ClusterCapacityReport {
+	return &v1alpha1.ClusterCapacityReport{
+		Owner: v1alpha1.ClusterCapacityReportOwner{
+			Name: r.ownerName,
+		},
+		Breakdown: r.buildSortedBreakdowns(),
+	}
+}
 
+func (r *Report) AddPodConditionBreakdownBuilder(b *PodConditionBreakdown) *Report {
+	r.podConditionBreakdownBuilders[b.Key()] = b
+	return r
+}
+
+func (r *Report) buildSortedBreakdowns() []v1alpha1.ClusterCapacityReportBreakdown {
 	orderedBreakdowns := make([]v1alpha1.ClusterCapacityReportBreakdown, len(r.podConditionBreakdownBuilders))
 
 	i := 0
@@ -70,18 +83,7 @@ func (r *Report) Build() *v1alpha1.ClusterCapacityReport {
 		return orderedBreakdowns[i].Type < orderedBreakdowns[j].Type
 	})
 
-	report := v1alpha1.ClusterCapacityReport{
-		Owner: v1alpha1.ClusterCapacityReportOwner{
-			Name: r.ownerName,
-		},
-		Breakdown: orderedBreakdowns,
-	}
-	return &report
-}
-
-func (r *Report) AddPodConditionBreakdownBuilder(b *PodConditionBreakdown) *Report {
-	r.podConditionBreakdownBuilders[b.Key()] = b
-	return r
+	return orderedBreakdowns
 }
 
 func GetRunningContainerStateField(field ContainerStateField) string {
