@@ -155,9 +155,8 @@ func (f *fixture) run() {
 	}()
 
 	fmt.Println("processing the next release item")
-	b := controller.processNextReleaseWorkItem()
-	fmt.Printf("process next item continue: %t\n", b)
-	//controller.processNextAppWorkItem()
+	controller.processNextReleaseWorkItem()
+	controller.processNextAppWorkItem()
 	close(f.recorder.Events)
 	fmt.Println("done processing")
 	<-readyCh
@@ -249,6 +248,14 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 			TargetStep: 2,
 			Environment: shipper.ReleaseEnvironment{
 				Strategy: &vanguard,
+				Chart: shipper.Chart{
+					Name:    "simple",
+					Version: "0.0.1",
+					RepoURL: chartRepoURL,
+				},
+				ClusterRequirements: shipper.ClusterRequirements{
+					Regions: []shipper.RegionRequirement{{Name: shippertesting.TestRegion}},
+				},
 			},
 		},
 	}
@@ -425,6 +432,14 @@ func (f *fixture) buildContender(namespace string, relName string, replicaCount 
 			TargetStep: 0,
 			Environment: shipper.ReleaseEnvironment{
 				Strategy: &vanguard,
+				Chart: shipper.Chart{
+					Name:    "simple",
+					Version: "0.0.1",
+					RepoURL: chartRepoURL,
+				},
+				ClusterRequirements: shipper.ClusterRequirements{
+					Regions: []shipper.RegionRequirement{{Name: shippertesting.TestRegion}},
+				},
 			},
 		},
 	}
