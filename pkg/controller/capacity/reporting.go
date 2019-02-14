@@ -1,7 +1,6 @@
 package capacity
 
 import (
-	"fmt"
 	"github.com/bookingcom/shipper/pkg/controller/capacity/builder"
 	"sort"
 	"strings"
@@ -9,14 +8,6 @@ import (
 	core_v1 "k8s.io/api/core/v1"
 
 	shipper_v1alpha1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-)
-
-type ContainerStateField string
-
-const (
-	ContainerStateFieldType    ContainerStateField = "type"
-	ContainerStateFieldReason  ContainerStateField = "reason"
-	ContainerStateFieldMessage ContainerStateField = "message"
 )
 
 type containerState struct {
@@ -44,55 +35,6 @@ func string2ptr(v string) *string {
 	return &v
 }
 
-func getRunningContainerStateField(field ContainerStateField) string {
-	switch field {
-	case ContainerStateFieldType:
-		return "Running"
-	case ContainerStateFieldReason, ContainerStateFieldMessage:
-		return ""
-	default:
-		panic(fmt.Sprintf("Unknown field %s", field))
-	}
-}
-
-func getWaitingContainerStateField(stateWaiting *core_v1.ContainerStateWaiting, field ContainerStateField) string {
-	switch field {
-	case ContainerStateFieldType:
-		return "Waiting"
-	case ContainerStateFieldReason:
-		return stateWaiting.Reason
-	case ContainerStateFieldMessage:
-		return stateWaiting.Message
-	default:
-		panic(fmt.Sprintf("Unknown field %s", field))
-	}
-}
-
-func getTerminatedContainerStateField(stateTerminated *core_v1.ContainerStateTerminated, f ContainerStateField) string {
-	switch f {
-	case ContainerStateFieldType:
-		return "Terminated"
-	case ContainerStateFieldReason:
-		return stateTerminated.Reason
-	case ContainerStateFieldMessage:
-		return stateTerminated.Message
-	default:
-		panic(fmt.Sprintf("Unknown field %s", f))
-	}
-}
-
-func getContainerStateField(c core_v1.ContainerState, f ContainerStateField) string {
-	if c.Running != nil {
-		return getRunningContainerStateField(f)
-	} else if c.Waiting != nil {
-		return getWaitingContainerStateField(c.Waiting, f)
-	} else if c.Terminated != nil {
-		return getTerminatedContainerStateField(c.Terminated, f)
-	}
-
-	panic("Programmer error: a container state must be either Running, Waiting or Terminated.")
-}
-
 func buildContainerStateEntries(clusterName string, podsList []*core_v1.Pod) []containerState {
 	containerStates := make([]containerState, 0)
 
@@ -113,9 +55,9 @@ func buildContainerStateEntries(clusterName string, podsList []*core_v1.Pod) []c
 			state.conditionReason = string2ptr(string(cond.Reason))
 			for _, containerStatus := range pod.Status.ContainerStatuses {
 				state.containerName = string2ptr(containerStatus.Name)
-				state.containerStateType = string2ptr(getContainerStateField(containerStatus.State, ContainerStateFieldType))
-				state.containerStateReason = string2ptr(getContainerStateField(containerStatus.State, ContainerStateFieldReason))
-				state.containerStateMessage = string2ptr(getContainerStateField(containerStatus.State, ContainerStateFieldMessage))
+				state.containerStateType = string2ptr(builder.GetContainerStateField(containerStatus.State, builder.ContainerStateFieldType))
+				state.containerStateReason = string2ptr(builder.GetContainerStateField(containerStatus.State, builder.ContainerStateFieldReason))
+				state.containerStateMessage = string2ptr(builder.GetContainerStateField(containerStatus.State, builder.ContainerStateFieldMessage))
 
 				containerStates = append(containerStates, state)
 			}
