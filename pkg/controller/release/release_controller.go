@@ -294,7 +294,7 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 		return retry
 	}
 
-	if !releaseutil.IsEmpty(rel) {
+	if releaseutil.IsEmpty(rel) {
 		glog.Infof("Release %q has an empty Environment, bailing out", key)
 		return noRetry
 	}

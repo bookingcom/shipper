@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	//"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/util/wait"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	fakedynamic "k8s.io/client-go/dynamic/fake"
 	kubetesting "k8s.io/client-go/testing"
@@ -83,9 +83,9 @@ func (f *fixture) addObjects(objects ...runtime.Object) {
 }
 
 func (f *fixture) init() {
-	clientset := shipperfake.NewSimpleClientset(f.objects...)
-	discovery := clientset.Discovery().(*fakediscovery.FakeDiscovery)
-	discovery.Resources = []*metav1.APIResourceList{
+	f.clientset = shipperfake.NewSimpleClientset(f.objects...)
+	f.discovery = f.clientset.Discovery().(*fakediscovery.FakeDiscovery)
+	f.discovery.Resources = []*metav1.APIResourceList{
 		{
 			GroupVersion: shipper.SchemeGroupVersion.String(),
 			APIResources: []metav1.APIResource{
@@ -121,14 +121,9 @@ func (f *fixture) init() {
 	const syncPeriod time.Duration = 0
 	informerFactory := shipperinformers.NewSharedInformerFactory(f.clientset, syncPeriod)
 
-	clientPool := &fakedynamic.FakeClientPool{}
-	recorder := record.NewFakeRecorder(42)
-
-	f.clientset = clientset
 	f.informerFactory = informerFactory
-	f.discovery = discovery
-	f.clientPool = clientPool
-	f.recorder = recorder
+	f.clientPool = &fakedynamic.FakeClientPool{}
+	f.recorder = record.NewFakeRecorder(42)
 	f.initialized = true
 }
 
@@ -137,8 +132,7 @@ func (f *fixture) run() {
 	if !f.initialized {
 		f.t.Fatalf("The fixture should be initialized using init() before running it")
 	}
-	c := f.newController()
-	fmt.Printf("%#v\n", c)
+	controller := f.newController()
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
@@ -146,24 +140,27 @@ func (f *fixture) run() {
 	f.informerFactory.Start(stopCh)
 	f.informerFactory.WaitForCacheSync(stopCh)
 
-	// wait.PollUntil(
-	// 	10*time.Millisecond,
-	// 	func() (bool, error) { return controller.releaseWorkqueue.Len() >= 1, nil },
-	// 	stopCh,
-	// )
+	wait.PollUntil(
+		10*time.Millisecond,
+		func() (bool, error) { return controller.releaseWorkqueue.Len() >= 1, nil },
+		stopCh,
+	)
 
-	// readyCh := make(chan struct{})
-	// go func() {
-	// 	for e := range f.recorder.Events {
-	// 		f.receivedEvents = append(f.receivedEvents, e)
-	// 	}
-	// 	close(readyCh)
-	// }()
+	readyCh := make(chan struct{})
+	go func() {
+		for e := range f.recorder.Events {
+			f.receivedEvents = append(f.receivedEvents, e)
+		}
+		close(readyCh)
+	}()
 
-	// controller.processNextReleaseWorkItem()
-	// controller.processNextAppWorkItem()
-	// close(f.recorder.Events)
-	// <-readyCh
+	fmt.Println("processing the next release item")
+	b := controller.processNextReleaseWorkItem()
+	fmt.Printf("process next item continue: %t\n", b)
+	//controller.processNextAppWorkItem()
+	close(f.recorder.Events)
+	fmt.Println("done processing")
+	<-readyCh
 }
 
 func (f *fixture) newController() *Controller {
@@ -645,28 +642,27 @@ func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.
 		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
 		incumbentName, contenderName := randStr(), randStr()
 		app.Status.History = []string{incumbentName, contenderName}
-		fmt.Printf("testing replica count: %d", replicaCount)
-		//incumbent := f.buildIncumbent(namespace, incumbentName, replicaCount)
-		//contender := f.buildContender(namespace, contenderName, replicaCount)
+		incumbent := f.buildIncumbent(namespace, incumbentName, replicaCount)
+		contender := f.buildContender(namespace, contenderName, replicaCount)
 
-		// contender.capacityTarget.Spec.Clusters[0].Percent = 1
-		// contender.capacityTarget.Status.Clusters[0].AvailableReplicas = 1
-		// incumbent.capacityTarget.Spec.Clusters[0].Percent = 100
-		// incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = replicaCount
+		contender.capacityTarget.Spec.Clusters[0].Percent = 1
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = 1
+		incumbent.capacityTarget.Spec.Clusters[0].Percent = 100
+		incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = replicaCount
 
-		// f.addObjects(
-		// 	incumbent.release.DeepCopy(),
-		// 	incumbent.installationTarget.DeepCopy(),
-		// 	incumbent.capacityTarget.DeepCopy(),
-		// 	incumbent.trafficTarget.DeepCopy(),
-		// 	contender.release.DeepCopy(),
-		// 	contender.installationTarget.DeepCopy(),
-		// 	contender.capacityTarget.DeepCopy(),
-		// 	contender.trafficTarget.DeepCopy(),
-		// )
+		f.addObjects(
+			incumbent.release.DeepCopy(),
+			incumbent.installationTarget.DeepCopy(),
+			incumbent.capacityTarget.DeepCopy(),
+			incumbent.trafficTarget.DeepCopy(),
+			contender.release.DeepCopy(),
+			contender.installationTarget.DeepCopy(),
+			contender.capacityTarget.DeepCopy(),
+			contender.trafficTarget.DeepCopy(),
+		)
 		f.init()
-		//var step int32 = 0
-		//f.expectReleaseWaitingForCommand(contender.release.DeepCopy(), step)
+		var step int32 = 0
+		f.expectReleaseWaitingForCommand(contender.release.DeepCopy(), step)
 		f.run()
 	}
 }
