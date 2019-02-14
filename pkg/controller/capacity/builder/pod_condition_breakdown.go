@@ -46,11 +46,6 @@ func (p *PodConditionBreakdown) Key() string {
 	return p.podConditionType + p.podConditionStatus + p.podConditionReason
 }
 
-func (p *PodConditionBreakdown) AddContainerStateBreakdownBuilder(containerStateBreakdown *ContainerStateBreakdown) *PodConditionBreakdown {
-	p.containerStateBreakdownBuilders[containerStateBreakdown.containerName] = containerStateBreakdown
-	return p
-}
-
 func (p *PodConditionBreakdown) AddContainerState(
 	containerName string,
 	containerCount uint32,
