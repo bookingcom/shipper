@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,7 +130,6 @@ func (f *fixture) init() {
 }
 
 func (f *fixture) run() {
-
 	if !f.initialized {
 		f.t.Fatalf("The fixture should be initialized using init() before running it")
 	}
@@ -154,12 +155,15 @@ func (f *fixture) run() {
 		close(readyCh)
 	}()
 
-	fmt.Println("processing the next release item")
 	controller.processNextReleaseWorkItem()
 	controller.processNextAppWorkItem()
 	close(f.recorder.Events)
-	fmt.Println("done processing")
 	<-readyCh
+
+	actual := shippertesting.FilterActions(f.clientset.Actions())
+
+	shippertesting.CheckActions(f.actions, actual, f.t)
+	shippertesting.CheckEvents(f.expectedEvents, f.receivedEvents, f.t)
 }
 
 func (f *fixture) newController() *Controller {
@@ -645,6 +649,64 @@ func (f *fixture) expectReleaseWaitingForCommand(rel *shipper.Release, step int3
 		`Normal ReleaseStateTransitioned Release "test-namespace/0.0.2" had its state "WaitingForCommand" transitioned to "True"`,
 		`Normal ReleaseStateTransitioned Release "test-namespace/0.0.2" had its state "WaitingForInstallation" transitioned to "False"`,
 		`Normal ReleaseStateTransitioned Release "test-namespace/0.0.2" had its state "WaitingForTraffic" transitioned to "False"`,
+	}
+}
+
+func TestControllerComputeTargetClusters(t *testing.T) {
+	namespace := "test-namespace"
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+	contenderName := randStr()
+	var replicaCount int32 = 1
+	contender := f.buildContender(namespace, contenderName, replicaCount)
+
+	f.expectReleaseScheduled(contender.release.DeepCopy(), []*shipper.Cluster{cluster})
+	f.addObjects(
+		contender.release.DeepCopy(),
+		contender.capacityTarget.DeepCopy(),
+		contender.installationTarget.DeepCopy(),
+		contender.trafficTarget.DeepCopy(),
+	)
+	f.init()
+	f.run()
+}
+
+func (f *fixture) expectReleaseScheduled(release *shipper.Release, clusters []*shipper.Cluster) {
+	clusterNames := make([]string, 0, len(clusters))
+	for _, cluster := range clusters {
+		clusterNames = append(clusterNames, cluster.GetName())
+	}
+	sort.Strings(clusterNames)
+	clusterNamesStr := strings.Join(clusterNames, ",")
+
+	expected := release.DeepCopy()
+	expected.Annotations[shipper.ReleaseClustersAnnotation] = clusterNamesStr
+
+	expectedWithConditions := expected.DeepCopy()
+	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&expectedWithConditions.Status, *condition)
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			expected),
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			expectedWithConditions),
+	}
+
+	f.actions = append(f.actions, expectedActions...)
+	f.expectedEvents = []string{
+		fmt.Sprintf(
+			"Normal ClustersSelected Set clusters for \"%s/%s\" to %s",
+			release.GetNamespace(),
+			release.GetName(),
+			clusterNamesStr,
+		),
 	}
 }
 
