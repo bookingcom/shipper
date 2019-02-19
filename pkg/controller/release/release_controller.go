@@ -299,6 +299,11 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 		return noRetry
 	}
 
+	if releaseutil.ReleaseComplete(rel) {
+		glog.Infof("Release %q is complete, nothing to do, ignorining", key)
+		return noRetry
+	}
+
 	if !releaseutil.ReleaseScheduled(rel) {
 
 		glog.V(4).Infof("Release %q is not scheduled yet, processing", key)
@@ -313,8 +318,7 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 			c.recorder,
 		)
 
-		_, err = scheduler.ScheduleRelease(rel)
-		if err != nil {
+		if _, err = scheduler.ScheduleRelease(rel.DeepCopy()); err != nil {
 			c.recorder.Eventf(
 				rel,
 				corev1.EventTypeWarning,
@@ -345,6 +349,7 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 
 			return noRetry
 		}
+
 		glog.V(4).Infof("Release %q has been successfully scheduled", key)
 	}
 

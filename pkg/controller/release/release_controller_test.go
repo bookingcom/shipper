@@ -53,6 +53,68 @@ var vanguard = shipper.RolloutStrategy{
 	},
 }
 
+type actionfilter struct {
+	verbs     []string
+	resources []string
+}
+
+func (af actionfilter) Extend(ext actionfilter) actionfilter {
+	verbset := make(map[string]struct{})
+	newverbs := make([]string, 0)
+	for _, verb := range append(af.verbs, ext.verbs...) {
+		if _, ok := verbset[verb]; !ok {
+			newverbs = append(newverbs, verb)
+			verbset[verb] = struct{}{}
+		}
+	}
+	resourceset := make(map[string]struct{})
+	newresources := make([]string, 0)
+	for _, resource := range append(af.resources, ext.resources...) {
+		if _, ok := resourceset[resource]; !ok {
+			newresources = append(newresources, resource)
+			resourceset[resource] = struct{}{}
+		}
+	}
+	sort.Strings(newverbs)
+	sort.Strings(newresources)
+	return actionfilter{
+		verbs:     newverbs,
+		resources: newresources,
+	}
+}
+
+func (af actionfilter) IsEmpty() bool {
+	return len(af.verbs) == 0 && len(af.resources) == 0
+}
+
+func (af actionfilter) DoFilter(actions []kubetesting.Action) []kubetesting.Action {
+	if af.IsEmpty() {
+		return actions
+	}
+	ignore := func(action kubetesting.Action) bool {
+		for _, v := range af.verbs {
+			for _, r := range af.resources {
+				if action.Matches(v, r) {
+					return false
+				}
+			}
+		}
+
+		return true
+	}
+
+	var ret []kubetesting.Action
+	for _, action := range actions {
+		if ignore(action) {
+			continue
+		}
+
+		ret = append(ret, action)
+	}
+
+	return ret
+}
+
 type fixture struct {
 	initialized     bool
 	t               *testing.T
@@ -64,6 +126,7 @@ type fixture struct {
 	recorder        *record.FakeRecorder
 
 	actions        []kubetesting.Action
+	filter         actionfilter
 	receivedEvents []string
 	expectedEvents []string
 }
@@ -75,6 +138,7 @@ func newFixture(t *testing.T, objects ...runtime.Object) *fixture {
 		objects:     objects,
 
 		actions:        make([]kubetesting.Action, 0),
+		filter:         actionfilter{},
 		receivedEvents: make([]string, 0),
 		expectedEvents: make([]string, 0),
 	}
@@ -155,12 +219,17 @@ func (f *fixture) run() {
 		close(readyCh)
 	}()
 
-	controller.processNextReleaseWorkItem()
-	controller.processNextAppWorkItem()
+	for controller.releaseWorkqueue.Len() > 0 {
+		controller.processNextReleaseWorkItem()
+	}
+	for controller.applicationWorkqueue.Len() > 0 {
+		controller.processNextAppWorkItem()
+	}
 	close(f.recorder.Events)
 	<-readyCh
 
 	actual := shippertesting.FilterActions(f.clientset.Actions())
+	actual = f.filter.DoFilter(actual)
 
 	shippertesting.CheckActions(f.actions, actual, f.t)
 	shippertesting.CheckEvents(f.expectedEvents, f.receivedEvents, f.t)
@@ -662,15 +731,175 @@ func TestControllerComputeTargetClusters(t *testing.T) {
 	var replicaCount int32 = 1
 	contender := f.buildContender(namespace, contenderName, replicaCount)
 
-	f.expectReleaseScheduled(contender.release.DeepCopy(), []*shipper.Cluster{cluster})
 	f.addObjects(
 		contender.release.DeepCopy(),
 		contender.capacityTarget.DeepCopy(),
 		contender.installationTarget.DeepCopy(),
 		contender.trafficTarget.DeepCopy(),
 	)
+
+	f.expectReleaseScheduled(contender.release.DeepCopy(), []*shipper.Cluster{cluster})
 	f.init()
 	f.run()
+}
+
+func TestControllerCreateAssociatedObjects(t *testing.T) {
+	namespace := "test-namespace"
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+	contenderName := randStr()
+	var replicaCount int32 = 1
+	contender := f.buildContender(namespace, contenderName, replicaCount)
+
+	f.addObjects(
+		contender.release.DeepCopy(),
+		contender.capacityTarget.DeepCopy(),
+		contender.installationTarget.DeepCopy(),
+		contender.trafficTarget.DeepCopy(),
+	)
+
+	f.expectAssociatedObjectsCreated(contender.release.DeepCopy(), []*shipper.Cluster{cluster})
+	f.init()
+	f.run()
+}
+
+func buildExpectedActions(release *shipper.Release, clusters []*shipper.Cluster) []kubetesting.Action {
+
+	clusterNames := make([]string, 0, len(clusters))
+	for _, cluster := range clusters {
+		clusterNames = append(clusterNames, cluster.GetName())
+	}
+	sort.Strings(clusterNames)
+
+	installationTarget := &shipper.InstallationTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: release.APIVersion,
+					Kind:       release.Kind,
+					Name:       release.Name,
+					UID:        release.UID,
+				},
+			},
+			Labels: map[string]string{
+				shipper.AppLabel:     release.OwnerReferences[0].Name,
+				shipper.ReleaseLabel: release.GetName(),
+			},
+		},
+		Spec: shipper.InstallationTargetSpec{
+			Clusters: clusterNames,
+		},
+	}
+
+	clusterCapacityTargets := make([]shipper.ClusterCapacityTarget, 0, len(clusters))
+	for _, cluster := range clusters {
+		clusterCapacityTargets = append(
+			clusterCapacityTargets,
+			shipper.ClusterCapacityTarget{
+				Name:              cluster.GetName(),
+				Percent:           0,
+				TotalReplicaCount: 12,
+			})
+	}
+
+	capacityTarget := &shipper.CapacityTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.Name,
+			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: release.APIVersion,
+					Kind:       release.Kind,
+					Name:       release.Name,
+					UID:        release.UID,
+				},
+			},
+			Labels: map[string]string{
+				shipper.AppLabel:     release.OwnerReferences[0].Name,
+				shipper.ReleaseLabel: release.GetName(),
+			},
+		},
+		Spec: shipper.CapacityTargetSpec{
+			Clusters: clusterCapacityTargets,
+		},
+	}
+
+	clusterTrafficTargets := make([]shipper.ClusterTrafficTarget, 0, len(clusters))
+	for _, cluster := range clusters {
+		clusterTrafficTargets = append(
+			clusterTrafficTargets,
+			shipper.ClusterTrafficTarget{
+				Name: cluster.GetName(),
+			})
+	}
+
+	trafficTarget := &shipper.TrafficTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.Name,
+			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: release.APIVersion,
+					Kind:       release.Kind,
+					Name:       release.Name,
+					UID:        release.UID,
+				},
+			},
+			Labels: map[string]string{
+				shipper.AppLabel:     release.OwnerReferences[0].Name,
+				shipper.ReleaseLabel: release.GetName(),
+			},
+		},
+		Spec: shipper.TrafficTargetSpec{
+			Clusters: clusterTrafficTargets,
+		},
+	}
+
+	actions := []kubetesting.Action{
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("installationtargets"),
+			release.GetNamespace(),
+			installationTarget),
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("traffictargets"),
+			release.GetNamespace(),
+			trafficTarget),
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("capacitytargets"),
+			release.GetNamespace(),
+			capacityTarget,
+		),
+	}
+	return actions
+}
+
+func (f *fixture) expectAssociatedObjectsCreated(release *shipper.Release, clusters []*shipper.Cluster) {
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+	f.filter = f.filter.Extend(
+		actionfilter{
+			[]string{"create"},
+			[]string{"installationtargets", "traffictargets", "capacitytargets"},
+		})
+	f.actions = buildExpectedActions(expected, clusters)
+	clusterNames := make([]string, 0, len(clusters))
+	for _, cluster := range clusters {
+		clusterNames = append(clusterNames, cluster.GetName())
+	}
+	f.expectedEvents = []string{
+		fmt.Sprintf(
+			"Normal ClustersSelected Set clusters for \"%s/%s\" to %s",
+			release.GetNamespace(),
+			release.GetName(),
+			strings.Join(clusterNames, ","),
+		),
+	}
 }
 
 func (f *fixture) expectReleaseScheduled(release *shipper.Release, clusters []*shipper.Cluster) {
@@ -700,6 +929,7 @@ func (f *fixture) expectReleaseScheduled(release *shipper.Release, clusters []*s
 	}
 
 	f.actions = append(f.actions, expectedActions...)
+	f.filter = f.filter.Extend(actionfilter{[]string{"update"}, []string{"releases"}})
 	f.expectedEvents = []string{
 		fmt.Sprintf(
 			"Normal ClustersSelected Set clusters for \"%s/%s\" to %s",
@@ -715,12 +945,17 @@ func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.
 	app := buildApplication(namespace, "test-app")
 	cluster := buildCluster("minikube")
 
-	for _, replicaCount := range []int32{1, 3, 10} {
+	for _, replicaCount := range []int32{1} {
+		//for _, replicaCount := range []int32{1, 3, 10} {
 		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
 		incumbentName, contenderName := randStr(), randStr()
 		app.Status.History = []string{incumbentName, contenderName}
 		incumbent := f.buildIncumbent(namespace, incumbentName, replicaCount)
 		contender := f.buildContender(namespace, contenderName, replicaCount)
+
+		contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+		releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
 
 		contender.capacityTarget.Spec.Clusters[0].Percent = 1
 		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = 1

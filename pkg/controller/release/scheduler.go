@@ -54,10 +54,7 @@ func NewScheduler(
 	}
 }
 
-func (s *Scheduler) ScheduleRelease(origrel *shipper.Release) (*shipper.Release, error) {
-
-	rel := origrel.DeepCopy()
-
+func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, error) {
 	metaKey := controller.MetaKey(rel)
 	glog.Infof("Processing release %q", metaKey)
 	defer glog.Infof("Finished processing %q", metaKey)
@@ -73,10 +70,11 @@ func (s *Scheduler) ScheduleRelease(origrel *shipper.Release) (*shipper.Release,
 		}
 		setClusters(rel, selectedClusters)
 
-		rel, err := s.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel)
+		newrel, err := s.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel)
 		if err != nil {
 			return nil, NewFailedAPICallError("UpdateRelease", err)
 		}
+		rel = newrel
 
 		s.recorder.Eventf(
 			rel,
