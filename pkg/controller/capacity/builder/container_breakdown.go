@@ -3,12 +3,12 @@ package builder
 import (
 	"sort"
 
-	"github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 type ContainerStateBreakdown struct {
 	containerName string
-	states        []*v1alpha1.ClusterCapacityReportContainerStateBreakdown
+	states        []*shipper.ClusterCapacityReportContainerStateBreakdown
 }
 
 func NewContainerBreakdown(containerName string) *ContainerStateBreakdown {
@@ -22,11 +22,11 @@ func (c *ContainerStateBreakdown) AddState(
 	containerConditionReason string,
 ) *ContainerStateBreakdown {
 
-	breakdown := v1alpha1.ClusterCapacityReportContainerStateBreakdown{
+	breakdown := shipper.ClusterCapacityReportContainerStateBreakdown{
 		Count:  containerCount,
 		Type:   containerConditionType,
 		Reason: containerConditionReason,
-		Example: v1alpha1.ClusterCapacityReportContainerBreakdownExample{
+		Example: shipper.ClusterCapacityReportContainerBreakdownExample{
 			Pod: podExampleName,
 		},
 	}
@@ -42,9 +42,9 @@ func (c *ContainerStateBreakdown) AddState(
 	return c
 }
 
-func (c *ContainerStateBreakdown) Build() v1alpha1.ClusterCapacityReportContainerBreakdown {
+func (c *ContainerStateBreakdown) Build() shipper.ClusterCapacityReportContainerBreakdown {
 	stateCount := len(c.states)
-	orderedStates := make([]v1alpha1.ClusterCapacityReportContainerStateBreakdown, stateCount)
+	orderedStates := make([]shipper.ClusterCapacityReportContainerStateBreakdown, stateCount)
 	for i, v := range c.states {
 		orderedStates[i] = *v
 	}
@@ -53,7 +53,7 @@ func (c *ContainerStateBreakdown) Build() v1alpha1.ClusterCapacityReportContaine
 		return orderedStates[i].Type < orderedStates[j].Type
 	})
 
-	return v1alpha1.ClusterCapacityReportContainerBreakdown{
+	return shipper.ClusterCapacityReportContainerBreakdown{
 		Name:   c.containerName,
 		States: orderedStates,
 	}

@@ -1,8 +1,9 @@
 package builder
 
 import (
-	"github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"sort"
+
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 type containerStateBreakdownBuilders map[string]*ContainerStateBreakdown
@@ -67,9 +68,9 @@ func (p *PodConditionBreakdown) IncrementCount() *PodConditionBreakdown {
 	return p
 }
 
-func (p *PodConditionBreakdown) Build() v1alpha1.ClusterCapacityReportBreakdown {
+func (p *PodConditionBreakdown) Build() shipper.ClusterCapacityReportBreakdown {
 
-	orderedContainers := make([]v1alpha1.ClusterCapacityReportContainerBreakdown, 0)
+	orderedContainers := make([]shipper.ClusterCapacityReportContainerBreakdown, 0)
 
 	for _, v := range p.containerStateBreakdownBuilders {
 		orderedContainers = append(orderedContainers, v.Build())
@@ -79,7 +80,7 @@ func (p *PodConditionBreakdown) Build() v1alpha1.ClusterCapacityReportBreakdown 
 		return orderedContainers[i].Name < orderedContainers[j].Name
 	})
 
-	return v1alpha1.ClusterCapacityReportBreakdown{
+	return shipper.ClusterCapacityReportBreakdown{
 		Type:       p.podConditionType,
 		Status:     p.podConditionStatus,
 		Count:      p.podCount,
