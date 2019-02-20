@@ -2,7 +2,6 @@ package capacity
 
 import (
 	"fmt"
-	"github.com/bookingcom/shipper/pkg/controller/capacity/builder"
 	"sort"
 	"testing"
 	"time"
@@ -21,6 +20,7 @@ import (
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/conditions"
+	"github.com/bookingcom/shipper/pkg/controller/capacity/builder"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
