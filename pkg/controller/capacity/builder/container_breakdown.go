@@ -1,8 +1,9 @@
 package builder
 
 import (
-	"github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"sort"
+
+	"github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 type ContainerStateBreakdown struct {
