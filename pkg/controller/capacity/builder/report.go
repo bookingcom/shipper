@@ -6,7 +6,7 @@ import (
 
 	core_v1 "k8s.io/api/core/v1"
 
-	"github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 type podConditionBreakdownBuilders map[string]*PodConditionBreakdown
@@ -53,9 +53,9 @@ func (r *Report) AddPod(pod *core_v1.Pod) {
 	}
 }
 
-func (r *Report) Build() *v1alpha1.ClusterCapacityReport {
-	return &v1alpha1.ClusterCapacityReport{
-		Owner: v1alpha1.ClusterCapacityReportOwner{
+func (r *Report) Build() *shipper.ClusterCapacityReport {
+	return &shipper.ClusterCapacityReport{
+		Owner: shipper.ClusterCapacityReportOwner{
 			Name: r.ownerName,
 		},
 		Breakdown: r.buildSortedBreakdowns(),
@@ -67,8 +67,8 @@ func (r *Report) AddPodConditionBreakdownBuilder(b *PodConditionBreakdown) *Repo
 	return r
 }
 
-func (r *Report) buildSortedBreakdowns() []v1alpha1.ClusterCapacityReportBreakdown {
-	orderedBreakdowns := make([]v1alpha1.ClusterCapacityReportBreakdown, len(r.podConditionBreakdownBuilders))
+func (r *Report) buildSortedBreakdowns() []shipper.ClusterCapacityReportBreakdown {
+	orderedBreakdowns := make([]shipper.ClusterCapacityReportBreakdown, len(r.podConditionBreakdownBuilders))
 
 	i := 0
 	for _, v := range r.podConditionBreakdownBuilders {
