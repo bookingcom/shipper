@@ -48,6 +48,7 @@ func (r *Report) AddPod(pod *core_v1.Pod) {
 				pod.Name,
 				GetContainerStateField(containerStatus.State, ContainerStateFieldType),
 				GetContainerStateField(containerStatus.State, ContainerStateFieldReason),
+				GetContainerStateMessage(containerStatus),
 			)
 		}
 	}
@@ -133,6 +134,27 @@ func GetContainerStateField(c core_v1.ContainerState, f ContainerStateField) str
 	}
 
 	panic("Programmer error: a container state must be either Running, Waiting or Terminated.")
+}
+
+func getTerminatedMessage(c core_v1.ContainerState) string {
+	if c.Terminated == nil {
+		return ""
+	}
+
+	if len(c.Terminated.Message) > 0 {
+		return c.Terminated.Message
+	} else if c.Terminated.Signal > 0 {
+		return fmt.Sprintf("Terminated with signal %d", c.Terminated.Signal)
+	} else {
+		return fmt.Sprintf("Terminated with exit code %d", c.Terminated.ExitCode)
+	}
+}
+
+func GetContainerStateMessage(c core_v1.ContainerStatus) string {
+	if c.RestartCount > 0 {
+		return getTerminatedMessage(c.LastTerminationState)
+	}
+	return getTerminatedMessage(c.State)
 }
 
 type ContainerStateField string

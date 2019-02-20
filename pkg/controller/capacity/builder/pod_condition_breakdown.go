@@ -56,10 +56,11 @@ func (p *PodConditionBreakdown) AddContainerState(
 	podExampleName string,
 	containerConditionType string,
 	containerConditionReason string,
+	containerExampleMessage string,
 ) *PodConditionBreakdown {
 	p.containerStateBreakdownBuilders.
 		Get(containerName).
-		AddState(containerCount, podExampleName, containerConditionType, containerConditionReason)
+		AddState(containerCount, podExampleName, containerConditionType, containerConditionReason, containerExampleMessage)
 	return p
 }
 

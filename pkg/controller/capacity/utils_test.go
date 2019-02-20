@@ -8,11 +8,12 @@ import (
 )
 
 type PodBuilder struct {
-	podName           string
-	podNamespace      string
-	podLabels         map[string]string
-	containerStatuses []corev1.ContainerStatus
-	podConditions     []corev1.PodCondition
+	podName              string
+	podNamespace         string
+	podLabels            map[string]string
+	containerStatuses    []corev1.ContainerStatus
+	podConditions        []corev1.PodCondition
+	lastTerminationState corev1.ContainerState
 }
 
 func newPodBuilder(podName string, podNamespace string, podLabels map[string]string) *PodBuilder {
@@ -38,8 +39,12 @@ func (p *PodBuilder) SetLabels(labels map[string]string) *PodBuilder {
 	return p
 }
 
-func (p *PodBuilder) AddContainerStatus(containerName string, containerState corev1.ContainerState) *PodBuilder {
-	p.containerStatuses = append(p.containerStatuses, corev1.ContainerStatus{Name: containerName, State: containerState})
+func (p *PodBuilder) AddContainerStatus(containerName string, containerState corev1.ContainerState, restartCount int32, lastTerminatedState *corev1.ContainerState) *PodBuilder {
+	containerStatus := corev1.ContainerStatus{Name: containerName, State: containerState, RestartCount: restartCount}
+	if lastTerminatedState != nil {
+		containerStatus.LastTerminationState = *lastTerminatedState
+	}
+	p.containerStatuses = append(p.containerStatuses, containerStatus)
 	return p
 }
 

@@ -20,14 +20,21 @@ func (c *ContainerStateBreakdown) AddState(
 	podExampleName string,
 	containerConditionType string,
 	containerConditionReason string,
+	containerExampleMessage string,
 ) *ContainerStateBreakdown {
+
+	var m *string
+	if len(containerExampleMessage) > 0 {
+		m = &containerExampleMessage
+	}
 
 	breakdown := shipper.ClusterCapacityReportContainerStateBreakdown{
 		Count:  containerCount,
 		Type:   containerConditionType,
 		Reason: containerConditionReason,
 		Example: shipper.ClusterCapacityReportContainerBreakdownExample{
-			Pod: podExampleName,
+			Pod:     podExampleName,
+			Message: m,
 		},
 	}
 

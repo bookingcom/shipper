@@ -64,7 +64,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePod(t *testing.T
 	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
 
 	podA := newPodBuilder("pod-a", deployment.GetNamespace(), podLabels).
-		AddContainerStatus("app", corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}).
+		AddContainerStatus("app", corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, 0, nil).
 		AddPodCondition(corev1.PodCondition{Type: corev1.PodInitialized, Status: corev1.ConditionTrue}).
 		AddPodCondition(corev1.PodCondition{Type: "ContainersReady", Status: corev1.ConditionTrue}).
 		AddPodCondition(corev1.PodCondition{Type: corev1.PodReady, Status: corev1.ConditionTrue}).
@@ -76,16 +76,220 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePod(t *testing.T
 	c := builder.NewReport("nginx").
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(1, "ContainersReady", "True", "").
-				AddContainerState("app", 1, "pod-a", "Running", "")).
+				AddContainerState("app", 1, "pod-a", "Running", "", "")).
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(1, "Initialized", "True", "").
-				AddContainerState("app", 1, "pod-a", "Running", "")).
+				AddContainerState("app", 1, "pod-a", "Running", "", "")).
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(1, "PodScheduled", "True", "").
-				AddContainerState("app", 1, "pod-a", "Running", "")).
+				AddContainerState("app", 1, "pod-a", "Running", "", "")).
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(1, "Ready", "True", "").
-				AddContainerState("app", 1, "pod-a", "Running", ""))
+				AddContainerState("app", 1, "pod-a", "Running", "", ""))
+
+	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
+
+	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
+		Name:              "minikube",
+		Reports:           []shipper.ClusterCapacityReport{*c.Build()},
+		AchievedPercent:   100,
+		AvailableReplicas: 1,
+		Conditions: []shipper.ClusterCapacityCondition{
+			{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
+			{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+		},
+	})
+
+	updateAction := kubetesting.NewUpdateAction(
+		schema.GroupVersionResource{
+			Group:    shipper.SchemeGroupVersion.Group,
+			Version:  shipper.SchemeGroupVersion.Version,
+			Resource: "capacitytargets",
+		},
+		capacityTarget.GetNamespace(),
+		capacityTarget,
+	)
+
+	f.managementClusterActions = append(f.managementClusterActions, updateAction)
+	f.runCapacityTargetSyncHandler()
+
+	// Calling the sync handler again with the updated capacity target object should yield the same results.
+	f.managementObjects = []runtime.Object{capacityTarget.DeepCopy()}
+	f.runCapacityTargetSyncHandler()
+}
+
+func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodCompletedContainer(t *testing.T) {
+	f := NewFixture(t)
+
+	capacityTarget := newCapacityTarget(1, 100)
+
+	deployment := newDeployment(1, 1)
+	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
+
+	podA := newPodBuilder("pod-a", deployment.GetNamespace(), podLabels).
+		AddContainerStatus("app", corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Completed", ExitCode: 1}}, 0, nil).
+		AddPodCondition(corev1.PodCondition{Type: "ContainersReady", Status: corev1.ConditionTrue}).
+		Build()
+
+	f.targetClusterObjects = append(f.targetClusterObjects, deployment, podA)
+
+	c := builder.NewReport("nginx").
+		AddPodConditionBreakdownBuilder(
+			builder.NewPodConditionBreakdown(1, "ContainersReady", "True", "").
+				AddContainerState("app", 1, "pod-a", "Terminated", "Completed", "Terminated with exit code 1"))
+
+	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
+
+	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
+		Name:              "minikube",
+		Reports:           []shipper.ClusterCapacityReport{*c.Build()},
+		AchievedPercent:   100,
+		AvailableReplicas: 1,
+		Conditions: []shipper.ClusterCapacityCondition{
+			{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
+			{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+		},
+	})
+
+	updateAction := kubetesting.NewUpdateAction(
+		schema.GroupVersionResource{
+			Group:    shipper.SchemeGroupVersion.Group,
+			Version:  shipper.SchemeGroupVersion.Version,
+			Resource: "capacitytargets",
+		},
+		capacityTarget.GetNamespace(),
+		capacityTarget,
+	)
+
+	f.managementClusterActions = append(f.managementClusterActions, updateAction)
+	f.runCapacityTargetSyncHandler()
+
+	// Calling the sync handler again with the updated capacity target object should yield the same results.
+	f.managementObjects = []runtime.Object{capacityTarget.DeepCopy()}
+	f.runCapacityTargetSyncHandler()
+}
+
+func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodTerminatedContainer(t *testing.T) {
+	f := NewFixture(t)
+
+	capacityTarget := newCapacityTarget(1, 100)
+
+	deployment := newDeployment(1, 1)
+	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
+
+	podA := newPodBuilder("pod-a", deployment.GetNamespace(), podLabels).
+		AddContainerStatus("app", corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Terminated", Signal: 9}}, 0, nil).
+		AddPodCondition(corev1.PodCondition{Type: "ContainersReady", Status: corev1.ConditionTrue}).
+		Build()
+
+	f.targetClusterObjects = append(f.targetClusterObjects, deployment, podA)
+
+	c := builder.NewReport("nginx").
+		AddPodConditionBreakdownBuilder(
+			builder.NewPodConditionBreakdown(1, "ContainersReady", "True", "").
+				AddContainerState("app", 1, "pod-a", "Terminated", "Terminated", "Terminated with signal 9"))
+
+	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
+
+	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
+		Name:              "minikube",
+		Reports:           []shipper.ClusterCapacityReport{*c.Build()},
+		AchievedPercent:   100,
+		AvailableReplicas: 1,
+		Conditions: []shipper.ClusterCapacityCondition{
+			{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
+			{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+		},
+	})
+
+	updateAction := kubetesting.NewUpdateAction(
+		schema.GroupVersionResource{
+			Group:    shipper.SchemeGroupVersion.Group,
+			Version:  shipper.SchemeGroupVersion.Version,
+			Resource: "capacitytargets",
+		},
+		capacityTarget.GetNamespace(),
+		capacityTarget,
+	)
+
+	f.managementClusterActions = append(f.managementClusterActions, updateAction)
+	f.runCapacityTargetSyncHandler()
+
+	// Calling the sync handler again with the updated capacity target object should yield the same results.
+	f.managementObjects = []runtime.Object{capacityTarget.DeepCopy()}
+	f.runCapacityTargetSyncHandler()
+}
+
+func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodRestartedContainer(t *testing.T) {
+	f := NewFixture(t)
+
+	capacityTarget := newCapacityTarget(1, 100)
+
+	deployment := newDeployment(1, 1)
+	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
+
+	podA := newPodBuilder("pod-a", deployment.GetNamespace(), podLabels).
+		AddContainerStatus("app", corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Terminated", Signal: 9}}, 0, nil).
+		AddPodCondition(corev1.PodCondition{Type: "ContainersReady", Status: corev1.ConditionTrue}).
+		Build()
+
+	f.targetClusterObjects = append(f.targetClusterObjects, deployment, podA)
+
+	c := builder.NewReport("nginx").
+		AddPodConditionBreakdownBuilder(
+			builder.NewPodConditionBreakdown(1, "ContainersReady", "True", "").
+				AddContainerState("app", 1, "pod-a", "Terminated", "Terminated", "Terminated with signal 9"))
+
+	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
+
+	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
+		Name:              "minikube",
+		Reports:           []shipper.ClusterCapacityReport{*c.Build()},
+		AchievedPercent:   100,
+		AvailableReplicas: 1,
+		Conditions: []shipper.ClusterCapacityCondition{
+			{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
+			{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+		},
+	})
+
+	updateAction := kubetesting.NewUpdateAction(
+		schema.GroupVersionResource{
+			Group:    shipper.SchemeGroupVersion.Group,
+			Version:  shipper.SchemeGroupVersion.Version,
+			Resource: "capacitytargets",
+		},
+		capacityTarget.GetNamespace(),
+		capacityTarget,
+	)
+
+	f.managementClusterActions = append(f.managementClusterActions, updateAction)
+	f.runCapacityTargetSyncHandler()
+
+	// Calling the sync handler again with the updated capacity target object should yield the same results.
+	f.managementObjects = []runtime.Object{capacityTarget.DeepCopy()}
+	f.runCapacityTargetSyncHandler()
+}
+
+func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodRestartedContainerWithTerminationMessage(t *testing.T) {
+	f := NewFixture(t)
+
+	capacityTarget := newCapacityTarget(1, 100)
+
+	deployment := newDeployment(1, 1)
+	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
+
+	podA := newPodBuilder("pod-a", deployment.GetNamespace(), podLabels).
+		AddContainerStatus("app", corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Terminated", Signal: 9}}, 1, &corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Message: "termination message"}}).
+		AddPodCondition(corev1.PodCondition{Type: "ContainersReady", Status: corev1.ConditionTrue}).
+		Build()
+
+	f.targetClusterObjects = append(f.targetClusterObjects, deployment, podA)
+
+	c := builder.NewReport("nginx").
+		AddPodConditionBreakdownBuilder(
+			builder.NewPodConditionBreakdown(1, "ContainersReady", "True", "").
+				AddContainerState("app", 1, "pod-a", "Terminated", "Terminated", "termination message"))
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
@@ -127,7 +331,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePods(t *testin
 	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
 
 	podA := newPodBuilder("pod-a", deployment.GetNamespace(), podLabels).
-		AddContainerStatus("app", corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}).
+		AddContainerStatus("app", corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, 0, nil).
 		AddPodCondition(corev1.PodCondition{Type: corev1.PodInitialized, Status: corev1.ConditionTrue}).
 		AddPodCondition(corev1.PodCondition{Type: "ContainersReady", Status: corev1.ConditionTrue}).
 		AddPodCondition(corev1.PodCondition{Type: corev1.PodReady, Status: corev1.ConditionTrue}).
@@ -135,7 +339,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePods(t *testin
 		Build()
 
 	podB := newPodBuilder("pod-b", deployment.GetNamespace(), podLabels).
-		AddContainerStatus("app", corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}).
+		AddContainerStatus("app", corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, 0, nil).
 		AddPodCondition(corev1.PodCondition{Type: corev1.PodInitialized, Status: corev1.ConditionTrue}).
 		AddPodCondition(corev1.PodCondition{Type: "ContainersReady", Status: corev1.ConditionTrue}).
 		AddPodCondition(corev1.PodCondition{Type: corev1.PodReady, Status: corev1.ConditionTrue}).
@@ -147,16 +351,16 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePods(t *testin
 	c := builder.NewReport("nginx").
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(2, "ContainersReady", "True", "").
-				AddContainerState("app", 2, "pod-a", "Running", "")).
+				AddContainerState("app", 2, "pod-a", "Running", "", "")).
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(2, "Initialized", "True", "").
-				AddContainerState("app", 2, "pod-a", "Running", "")).
+				AddContainerState("app", 2, "pod-a", "Running", "", "")).
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(2, "PodScheduled", "True", "").
-				AddContainerState("app", 2, "pod-a", "Running", "")).
+				AddContainerState("app", 2, "pod-a", "Running", "", "")).
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(2, "Ready", "True", "").
-				AddContainerState("app", 2, "pod-a", "Running", ""))
+				AddContainerState("app", 2, "pod-a", "Running", "", ""))
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
@@ -198,21 +402,21 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePodsWithDiffer
 	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
 
 	podA := newPodBuilder("pod-a", deployment.GetNamespace(), podLabels).
-		AddContainerStatus("app", corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"}}).
+		AddContainerStatus("app", corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"}}, 0, nil).
 		AddPodCondition(corev1.PodCondition{Type: corev1.PodInitialized, Status: corev1.ConditionTrue}).
 		AddPodCondition(corev1.PodCondition{Type: corev1.PodReady, Status: corev1.ConditionFalse, Reason: "ContainersNotReady"}).
 		AddPodCondition(corev1.PodCondition{Type: corev1.PodScheduled, Status: corev1.ConditionTrue}).
 		Build()
 
 	podB := newPodBuilder("pod-b", deployment.GetNamespace(), podLabels).
-		AddContainerStatus("app", corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"}}).
+		AddContainerStatus("app", corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"}}, 0, nil).
 		AddPodCondition(corev1.PodCondition{Type: corev1.PodInitialized, Status: corev1.ConditionTrue}).
 		AddPodCondition(corev1.PodCondition{Type: corev1.PodReady, Status: corev1.ConditionFalse, Reason: "ContainersNotReady"}).
 		AddPodCondition(corev1.PodCondition{Type: corev1.PodScheduled, Status: corev1.ConditionTrue}).
 		Build()
 
 	podC := newPodBuilder("pod-c", deployment.GetNamespace(), podLabels).
-		AddContainerStatus("app", corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Completed"}}).
+		AddContainerStatus("app", corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Completed"}}, 0, nil).
 		AddPodCondition(corev1.PodCondition{Type: corev1.PodInitialized, Status: corev1.ConditionTrue}).
 		AddPodCondition(corev1.PodCondition{Type: corev1.PodReady, Status: corev1.ConditionFalse, Reason: "ContainersNotReady"}).
 		AddPodCondition(corev1.PodCondition{Type: corev1.PodScheduled, Status: corev1.ConditionTrue}).
@@ -223,16 +427,16 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePodsWithDiffer
 	c := builder.NewReport("nginx").
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(3, string(corev1.PodInitialized), string(corev1.ConditionTrue), "").
-				AddContainerState("app", 2, "pod-a", "Waiting", "ContainerCreating").
-				AddContainerState("app", 1, "pod-c", "Terminated", "Completed")).
+				AddContainerState("app", 2, "pod-a", "Waiting", "ContainerCreating", "").
+				AddContainerState("app", 1, "pod-c", "Terminated", "Completed", "Terminated with exit code 0")).
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(3, string(corev1.PodScheduled), string(corev1.ConditionTrue), "").
-				AddContainerState("app", 2, "pod-a", "Waiting", "ContainerCreating").
-				AddContainerState("app", 1, "pod-c", "Terminated", "Completed")).
+				AddContainerState("app", 2, "pod-a", "Waiting", "ContainerCreating", "").
+				AddContainerState("app", 1, "pod-c", "Terminated", "Completed", "Terminated with exit code 0")).
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(3, string(corev1.PodReady), string(corev1.ConditionFalse), "ContainersNotReady").
-				AddContainerState("app", 2, "pod-a", "Waiting", "ContainerCreating").
-				AddContainerState("app", 1, "pod-c", "Terminated", "Completed"))
+				AddContainerState("app", 2, "pod-a", "Waiting", "ContainerCreating", "").
+				AddContainerState("app", 1, "pod-c", "Terminated", "Completed", "Terminated with exit code 0"))
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 

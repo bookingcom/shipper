@@ -337,7 +337,8 @@ type CapacityTargetStatus struct {
 }
 
 type ClusterCapacityReportContainerBreakdownExample struct {
-	Pod string `json:"pod"`
+	Pod     string  `json:"pod"`
+	Message *string `json:"message,omitempty"`
 }
 
 type ClusterCapacityReportContainerStateBreakdown struct {
