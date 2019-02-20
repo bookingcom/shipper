@@ -376,8 +376,8 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 		},
 	}
 
-	capacityTargetStatusClusters := make([]shipper.ClusterCapacityStatus, len(clusterNames))
-	capacityTargetSpecClusters := make([]shipper.ClusterCapacityTarget, len(clusterNames))
+	capacityTargetStatusClusters := make([]shipper.ClusterCapacityStatus, 0, len(clusterNames))
+	capacityTargetSpecClusters := make([]shipper.ClusterCapacityTarget, 0, len(clusterNames))
 	for _, clusterName := range clusterNames {
 		capacityTargetStatusClusters = append(capacityTargetStatusClusters, shipper.ClusterCapacityStatus{
 			Name:            clusterName,
@@ -415,8 +415,8 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 		},
 	}
 
-	trafficTargetStatusClusters := make([]*shipper.ClusterTrafficStatus, len(clusterNames))
-	trafficTargetSpecClusters := make([]shipper.ClusterTrafficTarget, len(clusterNames))
+	trafficTargetStatusClusters := make([]*shipper.ClusterTrafficStatus, 0, len(clusterNames))
+	trafficTargetSpecClusters := make([]shipper.ClusterTrafficTarget, 0, len(clusterNames))
 
 	for _, clusterName := range clusterNames {
 		trafficTargetStatusClusters = append(trafficTargetStatusClusters, &shipper.ClusterTrafficStatus{
@@ -560,8 +560,8 @@ func (f *fixture) buildContender(namespace string, relName string, replicaCount 
 		},
 	}
 
-	capacityTargetStatusClusters := make([]shipper.ClusterCapacityStatus, len(clusterNames))
-	capacityTargetSpecClusters := make([]shipper.ClusterCapacityTarget, len(clusterNames))
+	capacityTargetStatusClusters := make([]shipper.ClusterCapacityStatus, 0, len(clusterNames))
+	capacityTargetSpecClusters := make([]shipper.ClusterCapacityTarget, 0, len(clusterNames))
 	for _, clusterName := range clusterNames {
 		capacityTargetStatusClusters = append(capacityTargetStatusClusters, shipper.ClusterCapacityStatus{
 			Name:            clusterName,
@@ -599,8 +599,8 @@ func (f *fixture) buildContender(namespace string, relName string, replicaCount 
 		},
 	}
 
-	trafficTargetStatusClusters := make([]*shipper.ClusterTrafficStatus, len(clusterNames))
-	trafficTargetSpecClusters := make([]shipper.ClusterTrafficTarget, len(clusterNames))
+	trafficTargetStatusClusters := make([]*shipper.ClusterTrafficStatus, 0, len(clusterNames))
+	trafficTargetSpecClusters := make([]shipper.ClusterTrafficTarget, 0, len(clusterNames))
 
 	for _, clusterName := range clusterNames {
 		trafficTargetStatusClusters = append(trafficTargetStatusClusters, &shipper.ClusterTrafficStatus{
@@ -714,10 +714,10 @@ func (f *fixture) expectReleaseWaitingForCommand(rel *shipper.Release, step int3
 
 	f.expectedEvents = []string{
 		fmt.Sprintf("Normal StrategyApplied step [%d] finished", step),
-		`Normal ReleaseStateTransitioned Release "test-namespace/0.0.2" had its state "WaitingForCapacity" transitioned to "False"`,
-		`Normal ReleaseStateTransitioned Release "test-namespace/0.0.2" had its state "WaitingForCommand" transitioned to "True"`,
-		`Normal ReleaseStateTransitioned Release "test-namespace/0.0.2" had its state "WaitingForInstallation" transitioned to "False"`,
-		`Normal ReleaseStateTransitioned Release "test-namespace/0.0.2" had its state "WaitingForTraffic" transitioned to "False"`,
+		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForCapacity" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
+		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForCommand" transitioned to "True"`, rel.GetNamespace(), rel.GetName()),
+		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForInstallation" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
+		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForTraffic" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
 	}
 }
 
@@ -947,9 +947,9 @@ func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.
 
 	for _, replicaCount := range []int32{1} {
 		//for _, replicaCount := range []int32{1, 3, 10} {
-		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
-		incumbentName, contenderName := randStr(), randStr()
+		incumbentName, contenderName := "test-incumbent", "test-contender"
 		app.Status.History = []string{incumbentName, contenderName}
+		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
 		incumbent := f.buildIncumbent(namespace, incumbentName, replicaCount)
 		contender := f.buildContender(namespace, contenderName, replicaCount)
 
