@@ -41,8 +41,12 @@ func NewPodConditionBreakdown(
 	}
 }
 
+func PodConditionBreakdownKey(typ, status, reason string) string {
+	return typ + status + reason
+}
+
 func (p *PodConditionBreakdown) Key() string {
-	return p.podConditionType + p.podConditionStatus + p.podConditionReason
+	return PodConditionBreakdownKey(p.podConditionType, p.podConditionStatus, p.podConditionReason)
 }
 
 func (p *PodConditionBreakdown) AddContainerState(

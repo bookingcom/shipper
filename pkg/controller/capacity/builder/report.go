@@ -14,7 +14,7 @@ type podConditionBreakdownBuilders map[string]*PodConditionBreakdown
 func (c podConditionBreakdownBuilders) Get(typ, status, reason string) *PodConditionBreakdown {
 	var b *PodConditionBreakdown
 	var ok bool
-	key := typ + status + reason
+	key := PodConditionBreakdownKey(typ, status, reason)
 	if b, ok = c[key]; !ok {
 		b = NewPodConditionBreakdown(0, typ, status, reason)
 		c[key] = b
