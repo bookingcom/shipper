@@ -36,8 +36,8 @@ func NewScheduler(
 	clientset shipperclientset.Interface,
 	clusterLister listers.ClusterLister,
 	installationTargerLister listers.InstallationTargetLister,
-	trafficTargetLister listers.TrafficTargetLister,
 	capacityTargetLister listers.CapacityTargetLister,
+	trafficTargetLister listers.TrafficTargetLister,
 	fetchChart shipperchart.FetchFunc,
 	recorder record.EventRecorder,
 ) *Scheduler {

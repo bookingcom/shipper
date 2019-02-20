@@ -305,8 +305,8 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 			c.clientset,
 			c.clusterLister,
 			c.installationTargetLister,
-			c.trafficTargetLister,
 			c.capacityTargetLister,
+			c.trafficTargetLister,
 			c.chartFetchFunc,
 			c.recorder,
 		)
