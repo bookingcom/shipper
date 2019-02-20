@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
+	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 
 func init() {
@@ -51,6 +53,13 @@ var vanguard = shipper.RolloutStrategy{
 		},
 	},
 }
+
+type role int
+
+const (
+	Contender = iota
+	Incumbent
+)
 
 type actionfilter struct {
 	verbs     []string
@@ -146,7 +155,7 @@ func (f *fixture) addObjects(objects ...runtime.Object) {
 	f.objects = append(f.objects, objects...)
 }
 
-func (f *fixture) init() {
+func (f *fixture) run() {
 	f.clientset = shipperfake.NewSimpleClientset(f.objects...)
 	f.discovery = f.clientset.Discovery().(*fakediscovery.FakeDiscovery)
 	f.discovery.Resources = []*metav1.APIResourceList{
@@ -187,13 +196,7 @@ func (f *fixture) init() {
 
 	f.informerFactory = informerFactory
 	f.recorder = record.NewFakeRecorder(42)
-	f.initialized = true
-}
 
-func (f *fixture) run() {
-	if !f.initialized {
-		f.t.Fatalf("The fixture should be initialized using init() before running it")
-	}
 	controller := f.newController()
 
 	stopCh := make(chan struct{})
@@ -655,6 +658,28 @@ func randStr() string {
 	return string(s)
 }
 
+func addCluster(ri *releaseInfo, name string) {
+	ri.installationTarget.Spec.Clusters = append(ri.installationTarget.Spec.Clusters, name)
+	ri.installationTarget.Status.Clusters = append(ri.installationTarget.Status.Clusters,
+		&shipper.ClusterInstallationStatus{Name: name, Status: shipper.InstallationStatusInstalled},
+	)
+
+	ri.capacityTarget.Status.Clusters = append(ri.capacityTarget.Status.Clusters,
+		shipper.ClusterCapacityStatus{Name: name, AchievedPercent: 100},
+	)
+
+	ri.capacityTarget.Spec.Clusters = append(ri.capacityTarget.Spec.Clusters,
+		shipper.ClusterCapacityTarget{Name: name, Percent: 0},
+	)
+
+	ri.trafficTarget.Spec.Clusters = append(ri.trafficTarget.Spec.Clusters,
+		shipper.ClusterTrafficTarget{Name: name, Weight: 0},
+	)
+	ri.trafficTarget.Status.Clusters = append(ri.trafficTarget.Status.Clusters,
+		&shipper.ClusterTrafficStatus{Name: name, AchievedTraffic: 100},
+	)
+}
+
 func (f *fixture) expectReleaseWaitingForCommand(rel *shipper.Release, step int32) {
 	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 	newStatus := map[string]interface{}{
@@ -715,50 +740,6 @@ func (f *fixture) expectReleaseWaitingForCommand(rel *shipper.Release, step int3
 		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForInstallation" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
 		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForTraffic" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
 	}
-}
-
-func TestControllerComputeTargetClusters(t *testing.T) {
-	namespace := "test-namespace"
-	app := buildApplication(namespace, "test-app")
-	cluster := buildCluster("minikube")
-
-	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
-	contenderName := randStr()
-	var replicaCount int32 = 1
-	contender := f.buildContender(namespace, contenderName, replicaCount)
-
-	f.addObjects(
-		contender.release.DeepCopy(),
-		contender.capacityTarget.DeepCopy(),
-		contender.installationTarget.DeepCopy(),
-		contender.trafficTarget.DeepCopy(),
-	)
-
-	f.expectReleaseScheduled(contender.release.DeepCopy(), []*shipper.Cluster{cluster})
-	f.init()
-	f.run()
-}
-
-func TestControllerCreateAssociatedObjects(t *testing.T) {
-	namespace := "test-namespace"
-	app := buildApplication(namespace, "test-app")
-	cluster := buildCluster("minikube")
-
-	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
-	contenderName := randStr()
-	var replicaCount int32 = 1
-	contender := f.buildContender(namespace, contenderName, replicaCount)
-
-	f.addObjects(
-		contender.release.DeepCopy(),
-		contender.capacityTarget.DeepCopy(),
-		contender.installationTarget.DeepCopy(),
-		contender.trafficTarget.DeepCopy(),
-	)
-
-	f.expectAssociatedObjectsCreated(contender.release.DeepCopy(), []*shipper.Cluster{cluster})
-	f.init()
-	f.run()
 }
 
 func buildExpectedActions(release *shipper.Release, clusters []*shipper.Cluster) []kubetesting.Action {
@@ -936,13 +917,54 @@ func (f *fixture) expectReleaseScheduled(release *shipper.Release, clusters []*s
 	}
 }
 
+func TestControllerComputeTargetClusters(t *testing.T) {
+	namespace := "test-namespace"
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+	contenderName := randStr()
+	var replicaCount int32 = 1
+	contender := f.buildContender(namespace, contenderName, replicaCount)
+
+	f.addObjects(
+		contender.release.DeepCopy(),
+		contender.capacityTarget.DeepCopy(),
+		contender.installationTarget.DeepCopy(),
+		contender.trafficTarget.DeepCopy(),
+	)
+
+	f.expectReleaseScheduled(contender.release.DeepCopy(), []*shipper.Cluster{cluster})
+	f.run()
+}
+
+func TestControllerCreateAssociatedObjects(t *testing.T) {
+	namespace := "test-namespace"
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+	contenderName := randStr()
+	var replicaCount int32 = 1
+	contender := f.buildContender(namespace, contenderName, replicaCount)
+
+	f.addObjects(
+		contender.release.DeepCopy(),
+		contender.capacityTarget.DeepCopy(),
+		contender.installationTarget.DeepCopy(),
+		contender.trafficTarget.DeepCopy(),
+	)
+
+	f.expectAssociatedObjectsCreated(contender.release.DeepCopy(), []*shipper.Cluster{cluster})
+	f.run()
+}
+
 func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.T) {
 	namespace := "test-namespace"
 	app := buildApplication(namespace, "test-app")
 	cluster := buildCluster("minikube")
 
-	for _, replicaCount := range []int32{1} {
-		//for _, replicaCount := range []int32{1, 3, 10} {
+	for _, replicaCount := range []int32{1, 3, 10} {
 		incumbentName, contenderName := "test-incumbent", "test-contender"
 		app.Status.History = []string{incumbentName, contenderName}
 		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
@@ -968,9 +990,1142 @@ func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.
 			contender.capacityTarget.DeepCopy(),
 			contender.trafficTarget.DeepCopy(),
 		)
-		f.init()
 		var step int32 = 0
 		f.expectReleaseWaitingForCommand(contender.release.DeepCopy(), step)
 		f.run()
 	}
+}
+
+func TestContenderDoNothingClusterInstallationNotReady(t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	for _, i := range []int32{1, 3, 10} {
+		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+
+		totalReplicaCount := i
+		contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+		incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+		contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+		releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+		addCluster(contender, "broken-installation-cluster")
+
+		contender.release.Spec.TargetStep = 0
+
+		// the fixture creates installation targets in 'installation succeeded' status,
+		// so we'll break one
+		contender.installationTarget.Status.Clusters[1].Status = shipper.InstallationStatusFailed
+
+		f.addObjects(
+			contender.release.DeepCopy(),
+			contender.installationTarget.DeepCopy(),
+			contender.capacityTarget.DeepCopy(),
+			contender.trafficTarget.DeepCopy(),
+
+			incumbent.release.DeepCopy(),
+			incumbent.installationTarget.DeepCopy(),
+			incumbent.capacityTarget.DeepCopy(),
+			incumbent.trafficTarget.DeepCopy(),
+		)
+
+		r := contender.release.DeepCopy()
+		f.expectInstallationNotReady(r, nil, 0, Contender)
+		f.run()
+	}
+}
+
+func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	for _, i := range []int32{1, 3, 10} {
+		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+
+		totalReplicaCount := i
+		contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+		incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+		contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+		releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+		brokenClusterName := "broken-capacity-cluster"
+		addCluster(contender, brokenClusterName)
+
+		// We'll set cluster 0 to be all set, but make cluster 1 broken.
+		contender.release.Spec.TargetStep = 1
+		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = int32(totalReplicaCount)
+		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+		contender.trafficTarget.Spec.Clusters[0].Weight = 50
+		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+
+		// No capacity yet.
+		contender.capacityTarget.Spec.Clusters[1].Percent = 50
+		contender.capacityTarget.Spec.Clusters[1].TotalReplicaCount = totalReplicaCount
+		contender.capacityTarget.Status.Clusters[1].AchievedPercent = 0
+		contender.capacityTarget.Status.Clusters[1].AvailableReplicas = 0
+		contender.trafficTarget.Spec.Clusters[1].Weight = 50
+		contender.trafficTarget.Status.Clusters[1].AchievedTraffic = 50
+
+		incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
+		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+		incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
+		incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+
+		f.addObjects(
+			contender.release.DeepCopy(),
+			contender.installationTarget.DeepCopy(),
+			contender.capacityTarget.DeepCopy(),
+			contender.trafficTarget.DeepCopy(),
+
+			incumbent.release.DeepCopy(),
+			incumbent.installationTarget.DeepCopy(),
+			incumbent.capacityTarget.DeepCopy(),
+			incumbent.trafficTarget.DeepCopy(),
+		)
+
+		r := contender.release.DeepCopy()
+		f.expectCapacityNotReady(r, 1, 0, Contender, brokenClusterName)
+		f.run()
+	}
+}
+
+func TestContenderDoNothingClusterTrafficNotReady(t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	for _, i := range []int32{1, 3, 10} {
+		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+
+		totalReplicaCount := i
+		contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+		incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+		contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+		releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+		brokenClusterName := "broken-traffic-cluster"
+		addCluster(contender, brokenClusterName)
+
+		// We'll set cluster 0 to be all set, but make cluster 1 broken.
+		contender.release.Spec.TargetStep = 1
+		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+		contender.trafficTarget.Spec.Clusters[0].Weight = 50
+		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+
+		contender.capacityTarget.Spec.Clusters[1].Percent = 50
+		contender.capacityTarget.Spec.Clusters[1].TotalReplicaCount = totalReplicaCount
+		contender.capacityTarget.Status.Clusters[1].AchievedPercent = 50
+		contender.capacityTarget.Status.Clusters[1].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+
+		contender.trafficTarget.Spec.Clusters[1].Weight = 50
+		// No traffic yet.
+		contender.trafficTarget.Status.Clusters[1].AchievedTraffic = 0
+
+		incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
+		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+		incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
+		incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+
+		f.addObjects(
+			contender.release.DeepCopy(),
+			contender.installationTarget.DeepCopy(),
+			contender.capacityTarget.DeepCopy(),
+			contender.trafficTarget.DeepCopy(),
+
+			incumbent.release.DeepCopy(),
+			incumbent.installationTarget.DeepCopy(),
+			incumbent.capacityTarget.DeepCopy(),
+			incumbent.trafficTarget.DeepCopy(),
+		)
+
+		r := contender.release.DeepCopy()
+		f.expectTrafficNotReady(r, 1, 0, Contender, brokenClusterName)
+		f.run()
+	}
+}
+
+func TestContenderCapacityShouldIncrease(t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	for _, i := range []int32{1, 3, 10} {
+		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+
+		totalReplicaCount := i
+		contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+		incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+		contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+		releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+		contender.release.Spec.TargetStep = 1
+
+		f.addObjects(
+			contender.release.DeepCopy(),
+			contender.installationTarget.DeepCopy(),
+			contender.capacityTarget.DeepCopy(),
+			contender.trafficTarget.DeepCopy(),
+
+			incumbent.release.DeepCopy(),
+			incumbent.installationTarget.DeepCopy(),
+			incumbent.capacityTarget.DeepCopy(),
+			incumbent.trafficTarget.DeepCopy(),
+		)
+
+		ct := contender.capacityTarget.DeepCopy()
+		r := contender.release.DeepCopy()
+		f.expectCapacityStatusPatch(ct, r, 50, uint(totalReplicaCount), Contender)
+		f.run()
+	}
+}
+
+func TestContenderTrafficShouldIncrease(t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	for _, totalReplicaCount := range []int32{1, 3, 10} {
+		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+
+		contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+		incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+		contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+		releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+		contender.release.Spec.TargetStep = 1
+		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+
+		f.addObjects(
+			contender.release.DeepCopy(),
+			contender.installationTarget.DeepCopy(),
+			contender.capacityTarget.DeepCopy(),
+			contender.trafficTarget.DeepCopy(),
+
+			incumbent.release.DeepCopy(),
+			incumbent.installationTarget.DeepCopy(),
+			incumbent.capacityTarget.DeepCopy(),
+			incumbent.trafficTarget.DeepCopy(),
+		)
+
+		tt := contender.trafficTarget.DeepCopy()
+		r := contender.release.DeepCopy()
+		f.expectTrafficStatusPatch(tt, r, 50, Contender)
+		f.run()
+	}
+}
+
+func TestIncumbentTrafficShouldDecrease(t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	for _, totalReplicaCount := range []int32{1, 3, 10} {
+		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+
+		contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+		incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+		contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+		releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+		contender.release.Spec.TargetStep = 1
+		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+		contender.trafficTarget.Spec.Clusters[0].Weight = 50
+		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+
+		f.addObjects(
+			contender.release.DeepCopy(),
+			contender.installationTarget.DeepCopy(),
+			contender.capacityTarget.DeepCopy(),
+			contender.trafficTarget.DeepCopy(),
+
+			incumbent.release.DeepCopy(),
+			incumbent.installationTarget.DeepCopy(),
+			incumbent.capacityTarget.DeepCopy(),
+			incumbent.trafficTarget.DeepCopy(),
+		)
+
+		tt := incumbent.trafficTarget.DeepCopy()
+		r := contender.release.DeepCopy()
+		f.expectTrafficStatusPatch(tt, r, 50, Incumbent)
+		f.run()
+	}
+}
+
+func TestIncumbentCapacityShouldDecrease(t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	for _, totalReplicaCount := range []int32{1, 3, 10} {
+		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+
+		contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+		incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+		contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+		releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+		contender.release.Spec.TargetStep = 1
+		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+		contender.trafficTarget.Spec.Clusters[0].Weight = 50
+		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+
+		incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
+		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+
+		f.addObjects(
+			contender.release.DeepCopy(),
+			contender.installationTarget.DeepCopy(),
+			contender.capacityTarget.DeepCopy(),
+			contender.trafficTarget.DeepCopy(),
+
+			incumbent.release.DeepCopy(),
+			incumbent.installationTarget.DeepCopy(),
+			incumbent.capacityTarget.DeepCopy(),
+			incumbent.trafficTarget.DeepCopy(),
+		)
+
+		tt := incumbent.capacityTarget.DeepCopy()
+		r := contender.release.DeepCopy()
+		f.expectCapacityStatusPatch(tt, r, 50, uint(totalReplicaCount), Incumbent)
+		f.run()
+	}
+}
+
+func TestContenderReleasePhaseIsWaitingForCommandForFinalStepState(t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	for _, totalReplicaCount := range []int32{1, 3, 10} {
+		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+
+		contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+		incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+		contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+		releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+		contender.release.Spec.TargetStep = 1
+		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+		contender.trafficTarget.Spec.Clusters[0].Weight = 50
+		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+		incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
+		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+		incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
+		incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+
+		f.addObjects(
+			contender.release.DeepCopy(),
+			contender.installationTarget.DeepCopy(),
+			contender.capacityTarget.DeepCopy(),
+			contender.trafficTarget.DeepCopy(),
+
+			incumbent.release.DeepCopy(),
+			incumbent.installationTarget.DeepCopy(),
+			incumbent.capacityTarget.DeepCopy(),
+			incumbent.trafficTarget.DeepCopy(),
+		)
+
+		rel := contender.release.DeepCopy()
+		f.expectReleaseWaitingForCommand(rel, 1)
+		f.run()
+	}
+}
+
+func TestContenderReleaseIsInstalled(t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	for _, totalReplicaCount := range []int32{1, 3, 10} {
+		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+
+		contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+		incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+		contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+		releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+		contender.release.Spec.TargetStep = 2
+		contender.capacityTarget.Spec.Clusters[0].Percent = 100
+		contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 100
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = totalReplicaCount
+		contender.trafficTarget.Spec.Clusters[0].Weight = 100
+		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 100
+		releaseutil.SetReleaseCondition(&contender.release.Status, shipper.ReleaseCondition{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue, Reason: "", Message: ""})
+
+		incumbent.trafficTarget.Spec.Clusters[0].Weight = 0
+		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 0
+		incumbent.capacityTarget.Spec.Clusters[0].Percent = 0
+		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 0
+		incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = 0
+
+		f.addObjects(
+			contender.release.DeepCopy(),
+			contender.installationTarget.DeepCopy(),
+			contender.capacityTarget.DeepCopy(),
+			contender.trafficTarget.DeepCopy(),
+
+			incumbent.release.DeepCopy(),
+			incumbent.installationTarget.DeepCopy(),
+			incumbent.capacityTarget.DeepCopy(),
+			incumbent.trafficTarget.DeepCopy(),
+		)
+
+		f.expectReleaseReleased(contender.release.DeepCopy(), 2)
+
+		f.run()
+	}
+}
+
+func workingOnContenderCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	defer wg.Done()
+
+	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+
+	totalReplicaCount := int32(10)
+	contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+	incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+	contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+	cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+	contender.release.Spec.TargetStep = 1
+
+	achievedCapacityPercentage := 100 - int32(percent)
+
+	// Working on contender capacity.
+	contender.capacityTarget.Spec.Clusters[0].Percent = 50
+	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+	contender.capacityTarget.Status.Clusters[0].AchievedPercent = achievedCapacityPercentage
+	contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), float64(achievedCapacityPercentage)))
+
+	f.addObjects(
+		contender.release.DeepCopy(),
+		contender.installationTarget.DeepCopy(),
+		contender.capacityTarget.DeepCopy(),
+		contender.trafficTarget.DeepCopy(),
+
+		incumbent.release.DeepCopy(),
+		incumbent.installationTarget.DeepCopy(),
+		incumbent.capacityTarget.DeepCopy(),
+		incumbent.trafficTarget.DeepCopy(),
+	)
+
+	r := contender.release.DeepCopy()
+	f.expectCapacityNotReady(r, 1, 0, Contender, "minikube")
+	f.run()
+}
+
+func workingOnContenderTraffic(percent int, wg *sync.WaitGroup, t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	defer wg.Done()
+
+	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+
+	totalReplicaCount := int32(10)
+	contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+	incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+	contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+	cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+	contender.release.Spec.TargetStep = 1
+
+	// Desired contender capacity achieved.
+	contender.capacityTarget.Spec.Clusters[0].Percent = 50
+	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+	contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+
+	// Working on contender traffic.
+	contender.trafficTarget.Spec.Clusters[0].Weight = 50
+	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = uint32(percent)
+
+	f.addObjects(
+		contender.release.DeepCopy(),
+		contender.installationTarget.DeepCopy(),
+		contender.capacityTarget.DeepCopy(),
+		contender.trafficTarget.DeepCopy(),
+
+		incumbent.release.DeepCopy(),
+		incumbent.installationTarget.DeepCopy(),
+		incumbent.capacityTarget.DeepCopy(),
+		incumbent.trafficTarget.DeepCopy(),
+	)
+
+	r := contender.release.DeepCopy()
+	f.expectTrafficNotReady(r, 1, 0, Contender, "minikube")
+	f.run()
+
+}
+
+func workingOnIncumbentTraffic(percent int, wg *sync.WaitGroup, t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	defer wg.Done()
+
+	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+
+	totalReplicaCount := int32(10)
+	contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+	incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+	contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+	cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+	contender.release.Spec.TargetStep = 1
+
+	// Desired contender capacity achieved.
+	contender.capacityTarget.Spec.Clusters[0].Percent = 50
+	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+	contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+
+	// Desired contender traffic achieved.
+	contender.trafficTarget.Spec.Clusters[0].Weight = 50
+	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+
+	// Working on incumbent traffic.
+	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
+	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 100 - uint32(percent)
+
+	f.addObjects(
+		contender.release.DeepCopy(),
+		contender.installationTarget.DeepCopy(),
+		contender.capacityTarget.DeepCopy(),
+		contender.trafficTarget.DeepCopy(),
+
+		incumbent.release.DeepCopy(),
+		incumbent.installationTarget.DeepCopy(),
+		incumbent.capacityTarget.DeepCopy(),
+		incumbent.trafficTarget.DeepCopy(),
+	)
+
+	r := contender.release.DeepCopy()
+	f.expectTrafficNotReady(r, 1, 0, Incumbent, "minikube")
+	f.run()
+}
+
+func workingOnIncumbentCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	defer wg.Done()
+
+	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+
+	totalReplicaCount := int32(10)
+	contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+	incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+	contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+	cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+	contender.release.Spec.TargetStep = 1
+
+	// Desired contender capacity achieved.
+	contender.capacityTarget.Spec.Clusters[0].Percent = 50
+	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+	contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+
+	// Desired contender traffic achieved.
+	contender.trafficTarget.Spec.Clusters[0].Weight = 50
+	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+
+	// Desired incumbent traffic achieved.
+	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
+	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+
+	// Working on incumbent capacity.
+	incumbentAchievedCapacityPercentage := 100 - int32(percent)
+	incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
+	incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = incumbentAchievedCapacityPercentage
+	incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), float64(incumbentAchievedCapacityPercentage)))
+
+	f.addObjects(
+		contender.release.DeepCopy(),
+		contender.installationTarget.DeepCopy(),
+		contender.capacityTarget.DeepCopy(),
+		contender.trafficTarget.DeepCopy(),
+
+		incumbent.release.DeepCopy(),
+		incumbent.installationTarget.DeepCopy(),
+		incumbent.capacityTarget.DeepCopy(),
+		incumbent.trafficTarget.DeepCopy(),
+	)
+
+	r := contender.release.DeepCopy()
+	f.expectCapacityNotReady(r, 1, 0, Incumbent, "minikube")
+	f.run()
+}
+
+func TestShouldNotProducePatches(t *testing.T) {
+	var wg sync.WaitGroup
+
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go workingOnContenderCapacity(i, &wg, t)
+
+		wg.Add(1)
+		go workingOnContenderTraffic(i, &wg, t)
+
+		wg.Add(1)
+		go workingOnIncumbentTraffic(i, &wg, t)
+
+		wg.Add(1)
+		go workingOnIncumbentCapacity(i, &wg, t)
+	}
+	wg.Wait()
+}
+
+func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipper.Release, value uint, totalReplicaCount uint, role role) {
+	gvr := shipper.SchemeGroupVersion.WithResource("capacitytargets")
+	newSpec := map[string]interface{}{
+		"spec": shipper.CapacityTargetSpec{
+			Clusters: []shipper.ClusterCapacityTarget{
+				{Name: "minikube", Percent: int32(value), TotalReplicaCount: int32(totalReplicaCount)},
+			},
+		},
+	}
+	patch, _ := json.Marshal(newSpec)
+	action := kubetesting.NewPatchAction(gvr, ct.GetNamespace(), ct.GetName(), patch)
+	f.actions = append(f.actions, action)
+
+	step := r.Spec.TargetStep
+
+	var strategyConditions conditions.StrategyConditionsMap
+
+	if role == Contender {
+		strategyConditions = conditions.NewStrategyConditions(
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedInstallation,
+				Status: corev1.ConditionTrue,
+				Step:   step,
+			},
+			shipper.ReleaseStrategyCondition{
+				Type:    shipper.StrategyConditionContenderAchievedCapacity,
+				Status:  corev1.ConditionFalse,
+				Step:    step,
+				Reason:  conditions.ClustersNotReady,
+				Message: "clusters pending capacity adjustments: [minikube]",
+			},
+		)
+	} else {
+		strategyConditions = conditions.NewStrategyConditions(
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedInstallation,
+				Status: corev1.ConditionTrue,
+				Step:   step,
+			},
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedCapacity,
+				Status: corev1.ConditionTrue,
+				Step:   step,
+			},
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedTraffic,
+				Status: corev1.ConditionTrue,
+				Step:   step,
+			},
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionIncumbentAchievedTraffic,
+				Status: corev1.ConditionTrue,
+				Step:   step,
+			},
+			shipper.ReleaseStrategyCondition{
+				Type:    shipper.StrategyConditionIncumbentAchievedCapacity,
+				Status:  corev1.ConditionFalse,
+				Step:    step,
+				Reason:  conditions.ClustersNotReady,
+				Message: "clusters pending capacity adjustments: [minikube]",
+			},
+		)
+	}
+
+	r.Status.Strategy = &shipper.ReleaseStrategyStatus{
+		Conditions: strategyConditions.AsReleaseStrategyConditions(),
+		State:      strategyConditions.AsReleaseStrategyState(r.Spec.TargetStep, true, false),
+	}
+	newStatus := map[string]interface{}{
+		"status": r.Status,
+	}
+	patch, _ = json.Marshal(newStatus)
+	action = kubetesting.NewPatchAction(
+		shipper.SchemeGroupVersion.WithResource("releases"),
+		r.GetNamespace(),
+		r.GetName(),
+		patch)
+	f.actions = append(f.actions, action)
+
+	f.expectedEvents = []string{}
+}
+
+func (f *fixture) expectTrafficStatusPatch(tt *shipper.TrafficTarget, r *shipper.Release, value uint32, role role) {
+	gvr := shipper.SchemeGroupVersion.WithResource("traffictargets")
+	newSpec := map[string]interface{}{
+		"spec": shipper.TrafficTargetSpec{
+			Clusters: []shipper.ClusterTrafficTarget{
+				{Name: "minikube", Weight: value},
+			},
+		},
+	}
+	patch, _ := json.Marshal(newSpec)
+	action := kubetesting.NewPatchAction(gvr, tt.GetNamespace(), tt.GetName(), patch)
+	f.actions = append(f.actions, action)
+
+	step := r.Spec.TargetStep
+
+	var strategyConditions conditions.StrategyConditionsMap
+
+	if role == Contender {
+		strategyConditions = conditions.NewStrategyConditions(
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedInstallation,
+				Status: corev1.ConditionTrue,
+				Step:   step,
+			},
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedCapacity,
+				Status: corev1.ConditionTrue,
+				Step:   step,
+			},
+			shipper.ReleaseStrategyCondition{
+				Type:    shipper.StrategyConditionContenderAchievedTraffic,
+				Status:  corev1.ConditionFalse,
+				Step:    step,
+				Reason:  conditions.ClustersNotReady,
+				Message: "clusters pending traffic adjustments: [minikube]",
+			},
+		)
+	} else {
+		strategyConditions = conditions.NewStrategyConditions(
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedInstallation,
+				Status: corev1.ConditionTrue,
+				Step:   step,
+			},
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedCapacity,
+				Status: corev1.ConditionTrue,
+				Step:   step,
+			},
+			shipper.ReleaseStrategyCondition{
+				Type:   shipper.StrategyConditionContenderAchievedTraffic,
+				Status: corev1.ConditionTrue,
+				Step:   step,
+			},
+			shipper.ReleaseStrategyCondition{
+				Type:    shipper.StrategyConditionIncumbentAchievedTraffic,
+				Status:  corev1.ConditionFalse,
+				Step:    step,
+				Reason:  conditions.ClustersNotReady,
+				Message: "clusters pending traffic adjustments: [minikube]",
+			},
+		)
+	}
+
+	r.Status.Strategy = &shipper.ReleaseStrategyStatus{
+		Conditions: strategyConditions.AsReleaseStrategyConditions(),
+		State:      strategyConditions.AsReleaseStrategyState(r.Spec.TargetStep, true, false),
+	}
+	newStatus := map[string]interface{}{
+		"status": r.Status,
+	}
+	patch, _ = json.Marshal(newStatus)
+	action = kubetesting.NewPatchAction(
+		shipper.SchemeGroupVersion.WithResource("releases"),
+		r.GetNamespace(),
+		r.GetName(),
+		patch)
+	f.actions = append(f.actions, action)
+
+	f.expectedEvents = []string{}
+}
+
+func (f *fixture) expectReleaseReleased(rel *shipper.Release, targetStep int32) {
+	gvr := shipper.SchemeGroupVersion.WithResource("releases")
+	newStatus := map[string]interface{}{
+		"status": shipper.ReleaseStatus{
+			AchievedStep: &shipper.AchievedStep{
+				Step: targetStep,
+				Name: rel.Spec.Environment.Strategy.Steps[targetStep].Name,
+			},
+			Conditions: []shipper.ReleaseCondition{
+				{Type: shipper.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
+				{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
+				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+			},
+			Strategy: &shipper.ReleaseStrategyStatus{
+				State: shipper.ReleaseStrategyState{
+					WaitingForInstallation: shipper.StrategyStateFalse,
+					WaitingForCommand:      shipper.StrategyStateFalse,
+					WaitingForTraffic:      shipper.StrategyStateFalse,
+					WaitingForCapacity:     shipper.StrategyStateFalse,
+				},
+				// The following conditions are sorted alphabetically by Type
+				Conditions: []shipper.ReleaseStrategyCondition{
+					{
+						Type:   shipper.StrategyConditionContenderAchievedCapacity,
+						Status: corev1.ConditionTrue,
+						Step:   targetStep,
+					},
+					{
+						Type:   shipper.StrategyConditionContenderAchievedInstallation,
+						Status: corev1.ConditionTrue,
+						Step:   targetStep,
+					},
+					{
+						Type:   shipper.StrategyConditionContenderAchievedTraffic,
+						Status: corev1.ConditionTrue,
+						Step:   targetStep,
+					},
+					{
+						Type:   shipper.StrategyConditionIncumbentAchievedCapacity,
+						Status: corev1.ConditionTrue,
+						Step:   targetStep,
+					},
+					{
+						Type:   shipper.StrategyConditionIncumbentAchievedTraffic,
+						Status: corev1.ConditionTrue,
+						Step:   targetStep,
+					},
+				},
+			},
+		},
+	}
+
+	patch, _ := json.Marshal(newStatus)
+	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), patch)
+
+	f.actions = append(f.actions, action)
+
+	f.expectedEvents = []string{
+		fmt.Sprintf("Normal StrategyApplied step [%d] finished", targetStep),
+		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForCapacity" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
+		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForCommand" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
+		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForInstallation" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
+		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForTraffic" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
+	}
+}
+
+// NOTE(btyler): when we add tests to use this function with a wider set of use
+// cases, we'll need a "pint32(int32) *int32" func to let us take pointers to literals
+func (f *fixture) expectInstallationNotReady(rel *shipper.Release, achievedStepIndex *int32, targetStepIndex int32, role role) {
+	gvr := shipper.SchemeGroupVersion.WithResource("releases")
+
+	var achievedStep *shipper.AchievedStep
+	if achievedStepIndex != nil {
+		achievedStep = &shipper.AchievedStep{
+			Step: *achievedStepIndex,
+			Name: rel.Spec.Environment.Strategy.Steps[*achievedStepIndex].Name,
+		}
+	}
+
+	newStatus := map[string]interface{}{
+		"status": shipper.ReleaseStatus{
+			AchievedStep: achievedStep,
+			Conditions: []shipper.ReleaseCondition{
+				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+			},
+			Strategy: &shipper.ReleaseStrategyStatus{
+				State: shipper.ReleaseStrategyState{
+					WaitingForInstallation: shipper.StrategyStateTrue,
+					WaitingForCommand:      shipper.StrategyStateFalse,
+					WaitingForTraffic:      shipper.StrategyStateFalse,
+					WaitingForCapacity:     shipper.StrategyStateFalse,
+				},
+				Conditions: []shipper.ReleaseStrategyCondition{
+					{
+						Type:    shipper.StrategyConditionContenderAchievedInstallation,
+						Status:  corev1.ConditionFalse,
+						Reason:  conditions.ClustersNotReady,
+						Step:    targetStepIndex,
+						Message: "clusters pending installation: [broken-installation-cluster]",
+					},
+				},
+			},
+		},
+	}
+
+	patch, _ := json.Marshal(newStatus)
+	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), patch)
+
+	f.actions = append(f.actions, action)
+
+	f.expectedEvents = []string{}
+}
+
+func (f *fixture) expectCapacityNotReady(rel *shipper.Release, targetStep, achievedStepIndex int32, role role, brokenClusterName string) {
+	gvr := shipper.SchemeGroupVersion.WithResource("releases")
+
+	var newStatus map[string]interface{}
+
+	var achievedStep *shipper.AchievedStep
+	if achievedStepIndex != 0 {
+		achievedStep = &shipper.AchievedStep{
+			Step: achievedStepIndex,
+			Name: rel.Spec.Environment.Strategy.Steps[achievedStepIndex].Name,
+		}
+	}
+
+	if role == Contender {
+		newStatus = map[string]interface{}{
+			"status": shipper.ReleaseStatus{
+				AchievedStep: achievedStep,
+				Conditions: []shipper.ReleaseCondition{
+					{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+				},
+				Strategy: &shipper.ReleaseStrategyStatus{
+					State: shipper.ReleaseStrategyState{
+						WaitingForInstallation: shipper.StrategyStateFalse,
+						WaitingForCommand:      shipper.StrategyStateFalse,
+						WaitingForTraffic:      shipper.StrategyStateFalse,
+						WaitingForCapacity:     shipper.StrategyStateTrue,
+					},
+					Conditions: []shipper.ReleaseStrategyCondition{
+						{
+							Type:    shipper.StrategyConditionContenderAchievedCapacity,
+							Status:  corev1.ConditionFalse,
+							Reason:  conditions.ClustersNotReady,
+							Message: fmt.Sprintf("clusters pending capacity adjustments: [%s]", brokenClusterName),
+							Step:    targetStep,
+						},
+						{
+							Type:   shipper.StrategyConditionContenderAchievedInstallation,
+							Status: corev1.ConditionTrue,
+							Step:   targetStep,
+						},
+					},
+				},
+			},
+		}
+	} else {
+		newStatus = map[string]interface{}{
+			"status": shipper.ReleaseStatus{
+				AchievedStep: achievedStep,
+				Conditions: []shipper.ReleaseCondition{
+					{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+				},
+				Strategy: &shipper.ReleaseStrategyStatus{
+					State: shipper.ReleaseStrategyState{
+						WaitingForInstallation: shipper.StrategyStateFalse,
+						WaitingForCommand:      shipper.StrategyStateFalse,
+						WaitingForTraffic:      shipper.StrategyStateFalse,
+						WaitingForCapacity:     shipper.StrategyStateTrue,
+					},
+					Conditions: []shipper.ReleaseStrategyCondition{
+						{
+							Type:   shipper.StrategyConditionContenderAchievedCapacity,
+							Status: corev1.ConditionTrue,
+							Step:   targetStep,
+						},
+						{
+							Type:   shipper.StrategyConditionContenderAchievedInstallation,
+							Status: corev1.ConditionTrue,
+							Step:   targetStep,
+						},
+						{
+							Type:   shipper.StrategyConditionContenderAchievedTraffic,
+							Status: corev1.ConditionTrue,
+							Step:   targetStep,
+						},
+						{
+							Type:    shipper.StrategyConditionIncumbentAchievedCapacity,
+							Status:  corev1.ConditionFalse,
+							Reason:  conditions.ClustersNotReady,
+							Step:    targetStep,
+							Message: fmt.Sprintf("clusters pending capacity adjustments: [%s]", brokenClusterName),
+						},
+						{
+							Type:   shipper.StrategyConditionIncumbentAchievedTraffic,
+							Status: corev1.ConditionTrue,
+							Step:   targetStep,
+						},
+					},
+				},
+			},
+		}
+	}
+
+	patch, _ := json.Marshal(newStatus)
+	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), patch)
+
+	f.actions = append(f.actions, action)
+
+	f.expectedEvents = []string{}
+}
+
+func (f *fixture) expectTrafficNotReady(rel *shipper.Release, targetStep, achievedStepIndex int32, role role, brokenClusterName string) {
+	gvr := shipper.SchemeGroupVersion.WithResource("releases")
+	var newStatus map[string]interface{}
+
+	var achievedStep *shipper.AchievedStep
+	if achievedStepIndex != 0 {
+		achievedStep = &shipper.AchievedStep{
+			Step: achievedStepIndex,
+			Name: rel.Spec.Environment.Strategy.Steps[achievedStepIndex].Name,
+		}
+	}
+
+	if role == Contender {
+		newStatus = map[string]interface{}{
+			"status": shipper.ReleaseStatus{
+				AchievedStep: achievedStep,
+				Conditions: []shipper.ReleaseCondition{
+					{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+				},
+				Strategy: &shipper.ReleaseStrategyStatus{
+					State: shipper.ReleaseStrategyState{
+						WaitingForInstallation: shipper.StrategyStateFalse,
+						WaitingForCommand:      shipper.StrategyStateFalse,
+						WaitingForTraffic:      shipper.StrategyStateTrue,
+						WaitingForCapacity:     shipper.StrategyStateFalse,
+					},
+					Conditions: []shipper.ReleaseStrategyCondition{
+						{
+							Type:   shipper.StrategyConditionContenderAchievedCapacity,
+							Status: corev1.ConditionTrue,
+							Step:   targetStep,
+						},
+						{
+							Type:   shipper.StrategyConditionContenderAchievedInstallation,
+							Status: corev1.ConditionTrue,
+							Step:   targetStep,
+						},
+						{
+							Type:    shipper.StrategyConditionContenderAchievedTraffic,
+							Status:  corev1.ConditionFalse,
+							Reason:  conditions.ClustersNotReady,
+							Message: fmt.Sprintf("clusters pending traffic adjustments: [%s]", brokenClusterName),
+							Step:    targetStep,
+						},
+					},
+				},
+			},
+		}
+	} else {
+		newStatus = map[string]interface{}{
+			"status": shipper.ReleaseStatus{
+				AchievedStep: achievedStep,
+				Conditions: []shipper.ReleaseCondition{
+					{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+				},
+				Strategy: &shipper.ReleaseStrategyStatus{
+					State: shipper.ReleaseStrategyState{
+						WaitingForInstallation: shipper.StrategyStateFalse,
+						WaitingForCommand:      shipper.StrategyStateFalse,
+						WaitingForTraffic:      shipper.StrategyStateTrue,
+						WaitingForCapacity:     shipper.StrategyStateFalse,
+					},
+					Conditions: []shipper.ReleaseStrategyCondition{
+						{
+							Type:   shipper.StrategyConditionContenderAchievedCapacity,
+							Status: corev1.ConditionTrue,
+							Step:   targetStep,
+						},
+						{
+							Type:   shipper.StrategyConditionContenderAchievedInstallation,
+							Status: corev1.ConditionTrue,
+							Step:   targetStep,
+						},
+						{
+							Type:   shipper.StrategyConditionContenderAchievedTraffic,
+							Status: corev1.ConditionTrue,
+							Step:   targetStep,
+						},
+						{
+							Type:    shipper.StrategyConditionIncumbentAchievedTraffic,
+							Status:  corev1.ConditionFalse,
+							Reason:  conditions.ClustersNotReady,
+							Message: fmt.Sprintf("clusters pending traffic adjustments: [%s]", brokenClusterName),
+							Step:    targetStep,
+						},
+					},
+				},
+			},
+		}
+	}
+
+	patch, _ := json.Marshal(newStatus)
+	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), patch)
+
+	f.actions = append(f.actions, action)
+
+	f.expectedEvents = []string{}
 }
