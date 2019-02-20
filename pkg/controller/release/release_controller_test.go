@@ -15,7 +15,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/wait"
 	fakediscovery "k8s.io/client-go/discovery/fake"
-	fakedynamic "k8s.io/client-go/dynamic/fake"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 
@@ -122,7 +121,6 @@ type fixture struct {
 	clientset       *shipperfake.Clientset
 	informerFactory shipperinformers.SharedInformerFactory
 	discovery       *fakediscovery.FakeDiscovery
-	clientPool      *fakedynamic.FakeClientPool
 	recorder        *record.FakeRecorder
 
 	actions        []kubetesting.Action
@@ -188,7 +186,6 @@ func (f *fixture) init() {
 	informerFactory := shipperinformers.NewSharedInformerFactory(f.clientset, syncPeriod)
 
 	f.informerFactory = informerFactory
-	f.clientPool = &fakedynamic.FakeClientPool{}
 	f.recorder = record.NewFakeRecorder(42)
 	f.initialized = true
 }
@@ -240,7 +237,6 @@ func (f *fixture) newController() *Controller {
 		f.clientset,
 		f.informerFactory,
 		chart.FetchRemote(),
-		f.clientPool,
 		f.recorder,
 	)
 }
