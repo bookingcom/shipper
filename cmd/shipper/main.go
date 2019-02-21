@@ -38,8 +38,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller/clustersecret"
 	"github.com/bookingcom/shipper/pkg/controller/installation"
 	"github.com/bookingcom/shipper/pkg/controller/janitor"
-	"github.com/bookingcom/shipper/pkg/controller/schedulecontroller"
-	"github.com/bookingcom/shipper/pkg/controller/strategy"
+	"github.com/bookingcom/shipper/pkg/controller/release"
 	"github.com/bookingcom/shipper/pkg/controller/traffic"
 	"github.com/bookingcom/shipper/pkg/metrics/instrumentedclient"
 	shippermetrics "github.com/bookingcom/shipper/pkg/metrics/prometheus"
@@ -354,8 +353,7 @@ func buildInitializers() map[string]initFunc {
 	controllers := map[string]initFunc{}
 	controllers["application"] = startApplicationController
 	controllers["clustersecret"] = startClusterSecretController
-	controllers["schedule"] = startScheduleController
-	controllers["strategy"] = startStrategyController
+	controllers["release"] = startReleaseController
 	controllers["installation"] = startInstallationController
 	controllers["capacity"] = startCapacityController
 	controllers["traffic"] = startTrafficController
@@ -409,39 +407,17 @@ func startClusterSecretController(cfg *cfg) (bool, error) {
 	return true, nil
 }
 
-func startScheduleController(cfg *cfg) (bool, error) {
-	enabled := cfg.enabledControllers["schedule"]
+func startReleaseController(cfg *cfg) (bool, error) {
+	enabled := cfg.enabledControllers["release"]
 	if !enabled {
 		return false, nil
 	}
 
-	c := schedulecontroller.NewController(
-		buildShipperClient(cfg.restCfg, schedulecontroller.AgentName, cfg.restTimeout),
+	c := release.NewController(
+		buildShipperClient(cfg.restCfg, release.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.chartFetchFunc,
-		cfg.recorder(schedulecontroller.AgentName),
-	)
-
-	cfg.wg.Add(1)
-	go func() {
-		c.Run(cfg.workers, cfg.stopCh)
-		cfg.wg.Done()
-	}()
-
-	return true, nil
-}
-
-func startStrategyController(cfg *cfg) (bool, error) {
-	enabled := cfg.enabledControllers["strategy"]
-	if !enabled {
-		return false, nil
-	}
-
-	c := strategy.NewController(
-		buildShipperClient(cfg.restCfg, strategy.AgentName, cfg.restTimeout),
-		cfg.shipperInformerFactory,
-		dynamic.NewDynamicClientPool(cfg.restCfg),
-		cfg.recorder(strategy.AgentName),
+		cfg.recorder(release.AgentName),
 	)
 
 	cfg.wg.Add(1)
