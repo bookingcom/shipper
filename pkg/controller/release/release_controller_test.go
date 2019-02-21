@@ -733,12 +733,13 @@ func (f *fixture) expectReleaseWaitingForCommand(rel *shipper.Release, step int3
 	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), patch)
 	f.actions = append(f.actions, action)
 
+	relKey := fmt.Sprintf("%s/%s", rel.GetNamespace(), rel.GetName())
 	f.expectedEvents = []string{
 		fmt.Sprintf("Normal StrategyApplied step [%d] finished", step),
-		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForCapacity" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
-		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForCommand" transitioned to "True"`, rel.GetNamespace(), rel.GetName()),
-		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForInstallation" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
-		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForTraffic" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
+		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s" had its state "WaitingForCapacity" transitioned to "False"`, relKey),
+		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s" had its state "WaitingForCommand" transitioned to "True"`, relKey),
+		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s" had its state "WaitingForInstallation" transitioned to "False"`, relKey),
+		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s" had its state "WaitingForTraffic" transitioned to "False"`, relKey),
 	}
 }
 
@@ -869,12 +870,24 @@ func (f *fixture) expectAssociatedObjectsCreated(release *shipper.Release, clust
 	for _, cluster := range clusters {
 		clusterNames = append(clusterNames, cluster.GetName())
 	}
+	relKey := fmt.Sprintf("%s/%s", release.GetNamespace(), release.GetName())
 	f.expectedEvents = []string{
 		fmt.Sprintf(
-			"Normal ClustersSelected Set clusters for \"%s/%s\" to %s",
-			release.GetNamespace(),
-			release.GetName(),
+			"Normal ClustersSelected Set clusters for \"%s\" to %s",
+			relKey,
 			strings.Join(clusterNames, ","),
+		),
+		fmt.Sprintf(
+			"Normal ReleaseScheduled Created InstallationTarget \"%s\"",
+			relKey,
+		),
+		fmt.Sprintf(
+			"Normal ReleaseScheduled Created TrafficTarget \"%s\"",
+			relKey,
+		),
+		fmt.Sprintf(
+			"Normal ReleaseScheduled Created CapacityTarget \"%s\"",
+			relKey,
 		),
 	}
 }
@@ -907,12 +920,24 @@ func (f *fixture) expectReleaseScheduled(release *shipper.Release, clusters []*s
 
 	f.actions = append(f.actions, expectedActions...)
 	f.filter = f.filter.Extend(actionfilter{[]string{"update"}, []string{"releases"}})
+	relKey := fmt.Sprintf("%s/%s", release.GetNamespace(), release.GetName())
 	f.expectedEvents = []string{
 		fmt.Sprintf(
-			"Normal ClustersSelected Set clusters for \"%s/%s\" to %s",
-			release.GetNamespace(),
-			release.GetName(),
+			"Normal ClustersSelected Set clusters for \"%s\" to %s",
+			relKey,
 			clusterNamesStr,
+		),
+		fmt.Sprintf(
+			"Normal ReleaseScheduled Created InstallationTarget \"%s\"",
+			relKey,
+		),
+		fmt.Sprintf(
+			"Normal ReleaseScheduled Created TrafficTarget \"%s\"",
+			relKey,
+		),
+		fmt.Sprintf(
+			"Normal ReleaseScheduled Created CapacityTarget \"%s\"",
+			relKey,
 		),
 	}
 }
@@ -1405,9 +1430,6 @@ func TestControllerComputeTargetClusters(t *testing.T) {
 
 	f.addObjects(
 		contender.release.DeepCopy(),
-		contender.capacityTarget.DeepCopy(),
-		contender.installationTarget.DeepCopy(),
-		contender.trafficTarget.DeepCopy(),
 	)
 
 	f.expectReleaseScheduled(contender.release.DeepCopy(), []*shipper.Cluster{cluster})
@@ -1426,9 +1448,6 @@ func TestControllerCreateAssociatedObjects(t *testing.T) {
 
 	f.addObjects(
 		contender.release.DeepCopy(),
-		contender.capacityTarget.DeepCopy(),
-		contender.installationTarget.DeepCopy(),
-		contender.trafficTarget.DeepCopy(),
 	)
 
 	f.expectAssociatedObjectsCreated(contender.release.DeepCopy(), []*shipper.Cluster{cluster})
@@ -1461,6 +1480,7 @@ func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.
 			incumbent.installationTarget.DeepCopy(),
 			incumbent.capacityTarget.DeepCopy(),
 			incumbent.trafficTarget.DeepCopy(),
+
 			contender.release.DeepCopy(),
 			contender.installationTarget.DeepCopy(),
 			contender.capacityTarget.DeepCopy(),

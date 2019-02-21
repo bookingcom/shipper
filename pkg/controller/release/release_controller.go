@@ -275,6 +275,7 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %q", key))
 		return noRetry
 	}
+
 	rel, err := c.releaseLister.Releases(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -292,12 +293,20 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 		return noRetry
 	}
 
-	if releaseutil.ReleaseComplete(rel) {
-		glog.Infof("Release %q is complete, nothing to do, ignorining", key)
+	if isHead, err := c.releaseIsHead(rel); err != nil {
+		runtime.HandleError(fmt.Errorf("Failed to check if release %q is the head of history (will retry): %s", key, err))
+	} else if !isHead {
+		glog.Infof("Release %q is not the head of history, nothing to do", key)
 		return noRetry
 	}
 
-	if !releaseutil.ReleaseScheduled(rel) {
+	isScheduled, err := c.releaseScheduled(rel)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("failed to check if release %q has been scheduled (will retry): %s", key, err))
+		return retry
+	}
+
+	if !isScheduled {
 
 		glog.V(4).Infof("Release %q is not scheduled yet, processing", key)
 
@@ -484,14 +493,24 @@ func (c *Controller) buildExecutor(incumbentRelease, contenderRelease *shipper.R
 	}, nil
 }
 
-func (c *Controller) getAssociatedApplicationKey(rel *shipper.Release) (string, error) {
+func (c *Controller) getAssociatedApplicationName(rel *shipper.Release) (string, error) {
 	if n := len(rel.OwnerReferences); n != 1 {
 		return "", shippercontroller.NewMultipleOwnerReferencesError(
 			shippercontroller.MetaKey(rel), n)
 	}
 
 	appref := rel.OwnerReferences[0]
-	appKey := fmt.Sprintf("%s/%s", rel.Namespace, appref.Name)
+
+	return appref.Name, nil
+}
+
+func (c *Controller) getAssociatedApplicationKey(rel *shipper.Release) (string, error) {
+	appName, err := c.getAssociatedApplicationName(rel)
+	if err != nil {
+		return "", err
+	}
+
+	appKey := fmt.Sprintf("%s/%s", rel.Namespace, appName)
 
 	return appKey, nil
 }
@@ -506,12 +525,12 @@ func (c *Controller) getAssociatedReleaseKey(obj *metav1.ObjectMeta) (string, er
 	return fmt.Sprintf("%s/%s", obj.Namespace, owner.Name), nil
 }
 
-func (c *Controller) sortedReleasesForApp(app *shipper.Application) ([]*shipper.Release, error) {
+func (c *Controller) sortedReleasesForApp(namespace, name string) ([]*shipper.Release, error) {
 	selector := labels.Set{
-		shipper.AppLabel: app.GetName(),
+		shipper.AppLabel: name,
 	}.AsSelector()
 
-	releases, err := c.releaseLister.Releases(app.GetNamespace()).List(selector)
+	releases, err := c.releaseLister.Releases(namespace).List(selector)
 	if err != nil {
 		return nil, err
 	}
@@ -524,8 +543,64 @@ func (c *Controller) sortedReleasesForApp(app *shipper.Application) ([]*shipper.
 	return sorted, nil
 }
 
+func (c *Controller) releaseIsHead(rel *shipper.Release) (bool, error) {
+	appName, err := c.getAssociatedApplicationName(rel)
+	if err != nil {
+		return false, err
+	}
+
+	releases, err := c.sortedReleasesForApp(rel.GetNamespace(), appName)
+	if err != nil {
+		return false, err
+	}
+
+	return rel == releases[len(releases)-1], nil
+}
+
+func (c *Controller) releaseScheduled(rel *shipper.Release) (bool, error) {
+	it, err := c.installationTargetLister.InstallationTargets(rel.GetNamespace()).Get(rel.GetName())
+	if it == nil || err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	ct, err := c.capacityTargetLister.CapacityTargets(rel.GetNamespace()).Get(rel.GetName())
+	if ct == nil || err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	tt, err := c.trafficTargetLister.TrafficTargets(rel.GetNamespace()).Get(rel.GetName())
+	if tt == nil || err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (c *Controller) getHeadRelease(app *shipper.Application) (*shipper.Release, error) {
+	appReleases, err := c.sortedReleasesForApp(app.GetNamespace(), app.GetName())
+	if err != nil {
+		return nil, err
+	}
+
+	if len(appReleases) == 0 {
+		return nil, fmt.Errorf("app %q has no releases",
+			shippercontroller.MetaKey(app))
+	}
+
+	return appReleases[len(appReleases)-1], nil
+}
+
 func (c *Controller) getWorkingReleasePair(app *shipper.Application) (*shipper.Release, *shipper.Release, error) {
-	appReleases, err := c.sortedReleasesForApp(app)
+	appReleases, err := c.sortedReleasesForApp(app.GetNamespace(), app.GetName())
 	if err != nil {
 		return nil, nil, err
 	}

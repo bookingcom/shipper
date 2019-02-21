@@ -299,7 +299,7 @@ func (s *Scheduler) CreateCapacityTarget(rel *shipper.Release, totalReplicaCount
 		rel,
 		corev1.EventTypeNormal,
 		"ReleaseScheduled",
-		"Created Capacity Target %q",
+		"Created CapacityTarget %q",
 		controller.MetaKey(capacityTarget),
 	)
 
