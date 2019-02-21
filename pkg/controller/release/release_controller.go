@@ -294,7 +294,7 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 	}
 
 	if isHead, err := c.releaseIsHead(rel); err != nil {
-		runtime.HandleError(fmt.Errorf("Failed to check if release %q is the head of history (will retry): %s", key, err))
+		runtime.HandleError(fmt.Errorf("failed to check if release %q is the head of history (will retry): %s", key, err))
 	} else if !isHead {
 		glog.Infof("Release %q is not the head of history, nothing to do", key)
 		return noRetry
