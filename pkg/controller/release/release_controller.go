@@ -585,20 +585,6 @@ func (c *Controller) releaseScheduled(rel *shipper.Release) (bool, error) {
 	return true, nil
 }
 
-func (c *Controller) getHeadRelease(app *shipper.Application) (*shipper.Release, error) {
-	appReleases, err := c.sortedReleasesForApp(app.GetNamespace(), app.GetName())
-	if err != nil {
-		return nil, err
-	}
-
-	if len(appReleases) == 0 {
-		return nil, fmt.Errorf("app %q has no releases",
-			shippercontroller.MetaKey(app))
-	}
-
-	return appReleases[len(appReleases)-1], nil
-}
-
 func (c *Controller) getWorkingReleasePair(app *shipper.Application) (*shipper.Release, *shipper.Release, error) {
 	appReleases, err := c.sortedReleasesForApp(app.GetNamespace(), app.GetName())
 	if err != nil {
