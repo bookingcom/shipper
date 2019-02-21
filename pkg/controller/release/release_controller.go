@@ -180,7 +180,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 		c.trafficTargetsSynced,
 		c.capacityTargetsSynced,
 	); !ok {
-		runtime.HandleError(fmt.Errorf("Failed to wait for caches to sync"))
+		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
 		return
 	}
 
@@ -214,7 +214,7 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 
 	if _, ok := obj.(string); !ok {
 		c.releaseWorkqueue.Forget(obj)
-		runtime.HandleError(fmt.Errorf("Invalid object key (will not retry): %#v", obj))
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
 	}
 	key := obj.(string)
 
@@ -246,7 +246,7 @@ func (c *Controller) processNextAppWorkItem() bool {
 
 	if _, ok := obj.(string); !ok {
 		c.applicationWorkqueue.Forget(obj)
-		runtime.HandleError(fmt.Errorf("Invalid object key (will not retry): %#v", obj))
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
 	}
 	key := obj.(string)
 
@@ -272,7 +272,7 @@ func (c *Controller) processNextAppWorkItem() bool {
 func (c *Controller) syncReleaseHandler(key string) bool {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("Invalid object key (will not retry): %q", key))
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %q", key))
 		return noRetry
 	}
 	rel, err := c.releaseLister.Releases(namespace).Get(name)
@@ -282,7 +282,7 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 			return noRetry
 		}
 
-		runtime.HandleError(fmt.Errorf("Failed to process release %q (will retry): %s", key, err))
+		runtime.HandleError(fmt.Errorf("failed to process release %q (will retry): %s", key, err))
 
 		return retry
 	}
@@ -334,11 +334,11 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 			}
 
 			if shouldRetry {
-				runtime.HandleError(fmt.Errorf("Error syncing Release %q (will retry): %s", key, err))
+				runtime.HandleError(fmt.Errorf("error syncing Release %q (will retry): %s", key, err))
 				return retry
 			}
 
-			runtime.HandleError(fmt.Errorf("Error syncing Release %q (will not retry): %s", key, err))
+			runtime.HandleError(fmt.Errorf("error syncing Release %q (will not retry): %s", key, err))
 
 			return noRetry
 		}
@@ -348,7 +348,7 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 
 	appKey, err := c.getAssociatedApplicationKey(rel)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("Error fetching Application key for release %q (will not retry): %s", key, err))
+		runtime.HandleError(fmt.Errorf("error fetching Application key for release %q (will not retry): %s", key, err))
 		return noRetry
 	}
 
@@ -363,7 +363,7 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 func (c *Controller) syncApplicationHandler(key string) bool {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("Invalid object key (will not retry): %q", key))
+		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %q", key))
 		return noRetry
 	}
 	app, err := c.applicationLister.Applications(namespace).Get(name)
@@ -373,7 +373,7 @@ func (c *Controller) syncApplicationHandler(key string) bool {
 			return noRetry
 		}
 
-		runtime.HandleError(fmt.Errorf("Failed to process Application %q (will retry): %s", key, err))
+		runtime.HandleError(fmt.Errorf("failed to process Application %q (will retry): %s", key, err))
 
 		return retry
 	}
@@ -381,21 +381,21 @@ func (c *Controller) syncApplicationHandler(key string) bool {
 	glog.V(4).Infof("Fetching release pair for Application %q", key)
 	incumbent, contender, err := c.getWorkingReleasePair(app)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("Error syncing Application %q (will retry): %s", key, err))
+		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
 		return retry
 	}
 
 	glog.V(4).Infof("Building a strategy excecutor for Application %q", key)
 	strategyExecutor, err := c.buildExecutor(incumbent, contender)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("Error syncing Application %q (will retry): %s", key, err))
+		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
 		return retry
 	}
 
 	glog.V(4).Infof("Executing the strategy on Application %q", key)
 	patches, transitions, err := strategyExecutor.Execute()
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("Error syncing Application %q (will not retry): %s", key, err))
+		runtime.HandleError(fmt.Errorf("error syncing Application %q (will not retry): %s", key, err))
 
 		return noRetry
 	}
@@ -423,26 +423,26 @@ func (c *Controller) syncApplicationHandler(key string) bool {
 		switch gvk.Kind {
 		case "Release":
 			if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Patch(name, types.MergePatchType, b); err != nil {
-				runtime.HandleError(fmt.Errorf("Error syncing Release for Application %q (will retry): %s", key, err))
+				runtime.HandleError(fmt.Errorf("error syncing Release for Application %q (will retry): %s", key, err))
 				return retry
 			}
 		case "InstallationTarget":
 			if _, err := c.clientset.ShipperV1alpha1().InstallationTargets(namespace).Patch(name, types.MergePatchType, b); err != nil {
-				runtime.HandleError(fmt.Errorf("Error syncing InstallationTarget for Application %q (will retry): %s", key, err))
+				runtime.HandleError(fmt.Errorf("error syncing InstallationTarget for Application %q (will retry): %s", key, err))
 				return retry
 			}
 		case "CapacityTarget":
 			if _, err := c.clientset.ShipperV1alpha1().CapacityTargets(namespace).Patch(name, types.MergePatchType, b); err != nil {
-				runtime.HandleError(fmt.Errorf("Error syncing CapacityTarget for Application %q (will retry): %s", key, err))
+				runtime.HandleError(fmt.Errorf("error syncing CapacityTarget for Application %q (will retry): %s", key, err))
 				return retry
 			}
 		case "TrafficTarget":
 			if _, err := c.clientset.ShipperV1alpha1().TrafficTargets(namespace).Patch(name, types.MergePatchType, b); err != nil {
-				runtime.HandleError(fmt.Errorf("Error syncing TrafficTarget for Application %q (will retry): %s", key, err))
+				runtime.HandleError(fmt.Errorf("error syncing TrafficTarget for Application %q (will retry): %s", key, err))
 				return retry
 			}
 		default:
-			runtime.HandleError(fmt.Errorf("Error syncing Application %q (will not retry): unknown GVK resource name: %s", key, gvk.Kind))
+			runtime.HandleError(fmt.Errorf("error syncing Application %q (will not retry): unknown GVK resource name: %s", key, gvk.Kind))
 			return noRetry
 		}
 	}
