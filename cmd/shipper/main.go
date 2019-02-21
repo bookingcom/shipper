@@ -47,8 +47,7 @@ import (
 var controllers = []string{
 	"application",
 	"clustersecret",
-	"schedule",
-	"strategy",
+	"release",
 	"installation",
 	"capacity",
 	"traffic",
