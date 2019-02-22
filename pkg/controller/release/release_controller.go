@@ -293,67 +293,51 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 		return noRetry
 	}
 
-	if isHead, err := c.releaseIsHead(rel); err != nil {
-		runtime.HandleError(fmt.Errorf("failed to check if release %q is the head of history (will retry): %s", key, err))
-	} else if !isHead {
-		glog.Infof("Release %q is not the head of history, nothing to do", key)
+	glog.V(4).Infof("Start processing Release %q", key)
+
+	scheduler := NewScheduler(
+		c.clientset,
+		c.clusterLister,
+		c.installationTargetLister,
+		c.capacityTargetLister,
+		c.trafficTargetLister,
+		c.chartFetchFunc,
+		c.recorder,
+	)
+
+	if _, err = scheduler.ScheduleRelease(rel.DeepCopy()); err != nil {
+		c.recorder.Eventf(
+			rel,
+			corev1.EventTypeWarning,
+			"FailedReleaseScheduling",
+			err.Error(),
+		)
+
+		reason, shouldRetry := classifyError(err)
+		condition := releaseutil.NewReleaseCondition(
+			shipper.ReleaseConditionTypeScheduled,
+			corev1.ConditionFalse,
+			reason,
+			err.Error(),
+		)
+		releaseutil.SetReleaseCondition(&rel.Status, *condition)
+
+		if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); err != nil {
+			// always retry failing to write the error out to the Release: we need to communicate this to the user
+			return retry
+		}
+
+		if shouldRetry {
+			runtime.HandleError(fmt.Errorf("error syncing Release %q (will retry): %s", key, err))
+			return retry
+		}
+
+		runtime.HandleError(fmt.Errorf("error syncing Release %q (will not retry): %s", key, err))
+
 		return noRetry
 	}
 
-	isScheduled, err := c.releaseScheduled(rel)
-	if err != nil {
-		runtime.HandleError(fmt.Errorf("failed to check if release %q has been scheduled (will retry): %s", key, err))
-		return retry
-	}
-
-	if !isScheduled {
-
-		glog.V(4).Infof("Release %q is not scheduled yet, processing", key)
-
-		scheduler := NewScheduler(
-			c.clientset,
-			c.clusterLister,
-			c.installationTargetLister,
-			c.capacityTargetLister,
-			c.trafficTargetLister,
-			c.chartFetchFunc,
-			c.recorder,
-		)
-
-		if _, err = scheduler.ScheduleRelease(rel.DeepCopy()); err != nil {
-			c.recorder.Eventf(
-				rel,
-				corev1.EventTypeWarning,
-				"FailedReleaseScheduling",
-				err.Error(),
-			)
-
-			reason, shouldRetry := classifyError(err)
-			condition := releaseutil.NewReleaseCondition(
-				shipper.ReleaseConditionTypeScheduled,
-				corev1.ConditionFalse,
-				reason,
-				err.Error(),
-			)
-			releaseutil.SetReleaseCondition(&rel.Status, *condition)
-
-			if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); err != nil {
-				// always retry failing to write the error out to the Release: we need to communicate this to the user
-				return retry
-			}
-
-			if shouldRetry {
-				runtime.HandleError(fmt.Errorf("error syncing Release %q (will retry): %s", key, err))
-				return retry
-			}
-
-			runtime.HandleError(fmt.Errorf("error syncing Release %q (will not retry): %s", key, err))
-
-			return noRetry
-		}
-
-		glog.V(4).Infof("Release %q has been successfully scheduled", key)
-	}
+	glog.V(4).Infof("Release %q has been successfully scheduled", key)
 
 	appKey, err := c.getAssociatedApplicationKey(rel)
 	if err != nil {
@@ -543,27 +527,18 @@ func (c *Controller) sortedReleasesForApp(namespace, name string) ([]*shipper.Re
 	return sorted, nil
 }
 
-func (c *Controller) releaseIsHead(rel *shipper.Release) (bool, error) {
-	appName, err := c.getAssociatedApplicationName(rel)
-	if err != nil {
-		return false, err
-	}
-
-	releases, err := c.sortedReleasesForApp(rel.GetNamespace(), appName)
-	if err != nil {
-		return false, err
-	}
-
-	return rel == releases[len(releases)-1], nil
-}
-
 func (c *Controller) releaseScheduled(rel *shipper.Release) (bool, error) {
+	clusters := getReleaseClusters(rel)
+
 	it, err := c.installationTargetLister.InstallationTargets(rel.GetNamespace()).Get(rel.GetName())
 	if it == nil || err != nil {
 		if errors.IsNotFound(err) {
 			return false, nil
 		}
 		return false, err
+	}
+	if !installationTargetClustersMatch(it, clusters) {
+		return false, nil
 	}
 
 	ct, err := c.capacityTargetLister.CapacityTargets(rel.GetNamespace()).Get(rel.GetName())
@@ -572,6 +547,9 @@ func (c *Controller) releaseScheduled(rel *shipper.Release) (bool, error) {
 			return false, nil
 		}
 		return false, err
+	}
+	if !capacityTargetClustersMatch(ct, clusters) {
+		return false, nil
 	}
 
 	tt, err := c.trafficTargetLister.TrafficTargets(rel.GetNamespace()).Get(rel.GetName())

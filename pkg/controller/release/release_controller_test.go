@@ -231,6 +231,8 @@ func (f *fixture) run() {
 	actual := shippertesting.FilterActions(f.clientset.Actions())
 	actual = f.filter.DoFilter(actual)
 
+	fmt.Println(actual)
+
 	shippertesting.CheckActions(f.actions, actual, f.t)
 	shippertesting.CheckEvents(f.expectedEvents, f.receivedEvents, f.t)
 }
@@ -282,6 +284,16 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 		f.t.Fatalf("The fixture is missing an Application object")
 	}
 
+	clusterNames := make([]string, 0)
+	for _, obj := range f.objects {
+		if cluster, ok := obj.(*shipper.Cluster); ok {
+			clusterNames = append(clusterNames, cluster.GetName())
+		}
+	}
+	if len(clusterNames) == 0 {
+		f.t.Fatalf("The fixture is missing at least 1 Cluster object")
+	}
+
 	rel := &shipper.Release{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: shipper.SchemeGroupVersion.String(),
@@ -304,6 +316,7 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 			},
 			Annotations: map[string]string{
 				shipper.ReleaseGenerationAnnotation: "0",
+				shipper.ReleaseClustersAnnotation:   strings.Join(clusterNames, ","),
 			},
 		},
 		Status: shipper.ReleaseStatus{
@@ -330,16 +343,6 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 				},
 			},
 		},
-	}
-
-	clusterNames := make([]string, 0)
-	for _, obj := range f.objects {
-		if cluster, ok := obj.(*shipper.Cluster); ok {
-			clusterNames = append(clusterNames, cluster.GetName())
-		}
-	}
-	if len(clusterNames) == 0 {
-		f.t.Fatalf("The fixture is missing at least 1 Cluster object")
 	}
 
 	installationTargetClusters := make([]*shipper.ClusterInstallationStatus, 0, len(clusterNames))
@@ -473,6 +476,16 @@ func (f *fixture) buildContender(namespace string, relName string, replicaCount 
 		f.t.Fatalf("The fixture is missing an Application object")
 	}
 
+	clusterNames := make([]string, 0)
+	for _, obj := range f.objects {
+		if cluster, ok := obj.(*shipper.Cluster); ok {
+			clusterNames = append(clusterNames, cluster.GetName())
+		}
+	}
+	if len(clusterNames) == 0 {
+		f.t.Fatalf("The fixture is missing at least 1 Cluster object")
+	}
+
 	rel := &shipper.Release{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: shipper.SchemeGroupVersion.String(),
@@ -495,6 +508,7 @@ func (f *fixture) buildContender(namespace string, relName string, replicaCount 
 			},
 			Annotations: map[string]string{
 				shipper.ReleaseGenerationAnnotation: "1",
+				//shipper.ReleaseClustersAnnotation:   strings.Join(clusterNames, ","),
 			},
 		},
 		Status: shipper.ReleaseStatus{
@@ -514,16 +528,6 @@ func (f *fixture) buildContender(namespace string, relName string, replicaCount 
 				},
 			},
 		},
-	}
-
-	clusterNames := make([]string, 0)
-	for _, obj := range f.objects {
-		if cluster, ok := obj.(*shipper.Cluster); ok {
-			clusterNames = append(clusterNames, cluster.GetName())
-		}
-	}
-	if len(clusterNames) == 0 {
-		f.t.Fatalf("The fixture is missing at least 1 Cluster object")
 	}
 
 	installationTargetClusters := make([]*shipper.ClusterInstallationStatus, 0, len(clusterNames))
@@ -872,11 +876,6 @@ func (f *fixture) expectAssociatedObjectsCreated(release *shipper.Release, clust
 	}
 	relKey := fmt.Sprintf("%s/%s", release.GetNamespace(), release.GetName())
 	f.expectedEvents = []string{
-		fmt.Sprintf(
-			"Normal ClustersSelected Set clusters for \"%s\" to %s",
-			relKey,
-			strings.Join(clusterNames, ","),
-		),
 		fmt.Sprintf(
 			"Normal ReleaseScheduled Created InstallationTarget \"%s\"",
 			relKey,
@@ -1424,7 +1423,7 @@ func TestControllerComputeTargetClusters(t *testing.T) {
 	cluster := buildCluster("minikube")
 
 	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
-	contenderName := randStr()
+	contenderName := "test-contender"
 	var replicaCount int32 = 1
 	contender := f.buildContender(namespace, contenderName, replicaCount)
 
@@ -1442,9 +1441,10 @@ func TestControllerCreateAssociatedObjects(t *testing.T) {
 	cluster := buildCluster("minikube")
 
 	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
-	contenderName := randStr()
+	contenderName := "test-contender"
 	var replicaCount int32 = 1
 	contender := f.buildContender(namespace, contenderName, replicaCount)
+	contender.release.ObjectMeta.Annotations[shipper.ReleaseClustersAnnotation] = cluster.Name
 
 	f.addObjects(
 		contender.release.DeepCopy(),

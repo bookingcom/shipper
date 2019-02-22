@@ -1,6 +1,7 @@
 package release
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -59,7 +60,7 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 	glog.Infof("Processing release %q", metaKey)
 	defer glog.Infof("Finished processing %q", metaKey)
 
-	if !ReleaseHasClusters(rel) {
+	if !releaseHasClusters(rel) {
 		allClusters, err := s.clusterLister.List(labels.Everything())
 		if err != nil {
 			return nil, NewFailedAPICallError("ListClsuters", err)
@@ -68,7 +69,7 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 		if err != nil {
 			return nil, err
 		}
-		setClusters(rel, selectedClusters)
+		setReleaseClusters(rel, selectedClusters)
 
 		newrel, err := s.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel)
 		if err != nil {
@@ -119,191 +120,340 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 	return s.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel)
 }
 
-func ReleaseHasClusters(rel *shipper.Release) bool {
+func releaseHasClusters(rel *shipper.Release) bool {
 	return len(rel.Annotations[shipper.ReleaseClustersAnnotation]) > 0
 }
 
-func (s *Scheduler) CreateInstallationTarget(rel *shipper.Release) (*shipper.InstallationTarget, error) {
-	clusterNames := strings.Split(rel.Annotations[shipper.ReleaseClustersAnnotation], ",")
-	if len(clusterNames) == 1 && clusterNames[0] == "" {
-		clusterNames = []string{}
+func stringSliceEqual(arr1, arr2 []string) bool {
+	if len(arr1) != len(arr2) {
+		return false
 	}
-
-	it := &shipper.InstallationTarget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      rel.Name,
-			Namespace: rel.Namespace,
-			Labels:    rel.Labels,
-			OwnerReferences: []metav1.OwnerReference{
-				createOwnerRefFromRelease(rel),
-			},
-		},
-		Spec: shipper.InstallationTargetSpec{Clusters: clusterNames},
-	}
-
-	installationTarget, err := s.clientset.ShipperV1alpha1().InstallationTargets(rel.Namespace).Create(it)
-	if err != nil {
-		if errors.IsAlreadyExists(err) {
-			installationTarget, listerErr := s.installationTargetLister.InstallationTargets(rel.Namespace).Get(rel.Name)
-			if listerErr != nil {
-				glog.Errorf("Failed to fetch isntallation target: %s", listerErr)
-				return nil, listerErr
-			}
-
-			for _, ownerRef := range installationTarget.GetOwnerReferences() {
-				if ownerRef.UID == rel.UID {
-					glog.Infof("InstallationTarget %q already exists but"+
-						" it belongs to current release, proceeding normally",
-						controller.MetaKey(rel))
-					return installationTarget, nil
-				}
-			}
-
-			glog.Errorf("InstallationTarget %q already exists and it does not"+
-				" belong to the current release, bailing out", controller.MetaKey(installationTarget))
-
-			return nil, err
+	for i := 0; i < len(arr1); i++ {
+		if arr1[i] != arr2[i] {
+			return false
 		}
-
-		return nil, NewFailedAPICallError("CreateInstallationTarget", err)
 	}
 
-	s.recorder.Eventf(
-		rel,
-		corev1.EventTypeNormal,
-		"ReleaseScheduled",
-		"Created InstallationTarget %q",
-		controller.MetaKey(installationTarget),
-	)
-
-	return installationTarget, nil
+	return true
 }
 
-func (s *Scheduler) CreateTrafficTarget(rel *shipper.Release) (*shipper.TrafficTarget, error) {
-	clusterNames := strings.Split(rel.Annotations[shipper.ReleaseClustersAnnotation], ",")
-	if len(clusterNames) == 1 && clusterNames[0] == "" {
-		clusterNames = []string{}
+// getReleaseClusters is a helper function that returns a list of cluster names
+// annotating the release. It assumes cluster names are all unique.
+func getReleaseClusters(rel *shipper.Release) []string {
+	allRelClusters := strings.Split(rel.ObjectMeta.Annotations[shipper.ReleaseClustersAnnotation], ",")
+	if len(allRelClusters) == 1 && allRelClusters[0] == "" {
+		allRelClusters = []string{}
 	}
-
-	trafficTargetClusters := make([]shipper.ClusterTrafficTarget, 0, len(clusterNames))
-	for _, clusterName := range clusterNames {
-		trafficTargetClusters = append(
-			trafficTargetClusters,
-			shipper.ClusterTrafficTarget{
-				Name:   clusterName,
-				Weight: 0,
-			})
-	}
-
-	tt := &shipper.TrafficTarget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      rel.Name,
-			Namespace: rel.Namespace,
-			Labels:    rel.Labels,
-			OwnerReferences: []metav1.OwnerReference{
-				createOwnerRefFromRelease(rel),
-			},
-		},
-		Spec: shipper.TrafficTargetSpec{Clusters: trafficTargetClusters},
-	}
-
-	trafficTarget, err := s.clientset.ShipperV1alpha1().TrafficTargets(rel.Namespace).Create(tt)
-	if err != nil {
-		if errors.IsAlreadyExists(err) {
-			trafficTarget, listerErr := s.trafficTargetLister.TrafficTargets(rel.Namespace).Get(rel.Name)
-			if listerErr != nil {
-				glog.Errorf("Failed to fetch traffic target: %s", listerErr)
-				return nil, listerErr
-			}
-			for _, ownerRef := range trafficTarget.GetOwnerReferences() {
-				if ownerRef.UID == rel.UID {
-					glog.Infof("TrafficTarget %q already exists but"+
-						" it belongs to current release, proceeding normally",
-						controller.MetaKey(rel))
-					return trafficTarget, nil
-				}
-			}
-			glog.Errorf("TrafficTarget %q already exists and it does not"+
-				" belong to the current release, bailing out", controller.MetaKey(trafficTarget))
-			return nil, err
+	uniqRelClusters := make([]string, 0, len(allRelClusters))
+	seen := make(map[string]struct{})
+	for _, cluster := range allRelClusters {
+		if _, ok := seen[cluster]; !ok {
+			uniqRelClusters = append(uniqRelClusters, cluster)
+			seen[cluster] = struct{}{}
 		}
-		return nil, NewFailedAPICallError("CreateTrafficTarget", err)
 	}
 
-	s.recorder.Eventf(
-		rel,
-		corev1.EventTypeNormal,
-		"ReleaseScheduled",
-		"Created TrafficTarget %q",
-		controller.MetaKey(trafficTarget),
-	)
+	sort.Strings(uniqRelClusters)
 
-	return trafficTarget, nil
+	return uniqRelClusters
 }
 
-func (s *Scheduler) CreateCapacityTarget(rel *shipper.Release, totalReplicaCount int32) (*shipper.CapacityTarget, error) {
-	clusterNames := strings.Split(rel.Annotations[shipper.ReleaseClustersAnnotation], ",")
-	if len(clusterNames) == 1 && clusterNames[0] == "" {
-		clusterNames = []string{}
+// The 3 functions below are based on a basic cluster name set match, and never
+// take into account a cluster weight change. This must be addressed in the
+// future.
+func installationTargetClustersMatch(it *shipper.InstallationTarget, clusters []string) bool {
+	itClusters := it.Spec.Clusters
+	sort.Strings(itClusters)
+
+	return stringSliceEqual(clusters, itClusters)
+}
+
+func capacityTargetClustersMatch(ct *shipper.CapacityTarget, clusters []string) bool {
+	ctClusters := make([]string, 0, len(ct.Spec.Clusters))
+	for _, ctc := range ct.Spec.Clusters {
+		ctClusters = append(ctClusters, ctc.Name)
 	}
-	capacityTargetClusters := make([]shipper.ClusterCapacityTarget, 0, len(clusterNames))
-	for _, clusterName := range clusterNames {
+	sort.Strings(ctClusters)
+
+	return stringSliceEqual(clusters, ctClusters)
+}
+
+func trafficTargetClustersMatch(tt *shipper.TrafficTarget, clusters []string) bool {
+	ttClusters := make([]string, 0, len(tt.Spec.Clusters))
+	for _, ttc := range tt.Spec.Clusters {
+		ttClusters = append(ttClusters, ttc.Name)
+	}
+	sort.Strings(ttClusters)
+
+	return stringSliceEqual(clusters, ttClusters)
+}
+
+func setInstallationTargetClusters(it *shipper.InstallationTarget, clusters []string) {
+	it.Spec.Clusters = clusters
+}
+
+func setCapacityTargetClusters(ct *shipper.CapacityTarget, clusters []string, totalReplicaCount int32) {
+	capacityTargetClusters := make([]shipper.ClusterCapacityTarget, 0, len(clusters))
+	for _, cluster := range clusters {
 		capacityTargetClusters = append(
 			capacityTargetClusters,
 			shipper.ClusterCapacityTarget{
-				Name:              clusterName,
+				Name:              cluster,
 				Percent:           0,
 				TotalReplicaCount: totalReplicaCount,
 			})
 	}
+	ct.Spec.Clusters = capacityTargetClusters
+}
 
-	ct := &shipper.CapacityTarget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      rel.Name,
-			Namespace: rel.Namespace,
-			Labels:    rel.Labels,
-			OwnerReferences: []metav1.OwnerReference{
-				createOwnerRefFromRelease(rel),
-			},
-		},
-		Spec: shipper.CapacityTargetSpec{
-			Clusters: capacityTargetClusters,
-		},
+func setTrafficTargetClusters(tt *shipper.TrafficTarget, clusters []string) {
+	trafficTargetClusters := make([]shipper.ClusterTrafficTarget, 0, len(clusters))
+	for _, cluster := range clusters {
+		trafficTargetClusters = append(
+			trafficTargetClusters,
+			shipper.ClusterTrafficTarget{
+				Name:   cluster,
+				Weight: 0,
+			})
 	}
+	tt.Spec.Clusters = trafficTargetClusters
+}
 
-	capacityTarget, err := s.clientset.ShipperV1alpha1().CapacityTargets(rel.Namespace).Create(ct)
+func (s *Scheduler) CreateInstallationTarget(rel *shipper.Release) (*shipper.InstallationTarget, error) {
+	clusters := getReleaseClusters(rel)
+
+	it, err := s.installationTargetLister.InstallationTargets(rel.GetNamespace()).Get(rel.GetName())
 	if err != nil {
-		if errors.IsAlreadyExists(err) {
-			capacityTarget, listerErr := s.capacityTargetLister.CapacityTargets(rel.Namespace).Get(rel.Name)
-			if listerErr != nil {
-				glog.Errorf("Failed to fetch capacity target: %s", listerErr)
-				return nil, listerErr
-			}
-			for _, ownerRef := range capacityTarget.GetOwnerReferences() {
-				if ownerRef.UID == rel.UID {
-					glog.Infof("CapacityTarget %q already exists but"+
-						" it belongs to current release, proceeding normally",
-						controller.MetaKey(rel))
-					return capacityTarget, nil
-				}
-			}
-			glog.Errorf("CapacityTarget %q already exists and it does not"+
-				" belong to the current release, bailing out", controller.MetaKey(capacityTarget))
-
+		if !errors.IsNotFound(err) {
+			glog.Errorf("Failed to get InstallationTarget %q from lister interface: %s",
+				controller.MetaKey(rel),
+				err)
 			return nil, err
 		}
-		return nil, NewFailedAPICallError("CreateCapacityTarget", err)
+		it := &shipper.InstallationTarget{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      rel.Name,
+				Namespace: rel.Namespace,
+				Labels:    rel.Labels,
+				OwnerReferences: []metav1.OwnerReference{
+					createOwnerRefFromRelease(rel),
+				},
+			},
+		}
+		setInstallationTargetClusters(it, clusters)
+
+		updIt, err := s.clientset.ShipperV1alpha1().InstallationTargets(rel.GetNamespace()).Create(it)
+		if err != nil {
+			return nil, NewFailedAPICallError("CreateInstallationTarget", err)
+		}
+
+		s.recorder.Eventf(
+			rel,
+			corev1.EventTypeNormal,
+			"ReleaseScheduled",
+			"Created InstallationTarget %q",
+			controller.MetaKey(updIt),
+		)
+
+		return updIt, nil
 	}
 
-	s.recorder.Eventf(
-		rel,
-		corev1.EventTypeNormal,
-		"ReleaseScheduled",
-		"Created CapacityTarget %q",
-		controller.MetaKey(capacityTarget),
-	)
+	ownerFound := false
+	for _, ownerRef := range it.GetOwnerReferences() {
+		if ownerRef.UID == rel.GetUID() {
+			ownerFound = true
+			break
+		}
+	}
+	if !ownerFound {
+		err := fmt.Errorf("installationTarget %q already exists but it does not"+
+			" belong to the current release, bailing out", controller.MetaKey(it))
+		glog.Error(err)
 
-	return capacityTarget, nil
+		return nil, err
+	}
+
+	if !installationTargetClustersMatch(it, clusters) {
+		glog.Infof("Updating InstallationTarget %q clusters to %s",
+			controller.MetaKey(it),
+			strings.Join(clusters, ","))
+		setInstallationTargetClusters(it, clusters)
+		updIt, err := s.clientset.ShipperV1alpha1().InstallationTargets(rel.GetNamespace()).Update(it)
+		if err != nil {
+			glog.Errorf("Failed to update InstallationTarget %q clusters: %s",
+				controller.MetaKey(it),
+				err)
+			return nil, err
+		}
+		s.recorder.Eventf(
+			rel,
+			corev1.EventTypeNormal,
+			"ReleaseScheduled",
+			"Updated InstallationTarget %q cluster set to [%s]",
+			controller.MetaKey(updIt),
+			strings.Join(clusters, ","))
+		return updIt, nil
+	}
+
+	return it, nil
+}
+
+func (s *Scheduler) CreateCapacityTarget(rel *shipper.Release, totalReplicaCount int32) (*shipper.CapacityTarget, error) {
+	clusters := getReleaseClusters(rel)
+
+	ct, err := s.capacityTargetLister.CapacityTargets(rel.GetNamespace()).Get(rel.GetName())
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			glog.Errorf("Failed to get CapacityTarget %q from lister interface: %s",
+				controller.MetaKey(rel),
+				err)
+			return nil, err
+		}
+		ct := &shipper.CapacityTarget{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      rel.Name,
+				Namespace: rel.Namespace,
+				Labels:    rel.Labels,
+				OwnerReferences: []metav1.OwnerReference{
+					createOwnerRefFromRelease(rel),
+				},
+			},
+		}
+		setCapacityTargetClusters(ct, clusters, totalReplicaCount)
+
+		updCt, err := s.clientset.ShipperV1alpha1().CapacityTargets(rel.GetNamespace()).Create(ct)
+		if err != nil {
+			return nil, NewFailedAPICallError("CreateCapacityTarget", err)
+		}
+
+		s.recorder.Eventf(
+			rel,
+			corev1.EventTypeNormal,
+			"ReleaseScheduled",
+			"Created CapacityTarget %q",
+			controller.MetaKey(updCt),
+		)
+
+		return updCt, nil
+	}
+
+	ownerFound := false
+	for _, ownerRef := range ct.GetOwnerReferences() {
+		if ownerRef.UID == rel.GetUID() {
+			ownerFound = true
+			break
+		}
+	}
+	if !ownerFound {
+		err := fmt.Errorf("capacityTarget %q already exists but it does not"+
+			" belong to the current release, bailing out", controller.MetaKey(ct))
+		glog.Error(err)
+
+		return nil, err
+	}
+
+	if !capacityTargetClustersMatch(ct, clusters) {
+		glog.Infof("Updating InstallationTarget %q clusters to %s",
+			controller.MetaKey(ct),
+			strings.Join(clusters, ","))
+		setCapacityTargetClusters(ct, clusters, totalReplicaCount)
+		updCt, err := s.clientset.ShipperV1alpha1().CapacityTargets(rel.GetNamespace()).Update(ct)
+		if err != nil {
+			glog.Errorf("Failed to update CapacityTarget %q clusters: %s",
+				controller.MetaKey(ct),
+				err)
+			return nil, err
+		}
+		s.recorder.Eventf(
+			rel,
+			corev1.EventTypeNormal,
+			"ReleaseScheduled",
+			"Updated CapacityTarget %q cluster set to [%s]",
+			controller.MetaKey(updCt),
+			strings.Join(clusters, ","))
+		return updCt, nil
+	}
+
+	return ct, nil
+}
+
+func (s *Scheduler) CreateTrafficTarget(rel *shipper.Release) (*shipper.TrafficTarget, error) {
+	clusters := getReleaseClusters(rel)
+
+	tt, err := s.trafficTargetLister.TrafficTargets(rel.GetNamespace()).Get(rel.GetName())
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			glog.Errorf("Failed to get TrafficTarget %q from lister interface: %s",
+				controller.MetaKey(rel),
+				err)
+			return nil, err
+		}
+		tt := &shipper.TrafficTarget{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      rel.Name,
+				Namespace: rel.Namespace,
+				Labels:    rel.Labels,
+				OwnerReferences: []metav1.OwnerReference{
+					createOwnerRefFromRelease(rel),
+				},
+			},
+		}
+		setTrafficTargetClusters(tt, clusters)
+
+		updTt, err := s.clientset.ShipperV1alpha1().TrafficTargets(rel.GetNamespace()).Create(tt)
+		if err != nil {
+			return nil, NewFailedAPICallError("CreateTrafficTarget", err)
+		}
+
+		s.recorder.Eventf(
+			rel,
+			corev1.EventTypeNormal,
+			"ReleaseScheduled",
+			"Created TrafficTarget %q",
+			controller.MetaKey(updTt),
+		)
+
+		return updTt, nil
+	}
+
+	ownerFound := false
+	for _, ownerRef := range tt.GetOwnerReferences() {
+		if ownerRef.UID == rel.GetUID() {
+			ownerFound = true
+			break
+		}
+	}
+	if !ownerFound {
+		err := fmt.Errorf("trafficTarget %q already exists but it does not"+
+			" belong to the current release, bailing out", controller.MetaKey(tt))
+		glog.Error(err)
+
+		return nil, err
+	}
+
+	if !trafficTargetClustersMatch(tt, clusters) {
+		glog.Infof("Updating TrafficTarget %q clusters to %s",
+			controller.MetaKey(tt),
+			strings.Join(clusters, ","))
+		setTrafficTargetClusters(tt, clusters)
+		updTt, err := s.clientset.ShipperV1alpha1().TrafficTargets(rel.GetNamespace()).Update(tt)
+		if err != nil {
+			glog.Errorf("Failed to update TrafficTarget %q clusters: %s",
+				controller.MetaKey(tt),
+				err)
+			return nil, err
+		}
+		s.recorder.Eventf(
+			rel,
+			corev1.EventTypeNormal,
+			"ReleaseScheduled",
+			"Updated TrafficTarget %q cluster set to [%s]",
+			controller.MetaKey(updTt),
+			strings.Join(clusters, ","))
+		return updTt, nil
+	}
+
+	return tt, nil
 }
 
 // computeTargetClusters picks out the clusters from the given list which match
@@ -414,7 +564,7 @@ func validateClusterRequirements(requirements shipper.ClusterRequirements) error
 	return nil
 }
 
-func setClusters(rel *shipper.Release, clusters []*shipper.Cluster) {
+func setReleaseClusters(rel *shipper.Release, clusters []*shipper.Cluster) {
 	clusterNames := make([]string, 0, len(clusters))
 	for _, cluster := range clusters {
 		clusterNames = append(clusterNames, cluster.Name)
