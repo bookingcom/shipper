@@ -8,12 +8,11 @@ import (
 )
 
 type PodBuilder struct {
-	podName              string
-	podNamespace         string
-	podLabels            map[string]string
-	containerStatuses    []corev1.ContainerStatus
-	podConditions        []corev1.PodCondition
-	lastTerminationState corev1.ContainerState
+	podName           string
+	podNamespace      string
+	podLabels         map[string]string
+	containerStatuses []corev1.ContainerStatus
+	podConditions     []corev1.PodCondition
 }
 
 func newPodBuilder(podName string, podNamespace string, podLabels map[string]string) *PodBuilder {
