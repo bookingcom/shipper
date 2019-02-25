@@ -651,15 +651,6 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-func randStr() string {
-	var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-	s := make([]rune, 16)
-	for i := range s {
-		s[i] = letterRunes[rand.Intn(len(letterRunes))]
-	}
-	return string(s)
-}
-
 func addCluster(ri *releaseInfo, cluster *shipper.Cluster) {
 
 	clusters := getReleaseClusters(ri.release)

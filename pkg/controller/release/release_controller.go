@@ -527,42 +527,6 @@ func (c *Controller) sortedReleasesForApp(namespace, name string) ([]*shipper.Re
 	return sorted, nil
 }
 
-func (c *Controller) releaseScheduled(rel *shipper.Release) (bool, error) {
-	clusters := getReleaseClusters(rel)
-
-	it, err := c.installationTargetLister.InstallationTargets(rel.GetNamespace()).Get(rel.GetName())
-	if it == nil || err != nil {
-		if errors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	if !installationTargetClustersMatch(it, clusters) {
-		return false, nil
-	}
-
-	ct, err := c.capacityTargetLister.CapacityTargets(rel.GetNamespace()).Get(rel.GetName())
-	if ct == nil || err != nil {
-		if errors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	if !capacityTargetClustersMatch(ct, clusters) {
-		return false, nil
-	}
-
-	tt, err := c.trafficTargetLister.TrafficTargets(rel.GetNamespace()).Get(rel.GetName())
-	if tt == nil || err != nil {
-		if errors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, err
-	}
-
-	return true, nil
-}
-
 func (c *Controller) getWorkingReleasePair(app *shipper.Application) (*shipper.Release, *shipper.Release, error) {
 	appReleases, err := c.sortedReleasesForApp(app.GetNamespace(), app.GetName())
 	if err != nil {
