@@ -93,15 +93,15 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 		return nil, err
 	}
 
-	if _, err := s.CreateInstallationTarget(rel); err != nil {
+	if _, err := s.CreateOrUpdateInstallationTarget(rel); err != nil {
 		return nil, err
 	}
 
-	if _, err := s.CreateTrafficTarget(rel); err != nil {
+	if _, err := s.CreateOrUpdateTrafficTarget(rel); err != nil {
 		return nil, err
 	}
 
-	if _, err := s.CreateCapacityTarget(rel, replicaCount); err != nil {
+	if _, err := s.CreateOrUpdateCapacityTarget(rel, replicaCount); err != nil {
 		return nil, err
 	}
 
@@ -221,7 +221,7 @@ func setTrafficTargetClusters(tt *shipper.TrafficTarget, clusters []string) {
 	tt.Spec.Clusters = trafficTargetClusters
 }
 
-func (s *Scheduler) CreateInstallationTarget(rel *shipper.Release) (*shipper.InstallationTarget, error) {
+func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shipper.InstallationTarget, error) {
 	clusters := getReleaseClusters(rel)
 
 	it, err := s.installationTargetLister.InstallationTargets(rel.GetNamespace()).Get(rel.GetName())
@@ -299,7 +299,7 @@ func (s *Scheduler) CreateInstallationTarget(rel *shipper.Release) (*shipper.Ins
 	return it, nil
 }
 
-func (s *Scheduler) CreateCapacityTarget(rel *shipper.Release, totalReplicaCount int32) (*shipper.CapacityTarget, error) {
+func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalReplicaCount int32) (*shipper.CapacityTarget, error) {
 	clusters := getReleaseClusters(rel)
 
 	ct, err := s.capacityTargetLister.CapacityTargets(rel.GetNamespace()).Get(rel.GetName())
@@ -377,7 +377,7 @@ func (s *Scheduler) CreateCapacityTarget(rel *shipper.Release, totalReplicaCount
 	return ct, nil
 }
 
-func (s *Scheduler) CreateTrafficTarget(rel *shipper.Release) (*shipper.TrafficTarget, error) {
+func (s *Scheduler) CreateOrUpdateTrafficTarget(rel *shipper.Release) (*shipper.TrafficTarget, error) {
 	clusters := getReleaseClusters(rel)
 
 	tt, err := s.trafficTargetLister.TrafficTargets(rel.GetNamespace()).Get(rel.GetName())
@@ -424,12 +424,10 @@ func (s *Scheduler) CreateTrafficTarget(rel *shipper.Release) (*shipper.TrafficT
 		}
 	}
 	if !ownerFound {
-		if !ownerFound {
-			err := fmt.Errorf("mismatch in owner reference UIDs for TrafficTarget %q", controller.MetaKey(tt))
-			glog.Errorf(err.Error())
+		err := fmt.Errorf("mismatch in owner reference UIDs for TrafficTarget %q", controller.MetaKey(tt))
+		glog.Errorf(err.Error())
 
-			return nil, errors.NewConflict(schema.GroupResource{Resource: "TrafficTarget"}, controller.MetaKey(tt), err)
-		}
+		return nil, errors.NewConflict(schema.GroupResource{Resource: "TrafficTarget"}, controller.MetaKey(tt), err)
 	}
 
 	if !trafficTargetClustersMatch(tt, clusters) {
