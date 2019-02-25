@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 
@@ -104,20 +105,21 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 		return nil, err
 	}
 
-	// If we get to this point, it means that the clusters have already been
-	// selected and persisted in the Release, and all the associated Releases have
-	// already been created.
-	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
-	releaseutil.SetReleaseCondition(&rel.Status, *condition)
+	if !releaseutil.ReleaseInstalled(rel) && !releaseutil.ReleaseScheduled(rel) && !releaseutil.ReleaseComplete(rel) {
+		condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+		releaseutil.SetReleaseCondition(&rel.Status, *condition)
 
-	if len(rel.Status.Conditions) == 0 {
-		glog.Errorf(
-			"Conditions don't see right here for Release %q",
-			metaKey,
-		)
+		if len(rel.Status.Conditions) == 0 {
+			glog.Errorf(
+				"Conditions don't see right here for Release %q",
+				metaKey,
+			)
+		}
+
+		return s.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel)
 	}
 
-	return s.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel)
+	return rel, nil
 }
 
 func releaseHasClusters(rel *shipper.Release) bool {
@@ -266,11 +268,10 @@ func (s *Scheduler) CreateInstallationTarget(rel *shipper.Release) (*shipper.Ins
 		}
 	}
 	if !ownerFound {
-		err := fmt.Errorf("installationTarget %q already exists but it does not"+
-			" belong to the current release, bailing out", controller.MetaKey(it))
-		glog.Error(err)
+		err := fmt.Errorf("mismatch in owner reference UIDs for InstallationTarget %q", controller.MetaKey(it))
+		glog.Errorf(err.Error())
 
-		return nil, err
+		return nil, errors.NewConflict(schema.GroupResource{Resource: "InstallationTarget"}, controller.MetaKey(it), err)
 	}
 
 	if !installationTargetClustersMatch(it, clusters) {
@@ -345,15 +346,14 @@ func (s *Scheduler) CreateCapacityTarget(rel *shipper.Release, totalReplicaCount
 		}
 	}
 	if !ownerFound {
-		err := fmt.Errorf("capacityTarget %q already exists but it does not"+
-			" belong to the current release, bailing out", controller.MetaKey(ct))
-		glog.Error(err)
+		err := fmt.Errorf("mismatch in owner reference UIDs for CapacityTarget %q", controller.MetaKey(ct))
+		glog.Errorf(err.Error())
 
-		return nil, err
+		return nil, errors.NewConflict(schema.GroupResource{Resource: "CapacityTarget"}, controller.MetaKey(ct), err)
 	}
 
 	if !capacityTargetClustersMatch(ct, clusters) {
-		glog.Infof("Updating InstallationTarget %q clusters to %s",
+		glog.Infof("Updating CapacityTarget %q clusters to %s",
 			controller.MetaKey(ct),
 			strings.Join(clusters, ","))
 		setCapacityTargetClusters(ct, clusters, totalReplicaCount)
@@ -424,11 +424,12 @@ func (s *Scheduler) CreateTrafficTarget(rel *shipper.Release) (*shipper.TrafficT
 		}
 	}
 	if !ownerFound {
-		err := fmt.Errorf("trafficTarget %q already exists but it does not"+
-			" belong to the current release, bailing out", controller.MetaKey(tt))
-		glog.Error(err)
+		if !ownerFound {
+			err := fmt.Errorf("mismatch in owner reference UIDs for TrafficTarget %q", controller.MetaKey(tt))
+			glog.Errorf(err.Error())
 
-		return nil, err
+			return nil, errors.NewConflict(schema.GroupResource{Resource: "TrafficTarget"}, controller.MetaKey(tt), err)
+		}
 	}
 
 	if !trafficTargetClustersMatch(tt, clusters) {

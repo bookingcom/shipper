@@ -231,8 +231,6 @@ func (f *fixture) run() {
 	actual := shippertesting.FilterActions(f.clientset.Actions())
 	actual = f.filter.DoFilter(actual)
 
-	fmt.Println(actual)
-
 	shippertesting.CheckActions(f.actions, actual, f.t)
 	shippertesting.CheckEvents(f.expectedEvents, f.receivedEvents, f.t)
 }
@@ -662,25 +660,42 @@ func randStr() string {
 	return string(s)
 }
 
-func addCluster(ri *releaseInfo, name string) {
-	ri.installationTarget.Spec.Clusters = append(ri.installationTarget.Spec.Clusters, name)
+func addCluster(ri *releaseInfo, cluster *shipper.Cluster) {
+
+	clusters := getReleaseClusters(ri.release)
+	exists := false
+	for _, cl := range clusters {
+		if cl == cluster.Name {
+			exists = true
+			break
+		}
+	}
+	if !exists {
+		clusters = append(clusters, cluster.Name)
+		sort.Strings(clusters)
+		ri.release.ObjectMeta.Annotations[shipper.ReleaseClustersAnnotation] = strings.Join(clusters, ",")
+	}
+
+	ri.installationTarget.Spec.Clusters = append(ri.installationTarget.Spec.Clusters, cluster.Name)
+
 	ri.installationTarget.Status.Clusters = append(ri.installationTarget.Status.Clusters,
-		&shipper.ClusterInstallationStatus{Name: name, Status: shipper.InstallationStatusInstalled},
+		&shipper.ClusterInstallationStatus{Name: cluster.Name, Status: shipper.InstallationStatusInstalled},
 	)
 
 	ri.capacityTarget.Status.Clusters = append(ri.capacityTarget.Status.Clusters,
-		shipper.ClusterCapacityStatus{Name: name, AchievedPercent: 100},
+		shipper.ClusterCapacityStatus{Name: cluster.Name, AchievedPercent: 100},
 	)
 
 	ri.capacityTarget.Spec.Clusters = append(ri.capacityTarget.Spec.Clusters,
-		shipper.ClusterCapacityTarget{Name: name, Percent: 0},
+		shipper.ClusterCapacityTarget{Name: cluster.Name, Percent: 0},
 	)
 
 	ri.trafficTarget.Spec.Clusters = append(ri.trafficTarget.Spec.Clusters,
-		shipper.ClusterTrafficTarget{Name: name, Weight: 0},
+		shipper.ClusterTrafficTarget{Name: cluster.Name, Weight: 0},
 	)
+
 	ri.trafficTarget.Status.Clusters = append(ri.trafficTarget.Status.Clusters,
-		&shipper.ClusterTrafficStatus{Name: name, AchievedTraffic: 100},
+		&shipper.ClusterTrafficStatus{Name: cluster.Name, AchievedTraffic: 100},
 	)
 }
 
@@ -1497,6 +1512,7 @@ func TestContenderDoNothingClusterInstallationNotReady(t *testing.T) {
 	incumbentName, contenderName := "test-incumbent", "test-contender"
 	app := buildApplication(namespace, "test-app")
 	cluster := buildCluster("minikube")
+	brokenCluster := buildCluster("broken-installation-cluster")
 
 	for _, i := range []int32{1, 3, 10} {
 		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
@@ -1509,7 +1525,7 @@ func TestContenderDoNothingClusterInstallationNotReady(t *testing.T) {
 		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 		releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
 
-		addCluster(contender, "broken-installation-cluster")
+		addCluster(contender, brokenCluster)
 
 		contender.release.Spec.TargetStep = 0
 
@@ -1540,6 +1556,7 @@ func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
 	incumbentName, contenderName := "test-incumbent", "test-contender"
 	app := buildApplication(namespace, "test-app")
 	cluster := buildCluster("minikube")
+	brokenCluster := buildCluster("broken-capacity-cluster")
 
 	for _, i := range []int32{1, 3, 10} {
 		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
@@ -1552,8 +1569,7 @@ func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
 		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 		releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
 
-		brokenClusterName := "broken-capacity-cluster"
-		addCluster(contender, brokenClusterName)
+		addCluster(contender, brokenCluster)
 
 		// We'll set cluster 0 to be all set, but make cluster 1 broken.
 		contender.release.Spec.TargetStep = 1
@@ -1580,6 +1596,8 @@ func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
 		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
 
 		f.addObjects(
+			brokenCluster.DeepCopy(),
+
 			contender.release.DeepCopy(),
 			contender.installationTarget.DeepCopy(),
 			contender.capacityTarget.DeepCopy(),
@@ -1592,7 +1610,7 @@ func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
 		)
 
 		r := contender.release.DeepCopy()
-		f.expectCapacityNotReady(r, 1, 0, Contender, brokenClusterName)
+		f.expectCapacityNotReady(r, 1, 0, Contender, brokenCluster.Name)
 		f.run()
 	}
 }
@@ -1602,6 +1620,7 @@ func TestContenderDoNothingClusterTrafficNotReady(t *testing.T) {
 	incumbentName, contenderName := "test-incumbent", "test-contender"
 	app := buildApplication(namespace, "test-app")
 	cluster := buildCluster("minikube")
+	brokenCluster := buildCluster("broken-traffic-cluster")
 
 	for _, i := range []int32{1, 3, 10} {
 		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
@@ -1614,8 +1633,7 @@ func TestContenderDoNothingClusterTrafficNotReady(t *testing.T) {
 		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 		releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
 
-		brokenClusterName := "broken-traffic-cluster"
-		addCluster(contender, brokenClusterName)
+		addCluster(contender, brokenCluster)
 
 		// We'll set cluster 0 to be all set, but make cluster 1 broken.
 		contender.release.Spec.TargetStep = 1
@@ -1655,7 +1673,7 @@ func TestContenderDoNothingClusterTrafficNotReady(t *testing.T) {
 		)
 
 		r := contender.release.DeepCopy()
-		f.expectTrafficNotReady(r, 1, 0, Contender, brokenClusterName)
+		f.expectTrafficNotReady(r, 1, 0, Contender, brokenCluster.Name)
 		f.run()
 	}
 }

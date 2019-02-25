@@ -308,6 +308,7 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetSameOwner(t *testing.
 			},
 		},
 	}
+	setInstallationTargetClusters(installationtarget, []string{cluster.Name})
 	fixtures := []runtime.Object{release, cluster, installationtarget}
 
 	// Expected release and actions. Even with an existing installationtarget
@@ -319,6 +320,8 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetSameOwner(t *testing.
 		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(expected.DeepCopy(), []*shipper.Cluster{cluster})
+	// an installationtarget exists and contains the spec we expect, no action required
+	expectedActions = filterActions(expectedActions, []string{"update", "create"}, []string{"traffictargets", "capacitytargets"})
 
 	c, clientset := newScheduler(release, fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
@@ -362,7 +365,7 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetNoOwner(t *testing.T)
 		t.Fatalf("Expected an error here, none received")
 	}
 
-	if !errors.IsAlreadyExists(err) {
+	if !errors.IsConflict(err) {
 		t.Fatalf("Expected an already-exists error, got: %s", err)
 	}
 }
@@ -382,6 +385,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetSameOwner(t *testing.T) {
 			},
 		},
 	}
+	setTrafficTargetClusters(traffictarget, []string{cluster.Name})
 	fixtures := []runtime.Object{cluster, release, traffictarget}
 
 	// Expected release and actions. Even with an existing installationtarget
@@ -393,6 +397,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetSameOwner(t *testing.T) {
 		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(expected.DeepCopy(), []*shipper.Cluster{cluster})
+	expectedActions = filterActions(expectedActions, []string{"create", "update"}, []string{"installationtargets", "capacitytargets"})
 
 	c, clientset := newScheduler(release, fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
@@ -437,7 +442,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetNoOwner(t *testing.T) {
 		t.Fatalf("Expected an error here, none received")
 	}
 
-	if !errors.IsAlreadyExists(err) {
+	if !errors.IsConflict(err) {
 		t.Fatalf("Expected an already-exists error, got: %s", err)
 	}
 }
@@ -448,6 +453,8 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetSameOwner(t *testing.T) {
 	release := buildRelease()
 	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
 
+	var totalReplicaCount int32 = 1
+
 	capacitytarget := &shipper.CapacityTarget{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      release.GetName(),
@@ -457,6 +464,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetSameOwner(t *testing.T) {
 			},
 		},
 	}
+	setCapacityTargetClusters(capacitytarget, []string{cluster.Name}, totalReplicaCount)
 	fixtures := []runtime.Object{cluster, release, capacitytarget}
 
 	// Expected release and actions. Even with an existing capacitytarget object
@@ -468,6 +476,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetSameOwner(t *testing.T) {
 		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(expected.DeepCopy(), []*shipper.Cluster{cluster})
+	expectedActions = filterActions(expectedActions, []string{"update", "create"}, []string{"installationtargets", "traffictargets"})
 
 	c, clientset := newScheduler(release, fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
@@ -511,7 +520,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetNoOwner(t *testing.T) {
 		t.Fatalf("Expected an error here, none received")
 	}
 
-	if !errors.IsAlreadyExists(err) {
+	if !errors.IsConflict(err) {
 		t.Fatalf("Expected an already-exists error, got: %s", err)
 	}
 }
