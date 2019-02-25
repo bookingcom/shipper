@@ -63,6 +63,104 @@ func buildRelease() *shipper.Release {
 	}
 }
 
+func buildAssociatedObjects(release *shipper.Release, clusters []*shipper.Cluster) (*shipper.InstallationTarget, *shipper.TrafficTarget, *shipper.CapacityTarget) {
+
+	clusterNames := make([]string, 0, len(clusters))
+	for _, cluster := range clusters {
+		clusterNames = append(clusterNames, cluster.GetName())
+	}
+	sort.Strings(clusterNames)
+
+	installationTarget := &shipper.InstallationTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: release.APIVersion,
+					Kind:       release.Kind,
+					Name:       release.Name,
+					UID:        release.UID,
+				},
+			},
+			Labels: map[string]string{
+				shipper.AppLabel:     release.OwnerReferences[0].Name,
+				shipper.ReleaseLabel: release.GetName(),
+			},
+		},
+		Spec: shipper.InstallationTargetSpec{
+			Clusters: clusterNames,
+		},
+	}
+
+	clusterTrafficTargets := make([]shipper.ClusterTrafficTarget, 0, len(clusters))
+	for _, cluster := range clusters {
+		clusterTrafficTargets = append(
+			clusterTrafficTargets,
+			shipper.ClusterTrafficTarget{
+				Name: cluster.GetName(),
+			})
+	}
+
+	trafficTarget := &shipper.TrafficTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.Name,
+			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: release.APIVersion,
+					Kind:       release.Kind,
+					Name:       release.Name,
+					UID:        release.UID,
+				},
+			},
+			Labels: map[string]string{
+				shipper.AppLabel:     release.OwnerReferences[0].Name,
+				shipper.ReleaseLabel: release.GetName(),
+			},
+		},
+		Spec: shipper.TrafficTargetSpec{
+			Clusters: clusterTrafficTargets,
+		},
+	}
+
+	clusterCapacityTargets := make([]shipper.ClusterCapacityTarget, 0, len(clusters))
+	for _, cluster := range clusters {
+		clusterCapacityTargets = append(
+			clusterCapacityTargets,
+			shipper.ClusterCapacityTarget{
+				Name:              cluster.GetName(),
+				Percent:           0,
+				TotalReplicaCount: 12,
+			})
+	}
+
+	capacityTarget := &shipper.CapacityTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.Name,
+			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: release.APIVersion,
+					Kind:       release.Kind,
+					Name:       release.Name,
+					UID:        release.UID,
+				},
+			},
+			Labels: map[string]string{
+				shipper.AppLabel:     release.OwnerReferences[0].Name,
+				shipper.ReleaseLabel: release.GetName(),
+			},
+		},
+		Spec: shipper.CapacityTargetSpec{
+			Clusters: clusterCapacityTargets,
+		},
+	}
+
+	return installationTarget, trafficTarget, capacityTarget
+
+}
+
 func newScheduler(
 	release *shipper.Release,
 	fixtures []runtime.Object,
@@ -178,93 +276,6 @@ func TestScheduleSkipsUnschedulable(t *testing.T) {
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
-// func buildExpectedActions(ns string, release *shipper.Release) []kubetesting.Action {
-// 	installationTarget := &shipper.InstallationTarget{
-// 		ObjectMeta: metav1.ObjectMeta{
-// 			Name:      release.Name,
-// 			Namespace: ns,
-// 			OwnerReferences: []metav1.OwnerReference{
-// 				{
-// 					APIVersion: release.APIVersion,
-// 					Kind:       release.Kind,
-// 					Name:       release.Name,
-// 					UID:        release.UID,
-// 				},
-// 			},
-// 		},
-// 		Spec: shipper.InstallationTargetSpec{
-// 			Clusters: []string{"minikube-a"},
-// 		},
-// 	}
-//
-// 	capacityTarget := &shipper.CapacityTarget{
-// 		ObjectMeta: metav1.ObjectMeta{
-// 			Name:      release.Name,
-// 			Namespace: ns,
-// 			OwnerReferences: []metav1.OwnerReference{
-// 				{
-// 					APIVersion: release.APIVersion,
-// 					Kind:       release.Kind,
-// 					Name:       release.Name,
-// 					UID:        release.UID,
-// 				},
-// 			},
-// 		},
-// 		Spec: shipper.CapacityTargetSpec{
-// 			Clusters: []shipper.ClusterCapacityTarget{
-// 				{
-// 					Name:              "minikube-a",
-// 					Percent:           0,
-// 					TotalReplicaCount: 12,
-// 				},
-// 			},
-// 		},
-// 	}
-//
-// 	trafficTarget := &shipper.TrafficTarget{
-// 		ObjectMeta: metav1.ObjectMeta{
-// 			Name:      release.Name,
-// 			Namespace: ns,
-// 			OwnerReferences: []metav1.OwnerReference{
-// 				{
-// 					APIVersion: release.APIVersion,
-// 					Kind:       release.Kind,
-// 					Name:       release.Name,
-// 					UID:        release.UID,
-// 				},
-// 			},
-// 		},
-// 		Spec: shipper.TrafficTargetSpec{
-// 			Clusters: []shipper.ClusterTrafficTarget{
-// 				shipper.ClusterTrafficTarget{
-// 					Name: "minikube-a",
-// 				},
-// 			},
-// 		},
-// 	}
-//
-// 	actions := []kubetesting.Action{
-// 		kubetesting.NewCreateAction(
-// 			shipper.SchemeGroupVersion.WithResource("installationtargets"),
-// 			ns,
-// 			installationTarget),
-// 		kubetesting.NewCreateAction(
-// 			shipper.SchemeGroupVersion.WithResource("traffictargets"),
-// 			ns,
-// 			trafficTarget),
-// 		kubetesting.NewCreateAction(
-// 			shipper.SchemeGroupVersion.WithResource("capacitytargets"),
-// 			ns,
-// 			capacityTarget,
-// 		),
-// 		kubetesting.NewUpdateAction(
-// 			shipper.SchemeGroupVersion.WithResource("releases"),
-// 			ns,
-// 			release),
-// 	}
-// 	return actions
-// }
-
 func TestCreateAssociatedObjects(t *testing.T) {
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
@@ -280,6 +291,174 @@ func TestCreateAssociatedObjects(t *testing.T) {
 		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
+
+	c, clientset := newScheduler(release, fixtures)
+	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
+		t.Fatal(err)
+	}
+
+	filteredActions := filterActions(
+		clientset.Actions(),
+		[]string{"update", "create"},
+		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+	)
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
+}
+
+func TestCreateAssociatedObjectsDuplicateInstallationTargetMismatchingClusters(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+
+	installationtarget := &shipper.InstallationTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(release),
+			},
+			Labels: map[string]string{
+				shipper.AppLabel:     release.OwnerReferences[0].Name,
+				shipper.ReleaseLabel: release.GetName(),
+			},
+		},
+	}
+
+	fixtures := []runtime.Object{release, installationtarget, cluster}
+
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+
+	it, tt, ct := buildAssociatedObjects(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("installationtargets"),
+			release.GetNamespace(),
+			it),
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("traffictargets"),
+			release.GetNamespace(),
+			tt),
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("capacitytargets"),
+			release.GetNamespace(),
+			ct,
+		),
+	}
+
+	c, clientset := newScheduler(release, fixtures)
+	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
+		t.Fatal(err)
+	}
+
+	filteredActions := filterActions(
+		clientset.Actions(),
+		[]string{"update", "create"},
+		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+	)
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
+}
+
+func TestCreateAssociatedObjectsDuplicateTrafficTargetMismatchingClusters(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+
+	traffictarget := &shipper.TrafficTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(release),
+			},
+			Labels: map[string]string{
+				shipper.AppLabel:     release.OwnerReferences[0].Name,
+				shipper.ReleaseLabel: release.GetName(),
+			},
+		},
+	}
+
+	fixtures := []runtime.Object{release, traffictarget, cluster}
+
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+
+	it, tt, ct := buildAssociatedObjects(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("installationtargets"),
+			release.GetNamespace(),
+			it),
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("traffictargets"),
+			release.GetNamespace(),
+			tt),
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("capacitytargets"),
+			release.GetNamespace(),
+			ct,
+		),
+	}
+
+	c, clientset := newScheduler(release, fixtures)
+	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
+		t.Fatal(err)
+	}
+
+	filteredActions := filterActions(
+		clientset.Actions(),
+		[]string{"update", "create"},
+		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+	)
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
+}
+
+func TestCreateAssociatedObjectsDuplicateCapacityTargetMismatchingClusters(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+
+	capacitytarget := &shipper.CapacityTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(release),
+			},
+			Labels: map[string]string{
+				shipper.AppLabel:     release.OwnerReferences[0].Name,
+				shipper.ReleaseLabel: release.GetName(),
+			},
+		},
+	}
+
+	fixtures := []runtime.Object{release, capacitytarget, cluster}
+
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+
+	it, tt, ct := buildAssociatedObjects(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("installationtargets"),
+			release.GetNamespace(),
+			it),
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("traffictargets"),
+			release.GetNamespace(),
+			tt),
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("capacitytargets"),
+			release.GetNamespace(),
+			ct,
+		),
+	}
 
 	c, clientset := newScheduler(release, fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
