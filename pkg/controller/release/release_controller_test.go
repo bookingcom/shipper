@@ -876,10 +876,6 @@ func (f *fixture) expectAssociatedObjectsCreated(release *shipper.Release, clust
 			[]string{"installationtargets", "traffictargets", "capacitytargets"},
 		})
 	f.actions = buildExpectedActions(expected, clusters)
-	clusterNames := make([]string, 0, len(clusters))
-	for _, cluster := range clusters {
-		clusterNames = append(clusterNames, cluster.GetName())
-	}
 	relKey := fmt.Sprintf("%s/%s", release.GetNamespace(), release.GetName())
 	f.expectedEvents = []string{
 		fmt.Sprintf(

@@ -37,7 +37,7 @@ func (s *Executor) event(obj runtime.Object, format string, args ...interface{})
 	)
 }
 
-// execute executes the strategy. It returns an ExecutorResult, if a patch should
+// Execute executes the strategy. It returns an ExecutorResult, if a patch should
 // be performed into some of the associated Release objects and an error if an error
 // has happened. Currently if both values are nil it means that the operation was
 // successful but no modifications are required.
