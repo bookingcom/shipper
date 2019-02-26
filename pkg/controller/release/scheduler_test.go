@@ -805,7 +805,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetNoOwner(t *testing.T) {
 	}
 
 	if !errors.IsConflict(err) {
-		t.Fatalf("Expected an already-exists error, got: %s", err)
+		t.Fatalf("Expected a conflict error, got: %s", err)
 	}
 }
 
@@ -901,7 +901,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetNoOwner(t *testing.T) {
 	}
 
 	if !errors.IsConflict(err) {
-		t.Fatalf("Expected an already-exists error, got: %s", err)
+		t.Fatalf("Expected a conflict error, got: %s", err)
 	}
 }
 
