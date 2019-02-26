@@ -2,13 +2,16 @@ package configurator
 
 import (
 	"encoding/hex"
+	"fmt"
 	"hash/crc32"
 
 	homedir "github.com/mitchellh/go-homedir"
+	certificatesv1beta1 "k8s.io/api/certificates/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apiextensionclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -16,9 +19,21 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"time"
+
+	"encoding/base64"
+
 	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
+)
+
+const (
+	shipperCSRName                      = "shipper-validating-webhook"
+	shipperValidatingWebhookSecretName  = "shipper-validating-webhook-secret"
+	shipperValidatingWebhookName        = "shipper.booking.com"
+	shipperValidatingWebhookServiceName = "shipper-validating-webhook"
 )
 
 type Cluster struct {
@@ -279,4 +294,139 @@ func loadKubeConfig(context, kubeConfigFile string) (*rest.Config, error) {
 	)
 
 	return clientConfig.ClientConfig()
+}
+
+func (c *Cluster) CreateCertificateSigningRequest(csr []byte) error {
+	certificateSigningRequest := &certificatesv1beta1.CertificateSigningRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: shipperCSRName,
+		},
+		Spec: certificatesv1beta1.CertificateSigningRequestSpec{
+			Request: csr,
+			Usages: []certificatesv1beta1.KeyUsage{
+				certificatesv1beta1.UsageServerAuth,
+				certificatesv1beta1.UsageDigitalSignature,
+				certificatesv1beta1.UsageKeyEncipherment,
+			},
+		},
+	}
+
+	_, err := c.KubeClient.Certificates().CertificateSigningRequests().Create(certificateSigningRequest)
+	return err
+}
+
+func (c *Cluster) ApproveShipperCSR() error {
+	csr, err := c.KubeClient.Certificates().CertificateSigningRequests().Get(shipperCSRName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	approvedCondition := certificatesv1beta1.CertificateSigningRequestCondition{
+		Type:    certificatesv1beta1.CertificateApproved,
+		Reason:  "ShipperctlApprove",
+		Message: "Automatically approved by shipperctl",
+	}
+
+	csr.Status.Conditions = append(csr.Status.Conditions, approvedCondition)
+	_, err = c.KubeClient.Certificates().CertificateSigningRequests().UpdateApproval(csr)
+
+	return err
+}
+
+// FetchCertificateFromCSR continually fetches the Shipper CSR until
+// it is populated with a certificate and then returns the certificate
+// from the Status. This is a blocking function.
+func (c *Cluster) FetchCertificateFromCSR() ([]byte, error) {
+	for retries := 0; retries < 10; retries++ {
+		csr, err := c.KubeClient.Certificates().CertificateSigningRequests().Get(shipperCSRName, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+
+		if len(csr.Status.Certificate) > 0 {
+			return csr.Status.Certificate, nil
+		}
+
+		time.Sleep(1 * time.Second)
+	}
+
+	// If we reach here, we have failed to get the certificate after all the retries
+	return nil, fmt.Errorf("certificate is not populated after 10 retries")
+}
+
+func (c *Cluster) CreateValidatingWebhookSecret(privateKey, certificate []byte, namespace string) error {
+	encodedPrivateKey := make([]byte, base64.StdEncoding.EncodedLen(len(privateKey)))
+	encodedCertificate := make([]byte, base64.StdEncoding.EncodedLen(len(certificate)))
+	base64.StdEncoding.Encode(encodedPrivateKey, privateKey)
+	base64.StdEncoding.Encode(encodedCertificate, certificate)
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: shipperValidatingWebhookSecretName,
+		},
+		Data: map[string][]byte{
+			"server.key":  encodedPrivateKey,
+			"server.cert": encodedCertificate,
+		},
+	}
+
+	_, err := c.KubeClient.CoreV1().Secrets(namespace).Create(secret)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Cluster) FetchKubernetesCABundle() ([]byte, error) {
+	configmap, err := c.KubeClient.CoreV1().ConfigMaps("kube-system").Get("extension-apiserver-authentication", metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	caBundle, ok := configmap.Data["client-ca-file"]
+	if !ok {
+		return nil, fmt.Errorf("there is no `client-ca-file` on the `extension-apiserver-authentication` configmap in the `kube-system` namespace")
+	}
+
+	return []byte(caBundle), nil
+}
+
+func (c *Cluster) CreateValidatingWebhookConfiguration(caBundle []byte, namespace string) error {
+	validatingWebhookConfiguration := &admissionregistrationv1beta1.ValidatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: shipperValidatingWebhookName,
+		},
+		Webhooks: []admissionregistrationv1beta1.Webhook{
+			admissionregistrationv1beta1.Webhook{
+				Name: shipperValidatingWebhookName,
+				ClientConfig: admissionregistrationv1beta1.WebhookClientConfig{
+					CABundle: caBundle,
+					Service: &admissionregistrationv1beta1.ServiceReference{
+						Name:      shipperValidatingWebhookServiceName,
+						Namespace: namespace,
+					},
+				},
+				Rules: []admissionregistrationv1beta1.RuleWithOperations{
+					admissionregistrationv1beta1.RuleWithOperations{
+						Operations: []admissionregistrationv1beta1.OperationType{
+							admissionregistrationv1beta1.OperationAll,
+						},
+						Rule: admissionregistrationv1beta1.Rule{
+							APIGroups:   []string{shipper.SchemeGroupVersion.Group},
+							APIVersions: []string{shipper.SchemeGroupVersion.Version},
+							Resources:   []string{"*"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	_, err := c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Create(validatingWebhookConfiguration)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

@@ -10,8 +10,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 
+	"crypto/rand"
+	"crypto/rsa"
+
+	"crypto/x509"
+
 	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
+	"github.com/bookingcom/shipper/cmd/shipperctl/tls"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/crds"
 )
@@ -31,6 +37,7 @@ var (
 
 // Name constants
 const (
+	shipperManagementServiceName               = "shipper-validating-webhook"
 	shipperManagementClusterServiceAccountName = "shipper-management-cluster"
 	shipperManagementClusterRoleName           = "shipper:management-cluster"
 	shipperManagementClusterRoleBindingName    = "shipper:management-cluster"
@@ -117,6 +124,14 @@ func setupManagementCluster(managementCluster *config.ClusterConfiguration, cmd 
 	}
 
 	if err := createManagementClusterRoleBinding(cmd, configurator); err != nil {
+		return err
+	}
+
+	if err := createValidatingWebhookSecret(cmd, configurator); err != nil {
+		return err
+	}
+
+	if err := createValidatingWebhookConfiguration(cmd, configurator); err != nil {
 		return err
 	}
 
@@ -231,6 +246,50 @@ func createManagementServiceAccount(cmd *cobra.Command, configurator *configurat
 	}
 
 	cmd.Println("done")
+	return nil
+}
+
+func createValidatingWebhookSecret(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	privatekey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return err
+	}
+
+	csr, err := tls.GenerateCSRForServiceInNamespace(privatekey, shipperManagementServiceName, shipperSystemNamespace)
+	if err != nil {
+		return err
+	}
+
+	if err := configurator.CreateCertificateSigningRequest(csr); err != nil {
+		return err
+	}
+
+	if err := configurator.ApproveShipperCSR(); err != nil {
+		return err
+	}
+
+	certificate, err := configurator.FetchCertificateFromCSR()
+	if err != nil {
+		return err
+	}
+
+	if err := configurator.CreateValidatingWebhookSecret(x509.MarshalPKCS1PrivateKey(privatekey), certificate, shipperSystemNamespace); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func createValidatingWebhookConfiguration(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	caBundle, err := configurator.FetchKubernetesCABundle()
+	if err != nil {
+		return err
+	}
+
+	if err := configurator.CreateValidatingWebhookConfiguration(caBundle, shipperSystemNamespace); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -399,4 +458,8 @@ func loadClustersConfiguration() (*config.ClustersConfiguration, error) {
 	}
 
 	return configuration, nil
+}
+
+func constructShipperServiceAccountUsername() string {
+	return fmt.Sprintf("system:serviceaccount:%s:%s", shipperSystemNamespace, shipperManagementClusterServiceAccountName)
 }
