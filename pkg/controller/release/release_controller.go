@@ -37,6 +37,12 @@ const (
 	noRetry = false
 )
 
+// Controller is a Kubernetes controller whose role is to pick up a newly created
+// release and progress it forward by scheduling the release on a set of
+// selected clusters, creating a set of associated objects and executing the
+// strategy.
+//
+// Release Controller has 2 primary workqueues: releases and applications.
 type Controller struct {
 	clientset      shipperclient.Interface
 	chartFetchFunc chart.FetchFunc
@@ -163,6 +169,7 @@ func NewController(
 	return controller
 }
 
+// Run starts Release Controller workers and waits until stopCh is closed.
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.releaseWorkqueue.ShutDown()
@@ -204,6 +211,9 @@ func (c *Controller) runApplicationWorker() {
 	}
 }
 
+// processNextReleaseWorkItem pops an element from the head of the workqueue and
+// passes to the sync release handler. It returns bool indicating if the
+// execution process should go on.
 func (c *Controller) processNextReleaseWorkItem() bool {
 	obj, shutdown := c.releaseWorkqueue.Get()
 	if shutdown {
@@ -215,6 +225,7 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 	if _, ok := obj.(string); !ok {
 		c.releaseWorkqueue.Forget(obj)
 		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
+		return true
 	}
 	key := obj.(string)
 
@@ -222,7 +233,6 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 		if c.releaseWorkqueue.NumRequeues(key) >= maxRetries {
 			glog.Warningf("Release %q has been retried too many times, droppping from the queue", key)
 			c.releaseWorkqueue.Forget(key)
-
 			return true
 		}
 
@@ -237,6 +247,9 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 	return true
 }
 
+// processNextAppWorkItem pops a next item from the head of the application
+// workqueue and passes it to the sync app handler. The returning bool is an
+// indication if the process should go on normally.
 func (c *Controller) processNextAppWorkItem() bool {
 	obj, shutdown := c.applicationWorkqueue.Get()
 	if shutdown {
@@ -247,6 +260,7 @@ func (c *Controller) processNextAppWorkItem() bool {
 	if _, ok := obj.(string); !ok {
 		c.applicationWorkqueue.Forget(obj)
 		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
+		return true
 	}
 	key := obj.(string)
 
@@ -269,6 +283,9 @@ func (c *Controller) processNextAppWorkItem() bool {
 	return true
 }
 
+// syncReleaseHandler processes release keys one-by-one. This stage progresses
+// the release through a scheduler: assigns a set of chosen clusters, creates
+// required associated objects and marks the release as scheduled.
 func (c *Controller) syncReleaseHandler(key string) bool {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -279,7 +296,7 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 	rel, err := c.releaseLister.Releases(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			glog.V(3).Infof("Release %q has been deleted", key)
+			glog.V(3).Infof("Release %q not found", key)
 			return noRetry
 		}
 
@@ -288,7 +305,7 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 		return retry
 	}
 
-	if releaseutil.IsEmpty(rel) {
+	if releaseutil.HasEmptyEnvironment(rel) {
 		glog.Infof("Release %q has an empty Environment, bailing out", key)
 		return noRetry
 	}
@@ -322,9 +339,10 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 		)
 		releaseutil.SetReleaseCondition(&rel.Status, *condition)
 
-		if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); err != nil {
+		if _, updErr := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); updErr != nil {
 			// always retry failing to write the error out to the Release: we need to communicate this to the user
-			return retry
+			err = updErr
+			shouldRetry = retry
 		}
 
 		if shouldRetry {
@@ -345,6 +363,8 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 		return noRetry
 	}
 
+	// If everything went fine, scheduling an application key in the
+	// application workqueue.
 	glog.V(4).Infof("Scheduling Application key %q", appKey)
 	c.applicationWorkqueue.Add(appKey)
 
@@ -353,6 +373,9 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 	return noRetry
 }
 
+// syncApplicationHandler processes application keys one-by-one. On this stage a
+// release is expected to be scheduled. This handler instantiates a strategy
+// executor and executes it.
 func (c *Controller) syncApplicationHandler(key string) bool {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -362,7 +385,7 @@ func (c *Controller) syncApplicationHandler(key string) bool {
 	app, err := c.applicationLister.Applications(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			glog.V(3).Infof("Application %q has been deleted", key)
+			glog.V(3).Infof("Application %q not found", key)
 			return noRetry
 		}
 
@@ -477,6 +500,9 @@ func (c *Controller) buildExecutor(incumbentRelease, contenderRelease *shipper.R
 	}, nil
 }
 
+// getAssociatedApplicationName returns the owner application name from the
+// release owner reference. It expects exactly 1 owner reference to exist, and
+// returns an error othewrwise.
 func (c *Controller) getAssociatedApplicationName(rel *shipper.Release) (string, error) {
 	if n := len(rel.OwnerReferences); n != 1 {
 		return "", shippercontroller.NewMultipleOwnerReferencesError(
@@ -488,6 +514,8 @@ func (c *Controller) getAssociatedApplicationName(rel *shipper.Release) (string,
 	return appref.Name, nil
 }
 
+// getAssociatedApplicationKey returns an application key in the format:
+// <namespace> / <application name>
 func (c *Controller) getAssociatedApplicationKey(rel *shipper.Release) (string, error) {
 	appName, err := c.getAssociatedApplicationName(rel)
 	if err != nil {
@@ -499,6 +527,9 @@ func (c *Controller) getAssociatedApplicationKey(rel *shipper.Release) (string, 
 	return appKey, nil
 }
 
+// getAssociatedReleaseKey returns an owner reference release name for an
+// associated object in the format:
+// <namespace> / <release name>
 func (c *Controller) getAssociatedReleaseKey(obj *metav1.ObjectMeta) (string, error) {
 	if n := len(obj.OwnerReferences); n != 1 {
 		return "", shippercontroller.NewMultipleOwnerReferencesError(obj.Name, n)
@@ -557,7 +588,7 @@ func (c *Controller) getWorkingReleasePair(app *shipper.Application) (*shipper.R
 
 	var incumbent *shipper.Release
 	// Walk backwards until we find an installed release that isn't the head of
-	// history. Ffor releases A -> B -> C, if B was never finished this allows C to
+	// history. For releases A -> B -> C, if B was never finished this allows C to
 	// ignore it and let it get deleted so the transition is A->C.
 	for i := len(appReleases) - 1; i >= 0; i-- {
 		if releaseutil.ReleaseComplete(appReleases[i]) && contender != appReleases[i] {
@@ -570,6 +601,9 @@ func (c *Controller) getWorkingReleasePair(app *shipper.Application) (*shipper.R
 	return incumbent, contender, nil
 }
 
+// buildReleaseInfo returns a release and it's associated objects fetched from
+// the lister interface. If some of them could not be found, it returns a
+// corresponding error.
 func (c *Controller) buildReleaseInfo(rel *shipper.Release) (*releaseInfo, error) {
 	installationTarget, err := c.installationTargetLister.InstallationTargets(rel.Namespace).Get(rel.Name)
 	if err != nil {
