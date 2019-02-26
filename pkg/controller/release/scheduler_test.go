@@ -191,519 +191,6 @@ func newScheduler(
 	return c, clientset
 }
 
-// TestSchedule tests the first part of the cluster scheduling, which is find
-// out which clusters the release must be installed, and persisting it under
-// .status.environment.clusters.
-func TestSchedule(t *testing.T) {
-	// Fixtures
-	clusterA := buildCluster("minikube-a")
-	clusterB := buildCluster("minikube-b")
-	release := buildRelease()
-	fixtures := []runtime.Object{clusterA, clusterB, release}
-	// Demand two clusters.
-	release.Spec.Environment.ClusterRequirements.Regions[0].Replicas = pint32(2)
-
-	// Expected values. The release should have, at the end of the business
-	// logic, a list of clusters containing all clusters we've added to
-	// the client in alphabetical order.
-	expected := release.DeepCopy()
-	expected.Annotations[shipper.ReleaseClustersAnnotation] = clusterA.GetName() + "," + clusterB.GetName()
-
-	relWithConditions := expected.DeepCopy()
-
-	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
-	releaseutil.SetReleaseCondition(&relWithConditions.Status, *condition)
-
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			release.GetNamespace(),
-			expected),
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			release.GetNamespace(),
-			relWithConditions),
-	}
-
-	c, clientset := newScheduler(release, fixtures)
-	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
-		t.Fatal(err)
-	}
-
-	filteredActions := filterActions(clientset.Actions(), []string{"update"}, []string{"releases"})
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
-}
-
-// TestScheduleSkipsUnschedulable tests the first part of the cluster
-// scheduling, which is find out which clusters the release must be installed,
-// and persisting it under .status.environment.clusters but skipping
-// unschedulable clusters this time.
-func TestScheduleSkipsUnschedulable(t *testing.T) {
-	// Fixtures
-	clusterA := buildCluster("minikube-a")
-	clusterB := buildCluster("minikube-b")
-	clusterB.Spec.Scheduler.Unschedulable = true
-	release := buildRelease()
-	fixtures := []runtime.Object{clusterA, clusterB, release}
-
-	// The release should have, at the end of the business logic, a list of
-	// clusters containing the schedulable cluster we've added to the client.
-	expected := release.DeepCopy()
-	expected.Annotations[shipper.ReleaseClustersAnnotation] = clusterA.GetName()
-
-	relWithConditions := expected.DeepCopy()
-
-	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
-	releaseutil.SetReleaseCondition(&relWithConditions.Status, *condition)
-
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			release.GetNamespace(),
-			expected),
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			release.GetNamespace(),
-			relWithConditions),
-	}
-
-	c, clientset := newScheduler(release, fixtures)
-	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
-		t.Fatal(err)
-	}
-
-	filteredActions := filterActions(clientset.Actions(), []string{"update"}, []string{"releases"})
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
-}
-
-func TestCreateAssociatedObjects(t *testing.T) {
-	cluster := buildCluster("minikube-a")
-	release := buildRelease()
-	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
-	fixtures := []runtime.Object{release, cluster}
-
-	// Expected release and actions. The release should have, at the end of the
-	// business logic, a list of clusters containing the sole cluster we've added
-	// to the client, and also a Scheduled condition with True status. Expected
-	// actions contain the intent to create all the associated target objects.
-	expected := release.DeepCopy()
-	expected.Status.Conditions = []shipper.ReleaseCondition{
-		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-	}
-	expectedActions := buildExpectedActions(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
-
-	c, clientset := newScheduler(release, fixtures)
-	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
-		t.Fatal(err)
-	}
-
-	filteredActions := filterActions(
-		clientset.Actions(),
-		[]string{"update", "create"},
-		[]string{"installationtargets", "traffictargets", "capacitytargets"},
-	)
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
-}
-
-func TestCreateAssociatedObjectsDuplicateInstallationTargetMismatchingClusters(t *testing.T) {
-	cluster := buildCluster("minikube-a")
-	release := buildRelease()
-	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
-
-	installationtarget := &shipper.InstallationTarget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      release.GetName(),
-			Namespace: release.GetNamespace(),
-			OwnerReferences: []metav1.OwnerReference{
-				createOwnerRefFromRelease(release),
-			},
-			Labels: map[string]string{
-				shipper.AppLabel:     release.OwnerReferences[0].Name,
-				shipper.ReleaseLabel: release.GetName(),
-			},
-		},
-	}
-
-	fixtures := []runtime.Object{release, installationtarget, cluster}
-
-	expected := release.DeepCopy()
-	expected.Status.Conditions = []shipper.ReleaseCondition{
-		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-	}
-
-	it, tt, ct := buildAssociatedObjects(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("installationtargets"),
-			release.GetNamespace(),
-			it),
-		kubetesting.NewCreateAction(
-			shipper.SchemeGroupVersion.WithResource("traffictargets"),
-			release.GetNamespace(),
-			tt),
-		kubetesting.NewCreateAction(
-			shipper.SchemeGroupVersion.WithResource("capacitytargets"),
-			release.GetNamespace(),
-			ct,
-		),
-	}
-
-	c, clientset := newScheduler(release, fixtures)
-	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
-		t.Fatal(err)
-	}
-
-	filteredActions := filterActions(
-		clientset.Actions(),
-		[]string{"update", "create"},
-		[]string{"installationtargets", "traffictargets", "capacitytargets"},
-	)
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
-}
-
-func TestCreateAssociatedObjectsDuplicateTrafficTargetMismatchingClusters(t *testing.T) {
-	cluster := buildCluster("minikube-a")
-	release := buildRelease()
-	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
-
-	traffictarget := &shipper.TrafficTarget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      release.GetName(),
-			Namespace: release.GetNamespace(),
-			OwnerReferences: []metav1.OwnerReference{
-				createOwnerRefFromRelease(release),
-			},
-			Labels: map[string]string{
-				shipper.AppLabel:     release.OwnerReferences[0].Name,
-				shipper.ReleaseLabel: release.GetName(),
-			},
-		},
-	}
-
-	fixtures := []runtime.Object{release, traffictarget, cluster}
-
-	expected := release.DeepCopy()
-	expected.Status.Conditions = []shipper.ReleaseCondition{
-		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-	}
-
-	it, tt, ct := buildAssociatedObjects(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewCreateAction(
-			shipper.SchemeGroupVersion.WithResource("installationtargets"),
-			release.GetNamespace(),
-			it),
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("traffictargets"),
-			release.GetNamespace(),
-			tt),
-		kubetesting.NewCreateAction(
-			shipper.SchemeGroupVersion.WithResource("capacitytargets"),
-			release.GetNamespace(),
-			ct,
-		),
-	}
-
-	c, clientset := newScheduler(release, fixtures)
-	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
-		t.Fatal(err)
-	}
-
-	filteredActions := filterActions(
-		clientset.Actions(),
-		[]string{"update", "create"},
-		[]string{"installationtargets", "traffictargets", "capacitytargets"},
-	)
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
-}
-
-func TestCreateAssociatedObjectsDuplicateCapacityTargetMismatchingClusters(t *testing.T) {
-	cluster := buildCluster("minikube-a")
-	release := buildRelease()
-	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
-
-	capacitytarget := &shipper.CapacityTarget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      release.GetName(),
-			Namespace: release.GetNamespace(),
-			OwnerReferences: []metav1.OwnerReference{
-				createOwnerRefFromRelease(release),
-			},
-			Labels: map[string]string{
-				shipper.AppLabel:     release.OwnerReferences[0].Name,
-				shipper.ReleaseLabel: release.GetName(),
-			},
-		},
-	}
-
-	fixtures := []runtime.Object{release, capacitytarget, cluster}
-
-	expected := release.DeepCopy()
-	expected.Status.Conditions = []shipper.ReleaseCondition{
-		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-	}
-
-	it, tt, ct := buildAssociatedObjects(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewCreateAction(
-			shipper.SchemeGroupVersion.WithResource("installationtargets"),
-			release.GetNamespace(),
-			it),
-		kubetesting.NewCreateAction(
-			shipper.SchemeGroupVersion.WithResource("traffictargets"),
-			release.GetNamespace(),
-			tt),
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("capacitytargets"),
-			release.GetNamespace(),
-			ct,
-		),
-	}
-
-	c, clientset := newScheduler(release, fixtures)
-	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
-		t.Fatal(err)
-	}
-
-	filteredActions := filterActions(
-		clientset.Actions(),
-		[]string{"update", "create"},
-		[]string{"installationtargets", "traffictargets", "capacitytargets"},
-	)
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
-}
-
-func TestCreateAssociatedObjectsDuplicateInstallationTargetSameOwner(t *testing.T) {
-	cluster := buildCluster("minikube-a")
-	release := buildRelease()
-	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
-
-	installationtarget := &shipper.InstallationTarget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      release.GetName(),
-			Namespace: release.GetNamespace(),
-			OwnerReferences: []metav1.OwnerReference{
-				createOwnerRefFromRelease(release),
-			},
-		},
-	}
-	setInstallationTargetClusters(installationtarget, []string{cluster.Name})
-	fixtures := []runtime.Object{release, cluster, installationtarget}
-
-	// Expected release and actions. Even with an existing installationtarget
-	// object for this release, at the end of the business logic the expected
-	// release should have its .status.phase set to "WaitingForStrategy". Expected
-	// actions contain the intent to create all the associated target objects.
-	expected := release.DeepCopy()
-	expected.Status.Conditions = []shipper.ReleaseCondition{
-		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-	}
-	expectedActions := buildExpectedActions(expected.DeepCopy(), []*shipper.Cluster{cluster})
-	// an installationtarget exists and contains the spec we expect, no action required
-	expectedActions = filterActions(expectedActions, []string{"update", "create"}, []string{"traffictargets", "capacitytargets"})
-
-	c, clientset := newScheduler(release, fixtures)
-	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
-		t.Fatal(err)
-	}
-
-	filteredActions := filterActions(
-		clientset.Actions(),
-		[]string{"update", "create"},
-		[]string{"installationtargets", "traffictargets", "capacitytargets"},
-	)
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
-}
-
-func TestCreateAssociatedObjectsDuplicateInstallationTargetNoOwner(t *testing.T) {
-	cluster := buildCluster("minikube-a")
-	release := buildRelease()
-	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
-
-	installationtarget := &shipper.InstallationTarget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      release.GetName(),
-			Namespace: release.GetNamespace(),
-			// No explicit owner reference here
-		},
-	}
-	fixtures := []runtime.Object{release, cluster, installationtarget}
-
-	// Expected a release but no actions. With an existing installationtarget
-	// object but no explicit reference, it's a no-go. Expected an
-	// already-exists error.
-	expected := release.DeepCopy()
-	expected.Status.Conditions = []shipper.ReleaseCondition{
-		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-	}
-
-	c, _ := newScheduler(release, fixtures)
-
-	_, err := c.ScheduleRelease(release.DeepCopy())
-	if err == nil {
-		t.Fatalf("Expected an error here, none received")
-	}
-
-	if !errors.IsConflict(err) {
-		t.Fatalf("Expected an already-exists error, got: %s", err)
-	}
-}
-
-func TestCreateAssociatedObjectsDuplicateTrafficTargetSameOwner(t *testing.T) {
-	// Fixtures
-	cluster := buildCluster("minikube-a")
-	release := buildRelease()
-	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
-
-	traffictarget := &shipper.TrafficTarget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      release.GetName(),
-			Namespace: release.GetNamespace(),
-			OwnerReferences: []metav1.OwnerReference{
-				createOwnerRefFromRelease(release),
-			},
-		},
-	}
-	setTrafficTargetClusters(traffictarget, []string{cluster.Name})
-	fixtures := []runtime.Object{cluster, release, traffictarget}
-
-	// Expected release and actions. Even with an existing installationtarget
-	// object for this release, at the end of the business logic the expected
-	// release should have its .status.phase set to "WaitingForStrategy". Expected
-	// actions contain the intent to create all the associated target objects.
-	expected := release.DeepCopy()
-	expected.Status.Conditions = []shipper.ReleaseCondition{
-		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-	}
-	expectedActions := buildExpectedActions(expected.DeepCopy(), []*shipper.Cluster{cluster})
-	expectedActions = filterActions(expectedActions, []string{"create", "update"}, []string{"installationtargets", "capacitytargets"})
-
-	c, clientset := newScheduler(release, fixtures)
-	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
-		t.Fatal(err)
-	}
-
-	filteredActions := filterActions(
-		clientset.Actions(),
-		[]string{"update", "create"},
-		[]string{"installationtargets", "traffictargets", "capacitytargets"},
-	)
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
-}
-
-func TestCreateAssociatedObjectsDuplicateTrafficTargetNoOwner(t *testing.T) {
-	// Fixtures
-	cluster := buildCluster("minikube-a")
-	release := buildRelease()
-	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
-
-	traffictarget := &shipper.TrafficTarget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      release.GetName(),
-			Namespace: release.GetNamespace(),
-			// No explicit owner reference here
-		},
-	}
-	fixtures := []runtime.Object{cluster, release, traffictarget}
-
-	// Expected a release but no actions. With an existing traffictarget
-	// object but no explicit reference, it's a no-go. Expected an
-	// already-exists error.
-	expected := release.DeepCopy()
-	expected.Status.Conditions = []shipper.ReleaseCondition{
-		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-	}
-
-	c, _ := newScheduler(release, fixtures)
-
-	_, err := c.ScheduleRelease(release.DeepCopy())
-	if err == nil {
-		t.Fatalf("Expected an error here, none received")
-	}
-
-	if !errors.IsConflict(err) {
-		t.Fatalf("Expected an already-exists error, got: %s", err)
-	}
-}
-
-func TestCreateAssociatedObjectsDuplicateCapacityTargetSameOwner(t *testing.T) {
-	// Fixtures
-	cluster := buildCluster("minikube-a")
-	release := buildRelease()
-	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
-
-	var totalReplicaCount int32 = 1
-
-	capacitytarget := &shipper.CapacityTarget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      release.GetName(),
-			Namespace: release.GetNamespace(),
-			OwnerReferences: []metav1.OwnerReference{
-				createOwnerRefFromRelease(release),
-			},
-		},
-	}
-	setCapacityTargetClusters(capacitytarget, []string{cluster.Name}, totalReplicaCount)
-	fixtures := []runtime.Object{cluster, release, capacitytarget}
-
-	// Expected release and actions. Even with an existing capacitytarget object
-	// for this release, at the end of the business logic the expected release
-	// should have its .status.phase set to "WaitingForStrategy". Expected actions
-	// contain the intent to create all the associated target objects.
-	expected := release.DeepCopy()
-	expected.Status.Conditions = []shipper.ReleaseCondition{
-		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-	}
-	expectedActions := buildExpectedActions(expected.DeepCopy(), []*shipper.Cluster{cluster})
-	expectedActions = filterActions(expectedActions, []string{"update", "create"}, []string{"installationtargets", "traffictargets"})
-
-	c, clientset := newScheduler(release, fixtures)
-	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
-		t.Fatal(err)
-	}
-
-	actions := filterActions(
-		clientset.Actions(),
-		[]string{"update", "create"},
-		[]string{"installationtargets", "traffictargets", "capacitytargets"},
-	)
-	shippertesting.CheckActions(expectedActions, actions, t)
-}
-
-func TestCreateAssociatedObjectsDuplicateCapacityTargetNoOwner(t *testing.T) {
-	// Fixtures
-	cluster := buildCluster("minikube-a")
-	release := buildRelease()
-	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
-
-	capacitytarget := &shipper.CapacityTarget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      release.GetName(),
-			Namespace: release.GetNamespace(),
-		},
-	}
-	fixtures := []runtime.Object{cluster, release, capacitytarget}
-
-	// Expected a release but no actions. With an existing capacitytarget
-	// object but no explicit reference, it's a no-go. Expected an
-	// already-exists error.
-	expected := release.DeepCopy()
-	expected.Status.Conditions = []shipper.ReleaseCondition{
-		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-	}
-
-	c, _ := newScheduler(release, fixtures)
-
-	_, err := c.ScheduleRelease(release.DeepCopy())
-	if err == nil {
-		t.Fatalf("Expected an error here, none received")
-	}
-
-	if !errors.IsConflict(err) {
-		t.Fatalf("Expected an already-exists error, got: %s", err)
-	}
-}
-
 func filterActions(
 	actions []kubetesting.Action,
 	verbs []string,
@@ -748,6 +235,675 @@ func pint32(i int32) *int32 {
 
 func pstr(s string) *string {
 	return &s
+}
+
+func computeClusterTestCase(
+	t *testing.T,
+	name string,
+	reqs requirements,
+	clusterSpecs clusters,
+	expectedClusters expected,
+	expectError bool,
+) {
+
+	release := generateReleaseForTestCase(shipper.ClusterRequirements(reqs))
+	clusters := make([]*shipper.Cluster, 0, len(clusterSpecs))
+	for i, spec := range clusterSpecs {
+		clusters = append(clusters, generateClusterForTestCase(i, spec))
+	}
+
+	actualClusters, err := computeTargetClusters(release, clusters)
+	if expectError {
+		if err == nil {
+			t.Errorf("test %q expected an error but didn't get one!", name)
+		}
+	} else {
+		if err != nil {
+			t.Errorf("error %q: %q", name, err)
+			return
+		}
+	}
+
+	actualClusterNames := make([]string, 0, len(actualClusters))
+	for _, cluster := range actualClusters {
+		actualClusterNames = append(actualClusterNames, cluster.GetName())
+	}
+	sort.Strings(actualClusterNames)
+
+	if strings.Join(expectedClusters, ",") != strings.Join(actualClusterNames, ",") {
+		t.Errorf("%q expected clusters %q, but got %q", name, strings.Join(expectedClusters, ","), strings.Join(actualClusterNames, ","))
+		return
+	}
+}
+
+func generateClusterForTestCase(name int, spec shipper.ClusterSpec) *shipper.Cluster {
+	return &shipper.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("cluster-%d", name),
+			Namespace: shippertesting.TestNamespace,
+		},
+		Spec: spec,
+	}
+}
+
+func generateReleaseForTestCase(reqs shipper.ClusterRequirements) *shipper.Release {
+	return &shipper.Release{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-release",
+			Namespace: shippertesting.TestNamespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: shipper.SchemeGroupVersion.String(),
+					Kind:       "Application",
+					Name:       "test-application",
+				},
+			},
+		},
+		Spec: shipper.ReleaseSpec{
+			Environment: shipper.ReleaseEnvironment{
+				ClusterRequirements: reqs,
+			},
+		},
+	}
+}
+
+// TestSchedule tests the first part of the cluster scheduling, which is find
+// out which clusters the release must be installed, and persisting it under
+// .status.environment.clusters.
+func TestSchedule(t *testing.T) {
+	// Fixtures
+	clusterA := buildCluster("minikube-a")
+	clusterB := buildCluster("minikube-b")
+	release := buildRelease()
+	fixtures := []runtime.Object{clusterA, clusterB, release}
+	// Demand two clusters.
+	release.Spec.Environment.ClusterRequirements.Regions[0].Replicas = pint32(2)
+
+	// Expected values. The release should have, at the end of the business
+	// logic, a list of clusters containing all clusters we've added to
+	// the client in alphabetical order.
+	expected := release.DeepCopy()
+	expected.Annotations[shipper.ReleaseClustersAnnotation] = clusterA.GetName() + "," + clusterB.GetName()
+
+	relWithConditions := expected.DeepCopy()
+
+	// release should be marked as Scheduled
+	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&relWithConditions.Status, *condition)
+
+	// The first update is the cluster selection stage, and the 2nd is
+	// setting the Scheduled status condition.
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			expected),
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			relWithConditions),
+	}
+
+	c, clientset := newScheduler(release, fixtures)
+	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
+		t.Fatal(err)
+	}
+
+	filteredActions := filterActions(clientset.Actions(), []string{"update"}, []string{"releases"})
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
+}
+
+// TestScheduleSkipsUnschedulable tests the first part of the cluster
+// scheduling, which is find out which clusters the release must be installed,
+// and persisting it under .status.environment.clusters but skipping
+// unschedulable clusters this time.
+func TestScheduleSkipsUnschedulable(t *testing.T) {
+	// Fixtures
+	clusterA := buildCluster("minikube-a")
+	clusterB := buildCluster("minikube-b")
+	clusterB.Spec.Scheduler.Unschedulable = true
+	release := buildRelease()
+	fixtures := []runtime.Object{clusterA, clusterB, release}
+
+	// The release should have, at the end of the business logic, a list of
+	// clusters containing the schedulable cluster we've added to the client.
+	expected := release.DeepCopy()
+	expected.Annotations[shipper.ReleaseClustersAnnotation] = clusterA.GetName()
+
+	relWithConditions := expected.DeepCopy()
+
+	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&relWithConditions.Status, *condition)
+
+	// The first update is the cluster selection stage, and the 2nd is
+	// setting the Scheduled status condition.
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			expected),
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			relWithConditions),
+	}
+
+	c, clientset := newScheduler(release, fixtures)
+	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
+		t.Fatal(err)
+	}
+
+	filteredActions := filterActions(clientset.Actions(), []string{"update"}, []string{"releases"})
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
+}
+
+// TestCreateAssociatedObjects checks whether the associated object set is being
+// created while a release is being scheduled. In a normal case scenario, all 3
+// objects do not exist by the moment of scheduling, therefore 3 extra create
+// actions are expected.
+func TestCreateAssociatedObjects(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+	fixtures := []runtime.Object{release, cluster}
+
+	// Expected release and actions. The release should have, at the end of the
+	// business logic, a list of clusters containing the sole cluster we've added
+	// to the client, and also a Scheduled condition with True status. Expected
+	// actions contain the intent to create all the associated target objects.
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+	expectedActions := buildExpectedActions(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
+
+	c, clientset := newScheduler(release, fixtures)
+	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
+		t.Fatal(err)
+	}
+
+	filteredActions := filterActions(
+		clientset.Actions(),
+		[]string{"update", "create"},
+		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+	)
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
+}
+
+// TestCreateAssociatedObjectsDuplicateInstallationTargetMismatchingClusters
+// tests a case when an installation target already exists but has a mismatching
+// set of clusters. The job of the scheduler is to correct the mismatch and
+// proceed normally. Instead of creating a new object, the existing one should
+// be updated.
+func TestCreateAssociatedObjectsDuplicateInstallationTargetMismatchingClusters(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+
+	installationtarget := &shipper.InstallationTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(release),
+			},
+			Labels: map[string]string{
+				shipper.AppLabel:     release.OwnerReferences[0].Name,
+				shipper.ReleaseLabel: release.GetName(),
+			},
+		},
+	}
+
+	fixtures := []runtime.Object{release, installationtarget, cluster}
+
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+
+	it, tt, ct := buildAssociatedObjects(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
+	// installationtarget already exists, expect an update ection. The rest
+	// does not exist yet, therefore 2 more create actions.
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("installationtargets"),
+			release.GetNamespace(),
+			it),
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("traffictargets"),
+			release.GetNamespace(),
+			tt),
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("capacitytargets"),
+			release.GetNamespace(),
+			ct,
+		),
+	}
+
+	c, clientset := newScheduler(release, fixtures)
+	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
+		t.Fatal(err)
+	}
+
+	filteredActions := filterActions(
+		clientset.Actions(),
+		[]string{"update", "create"},
+		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+	)
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
+}
+
+// TestCreateAssociatedObjectsDuplicateTrafficTargetMismatchingClusters
+// tests a case when a traffic target already exists but has a mismatching
+// set of clusters. The job of the scheduler is to correct the mismatch and
+// proceed normally. Instead of creating a new object, the existing one should
+// be updated.
+func TestCreateAssociatedObjectsDuplicateTrafficTargetMismatchingClusters(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+
+	traffictarget := &shipper.TrafficTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(release),
+			},
+			Labels: map[string]string{
+				shipper.AppLabel:     release.OwnerReferences[0].Name,
+				shipper.ReleaseLabel: release.GetName(),
+			},
+		},
+	}
+
+	fixtures := []runtime.Object{release, traffictarget, cluster}
+
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+
+	// traffictarget already exists, expect an update ection. The rest
+	// does not exist yet, therefore 2 more create actions.
+	it, tt, ct := buildAssociatedObjects(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("installationtargets"),
+			release.GetNamespace(),
+			it),
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("traffictargets"),
+			release.GetNamespace(),
+			tt),
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("capacitytargets"),
+			release.GetNamespace(),
+			ct,
+		),
+	}
+
+	c, clientset := newScheduler(release, fixtures)
+	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
+		t.Fatal(err)
+	}
+
+	filteredActions := filterActions(
+		clientset.Actions(),
+		[]string{"update", "create"},
+		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+	)
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
+}
+
+// TestCreateAssociatedObjectsDuplicateCapacityTargetMismatchingClusters
+// tests a case when a capacity target already exists but has a mismatching
+// set of clusters. The job of the scheduler is to correct the mismatch and
+// proceed normally. Instead of creating a new object, the existing one should
+// be updated.
+func TestCreateAssociatedObjectsDuplicateCapacityTargetMismatchingClusters(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+
+	capacitytarget := &shipper.CapacityTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(release),
+			},
+			Labels: map[string]string{
+				shipper.AppLabel:     release.OwnerReferences[0].Name,
+				shipper.ReleaseLabel: release.GetName(),
+			},
+		},
+	}
+
+	fixtures := []runtime.Object{release, capacitytarget, cluster}
+
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+
+	it, tt, ct := buildAssociatedObjects(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
+	// capacitytarget already exists, expect an update ection. The rest
+	// does not exist yet, therefore 2 more create actions.
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("installationtargets"),
+			release.GetNamespace(),
+			it),
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("traffictargets"),
+			release.GetNamespace(),
+			tt),
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("capacitytargets"),
+			release.GetNamespace(),
+			ct,
+		),
+	}
+
+	c, clientset := newScheduler(release, fixtures)
+	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
+		t.Fatal(err)
+	}
+
+	filteredActions := filterActions(
+		clientset.Actions(),
+		[]string{"update", "create"},
+		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+	)
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
+}
+
+// TestCreateAssociatedObjectsDuplicateInstallationTargetSameOwner tests a case
+// where an installationterget object already exists with the right cluster set
+// and belongs to the right release. In this case we expect the scheduler to
+// create the missing objects and proceed normally.
+func TestCreateAssociatedObjectsDuplicateInstallationTargetSameOwner(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+
+	installationtarget := &shipper.InstallationTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(release),
+			},
+		},
+	}
+	setInstallationTargetClusters(installationtarget, []string{cluster.Name})
+	fixtures := []runtime.Object{release, cluster, installationtarget}
+
+	// Expected release and actions. Even with an existing installationtarget
+	// object for this release, at the end of the business logic the expected
+	// release should have its .status.phase set to "WaitingForStrategy". Expected
+	// actions contain the intent to create the missing associated target
+	// objects and skip the existing one.
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+
+	_, tt, ct := buildAssociatedObjects(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("traffictargets"),
+			release.GetNamespace(),
+			tt),
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("capacitytargets"),
+			release.GetNamespace(),
+			ct,
+		),
+	}
+
+	c, clientset := newScheduler(release, fixtures)
+	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
+		t.Fatal(err)
+	}
+
+	filteredActions := filterActions(
+		clientset.Actions(),
+		[]string{"update", "create"},
+		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+	)
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
+}
+
+// TestCreateAssociatedObjectsDuplicateInstallationTargetNoOwner tests a case
+// where an installationtarget object already exists but it does not belong to
+// the propper release. This is an exception and we expect a conflict error to
+// be returned.
+func TestCreateAssociatedObjectsDuplicateInstallationTargetNoOwner(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+
+	installationtarget := &shipper.InstallationTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+			// No explicit owner reference here
+		},
+	}
+	fixtures := []runtime.Object{release, cluster, installationtarget}
+
+	// Expect a release but no actions. This is broken state, the system
+	// should never run into this on it's own. Returning a conflict error.
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+
+	c, _ := newScheduler(release, fixtures)
+
+	_, err := c.ScheduleRelease(release.DeepCopy())
+	if err == nil {
+		t.Fatalf("Expected an error here, none received")
+	}
+
+	if !errors.IsConflict(err) {
+		t.Fatalf("Expected a conflict error, got: %s", err)
+	}
+}
+
+// TestCreateAssociatedObjectsDuplicateTrafficTargetSameOwner tests a case where
+// a traffictarget object already exists and has a propper cluster set. In this
+// case we expect the missing asiociated objects to be created and the release
+// to be scheduled.
+func TestCreateAssociatedObjectsDuplicateTrafficTargetSameOwner(t *testing.T) {
+	// Fixtures
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+
+	traffictarget := &shipper.TrafficTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(release),
+			},
+		},
+	}
+	setTrafficTargetClusters(traffictarget, []string{cluster.Name})
+	fixtures := []runtime.Object{cluster, release, traffictarget}
+
+	// Expected release and actions. Even with an existing traffictarget
+	// object for this release, at the end of the business logic the expected
+	// release should have its .status.phase set to "WaitingForStrategy". Expected
+	// actions contain the intent to create the missing associated target
+	// objects.
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+
+	it, _, ct := buildAssociatedObjects(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
+	// 2 create actions: installationtarget and capacitytarget
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("installationtargets"),
+			release.GetNamespace(),
+			it),
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("capacitytargets"),
+			release.GetNamespace(),
+			ct,
+		),
+	}
+
+	c, clientset := newScheduler(release, fixtures)
+	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
+		t.Fatal(err)
+	}
+
+	filteredActions := filterActions(
+		clientset.Actions(),
+		[]string{"update", "create"},
+		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+	)
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
+}
+
+// TestCreateAssociatedObjectsDuplicateTrafficTargetNoOwner tests a case where
+// and existing traffictarget object exists but has a wrong owner reference.
+// It's an exception case and we expect a conflict error.
+func TestCreateAssociatedObjectsDuplicateTrafficTargetNoOwner(t *testing.T) {
+	// Fixtures
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+
+	traffictarget := &shipper.TrafficTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+			// No explicit owner reference here
+		},
+	}
+	fixtures := []runtime.Object{cluster, release, traffictarget}
+
+	// Expected a release but no actions. With an existing traffictarget
+	// object but no explicit reference, it's a no-go. Expected an
+	// already-exists error.
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+
+	c, _ := newScheduler(release, fixtures)
+
+	_, err := c.ScheduleRelease(release.DeepCopy())
+	if err == nil {
+		t.Fatalf("Expected an error here, none received")
+	}
+
+	if !errors.IsConflict(err) {
+		t.Fatalf("Expected an already-exists error, got: %s", err)
+	}
+}
+
+// TestCreateAssociatedObjectsDuplicateCapacityTargetSameOwner tests a case
+// where a capacitytarget object already exists and has a right owner reference.
+// In this case we expect the missing objects to be created.
+func TestCreateAssociatedObjectsDuplicateCapacityTargetSameOwner(t *testing.T) {
+	// Fixtures
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+
+	var totalReplicaCount int32 = 1
+
+	capacitytarget := &shipper.CapacityTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+			OwnerReferences: []metav1.OwnerReference{
+				createOwnerRefFromRelease(release),
+			},
+		},
+	}
+	setCapacityTargetClusters(capacitytarget, []string{cluster.Name}, totalReplicaCount)
+	fixtures := []runtime.Object{cluster, release, capacitytarget}
+
+	// Expected release and actions. Even with an existing capacitytarget object
+	// for this release, at the end of the business logic the expected release
+	// should have its .status.phase set to "WaitingForStrategy". Expected actions
+	// contain the intent to create all the associated target objects.
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+
+	it, tt, _ := buildAssociatedObjects(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
+	// 2 create actions: installationtarget and capacitytarget
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("installationtargets"),
+			release.GetNamespace(),
+			it),
+		kubetesting.NewCreateAction(
+			shipper.SchemeGroupVersion.WithResource("traffictargets"),
+			release.GetNamespace(),
+			tt,
+		),
+	}
+
+	c, clientset := newScheduler(release, fixtures)
+	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
+		t.Fatal(err)
+	}
+
+	actions := filterActions(
+		clientset.Actions(),
+		[]string{"update", "create"},
+		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+	)
+	shippertesting.CheckActions(expectedActions, actions, t)
+}
+
+// TestCreateAssociatedObjectsDuplicateCapacityTargetNoOwner tests a case where
+// a capacitytarget object already exists but it has a wrong owner reference.
+// It's an exception and we expect a conflict error.
+func TestCreateAssociatedObjectsDuplicateCapacityTargetNoOwner(t *testing.T) {
+	// Fixtures
+	cluster := buildCluster("minikube-a")
+	release := buildRelease()
+	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+
+	capacitytarget := &shipper.CapacityTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+		},
+	}
+	fixtures := []runtime.Object{cluster, release, capacitytarget}
+
+	// Expected a release but no actions. With an existing capacitytarget
+	// object but no explicit reference, it's a no-go. Expected a
+	// conflict error.
+	expected := release.DeepCopy()
+	expected.Status.Conditions = []shipper.ReleaseCondition{
+		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+	}
+
+	c, _ := newScheduler(release, fixtures)
+
+	_, err := c.ScheduleRelease(release.DeepCopy())
+	if err == nil {
+		t.Fatalf("Expected an error here, none received")
+	}
+
+	if !errors.IsConflict(err) {
+		t.Fatalf("Expected an already-exists error, got: %s", err)
+	}
 }
 
 // TestComputeTargetClusters works the core of the scheduler logic: matching
@@ -1002,74 +1158,4 @@ func TestComputeTargetClusters(t *testing.T) {
 		expected{"cluster-0", "cluster-2"},
 		passingCase,
 	)
-}
-
-func computeClusterTestCase(
-	t *testing.T,
-	name string,
-	reqs requirements,
-	clusterSpecs clusters,
-	expectedClusters expected,
-	expectError bool,
-) {
-
-	release := generateReleaseForTestCase(shipper.ClusterRequirements(reqs))
-	clusters := make([]*shipper.Cluster, 0, len(clusterSpecs))
-	for i, spec := range clusterSpecs {
-		clusters = append(clusters, generateClusterForTestCase(i, spec))
-	}
-
-	actualClusters, err := computeTargetClusters(release, clusters)
-	if expectError {
-		if err == nil {
-			t.Errorf("test %q expected an error but didn't get one!", name)
-		}
-	} else {
-		if err != nil {
-			t.Errorf("error %q: %q", name, err)
-			return
-		}
-	}
-
-	actualClusterNames := make([]string, 0, len(actualClusters))
-	for _, cluster := range actualClusters {
-		actualClusterNames = append(actualClusterNames, cluster.GetName())
-	}
-	sort.Strings(actualClusterNames)
-
-	if strings.Join(expectedClusters, ",") != strings.Join(actualClusterNames, ",") {
-		t.Errorf("%q expected clusters %q, but got %q", name, strings.Join(expectedClusters, ","), strings.Join(actualClusterNames, ","))
-		return
-	}
-}
-
-func generateClusterForTestCase(name int, spec shipper.ClusterSpec) *shipper.Cluster {
-	return &shipper.Cluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("cluster-%d", name),
-			Namespace: shippertesting.TestNamespace,
-		},
-		Spec: spec,
-	}
-}
-
-func generateReleaseForTestCase(reqs shipper.ClusterRequirements) *shipper.Release {
-	return &shipper.Release{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-release",
-			Namespace: shippertesting.TestNamespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: shipper.SchemeGroupVersion.String(),
-					Kind:       "Application",
-					Name:       "test-application",
-				},
-			},
-		},
-		Spec: shipper.ReleaseSpec{
-			Environment: shipper.ReleaseEnvironment{
-				ClusterRequirements: reqs,
-			},
-		},
-	}
 }
