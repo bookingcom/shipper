@@ -415,6 +415,11 @@ func TestCreateAssociatedObjects(t *testing.T) {
 		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
+	// Release should be marked as Scheduled
+	expectedActions = append(expectedActions, kubetesting.NewUpdateAction(
+		shipper.SchemeGroupVersion.WithResource("releases"),
+		release.GetNamespace(),
+		expected))
 
 	c, clientset := newScheduler(fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
@@ -424,7 +429,7 @@ func TestCreateAssociatedObjects(t *testing.T) {
 	filteredActions := filterActions(
 		clientset.Actions(),
 		[]string{"update", "create"},
-		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+		[]string{"releases", "installationtargets", "traffictargets", "capacitytargets"},
 	)
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
@@ -477,6 +482,10 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetMismatchingClusters(t
 			release.GetNamespace(),
 			ct,
 		),
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			expected),
 	}
 
 	c, clientset := newScheduler(fixtures)
@@ -487,7 +496,7 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetMismatchingClusters(t
 	filteredActions := filterActions(
 		clientset.Actions(),
 		[]string{"update", "create"},
-		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+		[]string{"releases", "installationtargets", "traffictargets", "capacitytargets"},
 	)
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
@@ -540,6 +549,10 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetMismatchingClusters(t *tes
 			release.GetNamespace(),
 			ct,
 		),
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			expected),
 	}
 
 	c, clientset := newScheduler(fixtures)
@@ -550,7 +563,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetMismatchingClusters(t *tes
 	filteredActions := filterActions(
 		clientset.Actions(),
 		[]string{"update", "create"},
-		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+		[]string{"releases", "installationtargets", "traffictargets", "capacitytargets"},
 	)
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
@@ -603,6 +616,10 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetMismatchingClusters(t *te
 			release.GetNamespace(),
 			ct,
 		),
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			expected),
 	}
 
 	c, clientset := newScheduler(fixtures)
@@ -613,7 +630,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetMismatchingClusters(t *te
 	filteredActions := filterActions(
 		clientset.Actions(),
 		[]string{"update", "create"},
-		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+		[]string{"releases", "installationtargets", "traffictargets", "capacitytargets"},
 	)
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
@@ -660,6 +677,10 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetSameOwner(t *testing.
 			release.GetNamespace(),
 			ct,
 		),
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			expected),
 	}
 
 	c, clientset := newScheduler(fixtures)
@@ -670,7 +691,7 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetSameOwner(t *testing.
 	filteredActions := filterActions(
 		clientset.Actions(),
 		[]string{"update", "create"},
-		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+		[]string{"releases", "installationtargets", "traffictargets", "capacitytargets"},
 	)
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
@@ -756,6 +777,10 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetSameOwner(t *testing.T) {
 			release.GetNamespace(),
 			ct,
 		),
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			expected),
 	}
 
 	c, clientset := newScheduler(fixtures)
@@ -766,7 +791,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetSameOwner(t *testing.T) {
 	filteredActions := filterActions(
 		clientset.Actions(),
 		[]string{"update", "create"},
-		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+		[]string{"releases", "installationtargets", "traffictargets", "capacitytargets"},
 	)
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
@@ -853,6 +878,10 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetSameOwner(t *testing.T) {
 			release.GetNamespace(),
 			tt,
 		),
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			release.GetNamespace(),
+			expected),
 	}
 
 	c, clientset := newScheduler(fixtures)
@@ -863,7 +892,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetSameOwner(t *testing.T) {
 	actions := filterActions(
 		clientset.Actions(),
 		[]string{"update", "create"},
-		[]string{"installationtargets", "traffictargets", "capacitytargets"},
+		[]string{"releases", "installationtargets", "traffictargets", "capacitytargets"},
 	)
 	shippertesting.CheckActions(expectedActions, actions, t)
 }
