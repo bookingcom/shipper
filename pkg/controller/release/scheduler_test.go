@@ -162,7 +162,6 @@ func buildAssociatedObjects(release *shipper.Release, clusters []*shipper.Cluste
 }
 
 func newScheduler(
-	release *shipper.Release,
 	fixtures []runtime.Object,
 ) (*Scheduler, *shipperfake.Clientset) {
 	clientset := shipperfake.NewSimpleClientset(fixtures...)
@@ -344,7 +343,7 @@ func TestSchedule(t *testing.T) {
 			relWithConditions),
 	}
 
-	c, clientset := newScheduler(release, fixtures)
+	c, clientset := newScheduler(fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
 		t.Fatal(err)
 	}
@@ -388,7 +387,7 @@ func TestScheduleSkipsUnschedulable(t *testing.T) {
 			relWithConditions),
 	}
 
-	c, clientset := newScheduler(release, fixtures)
+	c, clientset := newScheduler(fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +416,7 @@ func TestCreateAssociatedObjects(t *testing.T) {
 	}
 	expectedActions := buildExpectedActions(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
 
-	c, clientset := newScheduler(release, fixtures)
+	c, clientset := newScheduler(fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
 		t.Fatal(err)
 	}
@@ -480,7 +479,7 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetMismatchingClusters(t
 		),
 	}
 
-	c, clientset := newScheduler(release, fixtures)
+	c, clientset := newScheduler(fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
 		t.Fatal(err)
 	}
@@ -543,7 +542,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetMismatchingClusters(t *tes
 		),
 	}
 
-	c, clientset := newScheduler(release, fixtures)
+	c, clientset := newScheduler(fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
 		t.Fatal(err)
 	}
@@ -606,7 +605,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetMismatchingClusters(t *te
 		),
 	}
 
-	c, clientset := newScheduler(release, fixtures)
+	c, clientset := newScheduler(fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
 		t.Fatal(err)
 	}
@@ -663,7 +662,7 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetSameOwner(t *testing.
 		),
 	}
 
-	c, clientset := newScheduler(release, fixtures)
+	c, clientset := newScheduler(fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
 		t.Fatal(err)
 	}
@@ -701,7 +700,7 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetNoOwner(t *testing.T)
 		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 
-	c, _ := newScheduler(release, fixtures)
+	c, _ := newScheduler(fixtures)
 
 	_, err := c.ScheduleRelease(release.DeepCopy())
 	if err == nil {
@@ -759,7 +758,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetSameOwner(t *testing.T) {
 		),
 	}
 
-	c, clientset := newScheduler(release, fixtures)
+	c, clientset := newScheduler(fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
 		t.Fatal(err)
 	}
@@ -798,7 +797,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetNoOwner(t *testing.T) {
 		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 
-	c, _ := newScheduler(release, fixtures)
+	c, _ := newScheduler(fixtures)
 
 	_, err := c.ScheduleRelease(release.DeepCopy())
 	if err == nil {
@@ -856,7 +855,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetSameOwner(t *testing.T) {
 		),
 	}
 
-	c, clientset := newScheduler(release, fixtures)
+	c, clientset := newScheduler(fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
 		t.Fatal(err)
 	}
@@ -894,7 +893,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetNoOwner(t *testing.T) {
 		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 
-	c, _ := newScheduler(release, fixtures)
+	c, _ := newScheduler(fixtures)
 
 	_, err := c.ScheduleRelease(release.DeepCopy())
 	if err == nil {
