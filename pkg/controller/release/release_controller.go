@@ -222,12 +222,16 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 
 	defer c.releaseWorkqueue.Done(obj)
 
-	if _, ok := obj.(string); !ok {
+	var (
+		key string
+		ok  bool
+	)
+
+	if key, ok = obj.(string); !ok {
 		c.releaseWorkqueue.Forget(obj)
 		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
 		return true
 	}
-	key := obj.(string)
 
 	if shouldRetry := c.syncReleaseHandler(key); shouldRetry {
 		if c.releaseWorkqueue.NumRequeues(key) >= maxRetries {
@@ -257,12 +261,16 @@ func (c *Controller) processNextAppWorkItem() bool {
 	}
 	defer c.applicationWorkqueue.Done(obj)
 
-	if _, ok := obj.(string); !ok {
+	var (
+		key string
+		ok  bool
+	)
+
+	if key, ok = obj.(string); !ok {
 		c.applicationWorkqueue.Forget(obj)
 		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
 		return true
 	}
-	key := obj.(string)
 
 	if shouldRetry := c.syncApplicationHandler(key); shouldRetry {
 		if c.applicationWorkqueue.NumRequeues(key) >= maxRetries {
