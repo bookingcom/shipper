@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	csrType = "CERTIFICATE REQUEST"
+	csrDataType           = "CERTIFICATE REQUEST"
+	RSAPrivateKeyDataType = "RSA PRIVATE KEY"
 )
 
 func GenerateCSRForServiceInNamespace(privateKey *rsa.PrivateKey, service, namespace string) ([]byte, error) {
@@ -33,9 +34,18 @@ func GenerateCSRForServiceInNamespace(privateKey *rsa.PrivateKey, service, names
 
 	// Kubernetes expects a PEM-encoded request, so convert our CSR to PEM
 	block := &pem.Block{
-		Type:  csrType,
+		Type:  string(csrDataType),
 		Bytes: csr,
 	}
 
 	return pem.EncodeToMemory(block), nil
+}
+
+func EncodePrivateKeyAsPEM(data []byte) []byte {
+	block := &pem.Block{
+		Type:  string(RSAPrivateKeyDataType),
+		Bytes: data,
+	}
+
+	return pem.EncodeToMemory(block)
 }

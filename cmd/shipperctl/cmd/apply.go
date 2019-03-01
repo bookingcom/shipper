@@ -37,6 +37,7 @@ var (
 
 // Name constants
 const (
+	level1Padding                              = "    "
 	shipperManagementServiceName               = "shipper-validating-webhook"
 	shipperManagementClusterServiceAccountName = "shipper-management-cluster"
 	shipperManagementClusterRoleName           = "shipper:management-cluster"
@@ -132,6 +133,10 @@ func setupManagementCluster(managementCluster *config.ClusterConfiguration, cmd 
 	}
 
 	if err := createValidatingWebhookConfiguration(cmd, configurator); err != nil {
+		return err
+	}
+
+	if err := createValidatingWebhookService(cmd, configurator); err != nil {
 		return err
 	}
 
@@ -250,37 +255,57 @@ func createManagementServiceAccount(cmd *cobra.Command, configurator *configurat
 }
 
 func createValidatingWebhookSecret(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	cmd.Println("Creating a secret for the validating webhook:")
+
+	cmd.Printf("%sGenerating a private key... ", level1Padding)
 	privatekey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return err
 	}
+	cmd.Println("done")
 
+	cmd.Printf("%sCreating a TLS certificate signing request... ", level1Padding)
 	csr, err := tls.GenerateCSRForServiceInNamespace(privatekey, shipperManagementServiceName, shipperSystemNamespace)
 	if err != nil {
 		return err
 	}
+	cmd.Println("done")
 
+	cmd.Printf("%sCreating a Kubernetes CertificateSigningRequest... ", level1Padding)
 	if err := configurator.CreateCertificateSigningRequest(csr); err != nil {
 		return err
 	}
+	cmd.Println("done")
 
+	cmd.Printf("%sApproving the CertificateSigningRequest... ", level1Padding)
 	if err := configurator.ApproveShipperCSR(); err != nil {
 		return err
 	}
+	cmd.Println("done")
 
+	cmd.Printf("%sFetching the certificate from the CertificateSigningRequest object... ", level1Padding)
 	certificate, err := configurator.FetchCertificateFromCSR()
 	if err != nil {
 		return err
 	}
+	cmd.Println("done")
 
-	if err := configurator.CreateValidatingWebhookSecret(x509.MarshalPKCS1PrivateKey(privatekey), certificate, shipperSystemNamespace); err != nil {
+	// The private key we generated is not encoded as PEM, so we
+	// have to convert it. The certificate, however, is already
+	// PEM-encoded when we get it from Kubernetes above.
+	privatekeyPEM := tls.EncodePrivateKeyAsPEM(x509.MarshalPKCS1PrivateKey(privatekey))
+
+	cmd.Printf("%sCreating the Secret using the private key and certificate in the %s namespace... ", level1Padding, shipperSystemNamespace)
+	if err := configurator.CreateValidatingWebhookSecret(privatekeyPEM, certificate, shipperSystemNamespace); err != nil {
 		return err
 	}
+	cmd.Println("done")
 
 	return nil
 }
 
 func createValidatingWebhookConfiguration(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	cmd.Printf("Creating the ValidatingWebhookConfiguration in %s namespace... ", shipperSystemNamespace)
 	caBundle, err := configurator.FetchKubernetesCABundle()
 	if err != nil {
 		return err
@@ -289,6 +314,17 @@ func createValidatingWebhookConfiguration(cmd *cobra.Command, configurator *conf
 	if err := configurator.CreateValidatingWebhookConfiguration(caBundle, shipperSystemNamespace); err != nil {
 		return err
 	}
+	cmd.Println("done")
+
+	return nil
+}
+
+func createValidatingWebhookService(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	cmd.Print("Creating a Service object for the validating webhook... ")
+	if err := configurator.CreateValidatingWebhookService(shipperSystemNamespace); err != nil {
+		return err
+	}
+	cmd.Println("done")
 
 	return nil
 }
@@ -458,8 +494,4 @@ func loadClustersConfiguration() (*config.ClustersConfiguration, error) {
 	}
 
 	return configuration, nil
-}
-
-func constructShipperServiceAccountUsername() string {
-	return fmt.Sprintf("system:serviceaccount:%s:%s", shipperSystemNamespace, shipperManagementClusterServiceAccountName)
 }

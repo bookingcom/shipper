@@ -21,17 +21,16 @@ import (
 
 	"time"
 
-	"encoding/base64"
-
 	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 const (
 	shipperCSRName                      = "shipper-validating-webhook"
-	shipperValidatingWebhookSecretName  = "shipper-validating-webhook-secret"
+	shipperValidatingWebhookSecretName  = "shipper-validating-webhook"
 	shipperValidatingWebhookName        = "shipper.booking.com"
 	shipperValidatingWebhookServiceName = "shipper-validating-webhook"
 )
@@ -303,6 +302,7 @@ func (c *Cluster) CreateCertificateSigningRequest(csr []byte) error {
 		},
 		Spec: certificatesv1beta1.CertificateSigningRequestSpec{
 			Request: csr,
+			Groups:  []string{"system:authenticated"},
 			Usages: []certificatesv1beta1.KeyUsage{
 				certificatesv1beta1.UsageServerAuth,
 				certificatesv1beta1.UsageDigitalSignature,
@@ -311,12 +311,12 @@ func (c *Cluster) CreateCertificateSigningRequest(csr []byte) error {
 		},
 	}
 
-	_, err := c.KubeClient.Certificates().CertificateSigningRequests().Create(certificateSigningRequest)
+	_, err := c.KubeClient.CertificatesV1beta1().CertificateSigningRequests().Create(certificateSigningRequest)
 	return err
 }
 
 func (c *Cluster) ApproveShipperCSR() error {
-	csr, err := c.KubeClient.Certificates().CertificateSigningRequests().Get(shipperCSRName, metav1.GetOptions{})
+	csr, err := c.KubeClient.CertificatesV1beta1().CertificateSigningRequests().Get(shipperCSRName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -328,26 +328,30 @@ func (c *Cluster) ApproveShipperCSR() error {
 	}
 
 	csr.Status.Conditions = append(csr.Status.Conditions, approvedCondition)
-	_, err = c.KubeClient.Certificates().CertificateSigningRequests().UpdateApproval(csr)
+	_, err = c.KubeClient.CertificatesV1beta1().CertificateSigningRequests().UpdateApproval(csr)
 
 	return err
 }
 
 // FetchCertificateFromCSR continually fetches the Shipper CSR until
-// it is populated with a certificate and then returns the certificate
-// from the Status. This is a blocking function.
+// it is populated with a certificate and then returns the PEM-encoded
+// certificate from the Status. This is a blocking function.
+//
+// Note that the returned certificate is already PEM-encoded.
 func (c *Cluster) FetchCertificateFromCSR() ([]byte, error) {
 	for retries := 0; retries < 10; retries++ {
-		csr, err := c.KubeClient.Certificates().CertificateSigningRequests().Get(shipperCSRName, metav1.GetOptions{})
+		csr, err := c.KubeClient.CertificatesV1beta1().CertificateSigningRequests().Get(shipperCSRName, metav1.GetOptions{})
 		if err != nil {
 			return nil, err
 		}
 
-		if len(csr.Status.Certificate) > 0 {
-			return csr.Status.Certificate, nil
+		if len(csr.Status.Certificate) == 0 {
+			// Pause to give the server some time to sign and populate the certificate
+			time.Sleep(1 * time.Second)
+			continue
 		}
 
-		time.Sleep(1 * time.Second)
+		return csr.Status.Certificate, nil
 	}
 
 	// If we reach here, we have failed to get the certificate after all the retries
@@ -355,18 +359,14 @@ func (c *Cluster) FetchCertificateFromCSR() ([]byte, error) {
 }
 
 func (c *Cluster) CreateValidatingWebhookSecret(privateKey, certificate []byte, namespace string) error {
-	encodedPrivateKey := make([]byte, base64.StdEncoding.EncodedLen(len(privateKey)))
-	encodedCertificate := make([]byte, base64.StdEncoding.EncodedLen(len(certificate)))
-	base64.StdEncoding.Encode(encodedPrivateKey, privateKey)
-	base64.StdEncoding.Encode(encodedCertificate, certificate)
-
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: shipperValidatingWebhookSecretName,
 		},
+		Type: corev1.SecretTypeTLS,
 		Data: map[string][]byte{
-			"server.key":  encodedPrivateKey,
-			"server.cert": encodedCertificate,
+			corev1.TLSPrivateKeyKey: privateKey,
+			corev1.TLSCertKey:       certificate,
 		},
 	}
 
@@ -429,4 +429,27 @@ func (c *Cluster) CreateValidatingWebhookConfiguration(caBundle []byte, namespac
 	}
 
 	return nil
+}
+
+func (c *Cluster) CreateValidatingWebhookService(namespace string) error {
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      shipperValidatingWebhookServiceName,
+			Namespace: namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{
+				"app": "shipper",
+			},
+			Ports: []corev1.ServicePort{
+				corev1.ServicePort{
+					Port:       443,
+					TargetPort: intstr.FromInt(9443),
+				},
+			},
+		},
+	}
+
+	_, err := c.KubeClient.CoreV1().Services(namespace).Create(service)
+	return err
 }
