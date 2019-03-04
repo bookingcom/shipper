@@ -867,7 +867,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetSameOwner(t *testing.T) {
 	}
 
 	it, tt, _ := buildAssociatedObjects(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
-	// 2 create actions: installationtarget and capacitytarget
+	// 2 create actions: installationtarget and traffictarget
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewCreateAction(
 			shipper.SchemeGroupVersion.WithResource("installationtargets"),

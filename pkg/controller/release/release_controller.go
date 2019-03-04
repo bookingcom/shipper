@@ -354,7 +354,7 @@ func (c *Controller) getAssociatedApplicationName(rel *shipper.Release) (string,
 }
 
 // getAssociatedApplicationKey returns an application key in the format:
-// <namespace> / <application name>
+// <namespace>/<application name>
 func (c *Controller) getAssociatedApplicationKey(rel *shipper.Release) (string, error) {
 	appName, err := c.getAssociatedApplicationName(rel)
 	if err != nil {
