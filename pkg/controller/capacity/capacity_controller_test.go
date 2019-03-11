@@ -76,16 +76,16 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePod(t *testing.T
 	c := builder.NewReport("nginx").
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(1, "ContainersReady", "True", "").
-				AddContainerState("app", 1, "pod-a", "Running", "", "")).
+				AddOrIncrementContainerState("app", "pod-a", "Running", "", "")).
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(1, "Initialized", "True", "").
-				AddContainerState("app", 1, "pod-a", "Running", "", "")).
+				AddOrIncrementContainerState("app", "pod-a", "Running", "", "")).
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(1, "PodScheduled", "True", "").
-				AddContainerState("app", 1, "pod-a", "Running", "", "")).
+				AddOrIncrementContainerState("app", "pod-a", "Running", "", "")).
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(1, "Ready", "True", "").
-				AddContainerState("app", 1, "pod-a", "Running", "", ""))
+				AddOrIncrementContainerState("app", "pod-a", "Running", "", ""))
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
@@ -136,7 +136,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodCompletedCont
 	c := builder.NewReport("nginx").
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(1, "ContainersReady", "True", "").
-				AddContainerState("app", 1, "pod-a", "Terminated", "Completed", "Terminated with exit code 1"))
+				AddOrIncrementContainerState("app", "pod-a", "Terminated", "Completed", "Terminated with exit code 1"))
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
@@ -187,7 +187,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodTerminatedCon
 	c := builder.NewReport("nginx").
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(1, "ContainersReady", "True", "").
-				AddContainerState("app", 1, "pod-a", "Terminated", "Terminated", "Terminated with signal 9"))
+				AddOrIncrementContainerState("app", "pod-a", "Terminated", "Terminated", "Terminated with signal 9"))
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
@@ -238,7 +238,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodRestartedCont
 	c := builder.NewReport("nginx").
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(1, "ContainersReady", "True", "").
-				AddContainerState("app", 1, "pod-a", "Terminated", "Terminated", "Terminated with signal 9"))
+				AddOrIncrementContainerState("app", "pod-a", "Terminated", "Terminated", "Terminated with signal 9"))
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
@@ -289,7 +289,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodRestartedCont
 	c := builder.NewReport("nginx").
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(1, "ContainersReady", "True", "").
-				AddContainerState("app", 1, "pod-a", "Terminated", "Terminated", "termination message"))
+				AddOrIncrementContainerState("app", "pod-a", "Terminated", "Terminated", "termination message"))
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
@@ -351,16 +351,20 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePods(t *testin
 	c := builder.NewReport("nginx").
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(2, "ContainersReady", "True", "").
-				AddContainerState("app", 2, "pod-a", "Running", "", "")).
+				AddOrIncrementContainerState("app", "pod-a", "Running", "", "").
+				AddOrIncrementContainerState("app", "pod-a", "Running", "", "")).
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(2, "Initialized", "True", "").
-				AddContainerState("app", 2, "pod-a", "Running", "", "")).
+				AddOrIncrementContainerState("app", "pod-a", "Running", "", "").
+				AddOrIncrementContainerState("app", "pod-a", "Running", "", "")).
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(2, "PodScheduled", "True", "").
-				AddContainerState("app", 2, "pod-a", "Running", "", "")).
+				AddOrIncrementContainerState("app", "pod-a", "Running", "", "").
+				AddOrIncrementContainerState("app", "pod-a", "Running", "", "")).
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(2, "Ready", "True", "").
-				AddContainerState("app", 2, "pod-a", "Running", "", ""))
+				AddOrIncrementContainerState("app", "pod-a", "Running", "", "").
+				AddOrIncrementContainerState("app", "pod-a", "Running", "", ""))
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
@@ -427,16 +431,19 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePodsWithDiffer
 	c := builder.NewReport("nginx").
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(3, string(corev1.PodInitialized), string(corev1.ConditionTrue), "").
-				AddContainerState("app", 2, "pod-a", "Waiting", "ContainerCreating", "").
-				AddContainerState("app", 1, "pod-c", "Terminated", "Completed", "Terminated with exit code 0")).
+				AddOrIncrementContainerState("app", "pod-a", "Waiting", "ContainerCreating", "").
+				AddOrIncrementContainerState("app", "pod-a", "Waiting", "ContainerCreating", "").
+				AddOrIncrementContainerState("app", "pod-c", "Terminated", "Completed", "Terminated with exit code 0")).
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(3, string(corev1.PodScheduled), string(corev1.ConditionTrue), "").
-				AddContainerState("app", 2, "pod-a", "Waiting", "ContainerCreating", "").
-				AddContainerState("app", 1, "pod-c", "Terminated", "Completed", "Terminated with exit code 0")).
+				AddOrIncrementContainerState("app", "pod-a", "Waiting", "ContainerCreating", "").
+				AddOrIncrementContainerState("app", "pod-a", "Waiting", "ContainerCreating", "").
+				AddOrIncrementContainerState("app", "pod-c", "Terminated", "Completed", "Terminated with exit code 0")).
 		AddPodConditionBreakdownBuilder(
 			builder.NewPodConditionBreakdown(3, string(corev1.PodReady), string(corev1.ConditionFalse), "ContainersNotReady").
-				AddContainerState("app", 2, "pod-a", "Waiting", "ContainerCreating", "").
-				AddContainerState("app", 1, "pod-c", "Terminated", "Completed", "Terminated with exit code 0"))
+				AddOrIncrementContainerState("app", "pod-a", "Waiting", "ContainerCreating", "").
+				AddOrIncrementContainerState("app", "pod-a", "Waiting", "ContainerCreating", "").
+				AddOrIncrementContainerState("app", "pod-c", "Terminated", "Completed", "Terminated with exit code 0"))
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 

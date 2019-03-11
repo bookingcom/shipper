@@ -1,9 +1,10 @@
 package builder
 
 import (
+	"testing"
+
 	"github.com/pmezard/go-difflib/difflib"
 	"gopkg.in/yaml.v2"
-	"testing"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
@@ -46,7 +47,7 @@ func TestReportOneContainerOnePodOneCondition(t *testing.T) {
 	actual := NewReport(ownerName).
 		AddPodConditionBreakdownBuilder(
 			NewPodConditionBreakdown(1, "Ready", "True", "").
-				AddContainerState("app", 1, "pod-a", "Ready", "", "")).
+				AddOrIncrementContainerState("app", "pod-a", "Ready", "", "")).
 		Build()
 	expected := &shipper.ClusterCapacityReport{
 		Owner: shipper.ClusterCapacityReportOwner{Name: ownerName},
@@ -87,7 +88,7 @@ func TestReportOneContainerOnePodOneConditionTerminatedWithExitCodeContainer(t *
 	actual := NewReport(ownerName).
 		AddPodConditionBreakdownBuilder(
 			NewPodConditionBreakdown(1, "Ready", "True", "").
-				AddContainerState("app", 1, "pod-a", "Ready", "", "Terminated with exit code 1")).
+				AddOrIncrementContainerState("app", "pod-a", "Ready", "", "Terminated with exit code 1")).
 		Build()
 
 	m := "Terminated with exit code 1"
@@ -133,8 +134,8 @@ func TestReportOneContainerTwoPodsOneCondition(t *testing.T) {
 	actual := NewReport(ownerName).
 		AddPodConditionBreakdownBuilder(
 			NewPodConditionBreakdown(2, "Ready", "True", "").
-				AddContainerState("app", 1, "pod-a", "Ready", "", "").
-				AddContainerState("app", 1, "pod-b", "Ready", "", "")).
+				AddOrIncrementContainerState("app", "pod-a", "Ready", "", "").
+				AddOrIncrementContainerState("app", "pod-b", "Ready", "", "")).
 		Build()
 
 	expected := &shipper.ClusterCapacityReport{
@@ -176,10 +177,10 @@ func TestReportTwoContainersTwoPodsOneCondition(t *testing.T) {
 	actual := NewReport(ownerName).
 		AddPodConditionBreakdownBuilder(
 			NewPodConditionBreakdown(2, "Ready", "True", "").
-				AddContainerState("app", 1, "pod-a", "Ready", "", "").
-				AddContainerState("app", 1, "pod-b", "Ready", "", "").
-				AddContainerState("nginx", 1, "pod-a", "Ready", "", "").
-				AddContainerState("nginx", 1, "pod-b", "Ready", "", "")).
+				AddOrIncrementContainerState("app", "pod-a", "Ready", "", "").
+				AddOrIncrementContainerState("app", "pod-b", "Ready", "", "").
+				AddOrIncrementContainerState("nginx", "pod-a", "Ready", "", "").
+				AddOrIncrementContainerState("nginx", "pod-b", "Ready", "", "")).
 		Build()
 
 	expected := &shipper.ClusterCapacityReport{
@@ -234,15 +235,15 @@ func TestReportTwoContainersTwoPodsTwoConditions(t *testing.T) {
 	actual := NewReport(ownerName).
 		AddPodConditionBreakdownBuilder(
 			NewPodConditionBreakdown(2, "Ready", "True", "").
-				AddContainerState("app", 1, "pod-a", "Ready", "", "").
-				AddContainerState("app", 1, "pod-b", "Ready", "", "").
-				AddContainerState("nginx", 1, "pod-a", "Ready", "", "").
-				AddContainerState("nginx", 1, "pod-b", "Ready", "", "")).AddPodConditionBreakdownBuilder(
+				AddOrIncrementContainerState("app", "pod-a", "Ready", "", "").
+				AddOrIncrementContainerState("app", "pod-b", "Ready", "", "").
+				AddOrIncrementContainerState("nginx", "pod-a", "Ready", "", "").
+				AddOrIncrementContainerState("nginx", "pod-b", "Ready", "", "")).AddPodConditionBreakdownBuilder(
 		NewPodConditionBreakdown(2, "PodInitialized", "True", "").
-			AddContainerState("app", 1, "pod-a", "Ready", "", "").
-			AddContainerState("app", 1, "pod-b", "Ready", "", "").
-			AddContainerState("nginx", 1, "pod-a", "Ready", "", "").
-			AddContainerState("nginx", 1, "pod-b", "Ready", "", "")).
+			AddOrIncrementContainerState("app", "pod-a", "Ready", "", "").
+			AddOrIncrementContainerState("app", "pod-b", "Ready", "", "").
+			AddOrIncrementContainerState("nginx", "pod-a", "Ready", "", "").
+			AddOrIncrementContainerState("nginx", "pod-b", "Ready", "", "")).
 		Build()
 
 	expected := &shipper.ClusterCapacityReport{

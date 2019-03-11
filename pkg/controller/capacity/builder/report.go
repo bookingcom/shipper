@@ -35,16 +35,14 @@ func NewReport(ownerName string) *Report {
 }
 
 func (r *Report) AddPod(pod *core_v1.Pod) {
-
 	for _, cond := range pod.Status.Conditions {
 		b := r.podConditionBreakdownBuilders.
 			Get(string(cond.Type), string(cond.Status), string(cond.Reason)).
 			IncrementCount()
 
 		for _, containerStatus := range pod.Status.ContainerStatuses {
-			b.AddContainerState(
+			b.AddOrIncrementContainerState(
 				containerStatus.Name,
-				1,
 				pod.Name,
 				GetContainerStateField(containerStatus.State, ContainerStateFieldType),
 				GetContainerStateField(containerStatus.State, ContainerStateFieldReason),
