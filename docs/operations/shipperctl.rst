@@ -84,7 +84,7 @@ Here is something more interesting: having 2 application clusters, and marking o
     scheduler:
       unschedulable: true
 
-Using Contexts That Are Not Valid As a Kubernetes Name
+Using Google Kubernetes Engine (GKE) Context Names
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If you're running on GKE, your cluster context names are likely to have underscores in them, like this: ``gke_ACCOUNT_ZONE_CLUSTERNAME``. ``shipperctl``'s usage of the context name as the name of the Cluster object will break, because Kubernetes objects are not allowed to have underscores in their names. To solve this, specify ``context`` explicitly in ``clusters.yaml``, like so:
