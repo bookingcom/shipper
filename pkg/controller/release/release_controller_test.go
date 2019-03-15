@@ -913,10 +913,6 @@ func (f *fixture) expectReleaseScheduled(release *shipper.Release, clusters []*s
 			shipper.SchemeGroupVersion.WithResource("releases"),
 			release.GetNamespace(),
 			expected),
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			release.GetNamespace(),
-			expectedWithConditions),
 	}
 
 	f.actions = append(f.actions, expectedActions...)
@@ -927,18 +923,6 @@ func (f *fixture) expectReleaseScheduled(release *shipper.Release, clusters []*s
 			"Normal ClustersSelected Set clusters for \"%s\" to %s",
 			relKey,
 			clusterNamesStr,
-		),
-		fmt.Sprintf(
-			"Normal ReleaseScheduled Created InstallationTarget \"%s\"",
-			relKey,
-		),
-		fmt.Sprintf(
-			"Normal ReleaseScheduled Created TrafficTarget \"%s\"",
-			relKey,
-		),
-		fmt.Sprintf(
-			"Normal ReleaseScheduled Created CapacityTarget \"%s\"",
-			relKey,
 		),
 	}
 }
