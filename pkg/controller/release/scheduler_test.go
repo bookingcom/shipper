@@ -330,21 +330,15 @@ func TestSchedule(t *testing.T) {
 	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 	releaseutil.SetReleaseCondition(&relWithConditions.Status, *condition)
 
-	// The first update is the cluster selection stage, and the 2nd is
-	// setting the Scheduled status condition.
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
 			shipper.SchemeGroupVersion.WithResource("releases"),
 			release.GetNamespace(),
 			expected),
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			release.GetNamespace(),
-			relWithConditions),
 	}
 
 	c, clientset := newScheduler(fixtures)
-	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
+	if _, err := c.ChooseClusters(release.DeepCopy(), false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -374,21 +368,15 @@ func TestScheduleSkipsUnschedulable(t *testing.T) {
 	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 	releaseutil.SetReleaseCondition(&relWithConditions.Status, *condition)
 
-	// The first update is the cluster selection stage, and the 2nd is
-	// setting the Scheduled status condition.
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(
 			shipper.SchemeGroupVersion.WithResource("releases"),
 			release.GetNamespace(),
 			expected),
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			release.GetNamespace(),
-			relWithConditions),
 	}
 
 	c, clientset := newScheduler(fixtures)
-	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
+	if _, err := c.ChooseClusters(release.DeepCopy(), false); err != nil {
 		t.Fatal(err)
 	}
 
