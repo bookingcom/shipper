@@ -59,7 +59,7 @@ func NewScheduler(
 func (s *Scheduler) ChooseClusters(rel *shipper.Release, force bool) (*shipper.Release, error) {
 	metaKey := controller.MetaKey(rel)
 	if !force && releaseHasClusters(rel) {
-		return rel, fmt.Errorf("Release %q has already been assigned to clusters", metaKey)
+		return rel, fmt.Errorf("release %q has already been assigned to clusters", metaKey)
 	}
 	glog.Infof("Choosing clusters for release %q", metaKey)
 
@@ -97,7 +97,7 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 	defer glog.Infof("Finished processing %q", metaKey)
 
 	if !releaseHasClusters(rel) {
-		return nil, fmt.Errorf("Release %q clusters have not been chosen yet", metaKey)
+		return nil, fmt.Errorf("release %q clusters have not been chosen yet", metaKey)
 	}
 
 	replicaCount, err := s.fetchChartAndExtractReplicaCount(rel)

@@ -293,7 +293,7 @@ func (c *Controller) syncOneReleaseHandler(key string) bool {
 	// finalizes release scheduling process.
 	if !releaseHasClusters(rel) {
 		if _, err := scheduler.ChooseClusters(rel.DeepCopy(), false); err != nil {
-			runtime.HandleError(fmt.Errorf("Failed to choose clusters for release %q (will retry): %s", key, err))
+			runtime.HandleError(fmt.Errorf("failed to choose clusters for release %q (will retry): %s", key, err))
 			return retry
 		}
 
