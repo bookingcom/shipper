@@ -231,7 +231,7 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 		return true
 	}
 
-	if shouldRetry := c.syncReleaseHandler(key); shouldRetry {
+	if shouldRetry := c.syncOneReleaseHandler(key); shouldRetry {
 		if c.releaseWorkqueue.NumRequeues(key) >= maxRetries {
 			glog.Warningf("Release %q has been retried too many times, droppping from the queue", key)
 			c.releaseWorkqueue.Forget(key)
@@ -249,10 +249,10 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 	return true
 }
 
-// syncReleaseHandler processes release keys one-by-one. This stage progresses
+// syncOneReleaseHandler processes release keys one-by-one. This stage progresses
 // the release through a scheduler: assigns a set of chosen clusters, creates
 // required associated objects and marks the release as scheduled.
-func (c *Controller) syncReleaseHandler(key string) bool {
+func (c *Controller) syncOneReleaseHandler(key string) bool {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %q", key))
@@ -287,6 +287,28 @@ func (c *Controller) syncReleaseHandler(key string) bool {
 		c.chartFetchFunc,
 		c.recorder,
 	)
+
+	// This is a 2-round handler: the 1st round schedules the release on a
+	// set of clusters, and the 2nd round creates associated objects and
+	// finalizes release scheduling process.
+	if !releaseHasClusters(rel) {
+		if _, err := scheduler.ChooseClusters(rel.DeepCopy(), false); err != nil {
+			runtime.HandleError(fmt.Errorf("Failed to choose clusters for release %q (will retry): %s", key, err))
+			return retry
+		}
+
+		// If all went fine, we return here and let informers pick up
+		// the change and reschedule this release for the 2nd round
+		// naturally. This approach comes for a reason: we are
+		// eliminating a replication lag problem. While running the
+		// system in production, we observed some cases where a few
+		// sequentual updates on the same object experienced apiserver
+		// rejections due to the passed object outdate state. This
+		// happened due to the synchronisation/replication lag in etcd.
+		// This approach helps to eliminate this as a notification will
+		// be delivered once all parties are in sync.
+		return noRetry
+	}
 
 	if _, err = scheduler.ScheduleRelease(rel.DeepCopy()); err != nil {
 		c.recorder.Eventf(

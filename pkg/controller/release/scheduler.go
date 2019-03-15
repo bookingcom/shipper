@@ -56,36 +56,48 @@ func NewScheduler(
 	}
 }
 
+func (s *Scheduler) ChooseClusters(rel *shipper.Release, force bool) (*shipper.Release, error) {
+	metaKey := controller.MetaKey(rel)
+	if !force && releaseHasClusters(rel) {
+		return rel, fmt.Errorf("Release %q has already been assigned to clusters", metaKey)
+	}
+	glog.Infof("Choosing clusters for release %q", metaKey)
+
+	allClusters, err := s.clusterLister.List(labels.Everything())
+	if err != nil {
+		return nil, NewFailedAPICallError("ListClsuters", err)
+	}
+	selectedClusters, err := computeTargetClusters(rel, allClusters)
+	if err != nil {
+		return nil, err
+	}
+	setReleaseClusters(rel, selectedClusters)
+
+	newrel, err := s.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel)
+	if err != nil {
+		return nil, NewFailedAPICallError("UpdateRelease", err)
+	}
+	rel = newrel
+
+	s.recorder.Eventf(
+		rel,
+		corev1.EventTypeNormal,
+		"ClustersSelected",
+		"Set clusters for %q to %v",
+		metaKey,
+		rel.Annotations[shipper.ReleaseClustersAnnotation],
+	)
+
+	return newrel, nil
+}
+
 func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, error) {
 	metaKey := controller.MetaKey(rel)
 	glog.Infof("Processing release %q", metaKey)
 	defer glog.Infof("Finished processing %q", metaKey)
 
 	if !releaseHasClusters(rel) {
-		allClusters, err := s.clusterLister.List(labels.Everything())
-		if err != nil {
-			return nil, NewFailedAPICallError("ListClsuters", err)
-		}
-		selectedClusters, err := computeTargetClusters(rel, allClusters)
-		if err != nil {
-			return nil, err
-		}
-		setReleaseClusters(rel, selectedClusters)
-
-		newrel, err := s.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel)
-		if err != nil {
-			return nil, NewFailedAPICallError("UpdateRelease", err)
-		}
-		rel = newrel
-
-		s.recorder.Eventf(
-			rel,
-			corev1.EventTypeNormal,
-			"ClustersSelected",
-			"Set clusters for %q to %v",
-			metaKey,
-			rel.Annotations[shipper.ReleaseClustersAnnotation],
-		)
+		return nil, fmt.Errorf("Release %q clusters have not been chosen yet", metaKey)
 	}
 
 	replicaCount, err := s.fetchChartAndExtractReplicaCount(rel)

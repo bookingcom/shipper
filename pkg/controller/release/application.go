@@ -38,7 +38,7 @@ func (c *Controller) processNextAppWorkItem() bool {
 		return true
 	}
 
-	if shouldRetry := c.syncApplicationHandler(key); shouldRetry {
+	if shouldRetry := c.syncOneApplicationHandler(key); shouldRetry {
 		if c.applicationWorkqueue.NumRequeues(key) >= maxRetries {
 			glog.Warningf("Application %q has been retried too many times, droppping from the queue", key)
 			c.applicationWorkqueue.Forget(key)
@@ -57,10 +57,10 @@ func (c *Controller) processNextAppWorkItem() bool {
 	return true
 }
 
-// syncApplicationHandler processes application keys one-by-one. On this stage a
+// syncOneApplicationHandler processes application keys one-by-one. On this stage a
 // release is expected to be scheduled. This handler instantiates a strategy
 // executor and executes it.
-func (c *Controller) syncApplicationHandler(key string) bool {
+func (c *Controller) syncOneApplicationHandler(key string) bool {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %q", key))
