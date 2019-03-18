@@ -255,6 +255,19 @@ func createManagementServiceAccount(cmd *cobra.Command, configurator *configurat
 }
 
 func createValidatingWebhookSecret(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	cmd.Printf("Checking if a secret already exists for the validating webhook in the %s namespace... ", shipperSystemNamespace)
+
+	exists, err := configurator.ValidatingWebhookSecretExists(shipperSystemNamespace)
+	if err != nil {
+		return err
+	}
+
+	if exists {
+		cmd.Println("yes. Skipping")
+		return nil
+	}
+	cmd.Println("no.")
+
 	cmd.Println("Creating a secret for the validating webhook:")
 
 	cmd.Printf("%sGenerating a private key... ", level1Padding)
@@ -312,6 +325,11 @@ func createValidatingWebhookConfiguration(cmd *cobra.Command, configurator *conf
 	}
 
 	if err := configurator.CreateValidatingWebhookConfiguration(caBundle, shipperSystemNamespace); err != nil {
+		if errors.IsAlreadyExists(err) {
+			cmd.Println("already exists. Skipping")
+			return nil
+		}
+
 		return err
 	}
 	cmd.Println("done")
@@ -322,6 +340,11 @@ func createValidatingWebhookConfiguration(cmd *cobra.Command, configurator *conf
 func createValidatingWebhookService(cmd *cobra.Command, configurator *configurator.Cluster) error {
 	cmd.Print("Creating a Service object for the validating webhook... ")
 	if err := configurator.CreateValidatingWebhookService(shipperSystemNamespace); err != nil {
+		if errors.IsAlreadyExists(err) {
+			cmd.Println("already exists. Skipping")
+			return nil
+		}
+
 		return err
 	}
 	cmd.Println("done")

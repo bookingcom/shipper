@@ -358,6 +358,19 @@ func (c *Cluster) FetchCertificateFromCSR() ([]byte, error) {
 	return nil, fmt.Errorf("certificate is not populated after 10 retries")
 }
 
+func (c *Cluster) ValidatingWebhookSecretExists(namespace string) (bool, error) {
+	_, err := c.KubeClient.CoreV1().Secrets(namespace).Get(shipperValidatingWebhookSecretName, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	return true, nil
+}
+
 func (c *Cluster) CreateValidatingWebhookSecret(privateKey, certificate []byte, namespace string) error {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
