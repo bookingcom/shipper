@@ -25,7 +25,6 @@ import (
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/conditions"
-	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 
@@ -192,17 +191,24 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 		var clusterStatus *shipper.ClusterCapacityStatus
 		var targetDeployment *appsv1.Deployment
 
+		if ct.Status.Clusters == nil {
+			ct.Status.Clusters = []shipper.ClusterCapacityStatus{}
+		}
+
 		for i, cs := range ct.Status.Clusters {
 			if cs.Name == clusterSpec.Name {
 				clusterStatus = &ct.Status.Clusters[i]
+				clusterStatus.Reports = []shipper.ClusterCapacityReport{}
+				ct.Status.Clusters = append(ct.Status.Clusters[:i], ct.Status.Clusters[i+1:]...)
+				break
 			}
 		}
 
 		if clusterStatus == nil {
 			clusterStatus = &shipper.ClusterCapacityStatus{
-				Name: clusterSpec.Name,
+				Name:    clusterSpec.Name,
+				Reports: []shipper.ClusterCapacityReport{},
 			}
-			ct.Status.Clusters = append(ct.Status.Clusters, *clusterStatus)
 		}
 
 		// all the below functions add conditions to the clusterStatus as they do
@@ -228,30 +234,36 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 
 		clusterStatus.AvailableReplicas = targetDeployment.Status.AvailableReplicas
 		clusterStatus.AchievedPercent = c.calculatePercentageFromAmount(clusterSpec.TotalReplicaCount, clusterStatus.AvailableReplicas)
+
+		report, err := c.getReport(targetDeployment, clusterStatus)
+		if err == nil {
+			clusterStatus.Reports = append(clusterStatus.Reports, *report)
+		}
+
 		sadPods, err := c.getSadPods(targetDeployment, clusterStatus)
 		if err != nil {
+			ct.Status.Clusters = append(ct.Status.Clusters, *clusterStatus)
 			continue
 		}
-
 		clusterStatus.SadPods = sadPods
 
-		if len(sadPods) > 0 {
-			continue
+		if len(sadPods) == 0 {
+			// If we've got here, the capacity target has no sad pods and there have been
+			// no errors, so set conditions to true.
+			clusterStatus.Conditions = conditions.SetCapacityCondition(
+				clusterStatus.Conditions,
+				shipper.ClusterConditionTypeReady,
+				corev1.ConditionTrue,
+				"", "")
+			clusterStatus.Conditions = conditions.SetCapacityCondition(
+				clusterStatus.Conditions,
+				shipper.ClusterConditionTypeOperational,
+				corev1.ConditionTrue,
+				"",
+				"")
 		}
 
-		// If we've got here, the capacity target has no sad pods and there have been
-		// no errors, so set conditions to true.
-		clusterStatus.Conditions = conditions.SetCapacityCondition(
-			clusterStatus.Conditions,
-			shipper.ClusterConditionTypeReady,
-			corev1.ConditionTrue,
-			"", "")
-		clusterStatus.Conditions = conditions.SetCapacityCondition(
-			clusterStatus.Conditions,
-			shipper.ClusterConditionTypeOperational,
-			corev1.ConditionTrue,
-			"",
-			"")
+		ct.Status.Clusters = append(ct.Status.Clusters, *clusterStatus)
 	}
 
 	sort.Sort(byClusterName(ct.Status.Clusters))
@@ -261,15 +273,6 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 		runtime.HandleError(fmt.Errorf("error syncing CapacityTarget %q (will retry): %s", key, err))
 		return true
 	}
-
-	c.recorder.Eventf(
-		ct,
-		corev1.EventTypeNormal,
-		"CapacityTargetChanged",
-		"Set %q status to %v",
-		shippercontroller.MetaKey(ct),
-		ct.Status,
-	)
 
 	return false
 }
@@ -335,6 +338,25 @@ func (c *Controller) getSadPods(targetDeployment *appsv1.Deployment, clusterStat
 	}
 
 	return sadPods, nil
+}
+
+func (c *Controller) getReport(targetDeployment *appsv1.Deployment, clusterStatus *shipper.ClusterCapacityStatus) (*shipper.ClusterCapacityReport, error) {
+	targetClusterInformer, clusterErr := c.clusterClientStore.GetInformerFactory(clusterStatus.Name)
+	if clusterErr != nil {
+		// Not sure if each method should report operational conditions for
+		// the cluster it is operating on.
+		return nil, clusterErr
+	}
+
+	selector := labels.Set(targetDeployment.Spec.Template.Labels).AsSelector()
+	podsList, clusterErr := targetClusterInformer.Core().V1().Pods().Lister().Pods(targetDeployment.Namespace).List(selector)
+	if clusterErr != nil {
+		return nil, clusterErr
+	}
+
+	report := buildReport(targetDeployment.Name, podsList)
+
+	return report, nil
 }
 
 func (c *Controller) findTargetDeploymentForClusterSpec(clusterSpec shipper.ClusterCapacityTarget, targetNamespace string, selector labels.Selector, clusterStatus *shipper.ClusterCapacityStatus) (*appsv1.Deployment, error) {
