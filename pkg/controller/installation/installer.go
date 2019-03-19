@@ -343,10 +343,10 @@ func (i *Installer) installManifests(
 			releaseName := i.Release.ObjectMeta.Name
 			if !strings.Contains(deploymentName, releaseName) {
 				return controller.NewInvalidChartError(
-					fmt.Sprintf("Object %#v contains invalid name %q."+
+					fmt.Sprintf("Deployment %q has invalid name."+
 						" The name of the Deployment should be"+
 						" templated with {{.Release.Name}}.",
-						decodedObj, deploymentName),
+						deploymentName),
 				)
 			}
 		}
