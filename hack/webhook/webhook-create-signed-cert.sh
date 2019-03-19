@@ -17,8 +17,8 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-[[ -z ${service} ]] && service=shipper-webhook-svc
-[[ -z ${secret} ]] && secret=shipper-webhook-certs
+[[ -z ${service} ]] && service=shipper-validating-webhook
+[[ -z ${secret} ]] && secret=shipper-validating-webhook
 [[ -z ${namespace} ]] && namespace=shipper-system
 
 csrName=${service}.${namespace}

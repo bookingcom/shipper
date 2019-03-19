@@ -16,7 +16,7 @@ shipper-state-metrics:
 restart:
 	# Delete all Pods in namespace, to force the ReplicaSet to spawn new ones
 	# with the new latest image (assuming that imagePullPolicy is set to Always).
-	$(KUBECTL) delete po --all
+	$(KUBECTL) delete pods --all
 
 certs:
 	./hack/webhook/webhook-create-signed-cert.sh --namespace $(SHIPPER_NAMESPACE)

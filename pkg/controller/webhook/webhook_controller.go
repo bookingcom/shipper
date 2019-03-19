@@ -14,7 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 
-	shipper_v1alpha1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 type Controller struct {
@@ -137,22 +137,22 @@ func (c *Controller) validateHandlerFunc(review *admission_v1beta1.AdmissionRevi
 
 	switch request.Kind.Kind {
 	case "Application":
-		var application shipper_v1alpha1.Application
+		var application shipper.Application
 		err = json.Unmarshal(request.Object.Raw, &application)
 	case "Release":
-		var release shipper_v1alpha1.Release
+		var release shipper.Release
 		err = json.Unmarshal(request.Object.Raw, &release)
 	case "Cluster":
-		var cluster shipper_v1alpha1.Cluster
+		var cluster shipper.Cluster
 		err = json.Unmarshal(request.Object.Raw, &cluster)
 	case "InstallationTarget":
-		var installationTarget shipper_v1alpha1.InstallationTarget
+		var installationTarget shipper.InstallationTarget
 		err = json.Unmarshal(request.Object.Raw, &installationTarget)
 	case "CapacityTarget":
-		var capacityTarget shipper_v1alpha1.CapacityTarget
+		var capacityTarget shipper.CapacityTarget
 		err = json.Unmarshal(request.Object.Raw, &capacityTarget)
 	case "TrafficTarget":
-		var trafficTarget shipper_v1alpha1.TrafficTarget
+		var trafficTarget shipper.TrafficTarget
 		err = json.Unmarshal(request.Object.Raw, &trafficTarget)
 	}
 

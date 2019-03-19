@@ -20,9 +20,9 @@ spec:
         imagePullPolicy: Always
         args:
           - "-webhook-cert"
-          - "/etc/webhook/certs/cert.pem"
+          - "/etc/webhook/certs/tls.crt"
           - "-webhook-key"
-          - "/etc/webhook/certs/key.pem"
+          - "/etc/webhook/certs/tls.key"
           - "-webhook-port"
           - "9443"
         ports:
@@ -34,4 +34,4 @@ spec:
       volumes:
       - name: webhook-certs
         secret:
-          secretName: shipper-webhook-certs
+          secretName: shipper-validating-webhook
