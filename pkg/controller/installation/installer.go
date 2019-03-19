@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 
 	"github.com/golang/glog"
 	appsv1 "k8s.io/api/apps/v1"
@@ -330,6 +331,24 @@ func (i *Installer) installManifests(
 
 		if err != nil {
 			return NewDecodeManifestError("error decoding manifest: %s", err)
+		}
+
+		// We need the Deployment in the chart to have a unique name,
+		// meaning that two different Releases need to generate two
+		// different Deployments. Otherwise, we try to overwrite a
+		// previous Deployment, and that fails with a "field is
+		// immutable" error.
+		if deployment, ok := decodedObj.(*appsv1.Deployment); ok {
+			deploymentName := deployment.ObjectMeta.Name
+			releaseName := i.Release.ObjectMeta.Name
+			if !strings.Contains(deploymentName, releaseName) {
+				return controller.NewInvalidChartError(
+					fmt.Sprintf("Object %#v contains invalid name %q."+
+						" The name of the Deployment should be"+
+						" templated with {{.Release.Name}}.",
+						decodedObj, deploymentName),
+				)
+			}
 		}
 
 		// Here we keep a counter of Services that have the lb label. This will
