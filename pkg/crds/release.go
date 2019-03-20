@@ -45,5 +45,19 @@ var Release = &apiextensionv1beta1.CustomResourceDefinition{
 				},
 			},
 		},
+		AdditionalPrinterColumns: []apiextensionv1beta1.CustomResourceColumnDefinition{
+			apiextensionv1beta1.CustomResourceColumnDefinition{
+				Name:        "Clusters",
+				Type:        "string",
+				Description: "The list of clusters where a release is supposed to be rolled out as per strategy.",
+				JSONPath:    ".metadata.annotations.shipper\\.booking\\.com\\/release\\.clusters",
+			},
+			apiextensionv1beta1.CustomResourceColumnDefinition{
+				Name:        "Step",
+				Type:        "string",
+				Description: "The current achieved step for a release as defined in the rollout strategy.",
+				JSONPath:    ".status.achievedStep.name",
+			},
+		},
 	},
 }
