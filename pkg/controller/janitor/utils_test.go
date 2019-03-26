@@ -53,7 +53,7 @@ func (*FakeClusterClientStore) AddEventHandlerCallback(clusterclientstore.EventH
 	// No-op.
 }
 
-func (f *FakeClusterClientStore) GetClient(clusterName string) (kubernetes.Interface, error) {
+func (f *FakeClusterClientStore) GetClient(clusterName string, ua string) (kubernetes.Interface, error) {
 	if f.getClientShouldFail {
 		return nil, fmt.Errorf("Could not get client for cluster %q", clusterName)
 	} else {

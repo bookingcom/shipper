@@ -60,11 +60,12 @@ func ClusterClientStore(
 func CheckClusterClientActions(
 	store *clusterclientstore.Store,
 	clusters []*ClusterFixture,
+	ua string,
 	t *testing.T,
 ) {
 	for _, cluster := range clusters {
 		expected := cluster.ExpectedActions()
-		client, err := store.GetClient(cluster.Name)
+		client, err := store.GetClient(cluster.Name, ua)
 		if err != nil {
 			t.Fatalf("error getting cluster client for cluster fixture %q: %q", cluster.Name, err)
 			return

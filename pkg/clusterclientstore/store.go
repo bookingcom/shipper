@@ -22,9 +22,11 @@ import (
 	"github.com/bookingcom/shipper/pkg/clusterclientstore/cache"
 )
 
+const AgentName = "clusterclientstore"
+
 // This enables tests to inject an appropriate fake client, which allows us to
 // use the real cluster client store in unit tests.
-type ClientBuilderFunc func(string, *rest.Config) (kubernetes.Interface, error)
+type ClientBuilderFunc func(string, string, *rest.Config) (kubernetes.Interface, error)
 
 type Store struct {
 	ns          string
@@ -115,13 +117,13 @@ func (s *Store) AddEventHandlerCallback(eventHandler EventHandlerRegisterFunc) {
 }
 
 // GetClient returns a client for the specified cluster name.
-func (s *Store) GetClient(clusterName string) (kubernetes.Interface, error) {
+func (s *Store) GetClient(clusterName string, ua string) (kubernetes.Interface, error) {
 	cluster, ok := s.cache.Fetch(clusterName)
 	if !ok {
 		return nil, cache.ErrClusterNotInStore
 	}
 
-	return cluster.GetClient()
+	return cluster.GetClient(ua)
 }
 
 // GetConfig returns a rest.Config for the specified cluster name.
@@ -259,11 +261,6 @@ func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
 		return fmt.Errorf("create client configuration for Cluster %q: %s", cluster.Name, err)
 	}
 
-	client, err := s.buildClient(cluster.Name, config)
-	if err != nil {
-		return fmt.Errorf("create client for Cluster %q: %s", cluster.Name, err)
-	}
-
 	// These are only used in shared informers. Setting HTTP timeout here would
 	// affect watches which is undesirable. Instead, we leave it to client-go (see
 	// k8s.io/client-go/tools/cache) to govern watch durations.
@@ -272,7 +269,7 @@ func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
 		return fmt.Errorf("build informer client configuration for Cluster %q: %s", cluster.Name, err)
 	}
 
-	informerClient, err := s.buildClient(cluster.Name, informerConfig)
+	informerClient, err := s.buildClient(cluster.Name, AgentName, informerConfig)
 	if err != nil {
 		return fmt.Errorf("create informer client for Cluster %q: %s", cluster.Name, err)
 	}
@@ -286,14 +283,22 @@ func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
 	}
 
 	clusterName := cluster.Name
-	newCachedCluster := cache.NewCluster(clusterName, checksum, client, config, informerFactory, func() {
-		// If/when the informer cache finishes syncing, bind all of the event handler
-		// callbacks from the controllers if it does not finish (because the cluster
-		// was Shutdown) this will not be called.
-		for _, cb := range s.eventHandlerRegisterFuncs {
-			cb(informerFactory, clusterName)
-		}
-	})
+	newCachedCluster := cache.NewCluster(
+		clusterName,
+		checksum,
+		config,
+		informerFactory,
+		func(cluster, ua string, config *rest.Config) (kubernetes.Interface, error) {
+			return s.buildClient(cluster, ua, config)
+		},
+		func() {
+			// If/when the informer cache finishes syncing, bind all of the event handler
+			// callbacks from the controllers if it does not finish (because the cluster
+			// was Shutdown) this will not be called.
+			for _, cb := range s.eventHandlerRegisterFuncs {
+				cb(informerFactory, clusterName)
+			}
+		})
 
 	s.cache.Store(newCachedCluster)
 	return nil

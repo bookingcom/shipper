@@ -40,7 +40,7 @@ type FakeClientProvider struct {
 	getConfigShouldFail bool
 }
 
-func (f *FakeClientProvider) GetClient(clusterName string) (kubernetes.Interface, error) {
+func (f *FakeClientProvider) GetClient(clusterName string, ua string) (kubernetes.Interface, error) {
 	if f.getClientShouldFail {
 		return nil, fmt.Errorf("client error")
 	} else {

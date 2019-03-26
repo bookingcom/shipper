@@ -283,7 +283,7 @@ func (c *Controller) syncAnchor(item *AnchorWorkItem) error {
 }
 
 func (c *Controller) removeAnchor(clusterName string, namespace string, name string) (bool, *RecordableError) {
-	if client, err := c.clusterClientStore.GetClient(clusterName); err != nil {
+	if client, err := c.clusterClientStore.GetClient(clusterName, AgentName); err != nil {
 		return false, NewRecordableError(
 			corev1.EventTypeWarning,
 			"ClusterClientError",

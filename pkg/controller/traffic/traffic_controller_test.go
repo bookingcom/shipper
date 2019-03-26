@@ -154,7 +154,7 @@ func (f *fixture) newController(
 	store := shippertesting.ClusterClientStore(
 		stopCh,
 		clusterNames,
-		func(clusterName string, _ *rest.Config) (kubernetes.Interface, error) {
+		func(clusterName string, _ string, _ *rest.Config) (kubernetes.Interface, error) {
 			for _, cluster := range f.clusters {
 				if clusterName == cluster.Name {
 					return kubefake.NewSimpleClientset(cluster.Objects()...), nil
@@ -192,7 +192,7 @@ func (f *fixture) run() {
 		func() (bool, error) {
 			// poll until the clusters are prepared in the cluster store
 			for _, cluster := range f.clusters {
-				_, err := store.GetClient(cluster.Name)
+				_, err := store.GetClient(cluster.Name, AgentName)
 				if err != nil {
 					return false, nil
 				}
@@ -218,7 +218,7 @@ func (f *fixture) run() {
 	actual := shippertesting.FilterActions(client.Actions())
 	shippertesting.CheckActions(f.actions, actual, f.t)
 
-	shippertesting.CheckClusterClientActions(store, f.clusters, f.t)
+	shippertesting.CheckClusterClientActions(store, f.clusters, AgentName, f.t)
 }
 
 func (f *fixture) addTrafficTarget(tt *shipper.TrafficTarget) {

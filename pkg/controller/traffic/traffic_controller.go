@@ -39,7 +39,7 @@ const (
 // Controller is the controller implementation for TrafficTarget resources.
 type Controller struct {
 	shipperclientset     shipperclient.Interface
-	clusterClientStore   *clusterclientstore.Store
+	clusterClientStore   clusterclientstore.Interface
 	trafficTargetsLister listers.TrafficTargetLister
 	trafficTargetsSynced cache.InformerSynced
 	workqueue            workqueue.RateLimitingInterface
@@ -229,7 +229,7 @@ func (c *Controller) syncHandler(key string) bool {
 
 		statuses = append(statuses, clusterStatus)
 
-		clientset, err = c.clusterClientStore.GetClient(cluster)
+		clientset, err = c.clusterClientStore.GetClient(cluster, AgentName)
 		if err == nil {
 			clusterStatus.Conditions = conditions.SetTrafficCondition(
 				clusterStatus.Conditions,

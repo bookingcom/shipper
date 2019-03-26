@@ -56,7 +56,7 @@ func (s *FakeClusterClientStore) Run(stopCh <-chan struct{}) {
 	}
 }
 
-func (s *FakeClusterClientStore) GetClient(clusterName string) (kubernetes.Interface, error) {
+func (s *FakeClusterClientStore) GetClient(clusterName string, ua string) (kubernetes.Interface, error) {
 	return s.client, nil
 }
 
