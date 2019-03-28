@@ -244,19 +244,17 @@ func (c *Controller) syncApplication(key string) bool {
 		app.Spec.RevisionHistoryLimit = &max
 	}
 
-	var shouldRetry bool
-
-	if err = c.processApplication(app); err != nil {
-		shouldRetry = true
-		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
+	shouldRetry, err := c.processApplication(app)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry: %t): %s", key, shouldRetry, err))
 		c.recorder.Event(app, corev1.EventTypeWarning, "FailedApplication", err.Error())
 	}
 
 	// TODO(asurikov): change to UpdateStatus when it's available.
 	_, err = c.shipperClientset.ShipperV1alpha1().Applications(app.Namespace).Update(app)
 	if err != nil {
-		shouldRetry = true
-		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
+		shouldRetry = shouldRetry || !kerrors.IsInvalid(err)
+		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry: %t): %s", key, shouldRetry, err))
 	}
 
 	return shouldRetry
@@ -327,7 +325,7 @@ End:
 * if same, do nothing
 * if different, create new release (highest generation # + 1)
  */
-func (c *Controller) processApplication(app *shipper.Application) error {
+func (c *Controller) processApplication(app *shipper.Application) (bool, error) {
 
 	var (
 		appReleases     []*shipper.Release
@@ -338,7 +336,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 	)
 
 	if appReleases, err = c.relLister.Releases(app.Namespace).ReleasesForApplication(app.Name); err != nil {
-		return err
+		return true, err
 	}
 
 	// Required by subsequent calls to GetContender and GetIncumbent.
@@ -356,11 +354,12 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 			// is creating the first release for this application.
 			var generation = 0
 			if releaseName, iteration, err := c.releaseNameForApplication(app); err != nil {
-				return err
+				return true, err
 			} else if rel, err := c.createReleaseForApplication(app, releaseName, iteration, generation); err != nil {
 				releaseSyncedCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeReleaseSynced, corev1.ConditionFalse, conditions.CreateReleaseFailed, fmt.Sprintf("could not create a new release: %q", err))
 				apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
-				return err
+				shouldRetry := !kerrors.IsInvalid(err)
+				return shouldRetry, err
 			} else {
 				appReleases = append(appReleases, rel)
 			}
@@ -368,21 +367,22 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 			// update listers and informers automatically during tests...
 			// How should we do it then?
 			apputil.SetHighestObservedGeneration(app, generation)
-			return c.wrapUpApplicationConditions(app, appReleases)
+			err = c.wrapUpApplicationConditions(app, appReleases)
+			return err != nil, err
 		}
-		return err
+		return true, err
 	}
 
 	if generation, err = releaseutil.GetGeneration(contender); err != nil {
 		validHistoryCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeValidHistory, corev1.ConditionFalse, conditions.BrokenReleaseGeneration, err.Error())
 		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
-		return err
+		return true, err
 	}
 
 	if highestObserved, err = apputil.GetHighestObservedGeneration(app); err != nil {
 		validHistoryCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeValidHistory, corev1.ConditionFalse, conditions.BrokenApplicationObservedGeneration, err.Error())
 		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
-		return err
+		return true, err
 	}
 
 	if generation < highestObserved {
@@ -396,7 +396,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		apputil.SetApplicationCondition(&app.Status, *abortingCond)
 		rollingOutCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
 		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
-		return nil
+		return true, nil
 	}
 
 	if generation > highestObserved {
@@ -415,20 +415,22 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		// be created with the new template.
 		highestObserved = highestObserved + 1
 		if releaseName, iteration, err := c.releaseNameForApplication(app); err != nil {
-			return err
+			return true, err
 		} else if rel, err := c.createReleaseForApplication(app, releaseName, iteration, highestObserved); err != nil {
 			releaseSyncedCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeReleaseSynced, corev1.ConditionFalse, conditions.CreateReleaseFailed, err.Error())
 			apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
 			rollingOutCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRollingOut, corev1.ConditionFalse, conditions.CreateReleaseFailed, err.Error())
 			apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
-			return err
+			shouldRetry := !kerrors.IsInvalid(err)
+			return shouldRetry, err
 		} else {
 			appReleases = append(appReleases, rel)
 		}
 	}
 
 	apputil.SetHighestObservedGeneration(app, highestObserved)
-	return c.wrapUpApplicationConditions(app, appReleases)
+	err = c.wrapUpApplicationConditions(app, appReleases)
+	return err != nil, err
 }
 
 func (c *Controller) cleanUpReleasesForApplication(app *shipper.Application, releases []*shipper.Release) {

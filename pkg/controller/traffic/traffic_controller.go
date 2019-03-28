@@ -358,8 +358,9 @@ func (c *Controller) syncHandler(key string) bool {
 
 	_, err = c.shipperclientset.ShipperV1alpha1().TrafficTargets(namespace).Update(ttCopy)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will retry): %s", key, err))
-		return true
+		shouldRetry := !kerrors.IsInvalid(err)
+		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will retry: %t): %s", key, shouldRetry, err))
+		return shouldRetry
 	}
 
 	// TODO(btyler): don't record "success" if it wasn't a total success: this

@@ -7,6 +7,7 @@ import (
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -139,8 +140,12 @@ func (c *Controller) processNextWorkItem() bool {
 
 	if err := c.syncOne(key); err != nil {
 		runtime.HandleError(fmt.Errorf("error syncing %q: %s", key, err))
-		c.workqueue.AddRateLimited(key)
-		return true
+
+		shouldRetry := !kerrors.IsInvalid(err)
+		if shouldRetry {
+			c.workqueue.AddRateLimited(key)
+			return true
+		}
 	}
 
 	c.workqueue.Forget(obj)

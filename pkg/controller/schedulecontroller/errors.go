@@ -2,6 +2,7 @@ package schedulecontroller
 
 import (
 	"fmt"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"strings"
 )
 
@@ -33,7 +34,7 @@ func classifyError(err error) (string, bool) {
 		return "InvalidReleaseOwnerRefs", noRetry
 
 	case FailedAPICallError:
-		return "FailedAPICall", retry
+		return "FailedAPICall", !kerrors.IsInvalid(err)
 	}
 
 	return "unknown error! tell Shipper devs to classify it", retry

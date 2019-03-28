@@ -185,7 +185,8 @@ func (c *Controller) syncOne(key string) bool {
 	}
 
 	if err := c.processInstallation(it.DeepCopy()); err != nil {
-		shouldRetry := !shippercontroller.IsMultipleOwnerReferencesError(err) &&
+		shouldRetry := !kerrors.IsInvalid(err) &&
+			!shippercontroller.IsMultipleOwnerReferencesError(err) &&
 			!shippercontroller.IsWrongOwnerReferenceError(err) &&
 			!IsIncompleteReleaseError(err)
 

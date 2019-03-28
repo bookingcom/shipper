@@ -270,8 +270,9 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 
 	_, err = c.shipperclientset.ShipperV1alpha1().CapacityTargets(namespace).Update(ct)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing CapacityTarget %q (will retry): %s", key, err))
-		return true
+		shouldRetry := !kerrors.IsInvalid(err)
+		runtime.HandleError(fmt.Errorf("error syncing CapacityTargets %q (will retry: %t): %s", key, shouldRetry, err))
+		return shouldRetry
 	}
 
 	return false
