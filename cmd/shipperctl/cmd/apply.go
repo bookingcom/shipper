@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
@@ -63,6 +64,10 @@ func runApplyClustersCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if err := validateApplicationClusters(clustersConfiguration); err != nil {
+		return err
+	}
+
 	for _, managementCluster := range clustersConfiguration.ManagementClusters {
 		cmd.Printf("Setting up management cluster %s:\n", managementCluster.Name)
 		if err := setupManagementCluster(managementCluster, cmd); err != nil {
@@ -91,6 +96,20 @@ func runApplyClustersCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	cmd.Println("Cluster configuration applied successfully!")
+	return nil
+}
+
+func validateApplicationClusters(configuration *config.ClustersConfiguration) error {
+	for _, cluster := range configuration.ApplicationClusters {
+		if msgs := validation.IsDNS1123Subdomain(cluster.Name); len(msgs) > 0 {
+			return fmt.Errorf("%q is not a valid cluster name in Kubernetes. If this is the name of a context in your Kubernetes configuration, check out the relevant example at https://docs.shipper-k8s.io/en/latest/operations/shipperctl.html#using-google-kubernetes-engine-gke-context-names", cluster.Name)
+		}
+
+		if cluster.Region == "" {
+			return fmt.Errorf("you must specify region for cluster %s", cluster.Name)
+		}
+	}
+
 	return nil
 }
 
@@ -367,17 +386,12 @@ func copySecretFromApplicationToManagementCluster(cmd *cobra.Command, applicatio
 
 func createApplicationClusterObjectOnManagementCluster(cmd *cobra.Command, managementClusterConfigurator *configurator.Cluster, applicationCluster *config.ClusterConfiguration, host string) error {
 	cmd.Printf("Creating or updating the cluster object for cluster %s on the management cluster... ", applicationCluster.Name)
-	// Doing a priliminary validation
-	if applicationCluster.Region == "" {
-		return fmt.Errorf("must specify region for cluster %s", applicationCluster.Name)
-	}
 
 	// Initialize the map of capabilities if it's null so that we
 	// don't fire an error when creating it
 	if applicationCluster.Capabilities == nil {
 		applicationCluster.Capabilities = []string{}
 	}
-
 	if err := managementClusterConfigurator.CreateOrUpdateClusterWithConfig(applicationCluster, host); err != nil {
 		return err
 	}
