@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"hash/crc32"
+	"time"
 
 	homedir "github.com/mitchellh/go-homedir"
 	certificatesv1beta1 "k8s.io/api/certificates/v1beta1"
@@ -143,13 +144,29 @@ func (c *Cluster) ShouldCopySecret(name, namespace string) (bool, error) {
 	return false, nil
 }
 
+// FetchSecretForServiceAccount polls the server 10 times with a 1
+// second delay between each. If there is still no secret, it returns
+// a SecretNotPopulated error.
 func (c *Cluster) FetchSecretForServiceAccount(name, namespace string) (*corev1.Secret, error) {
-	serviceAccount, err := c.KubeClient.CoreV1().ServiceAccounts(namespace).Get(name, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
+	var serviceAccount *corev1.ServiceAccount
+	var err error
+	found := false
+	for i := 0; i < 10; i++ {
+		serviceAccount, err = c.KubeClient.CoreV1().ServiceAccounts(namespace).Get(name, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+
+		if len(serviceAccount.Secrets) == 0 {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		found = true
+		break
 	}
 
-	if len(serviceAccount.Secrets) == 0 {
+	if !found {
 		return nil, NewSecretNotPopulatedError(serviceAccount)
 	}
 
