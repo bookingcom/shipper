@@ -45,7 +45,7 @@ type cluster struct {
 	stateMut sync.RWMutex
 	state    string
 
-	clientsMut sync.RWMutex
+	clientsMut sync.Mutex
 	clients    map[string]kubernetes.Interface
 
 	// These are all read-only after initialization, so no lock needed.
