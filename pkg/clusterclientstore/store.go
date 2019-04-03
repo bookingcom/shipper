@@ -116,7 +116,8 @@ func (s *Store) AddEventHandlerCallback(eventHandler EventHandlerRegisterFunc) {
 	s.eventHandlerRegisterFuncs = append(s.eventHandlerRegisterFuncs, eventHandler)
 }
 
-// GetClient returns a client for the specified cluster name.
+// GetClient returns a client for the specified cluster name and user agent
+// pair.
 func (s *Store) GetClient(clusterName string, ua string) (kubernetes.Interface, error) {
 	cluster, ok := s.cache.Fetch(clusterName)
 	if !ok {

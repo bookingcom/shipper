@@ -65,6 +65,9 @@ func (c *cluster) IsReady() bool {
 	return c.state == StateReady
 }
 
+// GetClient returns a client for the user agent specified by ua. If a client
+// doesn't exist for that user agent, one will be created by calling the
+// buildClient func.
 func (c *cluster) GetClient(ua string) (kubernetes.Interface, error) {
 	if !c.IsReady() {
 		return nil, ErrClusterNotReady
