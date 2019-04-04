@@ -289,9 +289,7 @@ func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
 		checksum,
 		config,
 		informerFactory,
-		func(cluster, ua string, config *rest.Config) (kubernetes.Interface, error) {
-			return s.buildClient(cluster, ua, config)
-		},
+		s.buildClient,
 		func() {
 			// If/when the informer cache finishes syncing, bind all of the event handler
 			// callbacks from the controllers if it does not finish (because the cluster

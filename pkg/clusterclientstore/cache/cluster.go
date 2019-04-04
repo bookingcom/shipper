@@ -20,7 +20,7 @@ func NewCluster(
 	checksum string,
 	config *rest.Config,
 	informerFactory kubeinformers.SharedInformerFactory,
-	buildClient clientBuilderFunc,
+	buildClient func(string, string, *rest.Config) (kubernetes.Interface, error),
 	cacheSyncCb func(),
 ) *cluster {
 	return &cluster{
@@ -37,8 +37,6 @@ func NewCluster(
 	}
 }
 
-type clientBuilderFunc func(string, string, *rest.Config) (kubernetes.Interface, error)
-
 type cluster struct {
 	name string
 
@@ -52,7 +50,7 @@ type cluster struct {
 	checksum        string
 	config          *rest.Config
 	informerFactory kubeinformers.SharedInformerFactory
-	buildClient     clientBuilderFunc
+	buildClient     func(string, string, *rest.Config) (kubernetes.Interface, error)
 
 	cacheSyncCb func()
 
