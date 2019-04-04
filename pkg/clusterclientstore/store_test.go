@@ -263,7 +263,7 @@ func (f *fixture) newStore() (*Store, kubeinformers.SharedInformerFactory, shipp
 	f.kubeClient = kubefake.NewSimpleClientset(f.kubeObjects...)
 	f.shipperClient = shipperfake.NewSimpleClientset(f.shipperObjects...)
 
-	const noResyncPeriod time.Duration = 0
+	noResyncPeriod := time.Duration(0)
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(f.shipperClient, noResyncPeriod)
 	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(f.kubeClient, noResyncPeriod)
 
@@ -275,6 +275,7 @@ func (f *fixture) newStore() (*Store, kubeinformers.SharedInformerFactory, shipp
 		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
 		shipper.ShipperNamespace,
 		f.restTimeout,
+		&noResyncPeriod,
 	)
 
 	return store, kubeInformerFactory, shipperInformerFactory
