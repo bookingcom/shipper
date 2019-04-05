@@ -33,6 +33,7 @@ const (
 	shipperValidatingWebhookSecretName  = "shipper-validating-webhook"
 	shipperValidatingWebhookName        = "shipper.booking.com"
 	shipperValidatingWebhookServiceName = "shipper-validating-webhook"
+	MaximumRetries                      = 10
 )
 
 type Cluster struct {
@@ -339,7 +340,7 @@ func (c *Cluster) ApproveShipperCSR() error {
 //
 // Note that the returned certificate is already PEM-encoded.
 func (c *Cluster) FetchCertificateFromCSR() ([]byte, error) {
-	for retries := 0; retries < 10; retries++ {
+	for retries := 0; retries < MaximumRetries; retries++ {
 		csr, err := c.KubeClient.CertificatesV1beta1().CertificateSigningRequests().Get(shipperCSRName, metav1.GetOptions{})
 		if err != nil {
 			return nil, err
