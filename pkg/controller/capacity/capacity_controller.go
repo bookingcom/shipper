@@ -182,6 +182,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 
 	ct = ct.DeepCopy()
 
+	shouldRetry := false
 	targetNamespace := ct.Namespace
 	selector := labels.Set(ct.Labels).AsSelector()
 
@@ -216,6 +217,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 		targetDeployment, err := c.findTargetDeploymentForClusterSpec(clusterSpec, targetNamespace, selector, clusterStatus)
 		if err != nil {
 			c.recordErrorEvent(ct, err)
+			shouldRetry = true
 			continue
 		}
 
@@ -228,6 +230,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 			_, err = c.patchDeploymentWithReplicaCount(targetDeployment, clusterSpec.Name, replicaCount, clusterStatus)
 			if err != nil {
 				c.recordErrorEvent(ct, err)
+				shouldRetry = true
 				continue
 			}
 		}
@@ -274,7 +277,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 		return true
 	}
 
-	return false
+	return shouldRetry
 }
 
 func (c *Controller) enqueueCapacityTarget(obj interface{}) {
