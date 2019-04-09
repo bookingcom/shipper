@@ -319,13 +319,17 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 
 	_, err = c.shipperclientset.ShipperV1alpha1().InstallationTargets(it.Namespace).Update(it)
 	if err == nil {
+		newClusterStatusesVal := make([]string, 0, len(newClusterStatuses))
+		for _, clusterStatus := range newClusterStatuses {
+			newClusterStatusesVal = append(newClusterStatusesVal, fmt.Sprintf("%s", *clusterStatus))
+		}
 		c.recorder.Eventf(
 			it,
 			corev1.EventTypeNormal,
 			"InstallationStatusChanged",
 			"Set %q status to %v",
 			shippercontroller.MetaKey(it),
-			newClusterStatuses,
+			newClusterStatusesVal,
 		)
 	} else {
 		c.recorder.Event(
