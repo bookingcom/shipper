@@ -1,4 +1,4 @@
-package strategy
+package release
 
 import (
 	"encoding/json"

@@ -1,4 +1,4 @@
-package strategy
+package release
 
 import (
 	"fmt"
@@ -15,13 +15,6 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
-
-type releaseInfo struct {
-	release            *shipper.Release
-	installationTarget *shipper.InstallationTarget
-	trafficTarget      *shipper.TrafficTarget
-	capacityTarget     *shipper.CapacityTarget
-}
 
 type Executor struct {
 	contender *releaseInfo
@@ -44,17 +37,11 @@ func (s *Executor) event(obj runtime.Object, format string, args ...interface{})
 	)
 }
 
-type ReleaseStrategyStateTransition struct {
-	State    string
-	Previous shipper.StrategyState
-	New      shipper.StrategyState
-}
-
-// execute executes the strategy. It returns an ExecutorResult, if a patch should
+// Execute executes the strategy. It returns an ExecutorResult, if a patch should
 // be performed into some of the associated Release objects and an error if an error
 // has happened. Currently if both values are nil it means that the operation was
 // successful but no modifications are required.
-func (s *Executor) execute() ([]ExecutorResult, []ReleaseStrategyStateTransition, error) {
+func (s *Executor) Execute() ([]ExecutorResult, []ReleaseStrategyStateTransition, error) {
 	targetStep := s.contender.release.Spec.TargetStep
 
 	if targetStep >= int32(len(s.strategy.Steps)) {

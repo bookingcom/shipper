@@ -1,4 +1,4 @@
-package schedulecontroller
+package release
 
 import (
 	"math"
