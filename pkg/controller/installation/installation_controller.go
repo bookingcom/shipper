@@ -149,7 +149,7 @@ func (c *Controller) processNextWorkItem() bool {
 		if c.workqueue.NumRequeues(key) >= maxRetries {
 			// Drop the InstallationTarget's key out of the workqueue and thus reset its
 			// backoff. This limits the time a "broken" object can hog a worker.
-			glog.Warningf("CapacityTarget %q has been retried too many times, dropping from the queue", key)
+			glog.Warningf("InstallationTarget %q has been retried too many times, dropping from the queue", key)
 			c.workqueue.Forget(key)
 
 			return true
