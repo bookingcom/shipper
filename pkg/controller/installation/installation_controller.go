@@ -236,18 +236,6 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 		return nil
 	}
 
-	if appLabelValue, ok := release.GetLabels()[shipper.AppLabel]; !ok {
-		// TODO(isutton): Transform this into a real error
-		return fmt.Errorf("couldn't find label %q in release %q", shipper.AppLabel, release.GetName())
-	} else if app, appListerErr := c.appLister.Applications(release.GetNamespace()).Get(appLabelValue); appListerErr != nil {
-		// TODO(isutton): wrap this error.
-		return appListerErr
-	} else if len(app.Status.History) > 0 && app.Status.History[len(app.Status.History)-1] != release.GetName() {
-		// Current release isn't the contender, so we do not attempt to
-		// create or modify objects at all.
-		return nil
-	}
-
 	installer := NewInstaller(c.chartFetchFunc, release, it)
 
 	// Build .status over based on the current .spec.clusters.
