@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: shipper
-        image: localhost:32000/shipper:latest
+        image: bookingcom/shipper:latest
         imagePullPolicy: Always
         args:
           - "-webhook-cert"

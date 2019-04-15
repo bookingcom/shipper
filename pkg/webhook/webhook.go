@@ -14,10 +14,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 
+	"mime"
+
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
-type Controller struct {
+type Webhook struct {
 	bindAddr string
 	bindPort string
 
@@ -31,8 +33,8 @@ var (
 	deserializer  = codecs.UniversalDeserializer()
 )
 
-func NewController(bindAddr, bindPort, tlsPrivateKeyFile, tlsCertFile string) *Controller {
-	return &Controller{
+func NewWebhook(bindAddr, bindPort, tlsPrivateKeyFile, tlsCertFile string) *Webhook {
+	return &Webhook{
 		bindAddr:          bindAddr,
 		bindPort:          bindPort,
 		tlsPrivateKeyFile: tlsPrivateKeyFile,
@@ -40,7 +42,7 @@ func NewController(bindAddr, bindPort, tlsPrivateKeyFile, tlsCertFile string) *C
 	}
 }
 
-func (c *Controller) Run(stopCh <-chan struct{}) {
+func (c *Webhook) Run(stopCh <-chan struct{}) {
 	addr := c.bindAddr + ":" + c.bindPort
 	mux := c.initializeHandlers()
 	server := &http.Server{
@@ -56,23 +58,23 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 			serverError = server.ListenAndServeTLS(c.tlsCertFile, c.tlsPrivateKeyFile)
 		}
 
-		if serverError != nil {
-			glog.Fatalf("failed to start shipper-webhook-controller: %v", serverError)
+		if serverError != nil && serverError != http.ErrServerClosed {
+			glog.Fatalf("failed to start shipper-webhook: %v", serverError)
 		}
 	}()
 
-	glog.V(2).Info("Started WebHook controller")
+	glog.V(2).Info("Started the WebHook")
 
 	<-stopCh
 
-	glog.V(2).Info("Shutting down WebHook controller")
+	glog.V(2).Info("Shutting down the WebHook")
 
 	if err := server.Shutdown(context.Background()); err != nil {
 		glog.Errorf(`HTTP server Shutdown: %v`, err)
 	}
 }
 
-func (c *Controller) initializeHandlers() *http.ServeMux {
+func (c *Webhook) initializeHandlers() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/validate", adaptHandler(c.validateHandlerFunc))
 	return mux
@@ -93,9 +95,13 @@ func adaptHandler(handler func(*admission_v1beta1.AdmissionReview) *admission_v1
 			return
 		}
 
-		contentType := r.Header.Get("Content-Type")
+		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil {
+			http.Error(w, "Invalid content-type", http.StatusUnsupportedMediaType)
+			return
+		}
 
-		if contentType != "application/json" {
+		if mediaType != "application/json" {
 			http.Error(w, "invalid Content-Type, expect `application/json`", http.StatusUnsupportedMediaType)
 			return
 		}
@@ -131,7 +137,7 @@ func adaptHandler(handler func(*admission_v1beta1.AdmissionReview) *admission_v1
 	}
 }
 
-func (c *Controller) validateHandlerFunc(review *admission_v1beta1.AdmissionReview) *admission_v1beta1.AdmissionResponse {
+func (c *Webhook) validateHandlerFunc(review *admission_v1beta1.AdmissionReview) *admission_v1beta1.AdmissionResponse {
 	request := review.Request
 	var err error
 

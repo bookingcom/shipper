@@ -40,9 +40,9 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller/janitor"
 	"github.com/bookingcom/shipper/pkg/controller/release"
 	"github.com/bookingcom/shipper/pkg/controller/traffic"
-	"github.com/bookingcom/shipper/pkg/controller/webhook"
 	"github.com/bookingcom/shipper/pkg/metrics/instrumentedclient"
 	shippermetrics "github.com/bookingcom/shipper/pkg/metrics/prometheus"
+	"github.com/bookingcom/shipper/pkg/webhook"
 )
 
 var controllers = []string{
@@ -369,7 +369,7 @@ func buildInitializers() map[string]initFunc {
 	controllers["capacity"] = startCapacityController
 	controllers["traffic"] = startTrafficController
 	controllers["janitor"] = startJanitorController
-	controllers["webhook"] = startWebhookController
+	controllers["webhook"] = startWebhook
 	return controllers
 }
 
@@ -522,13 +522,13 @@ func startTrafficController(cfg *cfg) (bool, error) {
 	return true, nil
 }
 
-func startWebhookController(cfg *cfg) (bool, error) {
+func startWebhook(cfg *cfg) (bool, error) {
 	enabled := cfg.enabledControllers["webhook"]
 	if !enabled {
 		return false, nil
 	}
 
-	c := webhook.NewController(cfg.webhookBindAddr, cfg.webhookBindPort, cfg.webhookKeyPath, cfg.webhookCertPath)
+	c := webhook.NewWebhook(cfg.webhookBindAddr, cfg.webhookBindPort, cfg.webhookKeyPath, cfg.webhookCertPath)
 
 	cfg.wg.Add(1)
 	go func() {
