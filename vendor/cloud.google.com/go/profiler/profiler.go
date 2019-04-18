@@ -54,7 +54,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/pprof/profile"
-	gax "github.com/googleapis/gax-go"
+	gax "github.com/googleapis/gax-go/v2"
 	"google.golang.org/api/option"
 	gtransport "google.golang.org/api/transport/grpc"
 	pb "google.golang.org/genproto/googleapis/devtools/cloudprofiler/v2"
@@ -156,8 +156,17 @@ type Config struct {
 	// for testing.
 	APIAddr string
 
-	instance string
-	zone     string
+	// Instance is the name of Compute Engine instance the profiler agent runs
+	// on. This is normally determined from the Compute Engine metadata server
+	// and doesn't need to be initialized. It needs to be set in rare cases where
+	// the metadata server is present but is flaky or otherwise misbehave.
+	Instance string
+
+	// Zone is the zone of Compute Engine instance the profiler agent runs
+	// on. This is normally determined from the Compute Engine metadata server
+	// and doesn't need to be initialized. It needs to be set in rare cases where
+	// the metadata server is present but is flaky or otherwise misbehave.
+	Zone string
 }
 
 // startError represents the error occurred during the
@@ -264,6 +273,7 @@ func (r *retryer) Retry(err error) (time.Duration, bool) {
 // increasing value, bounded by maxBackoff.
 func (a *agent) createProfile(ctx context.Context) *pb.Profile {
 	req := pb.CreateProfileRequest{
+		Parent:      "projects/" + a.deployment.ProjectId,
 		Deployment:  a.deployment,
 		ProfileType: a.profileTypes,
 	}
@@ -420,8 +430,8 @@ func withXGoogHeader(ctx context.Context, keyval ...string) context.Context {
 
 func initializeAgent(c pb.ProfilerServiceClient) *agent {
 	labels := map[string]string{languageLabel: "go"}
-	if config.zone != "" {
-		labels[zoneNameLabel] = config.zone
+	if config.Zone != "" {
+		labels[zoneNameLabel] = config.Zone
 	}
 	if config.ServiceVersion != "" {
 		labels[versionLabel] = config.ServiceVersion
@@ -434,8 +444,8 @@ func initializeAgent(c pb.ProfilerServiceClient) *agent {
 
 	profileLabels := map[string]string{}
 
-	if config.instance != "" {
-		profileLabels[instanceLabel] = config.instance
+	if config.Instance != "" {
+		profileLabels[instanceLabel] = config.Instance
 	}
 
 	profileTypes := []pb.ProfileType{pb.ProfileType_CPU}
@@ -464,7 +474,12 @@ func initializeConfig(cfg Config) error {
 	config = cfg
 
 	if config.Service == "" {
-		config.Service = os.Getenv("GAE_SERVICE")
+		for _, ev := range []string{"GAE_SERVICE", "K_SERVICE"} {
+			if val := os.Getenv(ev); val != "" {
+				config.Service = val
+				break
+			}
+		}
 	}
 	if config.Service == "" {
 		return errors.New("service name must be configured")
@@ -474,7 +489,12 @@ func initializeConfig(cfg Config) error {
 	}
 
 	if config.ServiceVersion == "" {
-		config.ServiceVersion = os.Getenv("GAE_VERSION")
+		for _, ev := range []string{"GAE_VERSION", "K_REVISION"} {
+			if val := os.Getenv(ev); val != "" {
+				config.ServiceVersion = val
+				break
+			}
+		}
 	}
 
 	if projectID := os.Getenv("GOOGLE_CLOUD_PROJECT"); config.ProjectID == "" && projectID != "" {
@@ -494,17 +514,20 @@ func initializeConfig(cfg Config) error {
 			}
 		}
 
-		if config.zone, err = getZone(); err != nil {
-			return fmt.Errorf("failed to get zone from Compute Engine metadata: %v", err)
-		}
-
-		if config.instance, err = getInstanceName(); err != nil {
-			if _, ok := err.(gcemd.NotDefinedError); !ok {
-				return fmt.Errorf("failed to get instance name from Compute Engine metadata: %v", err)
+		if config.Zone == "" {
+			if config.Zone, err = getZone(); err != nil {
+				return fmt.Errorf("failed to get zone from Compute Engine metadata: %v", err)
 			}
-			debugLog("failed to get instance name from Compute Engine metadata, will use empty name: %v", err)
 		}
 
+		if config.Instance == "" {
+			if config.Instance, err = getInstanceName(); err != nil {
+				if _, ok := err.(gcemd.NotDefinedError); !ok {
+					return fmt.Errorf("failed to get instance name from Compute Engine metadata: %v", err)
+				}
+				debugLog("failed to get instance name from Compute Engine metadata, will use empty name: %v", err)
+			}
+		}
 	} else {
 		if config.ProjectID == "" {
 			return fmt.Errorf("project ID must be specified in the configuration if running outside of GCP")

@@ -1,11 +1,14 @@
 package v2
 
 import (
-	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/gophercloud/gophercloud/acceptance/tools"
+
 	"github.com/gophercloud/gophercloud"
+	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/v2/messages"
 	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/v2/shares"
 )
 
@@ -16,30 +19,23 @@ func CreateShare(t *testing.T, client *gophercloud.ServiceClient) (*shares.Share
 		t.Skip("Skipping test that requres share creation in short mode.")
 	}
 
-	shareNetwork, err := CreateShareNetwork(t, client)
-	if err != nil {
-		return nil, err
-	}
-	t.Logf("Share network id %s", shareNetwork.ID)
-
 	iTrue := true
 	createOpts := shares.CreateOpts{
-		Size:           1,
-		Name:           "My Test Share",
-		Description:    "My Test Description",
-		ShareProto:     "NFS",
-		ShareNetworkID: shareNetwork.ID,
-		IsPublic:       &iTrue,
+		Size:        1,
+		Name:        "My Test Share",
+		Description: "My Test Description",
+		ShareProto:  "NFS",
+		ShareType:   "dhss_false",
+		IsPublic:    &iTrue,
 	}
 
 	share, err := shares.Create(client, createOpts).Extract()
 	if err != nil {
-		t.Logf("Failed to create %s share", share.ID)
-		DeleteShare(t, client, share)
-		return share, err
+		t.Logf("Failed to create share")
+		return nil, err
 	}
 
-	err = waitForStatus(client, share.ID, "available", 600)
+	err = waitForStatus(t, client, share.ID, "available", 600)
 	if err != nil {
 		t.Logf("Failed to get %s share status", share.ID)
 		DeleteShare(t, client, share)
@@ -92,34 +88,12 @@ func DeleteShare(t *testing.T, client *gophercloud.ServiceClient, share *shares.
 		t.Errorf("Unable to delete share %s: %v", share.ID, err)
 	}
 
-	err = waitForStatus(client, share.ID, "deleted", 600)
+	err = waitForStatus(t, client, share.ID, "deleted", 600)
 	if err != nil {
 		t.Errorf("Failed to wait for 'deleted' status for %s share: %v", share.ID, err)
 	} else {
 		t.Logf("Deleted share: %s", share.ID)
 	}
-
-	DeleteShareNetwork(t, client, share.ShareNetworkID)
-}
-
-// PrintShare prints some information of the share
-func PrintShare(t *testing.T, share *shares.Share) {
-	asJSON, err := json.MarshalIndent(share, "", " ")
-	if err != nil {
-		t.Logf("Cannot print the contents of %s", share.ID)
-	}
-
-	t.Logf("Share %s", string(asJSON))
-}
-
-// PrintAccessRight prints contents of an access rule
-func PrintAccessRight(t *testing.T, accessRight *shares.AccessRight) {
-	asJSON, err := json.MarshalIndent(accessRight, "", " ")
-	if err != nil {
-		t.Logf("Cannot print access rule")
-	}
-
-	t.Logf("Access rule %s", string(asJSON))
 }
 
 // ExtendShare extends the capacity of an existing share
@@ -132,8 +106,28 @@ func ShrinkShare(t *testing.T, client *gophercloud.ServiceClient, share *shares.
 	return shares.Shrink(client, share.ID, &shares.ShrinkOpts{NewSize: newSize}).ExtractErr()
 }
 
-func waitForStatus(c *gophercloud.ServiceClient, id, status string, secs int) error {
-	return gophercloud.WaitFor(secs, func() (bool, error) {
+func PrintMessages(t *testing.T, c *gophercloud.ServiceClient, id string) error {
+	c.Microversion = "2.37"
+
+	allPages, err := messages.List(c, messages.ListOpts{ResourceID: id}).AllPages()
+	if err != nil {
+		return fmt.Errorf("Unable to retrieve messages: %v", err)
+	}
+
+	allMessages, err := messages.ExtractMessages(allPages)
+	if err != nil {
+		return fmt.Errorf("Unable to extract messages: %v", err)
+	}
+
+	for _, message := range allMessages {
+		tools.PrintResource(t, message)
+	}
+
+	return nil
+}
+
+func waitForStatus(t *testing.T, c *gophercloud.ServiceClient, id, status string, secs int) error {
+	err := gophercloud.WaitFor(secs, func() (bool, error) {
 		current, err := shares.Get(c, id).Extract()
 		if err != nil {
 			if _, ok := err.(gophercloud.ErrDefault404); ok {
@@ -147,14 +141,23 @@ func waitForStatus(c *gophercloud.ServiceClient, id, status string, secs int) er
 			return false, err
 		}
 
-		if current.Status == "error" {
-			return true, fmt.Errorf("An error occurred")
-		}
-
 		if current.Status == status {
 			return true, nil
 		}
 
+		if strings.Contains(current.Status, "error") {
+			return true, fmt.Errorf("An error occurred, wrong status: %s", current.Status)
+		}
+
 		return false, nil
 	})
+
+	if err != nil {
+		mErr := PrintMessages(t, c, id)
+		if mErr != nil {
+			return fmt.Errorf("Share status is '%s' and unable to get manila messages: %s", err, mErr)
+		}
+	}
+
+	return err
 }

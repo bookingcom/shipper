@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package releasetesting
 
 import (
 	"io"
-	"os"
+	"io/ioutil"
 	"testing"
 	"time"
 
@@ -26,7 +26,7 @@ import (
 	"golang.org/x/net/context"
 	grpc "google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-	"k8s.io/kubernetes/pkg/apis/core"
+	"k8s.io/api/core/v1"
 
 	"k8s.io/helm/pkg/helm"
 	"k8s.io/helm/pkg/proto/hapi/chart"
@@ -134,7 +134,7 @@ func TestRun(t *testing.T) {
 	}
 
 	if result2.Status != release.TestRun_FAILURE {
-		t.Errorf("Expected test result to be successful, got: %v", result2.Status)
+		t.Errorf("Expected test result to be failure, got: %v", result2.Status)
 	}
 
 }
@@ -217,6 +217,107 @@ func TestExtractTestManifestsFromHooks(t *testing.T) {
 
 	if len(testManifests) != 1 {
 		t.Errorf("Expected 1 test manifest, Got: %v", len(testManifests))
+	}
+}
+
+func TestParallelTestRun(t *testing.T) {
+	ts := testSuiteFixture([]string{manifestWithTestSuccessHook, manifestWithTestSuccessHook})
+	env := testEnvFixture()
+	env.Parallel = true
+	env.KubeClient = newSleepOnWaitKubeClient()
+	if err := ts.Run(env); err != nil {
+		t.Errorf("%s", err)
+	}
+
+	if len(ts.Results) != 2 {
+		t.Errorf("Expected 2 test result. Got %v", len(ts.Results))
+	}
+
+	stream := env.Stream.(*mockStream)
+	if len(stream.messages) != 4 {
+		t.Errorf("Expected four messages, Got: %v", len(stream.messages))
+	}
+
+	if stream.messages[0].Status != release.TestRun_RUNNING {
+		t.Errorf("Expected first message status to be RUNNING, Got: %v", stream.messages[0].Status)
+	}
+	if stream.messages[1].Status != release.TestRun_RUNNING {
+		t.Errorf("Expected second message status to be RUNNING, Got: %v", stream.messages[1].Status)
+	}
+	if stream.messages[2].Status != release.TestRun_SUCCESS {
+		t.Errorf("Expected third message status to be SUCCESS, Got: %v", stream.messages[2].Status)
+	}
+	if stream.messages[3].Status != release.TestRun_SUCCESS {
+		t.Errorf("Expected fourth message status to be SUCCESS, Got: %v", stream.messages[3].Status)
+	}
+}
+
+func TestParallelTestRunFailure(t *testing.T) {
+	ts := testSuiteFixture([]string{manifestWithTestSuccessHook, manifestWithTestFailureHook})
+	env := testEnvFixture()
+	env.Parallel = true
+	env.KubeClient = newSleepOnWaitKubeClient()
+	if err := ts.Run(env); err != nil {
+		t.Errorf("%s", err)
+	}
+
+	if len(ts.Results) != 2 {
+		t.Errorf("Expected 2 test result. Got %v", len(ts.Results))
+	}
+
+	stream := env.Stream.(*mockStream)
+	if len(stream.messages) != 4 {
+		t.Errorf("Expected four messages, Got: %v", len(stream.messages))
+	}
+
+	if stream.messages[0].Status != release.TestRun_RUNNING {
+		t.Errorf("Expected first message status to be RUNNING, Got: %v", stream.messages[0].Status)
+	}
+	if stream.messages[1].Status != release.TestRun_RUNNING {
+		t.Errorf("Expected second message status to be RUNNING, Got: %v", stream.messages[1].Status)
+	}
+
+	if ts.Results[0].Status != release.TestRun_SUCCESS {
+		t.Errorf("Expected first test result to be successful, got: %v", ts.Results[0].Status)
+	}
+
+	if ts.Results[1].Status != release.TestRun_FAILURE {
+		t.Errorf("Expected second test result to be failure, got: %v", ts.Results[1].Status)
+	}
+}
+
+func TestParallelism(t *testing.T) {
+	ts := testSuiteFixture([]string{manifestWithTestSuccessHook, manifestWithTestSuccessHook, manifestWithTestFailureHook})
+	env := testEnvFixture()
+	env.Parallel = true
+	env.Parallelism = 2
+	env.KubeClient = newSleepOnWaitKubeClient()
+	if err := ts.Run(env); err != nil {
+		t.Errorf("%s", err)
+	}
+
+	stream := env.Stream.(*mockStream)
+
+	if stream.messages[0].Status != release.TestRun_RUNNING {
+		t.Errorf("Expected first message status to be RUNNING, Got: %v", stream.messages[0].Status)
+	}
+	if stream.messages[1].Status != release.TestRun_RUNNING {
+		t.Errorf("Expected second message status to be RUNNING, Got: %v", stream.messages[1].Status)
+	}
+	if stream.messages[2].Status == release.TestRun_RUNNING {
+		t.Errorf("Expected third message status to be not be RUNNING")
+	}
+
+	if ts.Results[0].Status != release.TestRun_SUCCESS {
+		t.Errorf("Expected first test result to be successful, got: %v", ts.Results[0].Status)
+	}
+
+	if ts.Results[1].Status != release.TestRun_SUCCESS {
+		t.Errorf("Expected second test result to be successful, got: %v", ts.Results[1].Status)
+	}
+
+	if ts.Results[2].Status != release.TestRun_FAILURE {
+		t.Errorf("Expected third test result to be failure, got: %v", ts.Results[2].Status)
 	}
 }
 
@@ -320,12 +421,32 @@ type podSucceededKubeClient struct {
 
 func newPodSucceededKubeClient() *podSucceededKubeClient {
 	return &podSucceededKubeClient{
-		PrintingKubeClient: tillerEnv.PrintingKubeClient{Out: os.Stdout},
+		PrintingKubeClient: tillerEnv.PrintingKubeClient{Out: ioutil.Discard},
 	}
 }
 
-func (p *podSucceededKubeClient) WaitAndGetCompletedPodPhase(ns string, r io.Reader, timeout time.Duration) (core.PodPhase, error) {
-	return core.PodSucceeded, nil
+func (p *podSucceededKubeClient) WaitAndGetCompletedPodPhase(ns string, r io.Reader, timeout time.Duration) (v1.PodPhase, error) {
+	return v1.PodSucceeded, nil
+}
+
+// For testing parallelism, this kube client
+// will sleep for 1ms before returning completed pod
+// phase.
+type sleepOnWaitKubeClient struct {
+	tillerEnv.PrintingKubeClient
+	firstWait bool
+}
+
+func newSleepOnWaitKubeClient() *sleepOnWaitKubeClient {
+	return &sleepOnWaitKubeClient{
+		PrintingKubeClient: tillerEnv.PrintingKubeClient{Out: ioutil.Discard},
+	}
+}
+
+func (p *sleepOnWaitKubeClient) WaitAndGetCompletedPodPhase(ns string, r io.Reader, timeout time.Duration) (v1.PodPhase, error) {
+	time.Sleep(1 * time.Millisecond)
+
+	return v1.PodSucceeded, nil
 }
 
 type podFailedKubeClient struct {
@@ -334,10 +455,10 @@ type podFailedKubeClient struct {
 
 func newPodFailedKubeClient() *podFailedKubeClient {
 	return &podFailedKubeClient{
-		PrintingKubeClient: tillerEnv.PrintingKubeClient{Out: os.Stdout},
+		PrintingKubeClient: tillerEnv.PrintingKubeClient{Out: ioutil.Discard},
 	}
 }
 
-func (p *podFailedKubeClient) WaitAndGetCompletedPodPhase(ns string, r io.Reader, timeout time.Duration) (core.PodPhase, error) {
-	return core.PodFailed, nil
+func (p *podFailedKubeClient) WaitAndGetCompletedPodPhase(ns string, r io.Reader, timeout time.Duration) (v1.PodPhase, error) {
+	return v1.PodFailed, nil
 }

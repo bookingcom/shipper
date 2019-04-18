@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -76,12 +76,63 @@ func TestGetFirstPod(t *testing.T) {
 
 	for _, tt := range tests {
 		client := fake.NewSimpleClientset(&v1.PodList{Items: tt.pods})
-		name, err := getTillerPodName(client.Core(), v1.NamespaceDefault)
+		name, err := GetTillerPodName(client.CoreV1(), v1.NamespaceDefault)
 		if (err != nil) != tt.err {
 			t.Errorf("%q. expected error: %v, got %v", tt.name, tt.err, err)
 		}
 		if name != tt.expected {
 			t.Errorf("%q. expected %q, got %q", tt.name, tt.expected, name)
 		}
+	}
+}
+
+func TestGetTillerPodImage(t *testing.T) {
+	tests := []struct {
+		name     string
+		podSpec  v1.PodSpec
+		expected string
+		err      bool
+	}{
+		{
+			name: "pod with tiller container image",
+			podSpec: v1.PodSpec{
+				Containers: []v1.Container{
+					{
+						Name:  "tiller",
+						Image: "gcr.io/kubernetes-helm/tiller:v2.0.0",
+					},
+				},
+			},
+			expected: "gcr.io/kubernetes-helm/tiller:v2.0.0",
+			err:      false,
+		},
+		{
+			name: "pod without tiller container image",
+			podSpec: v1.PodSpec{
+				Containers: []v1.Container{
+					{
+						Name:  "not_tiller",
+						Image: "gcr.io/kubernetes-helm/not_tiller:v1.0.0",
+					},
+				},
+			},
+			expected: "",
+			err:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockPod := mockTillerPod()
+			mockPod.Spec = tt.podSpec
+			client := fake.NewSimpleClientset(&v1.PodList{Items: []v1.Pod{mockPod}})
+			imageName, err := GetTillerPodImage(client.CoreV1(), v1.NamespaceDefault)
+			if (err != nil) != tt.err {
+				t.Errorf("%q. expected error: %v, got %v", tt.name, tt.err, err)
+			}
+			if imageName != tt.expected {
+				t.Errorf("%q. expected %q, got %q", tt.name, tt.expected, imageName)
+			}
+		})
 	}
 }

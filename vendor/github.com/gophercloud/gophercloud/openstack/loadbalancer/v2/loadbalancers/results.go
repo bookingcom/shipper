@@ -3,6 +3,7 @@ package loadbalancers
 import (
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack/loadbalancer/v2/listeners"
+	"github.com/gophercloud/gophercloud/openstack/loadbalancer/v2/pools"
 	"github.com/gophercloud/gophercloud/pagination"
 )
 
@@ -34,6 +35,10 @@ type LoadBalancer struct {
 	// Loadbalancer address.
 	VipSubnetID string `json:"vip_subnet_id"`
 
+	// The UUID of the network on which to allocate the virtual IP for the
+	// Loadbalancer address.
+	VipNetworkID string `json:"vip_network_id"`
+
 	// The unique ID for the LoadBalancer.
 	ID string `json:"id"`
 
@@ -51,6 +56,13 @@ type LoadBalancer struct {
 
 	// Listeners are the listeners related to this Loadbalancer.
 	Listeners []listeners.Listener `json:"listeners"`
+
+	// Pools are the pools related to this Loadbalancer.
+	Pools []pools.Pool `json:"pools"`
+
+	// Tags is a list of resource tags. Tags are arbitrarily defined strings
+	// attached to the resource.
+	Tags []string `json:"tags"`
 }
 
 // StatusTree represents the status of a loadbalancer.

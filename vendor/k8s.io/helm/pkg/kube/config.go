@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,7 +16,9 @@ limitations under the License.
 
 package kube // import "k8s.io/helm/pkg/kube"
 
-import "k8s.io/client-go/tools/clientcmd"
+import (
+	"k8s.io/client-go/tools/clientcmd"
+)
 
 // GetConfig returns a Kubernetes client config for a given context.
 func GetConfig(context string, kubeconfig string) clientcmd.ClientConfig {

@@ -63,7 +63,7 @@ data:
   dessert: cake
 ```
 
-## Overriding Values from a Parent Chart
+## Overriding Values of a Child Chart
 
 Our original chart, `mychart` is now the _parent_ chart of `mysubchart`. This relationship is based entirely on the fact that `mysubchart` is within `mychart/charts`.
 
@@ -83,7 +83,7 @@ mysubchart:
   dessert: ice cream
 ```
 
-Note the last two lines. Any directives inside of the `mysubchart` section will be sent to the `mysubchart` chart. So if we run `helm install --dry-run --debug mychart`, once of the things we will see is the `mysubchart` ConfigMap:
+Note the last two lines. Any directives inside of the `mysubchart` section will be sent to the `mysubchart` chart. So if we run `helm install --dry-run --debug mychart`, one of the things we will see is the `mysubchart` ConfigMap:
 
 ```yaml
 # Source: mychart/charts/mysubchart/templates/configmap.yaml
@@ -124,7 +124,7 @@ global:
   salad: caesar
 ```
 
-Because of the way globals work, both `mychart/templates/configmap.yaml` and `mysubchart/templates/configmap.yaml` should be able to access that value as `{{ .Values.global.salad}}`.
+Because of the way globals work, both `mychart/templates/configmap.yaml` and `mychart/charts/mysubchart/templates/configmap.yaml` should be able to access that value as `{{ .Values.global.salad}}`.
 
 `mychart/templates/configmap.yaml`:
 
@@ -137,7 +137,7 @@ data:
   salad: {{ .Values.global.salad }}
 ```
 
-`mysubchart/templates/configmap.yaml`:
+`mychart/charts/mysubchart/templates/configmap.yaml`:
 
 ```yaml
 apiVersion: v1
@@ -201,7 +201,7 @@ will only accept a string literal.
 
 The Go template language provides a `block` keyword that allows developers to provide
 a default implementation which is overridden later. In Helm charts, blocks are not
-the best tool for overriding because it if multiple implementations of the same block
+the best tool for overriding because if multiple implementations of the same block
 are provided, the one selected is unpredictable.
 
 The suggestion is to instead use `include`.

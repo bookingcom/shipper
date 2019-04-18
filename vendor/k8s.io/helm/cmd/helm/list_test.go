@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,50 +17,147 @@ limitations under the License.
 package main
 
 import (
-	"bytes"
+	"io"
 	"regexp"
 	"testing"
 
+	"github.com/spf13/cobra"
+
+	"io/ioutil"
+	"os"
+
+	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/helm"
+	"k8s.io/helm/pkg/proto/hapi/chart"
 	"k8s.io/helm/pkg/proto/hapi/release"
 )
 
 func TestListCmd(t *testing.T) {
-	tests := []struct {
-		name     string
-		args     []string
-		resp     []*release.Release
-		expected string
-		err      bool
-	}{
+	tmpChart, _ := ioutil.TempDir("testdata", "tmp")
+	defer os.RemoveAll(tmpChart)
+	cfile := &chart.Metadata{
+		Name:        "foo",
+		Description: "A Helm chart for Kubernetes",
+		Version:     "0.1.0-beta.1",
+		AppVersion:  "2.X.A",
+	}
+	chartPath, err := chartutil.Create(cfile, tmpChart)
+	if err != nil {
+		t.Errorf("Error creating chart for list: %v", err)
+	}
+	ch, _ := chartutil.Load(chartPath)
+
+	tests := []releaseCase{
+		{
+			name:     "empty",
+			rels:     []*release.Release{},
+			expected: "",
+		},
 		{
 			name: "with a release",
-			resp: []*release.Release{
+			rels: []*release.Release{
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "thomas-guide"}),
 			},
 			expected: "thomas-guide",
 		},
 		{
 			name: "list",
-			args: []string{},
-			resp: []*release.Release{
+			rels: []*release.Release{
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "atlas"}),
 			},
-			expected: "NAME \tREVISION\tUPDATED                 \tSTATUS  \tCHART           \tNAMESPACE\natlas\t1       \t(.*)\tDEPLOYED\tfoo-0.1.0-beta.1\tdefault  \n",
+			expected: "NAME \tREVISION\tUPDATED                 \tSTATUS  \tCHART           \tAPP VERSION\tNAMESPACE\natlas\t1       \t(.*)\tDEPLOYED\tfoo-0.1.0-beta.1\t           \tdefault  \n",
 		},
 		{
-			name: "list, one deployed, one failed",
-			args: []string{"-q"},
-			resp: []*release.Release{
+			name: "list with appVersion",
+			rels: []*release.Release{
+				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "atlas", Chart: ch}),
+			},
+			expected: "NAME \tREVISION\tUPDATED                 \tSTATUS  \tCHART           \tAPP VERSION\tNAMESPACE\natlas\t1       \t(.*)\tDEPLOYED\tfoo-0.1.0-beta.1\t2.X.A      \tdefault  \n",
+		},
+		{
+			name:  "with json output",
+			flags: []string{"--max", "1", "--output", "json"},
+			rels: []*release.Release{
+				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "thomas-guide"}),
+				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "atlas-guide"}),
+			},
+			expected: regexp.QuoteMeta(`{"Next":"atlas-guide","Releases":[{"Name":"thomas-guide","Revision":1,"Updated":"`) + `([^"]*)` + regexp.QuoteMeta(`","Status":"DEPLOYED","Chart":"foo-0.1.0-beta.1","AppVersion":"","Namespace":"default"}]}
+`),
+		},
+		{
+			name:  "with yaml output",
+			flags: []string{"--max", "1", "--output", "yaml"},
+			rels: []*release.Release{
+				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "thomas-guide"}),
+				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "atlas-guide"}),
+			},
+			expected: regexp.QuoteMeta(`Next: atlas-guide
+Releases:
+- AppVersion: ""
+  Chart: foo-0.1.0-beta.1
+  Name: thomas-guide
+  Namespace: default
+  Revision: 1
+  Status: DEPLOYED
+  Updated: `) + `(.*)` + `
+
+`,
+		},
+		{
+			name:  "with short json output",
+			flags: []string{"-q", "--output", "json"},
+			rels: []*release.Release{
+				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "atlas"}),
+			},
+			expected: regexp.QuoteMeta(`["atlas"]
+`),
+		},
+		{
+			name:  "with short yaml output",
+			flags: []string{"-q", "--output", "yaml"},
+			rels: []*release.Release{
+				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "atlas"}),
+			},
+			expected: regexp.QuoteMeta(`- atlas
+
+`),
+		},
+		{
+			name:  "with json output without next",
+			flags: []string{"--output", "json"},
+			rels:  []*release.Release{},
+			expected: regexp.QuoteMeta(`{"Next":"","Releases":[]}
+`),
+		},
+		{
+			name:  "with yaml output without next",
+			flags: []string{"--output", "yaml"},
+			rels:  []*release.Release{},
+			expected: regexp.QuoteMeta(`Next: ""
+Releases: []
+
+`),
+		},
+		{
+			name:     "with unknown output format",
+			flags:    []string{"--output", "_unknown_"},
+			rels:     []*release.Release{},
+			err:      true,
+			expected: regexp.QuoteMeta(``),
+		},
+		{
+			name:  "list, one deployed, one failed",
+			flags: []string{"-q"},
+			rels: []*release.Release{
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "thomas-guide", StatusCode: release.Status_FAILED}),
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "atlas-guide", StatusCode: release.Status_DEPLOYED}),
 			},
 			expected: "thomas-guide\natlas-guide",
 		},
 		{
-			name: "with a release, multiple flags",
-			args: []string{"--deleted", "--deployed", "--failed", "-q"},
-			resp: []*release.Release{
+			name:  "with a release, multiple flags",
+			flags: []string{"--deleted", "--deployed", "--failed", "-q"},
+			rels: []*release.Release{
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "thomas-guide", StatusCode: release.Status_DELETED}),
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "atlas-guide", StatusCode: release.Status_DEPLOYED}),
 			},
@@ -69,9 +166,9 @@ func TestListCmd(t *testing.T) {
 			expected: "thomas-guide\natlas-guide",
 		},
 		{
-			name: "with a release, multiple flags",
-			args: []string{"--all", "-q"},
-			resp: []*release.Release{
+			name:  "with a release, multiple flags",
+			flags: []string{"--all", "-q"},
+			rels: []*release.Release{
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "thomas-guide", StatusCode: release.Status_DELETED}),
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "atlas-guide", StatusCode: release.Status_DEPLOYED}),
 			},
@@ -79,9 +176,9 @@ func TestListCmd(t *testing.T) {
 			expected: "thomas-guide\natlas-guide",
 		},
 		{
-			name: "with a release, multiple flags, deleting",
-			args: []string{"--all", "-q"},
-			resp: []*release.Release{
+			name:  "with a release, multiple flags, deleting",
+			flags: []string{"--all", "-q"},
+			rels: []*release.Release{
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "thomas-guide", StatusCode: release.Status_DELETING}),
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "atlas-guide", StatusCode: release.Status_DEPLOYED}),
 			},
@@ -89,9 +186,9 @@ func TestListCmd(t *testing.T) {
 			expected: "thomas-guide\natlas-guide",
 		},
 		{
-			name: "namespace defined, multiple flags",
-			args: []string{"--all", "-q", "--namespace test123"},
-			resp: []*release.Release{
+			name:  "namespace defined, multiple flags",
+			flags: []string{"--all", "-q", "--namespace test123"},
+			rels: []*release.Release{
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "thomas-guide", Namespace: "test123"}),
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "atlas-guide", Namespace: "test321"}),
 			},
@@ -99,18 +196,18 @@ func TestListCmd(t *testing.T) {
 			expected: "thomas-guide",
 		},
 		{
-			name: "with a pending release, multiple flags",
-			args: []string{"--all", "-q"},
-			resp: []*release.Release{
+			name:  "with a pending release, multiple flags",
+			flags: []string{"--all", "-q"},
+			rels: []*release.Release{
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "thomas-guide", StatusCode: release.Status_PENDING_INSTALL}),
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "atlas-guide", StatusCode: release.Status_DEPLOYED}),
 			},
 			expected: "thomas-guide\natlas-guide",
 		},
 		{
-			name: "with a pending release, pending flag",
-			args: []string{"--pending", "-q"},
-			resp: []*release.Release{
+			name:  "with a pending release, pending flag",
+			flags: []string{"--pending", "-q"},
+			rels: []*release.Release{
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "thomas-guide", StatusCode: release.Status_PENDING_INSTALL}),
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "wild-idea", StatusCode: release.Status_PENDING_UPGRADE}),
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "crazy-maps", StatusCode: release.Status_PENDING_ROLLBACK}),
@@ -120,7 +217,7 @@ func TestListCmd(t *testing.T) {
 		},
 		{
 			name: "with old releases",
-			resp: []*release.Release{
+			rels: []*release.Release{
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "thomas-guide"}),
 				helm.ReleaseMock(&helm.MockReleaseOptions{Name: "thomas-guide", StatusCode: release.Status_FAILED}),
 			},
@@ -128,21 +225,7 @@ func TestListCmd(t *testing.T) {
 		},
 	}
 
-	var buf bytes.Buffer
-	for _, tt := range tests {
-		c := &helm.FakeClient{
-			Rels: tt.resp,
-		}
-		cmd := newListCmd(c, &buf)
-		cmd.ParseFlags(tt.args)
-		err := cmd.RunE(cmd, tt.args)
-		if (err != nil) != tt.err {
-			t.Errorf("%q. expected error: %v, got %v", tt.name, tt.err, err)
-		}
-		re := regexp.MustCompile(tt.expected)
-		if !re.Match(buf.Bytes()) {
-			t.Errorf("%q. expected\n%q\ngot\n%q", tt.name, tt.expected, buf.String())
-		}
-		buf.Reset()
-	}
+	runReleaseCases(t, tests, func(c *helm.FakeClient, out io.Writer) *cobra.Command {
+		return newListCmd(c, out)
+	})
 }

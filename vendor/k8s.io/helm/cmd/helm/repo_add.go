@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,14 +22,18 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"golang.org/x/crypto/ssh/terminal"
 	"k8s.io/helm/pkg/getter"
 	"k8s.io/helm/pkg/helm/helmpath"
 	"k8s.io/helm/pkg/repo"
+	"syscall"
 )
 
 type repoAddCmd struct {
 	name     string
 	url      string
+	username string
+	password string
 	home     helmpath.Home
 	noupdate bool
 
@@ -60,6 +64,8 @@ func newRepoAddCmd(out io.Writer) *cobra.Command {
 	}
 
 	f := cmd.Flags()
+	f.StringVar(&add.username, "username", "", "chart repository username")
+	f.StringVar(&add.password, "password", "", "chart repository password")
 	f.BoolVar(&add.noupdate, "no-update", false, "raise error if repo is already registered")
 	f.StringVar(&add.certFile, "cert-file", "", "identify HTTPS client using this SSL certificate file")
 	f.StringVar(&add.keyFile, "key-file", "", "identify HTTPS client using this SSL key file")
@@ -69,14 +75,32 @@ func newRepoAddCmd(out io.Writer) *cobra.Command {
 }
 
 func (a *repoAddCmd) run() error {
-	if err := addRepository(a.name, a.url, a.home, a.certFile, a.keyFile, a.caFile, a.noupdate); err != nil {
+	if a.username != "" && a.password == "" {
+		fmt.Fprint(a.out, "Password:")
+		password, err := readPassword()
+		fmt.Fprintln(a.out)
+		if err != nil {
+			return err
+		}
+		a.password = password
+	}
+
+	if err := addRepository(a.name, a.url, a.username, a.password, a.home, a.certFile, a.keyFile, a.caFile, a.noupdate); err != nil {
 		return err
 	}
 	fmt.Fprintf(a.out, "%q has been added to your repositories\n", a.name)
 	return nil
 }
 
-func addRepository(name, url string, home helmpath.Home, certFile, keyFile, caFile string, noUpdate bool) error {
+func readPassword() (string, error) {
+	password, err := terminal.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		return "", err
+	}
+	return string(password), nil
+}
+
+func addRepository(name, url, username, password string, home helmpath.Home, certFile, keyFile, caFile string, noUpdate bool) error {
 	f, err := repo.LoadRepositoriesFile(home.RepositoryFile())
 	if err != nil {
 		return err
@@ -91,6 +115,8 @@ func addRepository(name, url string, home helmpath.Home, certFile, keyFile, caFi
 		Name:     name,
 		Cache:    cif,
 		URL:      url,
+		Username: username,
+		Password: password,
 		CertFile: certFile,
 		KeyFile:  keyFile,
 		CAFile:   caFile,

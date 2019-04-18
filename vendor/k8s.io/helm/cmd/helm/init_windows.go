@@ -1,7 +1,7 @@
 // +build windows
 
 /*
-Copyright 2017 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,8 +20,10 @@ package main
 
 import (
 	"os"
+
+	"k8s.io/helm/pkg/helm/helmpath"
 )
 
-func createLink(indexFile, cacheFile string) {
-	os.Link(indexFile, cacheFile)
+func createLink(indexFile, cacheFile string, home helmpath.Home) error {
+	return os.Link(indexFile, cacheFile)
 }

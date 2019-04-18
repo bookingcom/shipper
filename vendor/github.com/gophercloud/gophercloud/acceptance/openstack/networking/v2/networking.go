@@ -235,6 +235,48 @@ func CreatePortWithExtraDHCPOpts(t *testing.T, client *gophercloud.ServiceClient
 	return port, nil
 }
 
+// CreatePortWithMultipleFixedIPs will create a port with two FixedIPs on the
+// specified subnet. An error will be returned if the port could not be created.
+func CreatePortWithMultipleFixedIPs(t *testing.T, client *gophercloud.ServiceClient, networkID, subnetID string) (*ports.Port, error) {
+	portName := tools.RandomString("TESTACC-", 8)
+	portDescription := tools.RandomString("TESTACC-DESC-", 8)
+
+	t.Logf("Attempting to create port with two fixed IPs: %s", portName)
+
+	createOpts := ports.CreateOpts{
+		NetworkID:    networkID,
+		Name:         portName,
+		Description:  portDescription,
+		AdminStateUp: gophercloud.Enabled,
+		FixedIPs:     []ports.IP{ports.IP{SubnetID: subnetID}, ports.IP{SubnetID: subnetID}},
+	}
+
+	port, err := ports.Create(client, createOpts).Extract()
+	if err != nil {
+		return port, err
+	}
+
+	if err := WaitForPortToCreate(client, port.ID, 60); err != nil {
+		return port, err
+	}
+
+	newPort, err := ports.Get(client, port.ID).Extract()
+	if err != nil {
+		return newPort, err
+	}
+
+	t.Logf("Successfully created port: %s", portName)
+
+	th.AssertEquals(t, port.Name, portName)
+	th.AssertEquals(t, port.Description, portDescription)
+
+	if len(port.FixedIPs) != 2 {
+		t.Fatalf("Failed to create a port with two fixed IPs: %s", portName)
+	}
+
+	return newPort, nil
+}
+
 // CreateSubnet will create a subnet on the specified Network ID. An error
 // will be returned if the subnet could not be created.
 func CreateSubnet(t *testing.T, client *gophercloud.ServiceClient, networkID string) (*subnets.Subnet, error) {
@@ -385,6 +427,35 @@ func CreateSubnetWithSubnetPoolNoCIDR(t *testing.T, client *gophercloud.ServiceC
 		Name:         subnetName,
 		EnableDHCP:   gophercloud.Disabled,
 		SubnetPoolID: subnetPoolID,
+	}
+
+	t.Logf("Attempting to create subnet: %s", subnetName)
+
+	subnet, err := subnets.Create(client, createOpts).Extract()
+	if err != nil {
+		return subnet, err
+	}
+
+	t.Logf("Successfully created subnet.")
+
+	th.AssertEquals(t, subnet.Name, subnetName)
+
+	return subnet, nil
+}
+
+// CreateSubnetWithSubnetPoolPrefixlen will create a subnet associated with the
+// provided subnetpool on the specified Network ID and with overwritten
+// prefixlen instead of the default subnetpool prefixlen.
+// An error will be returned if the subnet or the subnetpool could not be created.
+func CreateSubnetWithSubnetPoolPrefixlen(t *testing.T, client *gophercloud.ServiceClient, networkID string, subnetPoolID string) (*subnets.Subnet, error) {
+	subnetName := tools.RandomString("TESTACC-", 8)
+	createOpts := subnets.CreateOpts{
+		NetworkID:    networkID,
+		IPVersion:    4,
+		Name:         subnetName,
+		EnableDHCP:   gophercloud.Disabled,
+		SubnetPoolID: subnetPoolID,
+		Prefixlen:    12,
 	}
 
 	t.Logf("Attempting to create subnet: %s", subnetName)

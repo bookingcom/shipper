@@ -361,6 +361,21 @@ func BenchmarkInsert(b *testing.B) {
 	}
 }
 
+func BenchmarkSeek(b *testing.B) {
+	b.StopTimer()
+	size := 100000
+	insertP := perm(size)
+	tr := New(*btreeDegree)
+	for _, item := range insertP {
+		tr.ReplaceOrInsert(item)
+	}
+	b.StartTimer()
+
+	for i := 0; i < b.N; i++ {
+		tr.AscendGreaterOrEqual(Int(i%size), func(i Item) bool { return false })
+	}
+}
+
 func BenchmarkDeleteInsert(b *testing.B) {
 	b.StopTimer()
 	insertP := perm(benchmarkTreeSize)
@@ -686,4 +701,85 @@ func TestCloneConcurrentOperations(t *testing.T) {
 			t.Errorf("tree %v mismatch, want %v got %v", i, len(want), len(got))
 		}
 	}
+}
+
+func BenchmarkDeleteAndRestore(b *testing.B) {
+	items := perm(16392)
+	b.ResetTimer()
+	b.Run(`CopyBigFreeList`, func(b *testing.B) {
+		fl := NewFreeList(16392)
+		tr := NewWithFreeList(*btreeDegree, fl)
+		for _, v := range items {
+			tr.ReplaceOrInsert(v)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			dels := make([]Item, 0, tr.Len())
+			tr.Ascend(ItemIterator(func(b Item) bool {
+				dels = append(dels, b)
+				return true
+			}))
+			for _, del := range dels {
+				tr.Delete(del)
+			}
+			// tr is now empty, we make a new empty copy of it.
+			tr = NewWithFreeList(*btreeDegree, fl)
+			for _, v := range items {
+				tr.ReplaceOrInsert(v)
+			}
+		}
+	})
+	b.Run(`Copy`, func(b *testing.B) {
+		tr := New(*btreeDegree)
+		for _, v := range items {
+			tr.ReplaceOrInsert(v)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			dels := make([]Item, 0, tr.Len())
+			tr.Ascend(ItemIterator(func(b Item) bool {
+				dels = append(dels, b)
+				return true
+			}))
+			for _, del := range dels {
+				tr.Delete(del)
+			}
+			// tr is now empty, we make a new empty copy of it.
+			tr = New(*btreeDegree)
+			for _, v := range items {
+				tr.ReplaceOrInsert(v)
+			}
+		}
+	})
+	b.Run(`ClearBigFreelist`, func(b *testing.B) {
+		fl := NewFreeList(16392)
+		tr := NewWithFreeList(*btreeDegree, fl)
+		for _, v := range items {
+			tr.ReplaceOrInsert(v)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			tr.Clear(true)
+			for _, v := range items {
+				tr.ReplaceOrInsert(v)
+			}
+		}
+	})
+	b.Run(`Clear`, func(b *testing.B) {
+		tr := New(*btreeDegree)
+		for _, v := range items {
+			tr.ReplaceOrInsert(v)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			tr.Clear(true)
+			for _, v := range items {
+				tr.ReplaceOrInsert(v)
+			}
+		}
+	})
 }

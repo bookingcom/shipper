@@ -7,7 +7,6 @@ package ssh
 import (
 	"bytes"
 	"crypto"
-	"crypto/aes"
 	"crypto/rand"
 	"testing"
 )
@@ -15,7 +14,12 @@ import (
 func TestDefaultCiphersExist(t *testing.T) {
 	for _, cipherAlgo := range supportedCiphers {
 		if _, ok := cipherModes[cipherAlgo]; !ok {
-			t.Errorf("default cipher %q is unknown", cipherAlgo)
+			t.Errorf("supported cipher %q is unknown", cipherAlgo)
+		}
+	}
+	for _, cipherAlgo := range preferredCiphers {
+		if _, ok := cipherModes[cipherAlgo]; !ok {
+			t.Errorf("preferred cipher %q is unknown", cipherAlgo)
 		}
 	}
 }
@@ -52,13 +56,13 @@ func testPacketCipher(t *testing.T, cipher, mac string) {
 	want := "bla bla"
 	input := []byte(want)
 	buf := &bytes.Buffer{}
-	if err := client.writePacket(0, buf, rand.Reader, input); err != nil {
-		t.Fatalf("writePacket(%q, %q): %v", cipher, mac, err)
+	if err := client.writeCipherPacket(0, buf, rand.Reader, input); err != nil {
+		t.Fatalf("writeCipherPacket(%q, %q): %v", cipher, mac, err)
 	}
 
-	packet, err := server.readPacket(0, buf)
+	packet, err := server.readCipherPacket(0, buf)
 	if err != nil {
-		t.Fatalf("readPacket(%q, %q): %v", cipher, mac, err)
+		t.Fatalf("readCipherPacket(%q, %q): %v", cipher, mac, err)
 	}
 
 	if string(packet) != want {
@@ -67,9 +71,6 @@ func testPacketCipher(t *testing.T, cipher, mac string) {
 }
 
 func TestCBCOracleCounterMeasure(t *testing.T) {
-	cipherModes[aes128cbcID] = &streamCipherMode{16, aes.BlockSize, 0, nil}
-	defer delete(cipherModes, aes128cbcID)
-
 	kr := &kexResult{Hash: crypto.SHA1}
 	algs := directionAlgorithms{
 		Cipher:      aes128cbcID,
@@ -84,8 +85,8 @@ func TestCBCOracleCounterMeasure(t *testing.T) {
 	want := "bla bla"
 	input := []byte(want)
 	buf := &bytes.Buffer{}
-	if err := client.writePacket(0, buf, rand.Reader, input); err != nil {
-		t.Errorf("writePacket: %v", err)
+	if err := client.writeCipherPacket(0, buf, rand.Reader, input); err != nil {
+		t.Errorf("writeCipherPacket: %v", err)
 	}
 
 	packetSize := buf.Len()
@@ -105,9 +106,9 @@ func TestCBCOracleCounterMeasure(t *testing.T) {
 		fresh.Bytes()[i] ^= 0x01
 
 		before := fresh.Len()
-		_, err = server.readPacket(0, fresh)
+		_, err = server.readCipherPacket(0, fresh)
 		if err == nil {
-			t.Errorf("corrupt byte %d: readPacket succeeded ", i)
+			t.Errorf("corrupt byte %d: readCipherPacket succeeded ", i)
 			continue
 		}
 		if _, ok := err.(cbcError); !ok {

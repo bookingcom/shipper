@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -15,6 +15,8 @@ limitations under the License.
 package chartutil
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 
@@ -426,7 +428,12 @@ func TestDependentChartWithSubChartsHelmignore(t *testing.T) {
 }
 
 func TestDependentChartsWithSubChartsSymlink(t *testing.T) {
-	c, err := Load("testdata/joonix")
+	joonix := "testdata/joonix"
+	if err := os.Symlink(filepath.Join("..", "..", "frobnitz"), filepath.Join(joonix, "charts", "frobnitz")); err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(filepath.Join(joonix, "charts", "frobnitz"))
+	c, err := Load(joonix)
 	if err != nil {
 		t.Fatalf("Failed to load testdata: %s", err)
 	}

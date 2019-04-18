@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,7 +23,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
+
+	"k8s.io/client-go/kubernetes"
 
 	"k8s.io/helm/cmd/helm/installer"
 	"k8s.io/helm/pkg/helm"
@@ -44,7 +45,7 @@ type resetCmd struct {
 	out            io.Writer
 	home           helmpath.Home
 	client         helm.Interface
-	kubeClient     internalclientset.Interface
+	kubeClient     kubernetes.Interface
 }
 
 func newResetCmd(client helm.Interface, out io.Writer) *cobra.Command {
@@ -58,7 +59,7 @@ func newResetCmd(client helm.Interface, out io.Writer) *cobra.Command {
 		Short: "uninstalls Tiller from a cluster",
 		Long:  resetDesc,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			if err := setupConnection(cmd, args); !d.force && err != nil {
+			if err := setupConnection(); !d.force && err != nil {
 				return err
 			}
 			return nil
@@ -77,8 +78,12 @@ func newResetCmd(client helm.Interface, out io.Writer) *cobra.Command {
 	}
 
 	f := cmd.Flags()
-	f.BoolVarP(&d.force, "force", "f", false, "forces Tiller uninstall even if there are releases installed, or if Tiller is not in ready state")
+	settings.AddFlagsTLS(f)
+	f.BoolVarP(&d.force, "force", "f", false, "forces Tiller uninstall even if there are releases installed, or if Tiller is not in ready state. Releases are not deleted.)")
 	f.BoolVar(&d.removeHelmHome, "remove-helm-home", false, "if set deletes $HELM_HOME")
+
+	// set defaults from environment
+	settings.InitTLS(f)
 
 	return cmd
 }
@@ -86,7 +91,7 @@ func newResetCmd(client helm.Interface, out io.Writer) *cobra.Command {
 // runReset uninstalls tiller from Kubernetes Cluster and deletes local config
 func (d *resetCmd) run() error {
 	if d.kubeClient == nil {
-		c, err := getInternalKubeClient(settings.KubeContext)
+		_, c, err := getKubeClient(settings.KubeContext, settings.KubeConfig)
 		if err != nil {
 			return fmt.Errorf("could not get kubernetes client: %s", err)
 		}
@@ -101,7 +106,7 @@ func (d *resetCmd) run() error {
 	}
 
 	if !d.force && res != nil && len(res.Releases) > 0 {
-		return fmt.Errorf("there are still %d deployed releases (Tip: use --force)", len(res.Releases))
+		return fmt.Errorf("there are still %d deployed releases (Tip: use --force to remove Tiller. Releases will not be deleted.)", len(res.Releases))
 	}
 
 	if err := installer.Uninstall(d.kubeClient, &installer.Options{Namespace: d.namespace}); err != nil {

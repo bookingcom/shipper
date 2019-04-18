@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -61,7 +61,13 @@ func TestInstall(t *testing.T) {
 			resp:     helm.ReleaseMock(&helm.MockReleaseOptions{Name: "virgil"}),
 			expected: "virgil",
 		},
-		// Install, values from yaml
+		{
+			name:     "install with multiple unordered list values",
+			args:     []string{"testdata/testcharts/alpine"},
+			flags:    strings.Split("--name virgil --set foo[1].bar=baz,foo[0].baz=bar", " "),
+			resp:     helm.ReleaseMock(&helm.MockReleaseOptions{Name: "virgil"}),
+			expected: "virgil",
+		},
 		{
 			name:     "install with values",
 			args:     []string{"testdata/testcharts/alpine"},
@@ -107,13 +113,28 @@ func TestInstall(t *testing.T) {
 			expected: "apollo",
 			resp:     helm.ReleaseMock(&helm.MockReleaseOptions{Name: "apollo"}),
 		},
+		// Install, with atomic
+		{
+			name:     "install with a atomic",
+			args:     []string{"testdata/testcharts/alpine"},
+			flags:    strings.Split("--name apollo", " "),
+			expected: "apollo",
+			resp:     helm.ReleaseMock(&helm.MockReleaseOptions{Name: "apollo"}),
+		},
 		// Install, using the name-template
 		{
 			name:     "install with name-template",
 			args:     []string{"testdata/testcharts/alpine"},
-			flags:    []string{"--name-template", "{{upper \"foobar\"}}"},
-			expected: "FOOBAR",
-			resp:     helm.ReleaseMock(&helm.MockReleaseOptions{Name: "FOOBAR"}),
+			flags:    []string{"--name-template", "{{lower \"FOOBAR\"}}"},
+			expected: "foobar",
+			resp:     helm.ReleaseMock(&helm.MockReleaseOptions{Name: "foobar"}),
+		},
+		{
+			name:     "install with custom description",
+			args:     []string{"testdata/testcharts/alpine"},
+			flags:    []string{"--name", "virgil", "--description", "foobar"},
+			expected: "virgil",
+			resp:     helm.ReleaseMock(&helm.MockReleaseOptions{Name: "virgil", Description: "foobar"}),
 		},
 		// Install, perform chart verification along the way.
 		{
@@ -144,6 +165,31 @@ func TestInstall(t *testing.T) {
 			name: "install chart with bad requirements.yaml",
 			args: []string{"testdata/testcharts/chart-bad-requirements"},
 			err:  true,
+		},
+		// Install, using a bad release name
+		{
+			name:  "install chart with release name using capitals",
+			args:  []string{"testdata/testcharts/alpine"},
+			flags: []string{"--name", "FOO"},
+			err:   true,
+		},
+		{
+			name:  "install chart with release name using periods",
+			args:  []string{"testdata/testcharts/alpine"},
+			flags: []string{"--name", "foo.bar"},
+		},
+		{
+			name:  "install chart with release name using underscores",
+			args:  []string{"testdata/testcharts/alpine"},
+			flags: []string{"--name", "foo_bar"},
+			err:   true,
+		},
+		// Install, using a bad name-template
+		{
+			name:  "install with name-template",
+			args:  []string{"testdata/testcharts/alpine"},
+			flags: []string{"--name-template", "{{UPPER \"foobar\"}}"},
+			err:   true,
 		},
 	}
 

@@ -359,6 +359,80 @@ func TestIntegration_BucketUpdate(t *testing.T) {
 	}
 }
 
+func TestIntegration_BucketPolicyOnly(t *testing.T) {
+	ctx := context.Background()
+	client := testConfig(ctx, t)
+	defer client.Close()
+	h := testHelper{t}
+	bkt := client.Bucket(bucketName)
+
+	// Insert an object with custom ACL.
+	o := bkt.Object("bucketPolicyOnly")
+	defer func() {
+		if err := o.Delete(ctx); err != nil {
+			log.Printf("failed to delete test object: %v", err)
+		}
+	}()
+	wc := o.NewWriter(ctx)
+	wc.ContentType = "text/plain"
+	h.mustWrite(wc, []byte("test"))
+	a := o.ACL()
+	aclEntity := ACLEntity("user-test@example.com")
+	err := a.Set(ctx, aclEntity, RoleReader)
+	if err != nil {
+		t.Fatalf("set ACL failed: %v", err)
+	}
+
+	// Enable BucketPolicyOnly.
+	ua := BucketAttrsToUpdate{BucketPolicyOnly: &BucketPolicyOnly{Enabled: true}}
+	attrs := h.mustUpdateBucket(bkt, ua)
+	if got, want := attrs.BucketPolicyOnly.Enabled, true; got != want {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if got := attrs.BucketPolicyOnly.LockedTime; got.IsZero() {
+		t.Fatal("got a zero time value, want a populated value")
+	}
+
+	// Confirm BucketAccessControl returns error.
+	_, err = bkt.ACL().List(ctx)
+	if err == nil {
+		t.Fatal("expected Bucket ACL list to fail")
+	}
+
+	// Confirm ObjectAccessControl returns error.
+	_, err = o.ACL().List(ctx)
+	if err == nil {
+		t.Fatal("expected Object ACL list to fail")
+	}
+
+	// Disable BucketPolicyOnly.
+	ua = BucketAttrsToUpdate{BucketPolicyOnly: &BucketPolicyOnly{Enabled: false}}
+	attrs = h.mustUpdateBucket(bkt, ua)
+	if got, want := attrs.BucketPolicyOnly.Enabled, false; got != want {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+
+	// Check that the object ACLs are the same.
+	acls, err := o.ACL().List(ctx)
+	if err != nil {
+		t.Fatalf("object ACL list failed: %v", err)
+	}
+
+	// Check that ACL rules contain custom ACL from above.
+	if !containsACL(acls, aclEntity, RoleReader) {
+		t.Fatalf("expected ACLs %v to include custom ACL entity %v", acls, aclEntity)
+	}
+}
+
+func containsACL(acls []ACLRule, e ACLEntity, r ACLRole) bool {
+	for _, a := range acls {
+		if a.Entity == e && a.Role == r {
+			return true
+		}
+	}
+	return false
+}
+
 func TestIntegration_ConditionalDelete(t *testing.T) {
 	ctx := context.Background()
 	client := testConfig(ctx, t)
@@ -1826,9 +1900,8 @@ func TestIntegration_ReadCRC(t *testing.T) {
 		uncompressedBucket = "gcp-public-data-landsat"
 		uncompressedObject = "LC08/PRE/044/034/LC80440342016259LGN00/LC80440342016259LGN00_MTL.txt"
 
-		gzippedBucket   = "storage-library-test-bucket"
-		gzippedObject   = "gzipped-text.txt"
-		gzippedContents = "hello world" // uncompressed contents of the file
+		gzippedBucket = "storage-library-test-bucket"
+		gzippedObject = "gzipped-text.txt"
 	)
 	ctx := context.Background()
 	client, err := newTestClient(ctx, option.WithoutAuthentication())
@@ -2147,8 +2220,16 @@ func TestIntegration_UpdateRetentionExpirationTime(t *testing.T) {
 
 	defer func() {
 		h.mustUpdateBucket(bkt, BucketAttrsToUpdate{RetentionPolicy: &RetentionPolicy{RetentionPeriod: 0}})
-		h.mustDeleteObject(obj)
-		h.mustDeleteBucket(bkt)
+
+		// RetentionPeriod of less than a day is explicitly called out
+		// as best effort and not guaranteed, so let's log problems deleting
+		// objects instead of failing.
+		if err := obj.Delete(context.Background()); err != nil {
+			t.Logf("%s: object delete: %v", loc(), err)
+		}
+		if err := bkt.Delete(context.Background()); err != nil {
+			t.Logf("%s: bucket delete: %v", loc(), err)
+		}
 	}()
 
 	attrs := h.mustObjectAttrs(obj)

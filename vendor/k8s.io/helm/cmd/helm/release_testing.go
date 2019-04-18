@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -34,11 +34,12 @@ The tests to be run are defined in the chart that was installed.
 `
 
 type releaseTestCmd struct {
-	name    string
-	out     io.Writer
-	client  helm.Interface
-	timeout int64
-	cleanup bool
+	name     string
+	out      io.Writer
+	client   helm.Interface
+	timeout  int64
+	cleanup  bool
+	parallel bool
 }
 
 func newReleaseTestCmd(c helm.Interface, out io.Writer) *cobra.Command {
@@ -51,7 +52,7 @@ func newReleaseTestCmd(c helm.Interface, out io.Writer) *cobra.Command {
 		Use:     "test [RELEASE]",
 		Short:   "test a release",
 		Long:    releaseTestDesc,
-		PreRunE: setupConnection,
+		PreRunE: func(_ *cobra.Command, _ []string) error { return setupConnection() },
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := checkArgsLength(len(args), "release name"); err != nil {
 				return err
@@ -64,8 +65,13 @@ func newReleaseTestCmd(c helm.Interface, out io.Writer) *cobra.Command {
 	}
 
 	f := cmd.Flags()
+	settings.AddFlagsTLS(f)
 	f.Int64Var(&rlsTest.timeout, "timeout", 300, "time in seconds to wait for any individual Kubernetes operation (like Jobs for hooks)")
 	f.BoolVar(&rlsTest.cleanup, "cleanup", false, "delete test pods upon completion")
+	f.BoolVar(&rlsTest.parallel, "parallel", false, "run test pods in parallel")
+
+	// set defaults from environment
+	settings.InitTLS(f)
 
 	return cmd
 }
@@ -75,6 +81,7 @@ func (t *releaseTestCmd) run() (err error) {
 		t.name,
 		helm.ReleaseTestTimeout(t.timeout),
 		helm.ReleaseTestCleanup(t.cleanup),
+		helm.ReleaseTestParallel(t.parallel),
 	)
 	testErr := &testErr{}
 

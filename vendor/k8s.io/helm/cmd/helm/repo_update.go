@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -40,9 +40,10 @@ future releases.
 var errNoRepositories = errors.New("no repositories found. You must add one before updating")
 
 type repoUpdateCmd struct {
-	update func([]*repo.ChartRepository, io.Writer, helmpath.Home)
+	update func([]*repo.ChartRepository, io.Writer, helmpath.Home, bool) error
 	home   helmpath.Home
 	out    io.Writer
+	strict bool
 }
 
 func newRepoUpdateCmd(out io.Writer) *cobra.Command {
@@ -60,6 +61,10 @@ func newRepoUpdateCmd(out io.Writer) *cobra.Command {
 			return u.run()
 		},
 	}
+
+	f := cmd.Flags()
+	f.BoolVar(&u.strict, "strict", false, "fail on update warnings")
+
 	return cmd
 }
 
@@ -80,30 +85,45 @@ func (u *repoUpdateCmd) run() error {
 		}
 		repos = append(repos, r)
 	}
-
-	u.update(repos, u.out, u.home)
-	return nil
+	return u.update(repos, u.out, u.home, u.strict)
 }
 
-func updateCharts(repos []*repo.ChartRepository, out io.Writer, home helmpath.Home) {
+func updateCharts(repos []*repo.ChartRepository, out io.Writer, home helmpath.Home, strict bool) error {
 	fmt.Fprintln(out, "Hang tight while we grab the latest from your chart repositories...")
-	var wg sync.WaitGroup
+	var (
+		errorCounter int
+		wg           sync.WaitGroup
+		mu           sync.Mutex
+	)
 	for _, re := range repos {
 		wg.Add(1)
 		go func(re *repo.ChartRepository) {
 			defer wg.Done()
 			if re.Config.Name == localRepository {
+				mu.Lock()
 				fmt.Fprintf(out, "...Skip %s chart repository\n", re.Config.Name)
+				mu.Unlock()
 				return
 			}
 			err := re.DownloadIndexFile(home.Cache())
 			if err != nil {
+				mu.Lock()
+				errorCounter++
 				fmt.Fprintf(out, "...Unable to get an update from the %q chart repository (%s):\n\t%s\n", re.Config.Name, re.Config.URL, err)
+				mu.Unlock()
 			} else {
+				mu.Lock()
 				fmt.Fprintf(out, "...Successfully got an update from the %q chart repository\n", re.Config.Name)
+				mu.Unlock()
 			}
 		}(re)
 	}
 	wg.Wait()
+
+	if errorCounter != 0 && strict {
+		return errors.New("Update Failed. Check log for details")
+	}
+
 	fmt.Fprintln(out, "Update Complete. ⎈ Happy Helming!⎈ ")
+	return nil
 }

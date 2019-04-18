@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -78,7 +78,7 @@ func TestRecordsRemove(t *testing.T) {
 	for _, tt := range tests {
 		if r := rs.Remove(tt.key); r == nil {
 			if !tt.ok {
-				t.Fatalf("Failed to %q (key = %s). Expected nil, got %s",
+				t.Fatalf("Failed to %q (key = %s). Expected nil, got %v",
 					tt.desc,
 					tt.key,
 					r,

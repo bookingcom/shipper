@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,21 +28,43 @@ import (
 	"k8s.io/helm/pkg/version"
 )
 
+func TestHasCRDHook(t *testing.T) {
+	tests := []struct {
+		hooks  []*release.Hook
+		expect bool
+	}{
+		{
+			hooks: []*release.Hook{
+				{Events: []release.Hook_Event{release.Hook_PRE_DELETE}},
+			},
+			expect: false,
+		},
+		{
+			hooks: []*release.Hook{
+				{Events: []release.Hook_Event{release.Hook_CRD_INSTALL}},
+			},
+			expect: true,
+		},
+		{
+			hooks: []*release.Hook{
+				{Events: []release.Hook_Event{release.Hook_PRE_UPGRADE, release.Hook_CRD_INSTALL}},
+			},
+			expect: true,
+		},
+	}
+
+	for i, tt := range tests {
+		if tt.expect != hasCRDHook(tt.hooks) {
+			t.Errorf("test %d: expected %t, got %t", i, tt.expect, !tt.expect)
+		}
+	}
+}
+
 func TestInstallRelease(t *testing.T) {
 	c := helm.NewContext()
 	rs := rsFixture()
 
-	// TODO: Refactor this into a mock.
-	req := &services.InstallReleaseRequest{
-		Namespace: "spaced",
-		Chart: &chart.Chart{
-			Metadata: &chart.Metadata{Name: "hello"},
-			Templates: []*chart.Template{
-				{Name: "templates/hello", Data: []byte("hello: world")},
-				{Name: "templates/hooks", Data: []byte(manifestWithHook)},
-			},
-		},
-	}
+	req := installRequest()
 	res, err := rs.InstallRelease(c, req)
 	if err != nil {
 		t.Fatalf("Failed install: %s", err)
@@ -96,18 +118,9 @@ func TestInstallRelease_WithNotes(t *testing.T) {
 	c := helm.NewContext()
 	rs := rsFixture()
 
-	// TODO: Refactor this into a mock.
-	req := &services.InstallReleaseRequest{
-		Namespace: "spaced",
-		Chart: &chart.Chart{
-			Metadata: &chart.Metadata{Name: "hello"},
-			Templates: []*chart.Template{
-				{Name: "templates/hello", Data: []byte("hello: world")},
-				{Name: "templates/hooks", Data: []byte(manifestWithHook)},
-				{Name: "templates/NOTES.txt", Data: []byte(notesText)},
-			},
-		},
-	}
+	req := installRequest(
+		withChart(withNotes(notesText)),
+	)
 	res, err := rs.InstallRelease(c, req)
 	if err != nil {
 		t.Fatalf("Failed install: %s", err)
@@ -165,18 +178,9 @@ func TestInstallRelease_WithNotesRendered(t *testing.T) {
 	c := helm.NewContext()
 	rs := rsFixture()
 
-	// TODO: Refactor this into a mock.
-	req := &services.InstallReleaseRequest{
-		Namespace: "spaced",
-		Chart: &chart.Chart{
-			Metadata: &chart.Metadata{Name: "hello"},
-			Templates: []*chart.Template{
-				{Name: "templates/hello", Data: []byte("hello: world")},
-				{Name: "templates/hooks", Data: []byte(manifestWithHook)},
-				{Name: "templates/NOTES.txt", Data: []byte(notesText + " {{.Release.Name}}")},
-			},
-		},
-	}
+	req := installRequest(
+		withChart(withNotes(notesText + " {{.Release.Name}}")),
+	)
 	res, err := rs.InstallRelease(c, req)
 	if err != nil {
 		t.Fatalf("Failed install: %s", err)
@@ -236,17 +240,9 @@ func TestInstallRelease_TillerVersion(t *testing.T) {
 	c := helm.NewContext()
 	rs := rsFixture()
 
-	// TODO: Refactor this into a mock.
-	req := &services.InstallReleaseRequest{
-		Namespace: "spaced",
-		Chart: &chart.Chart{
-			Metadata: &chart.Metadata{Name: "hello", TillerVersion: ">=2.2.0"},
-			Templates: []*chart.Template{
-				{Name: "templates/hello", Data: []byte("hello: world")},
-				{Name: "templates/hooks", Data: []byte(manifestWithHook)},
-			},
-		},
-	}
+	req := installRequest(
+		withChart(withTiller(">=2.2.0")),
+	)
 	_, err := rs.InstallRelease(c, req)
 	if err != nil {
 		t.Fatalf("Expected valid range. Got %q", err)
@@ -258,17 +254,9 @@ func TestInstallRelease_WrongTillerVersion(t *testing.T) {
 	c := helm.NewContext()
 	rs := rsFixture()
 
-	// TODO: Refactor this into a mock.
-	req := &services.InstallReleaseRequest{
-		Namespace: "spaced",
-		Chart: &chart.Chart{
-			Metadata: &chart.Metadata{Name: "hello", TillerVersion: "<2.0.0"},
-			Templates: []*chart.Template{
-				{Name: "templates/hello", Data: []byte("hello: world")},
-				{Name: "templates/hooks", Data: []byte(manifestWithHook)},
-			},
-		},
-	}
+	req := installRequest(
+		withChart(withTiller("<2.0.0")),
+	)
 	_, err := rs.InstallRelease(c, req)
 	if err == nil {
 		t.Fatalf("Expected to fail because of wrong version")
@@ -280,33 +268,14 @@ func TestInstallRelease_WrongTillerVersion(t *testing.T) {
 	}
 }
 
-func TestInstallRelease_WithChartAndDependencyNotes(t *testing.T) {
+func TestInstallRelease_WithChartAndDependencyParentNotes(t *testing.T) {
 	c := helm.NewContext()
 	rs := rsFixture()
 
-	// TODO: Refactor this into a mock.
-	req := &services.InstallReleaseRequest{
-		Namespace: "spaced",
-		Chart: &chart.Chart{
-			Metadata: &chart.Metadata{Name: "hello"},
-			Templates: []*chart.Template{
-				{Name: "templates/hello", Data: []byte("hello: world")},
-				{Name: "templates/hooks", Data: []byte(manifestWithHook)},
-				{Name: "templates/NOTES.txt", Data: []byte(notesText)},
-			},
-			Dependencies: []*chart.Chart{
-				{
-					Metadata: &chart.Metadata{Name: "hello"},
-					Templates: []*chart.Template{
-						{Name: "templates/hello", Data: []byte("hello: world")},
-						{Name: "templates/hooks", Data: []byte(manifestWithHook)},
-						{Name: "templates/NOTES.txt", Data: []byte(notesText + " child")},
-					},
-				},
-			},
-		},
-	}
-
+	req := installRequest(withChart(
+		withNotes(notesText),
+		withDependency(withNotes(notesText+" child")),
+	))
 	res, err := rs.InstallRelease(c, req)
 	if err != nil {
 		t.Fatalf("Failed install: %s", err)
@@ -331,14 +300,46 @@ func TestInstallRelease_WithChartAndDependencyNotes(t *testing.T) {
 	}
 }
 
+func TestInstallRelease_WithChartAndDependencyAllNotes(t *testing.T) {
+	c := helm.NewContext()
+	rs := rsFixture()
+
+	req := installRequest(withSubNotes(),
+		withChart(
+			withNotes(notesText),
+			withDependency(withNotes(notesText+" child")),
+		))
+	res, err := rs.InstallRelease(c, req)
+	if err != nil {
+		t.Fatalf("Failed install: %s", err)
+	}
+	if res.Release.Name == "" {
+		t.Errorf("Expected release name.")
+	}
+
+	rel, err := rs.env.Releases.Get(res.Release.Name, res.Release.Version)
+	if err != nil {
+		t.Errorf("Expected release for %s (%v).", res.Release.Name, rs.env.Releases)
+	}
+
+	t.Logf("rel: %v", rel)
+
+	if !strings.Contains(rel.Info.Status.Notes, notesText) || !strings.Contains(rel.Info.Status.Notes, notesText+" child") {
+		t.Fatalf("Expected '%s', got '%s'", notesText+"\n"+notesText+" child", rel.Info.Status.Notes)
+	}
+
+	if rel.Info.Description != "Install complete" {
+		t.Errorf("unexpected description: %s", rel.Info.Description)
+	}
+}
+
 func TestInstallRelease_DryRun(t *testing.T) {
 	c := helm.NewContext()
 	rs := rsFixture()
 
-	req := &services.InstallReleaseRequest{
-		Chart:  chartStub(),
-		DryRun: true,
-	}
+	req := installRequest(withDryRun(),
+		withChart(withSampleTemplates()),
+	)
 	res, err := rs.InstallRelease(c, req)
 	if err != nil {
 		t.Errorf("Failed install: %s", err)
@@ -389,10 +390,7 @@ func TestInstallRelease_NoHooks(t *testing.T) {
 	rs := rsFixture()
 	rs.env.Releases.Create(releaseStub())
 
-	req := &services.InstallReleaseRequest{
-		Chart:        chartStub(),
-		DisableHooks: true,
-	}
+	req := installRequest(withDisabledHooks())
 	res, err := rs.InstallRelease(c, req)
 	if err != nil {
 		t.Errorf("Failed install: %s", err)
@@ -403,15 +401,62 @@ func TestInstallRelease_NoHooks(t *testing.T) {
 	}
 }
 
+func TestInstallRelease_CRDInstallHook(t *testing.T) {
+	c := helm.NewContext()
+	rs := rsFixture()
+	rs.env.Releases.Create(releaseStub())
+
+	req := installRequest()
+	req.Chart.Templates = append(req.Chart.Templates, &chart.Template{
+		Name: "templates/crdhook",
+		Data: []byte(manifestWithCRDHook),
+	})
+
+	res, err := rs.InstallRelease(c, req)
+	if err != nil {
+		t.Errorf("Failed install: %s", err)
+	}
+
+	// The new hook should have been pulled from the manifest.
+	if l := len(res.Release.Hooks); l != 2 {
+		t.Fatalf("expected 2 hooks, got %d", l)
+	}
+
+	expect := "Install complete"
+	if got := res.Release.Info.Description; got != expect {
+		t.Errorf("Expected Description to be %q, got %q", expect, got)
+	}
+}
+
+func TestInstallRelease_DryRunCRDInstallHook(t *testing.T) {
+	c := helm.NewContext()
+	rs := rsFixture()
+	rs.env.Releases.Create(releaseStub())
+
+	req := installRequest(withDryRun())
+	req.Chart.Templates = append(req.Chart.Templates, &chart.Template{
+		Name: "templates/crdhook",
+		Data: []byte(manifestWithCRDHook),
+	})
+
+	res, err := rs.InstallRelease(c, req)
+	if err != nil {
+		t.Errorf("Failed install: %s", err)
+	}
+
+	expect := "Validation skipped because CRDs are not installed"
+	if res.Release.Info.Description != expect {
+		t.Errorf("Expected Description %q, got %q", expect, res.Release.Info.Description)
+	}
+}
+
 func TestInstallRelease_FailedHooks(t *testing.T) {
 	c := helm.NewContext()
 	rs := rsFixture()
 	rs.env.Releases.Create(releaseStub())
 	rs.env.KubeClient = newHookFailingKubeClient()
 
-	req := &services.InstallReleaseRequest{
-		Chart: chartStub(),
-	}
+	req := installRequest()
 	res, err := rs.InstallRelease(c, req)
 	if err == nil {
 		t.Error("Expected failed install")
@@ -429,11 +474,10 @@ func TestInstallRelease_ReuseName(t *testing.T) {
 	rel.Info.Status.Code = release.Status_DELETED
 	rs.env.Releases.Create(rel)
 
-	req := &services.InstallReleaseRequest{
-		Chart:     chartStub(),
-		ReuseName: true,
-		Name:      rel.Name,
-	}
+	req := installRequest(
+		withReuseName(),
+		withName(rel.Name),
+	)
 	res, err := rs.InstallRelease(c, req)
 	if err != nil {
 		t.Fatalf("Failed install: %s", err)
@@ -457,18 +501,10 @@ func TestInstallRelease_KubeVersion(t *testing.T) {
 	c := helm.NewContext()
 	rs := rsFixture()
 
-	// TODO: Refactor this into a mock.
-	req := &services.InstallReleaseRequest{
-		Chart: &chart.Chart{
-			Metadata: &chart.Metadata{Name: "hello", KubeVersion: ">=0.0.0"},
-			Templates: []*chart.Template{
-				{Name: "templates/hello", Data: []byte("hello: world")},
-				{Name: "templates/hooks", Data: []byte(manifestWithHook)},
-			},
-		},
-	}
+	req := installRequest(
+		withChart(withKube(">=0.0.0")),
+	)
 	_, err := rs.InstallRelease(c, req)
-	fmt.Println(err)
 	if err != nil {
 		t.Fatalf("Expected valid range. Got %q", err)
 	}
@@ -478,16 +514,10 @@ func TestInstallRelease_WrongKubeVersion(t *testing.T) {
 	c := helm.NewContext()
 	rs := rsFixture()
 
-	// TODO: Refactor this into a mock.
-	req := &services.InstallReleaseRequest{
-		Chart: &chart.Chart{
-			Metadata: &chart.Metadata{Name: "hello", KubeVersion: ">=5.0.0"},
-			Templates: []*chart.Template{
-				{Name: "templates/hello", Data: []byte("hello: world")},
-				{Name: "templates/hooks", Data: []byte(manifestWithHook)},
-			},
-		},
-	}
+	req := installRequest(
+		withChart(withKube(">=5.0.0")),
+	)
+
 	_, err := rs.InstallRelease(c, req)
 	if err == nil {
 		t.Fatalf("Expected to fail because of wrong version")
@@ -496,5 +526,25 @@ func TestInstallRelease_WrongKubeVersion(t *testing.T) {
 	expect := "Chart requires kubernetesVersion"
 	if !strings.Contains(err.Error(), expect) {
 		t.Errorf("Expected %q to contain %q", err.Error(), expect)
+	}
+}
+
+func TestInstallRelease_Description(t *testing.T) {
+	c := helm.NewContext()
+	rs := rsFixture()
+	rs.env.Releases.Create(releaseStub())
+
+	customDescription := "foo"
+	req := &services.InstallReleaseRequest{
+		Chart:       chartStub(),
+		Description: customDescription,
+	}
+	res, err := rs.InstallRelease(c, req)
+	if err != nil {
+		t.Errorf("Failed install: %s", err)
+	}
+
+	if desc := res.Release.Info.Description; desc != customDescription {
+		t.Errorf("Expected description %q. Got %q", customDescription, desc)
 	}
 }

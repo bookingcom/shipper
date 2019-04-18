@@ -20,7 +20,7 @@ import (
 )
 
 func TestSelf(t *testing.T) {
-	fs := FS("fixtures")
+	fs := FS(procTestFixtures)
 
 	p1, err := fs.NewProc(26231)
 	if err != nil {
@@ -37,7 +37,7 @@ func TestSelf(t *testing.T) {
 }
 
 func TestAllProcs(t *testing.T) {
-	procs, err := FS("fixtures").AllProcs()
+	procs, err := FS(procTestFixtures).AllProcs()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestCmdLine(t *testing.T) {
 		{process: 26232, want: []string{}},
 		{process: 26233, want: []string{"com.github.uiautomator"}},
 	} {
-		p1, err := FS("fixtures").NewProc(tt.process)
+		p1, err := FS(procTestFixtures).NewProc(tt.process)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -80,7 +80,7 @@ func TestComm(t *testing.T) {
 		{process: 26231, want: "vim"},
 		{process: 26232, want: "ata_sff"},
 	} {
-		p1, err := FS("fixtures").NewProc(tt.process)
+		p1, err := FS(procTestFixtures).NewProc(tt.process)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -102,7 +102,7 @@ func TestExecutable(t *testing.T) {
 		{process: 26231, want: "/usr/bin/vim"},
 		{process: 26232, want: ""},
 	} {
-		p, err := FS("fixtures").NewProc(tt.process)
+		p, err := FS(procTestFixtures).NewProc(tt.process)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -111,13 +111,69 @@ func TestExecutable(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(tt.want, exe) {
-			t.Errorf("want absolute path to cmdline %v, have %v", tt.want, exe)
+			t.Errorf("want absolute path to exe %v, have %v", tt.want, exe)
+		}
+	}
+}
+
+func TestCwd(t *testing.T) {
+	for _, tt := range []struct {
+		process    int
+		want       string
+		brokenLink bool
+	}{
+		{process: 26231, want: "/usr/bin"},
+		{process: 26232, want: "/does/not/exist", brokenLink: true},
+		{process: 26233, want: ""},
+	} {
+		p, err := FS(procTestFixtures).NewProc(tt.process)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wd, err := p.Cwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(tt.want, wd) {
+			if wd == "" && tt.brokenLink {
+				// Allow the result to be empty when can't os.Readlink broken links
+				continue
+			}
+			t.Errorf("want absolute path to cwd %v, have %v", tt.want, wd)
+		}
+	}
+}
+
+func TestRoot(t *testing.T) {
+	for _, tt := range []struct {
+		process    int
+		want       string
+		brokenLink bool
+	}{
+		{process: 26231, want: "/"},
+		{process: 26232, want: "/does/not/exist", brokenLink: true},
+		{process: 26233, want: ""},
+	} {
+		p, err := FS(procTestFixtures).NewProc(tt.process)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rdir, err := p.RootDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(tt.want, rdir) {
+			if rdir == "" && tt.brokenLink {
+				// Allow the result to be empty when can't os.Readlink broken links
+				continue
+			}
+			t.Errorf("want absolute path to rootdir %v, have %v", tt.want, rdir)
 		}
 	}
 }
 
 func TestFileDescriptors(t *testing.T) {
-	p1, err := FS("fixtures").NewProc(26231)
+	p1, err := FS(procTestFixtures).NewProc(26231)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +188,7 @@ func TestFileDescriptors(t *testing.T) {
 }
 
 func TestFileDescriptorTargets(t *testing.T) {
-	p1, err := FS("fixtures").NewProc(26231)
+	p1, err := FS(procTestFixtures).NewProc(26231)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +210,7 @@ func TestFileDescriptorTargets(t *testing.T) {
 }
 
 func TestFileDescriptorsLen(t *testing.T) {
-	p1, err := FS("fixtures").NewProc(26231)
+	p1, err := FS(procTestFixtures).NewProc(26231)
 	if err != nil {
 		t.Fatal(err)
 	}

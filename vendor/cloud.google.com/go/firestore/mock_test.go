@@ -19,13 +19,14 @@ package firestore
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
 	"cloud.google.com/go/internal/testutil"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
-	pb "google.golang.org/genproto/googleapis/firestore/v1beta1"
+	pb "google.golang.org/genproto/googleapis/firestore/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -80,7 +81,7 @@ func (s *mockServer) addRPCAdjust(wantReq proto.Message, resp interface{}, adjus
 // was expected or there are no expected rpcs.
 func (s *mockServer) popRPC(gotReq proto.Message) (interface{}, error) {
 	if len(s.reqItems) == 0 {
-		panic("out of RPCs")
+		panic(fmt.Sprintf("out of RPCs, saw %v", reflect.TypeOf(gotReq)))
 	}
 	ri := s.reqItems[0]
 	s.reqItems = s.reqItems[1:]
@@ -102,7 +103,7 @@ func (s *mockServer) popRPC(gotReq proto.Message) (interface{}, error) {
 		}
 
 		if !proto.Equal(gotReq, ri.wantReq) {
-			return nil, fmt.Errorf("mockServer: bad request\ngot:  %T\n%s\nwant: %T\n%s",
+			return nil, fmt.Errorf("mockServer: bad request\ngot:\n%T\n%s\nwant:\n%T\n%s",
 				gotReq, proto.MarshalTextString(gotReq),
 				ri.wantReq, proto.MarshalTextString(ri.wantReq))
 		}

@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -18,6 +18,7 @@ package getter
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -67,6 +68,10 @@ func TestCollectPlugins(t *testing.T) {
 }
 
 func TestPluginGetter(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("TODO: refactor this test to work on windows")
+	}
+
 	oldhh := os.Getenv("HELM_HOME")
 	defer os.Setenv("HELM_HOME", oldhh)
 	os.Setenv("HELM_HOME", "")

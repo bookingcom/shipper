@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -86,6 +86,10 @@ func TestKindSorter(t *testing.T) {
 			Head: &util.SimpleHead{Kind: "Pod"},
 		},
 		{
+			Name: "3",
+			Head: &util.SimpleHead{Kind: "PodSecurityPolicy"},
+		},
+		{
 			Name: "q",
 			Head: &util.SimpleHead{Kind: "ReplicaSet"},
 		},
@@ -129,6 +133,10 @@ func TestKindSorter(t *testing.T) {
 			Name: "w",
 			Head: &util.SimpleHead{Kind: "APIService"},
 		},
+		{
+			Name: "z",
+			Head: &util.SimpleHead{Kind: "PodDisruptionBudget"},
+		},
 	}
 
 	for _, test := range []struct {
@@ -136,8 +144,8 @@ func TestKindSorter(t *testing.T) {
 		order       SortOrder
 		expected    string
 	}{
-		{"install", InstallOrder, "abcde1fgh2ijklmnopqrstuvw!"},
-		{"uninstall", UninstallOrder, "wvmutsrqponlkji2hgf1edcba!"},
+		{"install", InstallOrder, "abc3zde1fgh2ijklmnopqrstuvw!"},
+		{"uninstall", UninstallOrder, "wvmutsrqponlkji2hgf1edz3cba!"},
 	} {
 		var buf bytes.Buffer
 		t.Run(test.description, func(t *testing.T) {
@@ -213,5 +221,26 @@ func TestKindSorterSubSort(t *testing.T) {
 				t.Errorf("Expected %q, got %q", test.expected, got)
 			}
 		})
+	}
+}
+
+func TestKindSorterNamespaceAgainstUnknown(t *testing.T) {
+	unknown := Manifest{
+		Name: "a",
+		Head: &util.SimpleHead{Kind: "Unknown"},
+	}
+	namespace := Manifest{
+		Name: "b",
+		Head: &util.SimpleHead{Kind: "Namespace"},
+	}
+
+	manifests := []Manifest{unknown, namespace}
+	sortByKind(manifests, InstallOrder)
+
+	expectedOrder := []Manifest{namespace, unknown}
+	for i, manifest := range manifests {
+		if expectedOrder[i].Name != manifest.Name {
+			t.Errorf("Expected %s, got %s", expectedOrder[i].Name, manifest.Name)
+		}
 	}
 }

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -18,6 +18,7 @@ package downloader
 import (
 	"bytes"
 	"reflect"
+	"strings"
 	"testing"
 
 	"k8s.io/helm/pkg/chartutil"
@@ -77,14 +78,19 @@ func TestFindChartURL(t *testing.T) {
 	version := "0.1.0"
 	repoURL := "http://example.com/charts"
 
-	churl, err := findChartURL(name, version, repoURL, repos)
+	churl, username, password, err := findChartURL(name, version, repoURL, repos)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if churl != "https://kubernetes-charts.storage.googleapis.com/alpine-0.1.0.tgz" {
 		t.Errorf("Unexpected URL %q", churl)
 	}
-
+	if username != "" {
+		t.Errorf("Unexpected username %q", username)
+	}
+	if password != "" {
+		t.Errorf("Unexpected password %q", password)
+	}
 }
 
 func TestGetRepoNames(t *testing.T) {
@@ -94,10 +100,11 @@ func TestGetRepoNames(t *testing.T) {
 		HelmHome: helmpath.Home("testdata/helmhome"),
 	}
 	tests := []struct {
-		name   string
-		req    []*chartutil.Dependency
-		expect map[string]string
-		err    bool
+		name        string
+		req         []*chartutil.Dependency
+		expect      map[string]string
+		err         bool
+		expectedErr string
 	}{
 		{
 			name: "no repo definition failure",
@@ -112,6 +119,14 @@ func TestGetRepoNames(t *testing.T) {
 				{Name: "oedipus-rex", Repository: "stable"},
 			},
 			err: true,
+		},
+		{
+			name: "dependency entry missing 'repository' field -- e.g. spelled 'repo'",
+			req: []*chartutil.Dependency{
+				{Name: "dependency-missing-repository-field"},
+			},
+			err:         true,
+			expectedErr: "no 'repository' field specified for dependency: \"dependency-missing-repository-field\"",
 		},
 		{
 			name: "no repo definition failure",
@@ -147,6 +162,9 @@ func TestGetRepoNames(t *testing.T) {
 		l, err := m.getRepoNames(tt.req)
 		if err != nil {
 			if tt.err {
+				if !strings.Contains(err.Error(), tt.expectedErr) {
+					t.Fatalf("%s: expected error: %s, got: %s", tt.name, tt.expectedErr, err.Error())
+				}
 				continue
 			}
 			t.Fatal(err)

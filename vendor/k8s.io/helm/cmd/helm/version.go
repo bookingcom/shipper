@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -55,6 +55,7 @@ type versionCmd struct {
 	showClient bool
 	showServer bool
 	short      bool
+	template   string
 }
 
 func newVersionCmd(c helm.Interface, out io.Writer) *cobra.Command {
@@ -72,32 +73,45 @@ func newVersionCmd(c helm.Interface, out io.Writer) *cobra.Command {
 			if !version.showClient && !version.showServer {
 				version.showClient, version.showServer = true, true
 			}
-			if version.showServer {
-				// We do this manually instead of in PreRun because we only
-				// need a tunnel if server version is requested.
-				setupConnection(cmd, args)
-			}
-			version.client = ensureHelmClient(version.client)
 			return version.run()
 		},
 	}
 	f := cmd.Flags()
+	settings.AddFlagsTLS(f)
 	f.BoolVarP(&version.showClient, "client", "c", false, "client version only")
 	f.BoolVarP(&version.showServer, "server", "s", false, "server version only")
 	f.BoolVar(&version.short, "short", false, "print the version number")
+	f.StringVar(&version.template, "template", "", "template for version string format")
+
+	// set defaults from environment
+	settings.InitTLS(f)
 
 	return cmd
 }
 
 func (v *versionCmd) run() error {
+	// Store map data for template rendering
+	data := map[string]interface{}{}
+
 	if v.showClient {
 		cv := version.GetVersionProto()
-		fmt.Fprintf(v.out, "Client: %s\n", formatVersion(cv, v.short))
+		if v.template != "" {
+			data["Client"] = cv
+		} else {
+			fmt.Fprintf(v.out, "Client: %s\n", formatVersion(cv, v.short))
+		}
 	}
 
 	if !v.showServer {
-		return nil
+		return tpl(v.template, data, v.out)
 	}
+
+	// We do this manually instead of in PreRun because we only
+	// need a tunnel if server version is requested.
+	if err := setupConnection(); err != nil {
+		return err
+	}
+	v.client = ensureHelmClient(v.client)
 
 	if settings.Debug {
 		k8sVersion, err := getK8sVersion()
@@ -106,7 +120,6 @@ func (v *versionCmd) run() error {
 		}
 		fmt.Fprintf(v.out, "Kubernetes: %#v\n", k8sVersion)
 	}
-
 	resp, err := v.client.GetVersion()
 	if err != nil {
 		if grpc.Code(err) == codes.Unimplemented {
@@ -115,13 +128,18 @@ func (v *versionCmd) run() error {
 		debug("%s", err)
 		return errors.New("cannot connect to Tiller")
 	}
-	fmt.Fprintf(v.out, "Server: %s\n", formatVersion(resp.Version, v.short))
-	return nil
+
+	if v.template != "" {
+		data["Server"] = resp.Version
+	} else {
+		fmt.Fprintf(v.out, "Server: %s\n", formatVersion(resp.Version, v.short))
+	}
+	return tpl(v.template, data, v.out)
 }
 
 func getK8sVersion() (*apiVersion.Info, error) {
 	var v *apiVersion.Info
-	_, client, err := getKubeClient(settings.KubeContext)
+	_, client, err := getKubeClient(settings.KubeContext, settings.KubeConfig)
 	if err != nil {
 		return v, err
 	}
@@ -130,7 +148,7 @@ func getK8sVersion() (*apiVersion.Info, error) {
 }
 
 func formatVersion(v *pb.Version, short bool) string {
-	if short {
+	if short && v.GitCommit != "" {
 		return fmt.Sprintf("%s+g%s", v.SemVer, v.GitCommit[:7])
 	}
 	return fmt.Sprintf("%#v", v)

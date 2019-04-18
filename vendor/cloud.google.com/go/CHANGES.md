@@ -1,5 +1,132 @@
 # Changes
 
+## 0.37.4
+
+This patch releases re-builds the go.sum. This was not possible in the
+previous release.
+
+## 0.37.3
+
+This patch release removes github.com/golang/lint from the transitive
+dependency list, resolving `go get -u` problems.
+
+Note: this release intentionally has a broken go.sum. Please use v0.37.4.
+
+## 0.37.2
+
+This patch release is mostly intended to bring in v0.3.0 of
+google.golang.org/api, which fixes a GCF deployment issue.
+
+Note: we had to-date accidentally marked Redis as stable. In this release, we've
+fixed it by downgrading its documentation to alpha, as it is in other languages
+and docs.
+
+- all:
+  - Document context in generated libraries.
+
+## 0.37.1
+
+Small go.mod version bumps to bring in v0.2.0 of google.golang.org/api, which
+introduces a new oauth2 url.
+
+## 0.37.0
+
+- spanner:
+  - Add BatchDML method.
+  - Reduced initial time between retries.
+- bigquery:
+  - Produce better error messages for InferSchema.
+  - Add logical type control for avro loads.
+  - Add support for the GEOGRAPHY type.
+- datastore:
+  - Add sentinel value DetectProjectID for auto-detecting project ID.
+  - Allow flatten tag on struct pointers.
+  - Fixed a bug that caused queries to panic with invalid queries. Instead they
+    will now return an error.
+- profiler:
+  - Add ability to override GCE zone and instance.
+- pubsub:
+  - BEHAVIOR CHANGE: Refactor error code retry logic. RPCs should now more
+    consistently retry specific error codes based on whether they're idempotent
+    or non-idempotent.
+- httpreplay: Fixed a bug when a non-GET request had a zero-length body causing
+  the Content-Length header to be dropped.
+- iot:
+  - Add new apiv1 client.
+- securitycenter:
+  - Add new apiv1 client.
+- cloudscheduler:
+  - Add new apiv1 client.
+
+## 0.36.0
+
+- spanner:
+  - Reduce minimum retry backoff from 1s to 100ms. This makes time between
+    retries much faster and should improve latency.
+- storage:
+  - Add support for Bucket Policy Only.
+- kms:
+  - Add ResourceIAM helper method.
+  - Deprecate KeyRingIAM and CryptoKeyIAM. Please use ResourceIAM.
+- firestore:
+  - Switch from v1beta1 API to v1 API.
+  - Allow emulator with FIRESTORE_EMULATOR_HOST.
+- bigquery:
+  - Add NumLongTermBytes to Table.
+  - Add TotalBytesProcessedAccuracy to QueryStatistics.
+- irm:
+  - Add new v1alpha2 client.
+- talent:
+  - Add new v4beta1 client.
+- rpcreplay:
+  - Fix connection to work with grpc >= 1.17.
+  - It is now required for an actual gRPC server to be running for Dial to
+    succeed.
+
+## 0.35.1
+
+- spanner:
+  - Adds OpenCensus views back to public API.
+
+## v0.35.0
+
+- all:
+  - Add go.mod and go.sum.
+  - Switch usage of gax-go to gax-go/v2.
+- bigquery:
+  - Fix bug where time partitioning could not be removed from a table.
+  - Fix panic that occurred with empty query parameters.
+- bttest:
+  - Fix bug where deleted rows were returned by ReadRows.
+- bigtable/emulator:
+  - Configure max message size to 256 MiB.
+- firestore:
+  - Allow non-transactional queries in transactions.
+  - Allow StartAt/EndBefore on direct children at any depth.
+  - QuerySnapshotIterator.Stop may be called in an error state.
+  - Fix bug the prevented reset of transaction write state in between retries.
+- functions/metadata:
+  - Make Metadata.Resource a pointer.
+- logging:
+  - Make SpanID available in logging.Entry.
+- metadata:
+  - Wrap !200 error code in a typed err.
+- profiler:
+  - Add function to check if function name is within a particular file in the
+    profile.
+  - Set parent field in create profile request.
+  - Return kubernetes client to start cluster, so client can be used to poll
+    cluster.
+  - Add function for checking if filename is in profile.
+- pubsub:
+  - Fix bug where messages expired without an initial modack in
+    synchronous=true mode.
+  - Receive does not retry ResourceExhausted errors.
+- spanner:
+  - client.Close now cancels existing requests and should be much faster for
+    large amounts of sessions.
+  - Correctly allow MinOpened sessions to be spun up.
+
 ## v0.34.0
 
 - functions/metadata:
@@ -185,7 +312,7 @@ hard-to-reproduce Pub/Sub issues.
 
 ## v0.25.0
 
-- Added [Code of Conduct](https://github.com/GoogleCloudPlatform/google-cloud-go/blob/master/CODE_OF_CONDUCT.md)
+- Added [Code of Conduct](https://github.com/googleapis/google-cloud-go/blob/master/CODE_OF_CONDUCT.md)
 - bigtable:
   - cbt: Support a GC policy of "never".
 - errorreporting:

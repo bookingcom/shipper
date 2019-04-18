@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,6 +24,9 @@ import (
 	relutil "k8s.io/helm/pkg/releaseutil"
 	"k8s.io/helm/pkg/storage/driver"
 )
+
+// NoReleasesErr indicates that a given release cannot be found
+const NoReleasesErr = "has no deployed releases"
 
 // Storage represents a storage engine for a Release.
 type Storage struct {
@@ -98,7 +101,7 @@ func (s *Storage) ListDeployed() ([]*rspb.Release, error) {
 	})
 }
 
-// ListFilterAll returns the set of releases satisfying satisfying the predicate
+// ListFilterAll returns the set of releases satisfying the predicate
 // (filter0 && filter1 && ... && filterN), i.e. a Release is included in the results
 // if and only if all filters return true.
 func (s *Storage) ListFilterAll(fns ...relutil.FilterFunc) ([]*rspb.Release, error) {
@@ -108,7 +111,7 @@ func (s *Storage) ListFilterAll(fns ...relutil.FilterFunc) ([]*rspb.Release, err
 	})
 }
 
-// ListFilterAny returns the set of releases satisfying satisfying the predicate
+// ListFilterAny returns the set of releases satisfying the predicate
 // (filter0 || filter1 || ... || filterN), i.e. a Release is included in the results
 // if at least one of the filters returns true.
 func (s *Storage) ListFilterAny(fns ...relutil.FilterFunc) ([]*rspb.Release, error) {
@@ -118,10 +121,28 @@ func (s *Storage) ListFilterAny(fns ...relutil.FilterFunc) ([]*rspb.Release, err
 	})
 }
 
-// Deployed returns the deployed release with the provided release name, or
+// Deployed returns the last deployed release with the provided release name, or
 // returns ErrReleaseNotFound if not found.
 func (s *Storage) Deployed(name string) (*rspb.Release, error) {
-	s.Log("getting deployed release from %q history", name)
+	ls, err := s.DeployedAll(name)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return nil, fmt.Errorf("%q %s", name, NoReleasesErr)
+		}
+		return nil, err
+	}
+
+	if len(ls) == 0 {
+		return nil, fmt.Errorf("%q %s", name, NoReleasesErr)
+	}
+
+	return ls[0], err
+}
+
+// DeployedAll returns all deployed releases with the provided name, or
+// returns ErrReleaseNotFound if not found.
+func (s *Storage) DeployedAll(name string) ([]*rspb.Release, error) {
+	s.Log("getting deployed releases from %q history", name)
 
 	ls, err := s.Driver.Query(map[string]string{
 		"NAME":   name,
@@ -129,10 +150,10 @@ func (s *Storage) Deployed(name string) (*rspb.Release, error) {
 		"STATUS": "DEPLOYED",
 	})
 	if err == nil {
-		return ls[0], nil
+		return ls, nil
 	}
 	if strings.Contains(err.Error(), "not found") {
-		return nil, fmt.Errorf("%q has no deployed releases", name)
+		return nil, fmt.Errorf("%q %s", name, NoReleasesErr)
 	}
 	return nil, err
 }
@@ -145,7 +166,7 @@ func (s *Storage) History(name string) ([]*rspb.Release, error) {
 	return s.Driver.Query(map[string]string{"NAME": name, "OWNER": "TILLER"})
 }
 
-// removeLeastRecent removes items from history until the lengh number of releases
+// removeLeastRecent removes items from history until the length number of releases
 // does not exceed max.
 //
 // We allow max to be set explicitly so that calling functions can "make space"
@@ -161,21 +182,37 @@ func (s *Storage) removeLeastRecent(name string, max int) error {
 	if len(h) <= max {
 		return nil
 	}
-	overage := len(h) - max
 
 	// We want oldest to newest
 	relutil.SortByRevision(h)
 
+	lastDeployed, err := s.Deployed(name)
+	if err != nil {
+		return err
+	}
+
+	var toDelete []*rspb.Release
+	for _, rel := range h {
+		// once we have enough releases to delete to reach the max, stop
+		if len(h)-len(toDelete) == max {
+			break
+		}
+		if lastDeployed != nil {
+			if rel.GetVersion() != lastDeployed.GetVersion() {
+				toDelete = append(toDelete, rel)
+			}
+		} else {
+			toDelete = append(toDelete, rel)
+		}
+	}
+
 	// Delete as many as possible. In the case of API throughput limitations,
 	// multiple invocations of this function will eventually delete them all.
-	toDelete := h[0:overage]
 	errors := []error{}
 	for _, rel := range toDelete {
-		key := makeKey(name, rel.Version)
-		_, innerErr := s.Delete(name, rel.Version)
-		if innerErr != nil {
-			s.Log("error pruning %s from release history: %s", key, innerErr)
-			errors = append(errors, innerErr)
+		err = s.deleteReleaseVersion(name, rel.GetVersion())
+		if err != nil {
+			errors = append(errors, err)
 		}
 	}
 
@@ -188,6 +225,16 @@ func (s *Storage) removeLeastRecent(name string, max int) error {
 	default:
 		return fmt.Errorf("encountered %d deletion errors. First is: %s", c, errors[0])
 	}
+}
+
+func (s *Storage) deleteReleaseVersion(name string, version int32) error {
+	key := makeKey(name, version)
+	_, err := s.Delete(name, version)
+	if err != nil {
+		s.Log("error pruning %s from release history: %s", key, err)
+		return err
+	}
+	return nil
 }
 
 // Last fetches the last revision of the named release.

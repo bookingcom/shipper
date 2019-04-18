@@ -11,9 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package nfsd implements parsing of /proc/net/rpc/nfsd.
+// Package nfs implements parsing of /proc/net/rpc/nfsd.
 // Fields are documented in https://www.svennd.be/nfsd-stats-explained-procnetrpcnfsd/
 package nfs
+
+import (
+	"os"
+	"path"
+)
 
 // ReplyCache models the "rc" line.
 type ReplyCache struct {
@@ -136,8 +141,8 @@ type ClientV4Stats struct {
 	Setattr            uint64
 	FsInfo             uint64
 	Renew              uint64
-	SetClientId        uint64
-	SetClientIdConfirm uint64
+	SetClientID        uint64
+	SetClientIDConfirm uint64
 	Lock               uint64
 	Lockt              uint64
 	Locku              uint64
@@ -156,13 +161,13 @@ type ClientV4Stats struct {
 	ReadDir            uint64
 	ServerCaps         uint64
 	DelegReturn        uint64
-	GetAcl             uint64
-	SetAcl             uint64
+	GetACL             uint64
+	SetACL             uint64
 	FsLocations        uint64
 	ReleaseLockowner   uint64
 	Secinfo            uint64
 	FsidPresent        uint64
-	ExchangeId         uint64
+	ExchangeID         uint64
 	CreateSession      uint64
 	DestroySession     uint64
 	Sequence           uint64
@@ -173,11 +178,11 @@ type ClientV4Stats struct {
 	LayoutCommit       uint64
 	LayoutReturn       uint64
 	SecinfoNoName      uint64
-	TestStateId        uint64
-	FreeStateId        uint64
+	TestStateID        uint64
+	FreeStateID        uint64
 	GetDeviceList      uint64
 	BindConnToSession  uint64
-	DestroyClientId    uint64
+	DestroyClientID    uint64
 	Seek               uint64
 	Allocate           uint64
 	DeAllocate         uint64
@@ -238,7 +243,7 @@ type V4Ops struct {
 	RelLockOwner uint64
 }
 
-// RPCStats models all stats from /proc/net/rpc/nfs.
+// ClientRPCStats models all stats from /proc/net/rpc/nfs.
 type ClientRPCStats struct {
 	Network       Network
 	ClientRPC     ClientRPC
@@ -260,4 +265,28 @@ type ServerRPCStats struct {
 	V3Stats        V3Stats
 	ServerV4Stats  ServerV4Stats
 	V4Ops          V4Ops
+}
+
+// ReadClientRPCStats retrieves NFS client RPC statistics
+// from proc/net/rpc/nfs.
+func ReadClientRPCStats(procfs string) (*ClientRPCStats, error) {
+	f, err := os.Open(path.Join(procfs, "net/rpc/nfs"))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	return ParseClientRPCStats(f)
+}
+
+// ReadServerRPCStats retrieves NFS daemon RPC statistics
+// from proc/net/rpc/nfsd.
+func ReadServerRPCStats(procfs string) (*ServerRPCStats, error) {
+	f, err := os.Open(path.Join(procfs, "net/rpc/nfsd"))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	return ParseServerRPCStats(f)
 }

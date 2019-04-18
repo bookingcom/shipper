@@ -19,16 +19,17 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
-	pb "google.golang.org/genproto/googleapis/firestore/v1beta1"
+	pb "google.golang.org/genproto/googleapis/firestore/v1"
 )
 
 func TestDoc(t *testing.T) {
 	coll := testClient.Collection("C")
 	got := coll.Doc("d")
 	want := &DocumentRef{
-		Parent: coll,
-		ID:     "d",
-		Path:   "projects/projectID/databases/(default)/documents/C/d",
+		Parent:    coll,
+		ID:        "d",
+		Path:      "projects/projectID/databases/(default)/documents/C/d",
+		shortPath: "C/d",
 	}
 	if !testEqual(got, want) {
 		t.Errorf("got %+v, want %+v", got, want)

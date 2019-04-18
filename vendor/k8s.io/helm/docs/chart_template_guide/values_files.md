@@ -4,7 +4,7 @@ In the previous section we looked at the built-in objects that Helm templates of
 
 - The `values.yaml` file in the chart
 - If this is a subchart, the `values.yaml` file of a parent chart
-- A values file if passed into `helm install` or `helm update` with the `-f` flag (`helm install -f myvals.yaml ./mychart`)
+- A values file is passed into `helm install` or `helm upgrade` with the `-f` flag (`helm install -f myvals.yaml ./mychart`)
 - Individual parameters passed with `--set` (such as `helm install --set foo=bar ./mychart`)
 
 The list above is in order of specificity: `values.yaml` is the default, which can be overridden by a parent chart's `values.yaml`, which can in turn be overridden by a user-supplied values file, which can in turn be overridden by `--set` parameters.
@@ -54,7 +54,7 @@ data:
 
 Because `favoriteDrink` is set in the default `values.yaml` file to `coffee`, that's the value displayed in the template. We can easily override that by adding a `--set` flag in our call to `helm install`:
 
-```
+```console
 helm install --dry-run --debug --set favoriteDrink=slurm ./mychart
 SERVER: "localhost:44134"
 CHART PATH: /Users/mattbutcher/Code/Go/src/k8s.io/helm/_scratch/mychart
@@ -85,7 +85,7 @@ favorite:
 
 Now we would have to modify the template slightly:
 
-```
+```yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -65,8 +65,12 @@ type ChartDownloader struct {
 	Keyring string
 	// HelmHome is the $HELM_HOME.
 	HelmHome helmpath.Home
-	// Getter collection for the operation
+	// Getters collection for the operation
 	Getters getter.Providers
+	// Username chart repository username
+	Username string
+	// Password chart repository password
+	Password string
 }
 
 // DownloadTo retrieves a chart. Depending on the settings, it may also download a provenance file.
@@ -156,6 +160,7 @@ func (c *ChartDownloader) ResolveChartVersion(ref, version string) (*url.URL, ge
 		// through each repo cache file and finding a matching URL. But basically
 		// we want to find the repo in case we have special SSL cert config
 		// for that repo.
+
 		rc, err := c.scanReposForURL(ref, rf)
 		if err != nil {
 			// If there is no special config, return the default HTTP client and
@@ -165,12 +170,16 @@ func (c *ChartDownloader) ResolveChartVersion(ref, version string) (*url.URL, ge
 				if err != nil {
 					return u, nil, err
 				}
-				getter, err := getterConstructor(ref, "", "", "")
-				return u, getter, err
+				g, err := getterConstructor(ref, "", "", "")
+				if t, ok := g.(*getter.HttpGetter); ok {
+					t.SetCredentials(c.Username, c.Password)
+				}
+				return u, g, err
 			}
 			return u, nil, err
 		}
 		r, err := repo.NewChartRepository(rc, c.Getters)
+		c.setCredentials(r)
 		// If we get here, we don't need to go through the next phase of looking
 		// up the URL. We have it already. So we just return.
 		return u, r.Client, err
@@ -185,6 +194,7 @@ func (c *ChartDownloader) ResolveChartVersion(ref, version string) (*url.URL, ge
 	repoName := p[0]
 	chartName := p[1]
 	rc, err := pickChartRepositoryConfigByName(repoName, rf.Repositories)
+
 	if err != nil {
 		return u, nil, err
 	}
@@ -193,6 +203,7 @@ func (c *ChartDownloader) ResolveChartVersion(ref, version string) (*url.URL, ge
 	if err != nil {
 		return u, nil, err
 	}
+	c.setCredentials(r)
 
 	// Next, we need to load the index, and actually look up the chart.
 	i, err := repo.LoadIndexFile(c.HelmHome.CacheIndex(r.Config.Name))
@@ -202,7 +213,7 @@ func (c *ChartDownloader) ResolveChartVersion(ref, version string) (*url.URL, ge
 
 	cv, err := i.Get(chartName, version)
 	if err != nil {
-		return u, r.Client, fmt.Errorf("chart %q matching %s not found in %s index. (try 'helm repo update'). %s", chartName, version, r.Config.Name, err)
+		return u, r.Client, fmt.Errorf("chart %q matching %q not found in %s index. (try 'helm repo update'). %s", chartName, version, r.Config.Name, err)
 	}
 
 	if len(cv.URLs) == 0 {
@@ -230,6 +241,30 @@ func (c *ChartDownloader) ResolveChartVersion(ref, version string) (*url.URL, ge
 	}
 
 	return u, r.Client, nil
+}
+
+// setCredentials if HttpGetter is used, this method sets the configured repository credentials on the HttpGetter.
+func (c *ChartDownloader) setCredentials(r *repo.ChartRepository) {
+	if t, ok := r.Client.(*getter.HttpGetter); ok {
+		t.SetCredentials(c.getRepoCredentials(r))
+	}
+}
+
+// getRepoCredentials if this ChartDownloader is not configured to use credentials, and the chart repository sent as an argument is,
+// then the repository's configured credentials are returned.
+// Else, this ChartDownloader's credentials are returned.
+func (c *ChartDownloader) getRepoCredentials(r *repo.ChartRepository) (username, password string) {
+	username = c.Username
+	password = c.Password
+	if r != nil && r.Config != nil {
+		if username == "" {
+			username = r.Config.Username
+		}
+		if password == "" {
+			password = r.Config.Password
+		}
+	}
+	return
 }
 
 // VerifyChart takes a path to a chart archive and a keyring, and verifies the chart.

@@ -28,6 +28,9 @@
 //	-cpuprofile file
 //		Write a CPU profile of the compiler to file.
 //
+//	-go path
+//		Path to "go" command (default "go").
+//
 //	-memprofile file
 //		Write a memory profile of the compiler to file.
 //
@@ -37,11 +40,14 @@
 //	-obj
 //		Report object file statistics.
 //
-//  -pkg
+//	-pkg pkg
 //		Benchmark compiling a single package.
 //
 //	-run regexp
 //		Only run benchmarks with names matching regexp.
+//
+//	-short
+//		Skip long-running benchmarks.
 //
 // Although -cpuprofile and -memprofile are intended to write a
 // combined profile for all the executed benchmarks to file,
@@ -67,9 +73,9 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
-	"go/build"
 	"io/ioutil"
 	"log"
 	"os"
@@ -144,6 +150,7 @@ func main() {
 		log.Fatalf("%s env GOROOT: %v", *flagGoCmd, err)
 	}
 	goroot = strings.TrimSpace(string(s))
+	os.Setenv("GOROOT", goroot) // for any subcommands
 
 	compiler = *flagCompiler
 	if compiler == "" {
@@ -250,11 +257,28 @@ func runBuild(name, dir string, count int) {
 		return
 	}
 
-	pkg, err := build.Import(dir, ".", 0)
+	// Make sure dependencies needed by go tool compile are installed to GOROOT/pkg.
+	out, err := exec.Command(*flagGoCmd, "build", "-i", dir).CombinedOutput()
 	if err != nil {
-		log.Print(err)
+		log.Printf("go build -i %s: %v\n%s", dir, err, out)
 		return
 	}
+
+	// Find dir and source file list.
+	var pkg struct {
+		Dir     string
+		GoFiles []string
+	}
+	out, err = exec.Command(*flagGoCmd, "list", "-json", dir).Output()
+	if err != nil {
+		log.Printf("go list -json %s: %v\n", dir, err)
+		return
+	}
+	if err := json.Unmarshal(out, &pkg); err != nil {
+		log.Printf("go list -json %s: unmarshal: %v", dir, err)
+		return
+	}
+
 	args := []string{"-o", "_compilebench_.o"}
 	if is6g {
 		*flagMemprofilerate = -1
@@ -311,7 +335,11 @@ func runBuild(name, dir string, count int) {
 		}
 
 		if *flagMemprofile != "" {
-			if err := ioutil.WriteFile(*flagMemprofile, out, 0666); err != nil {
+			outpath := *flagMemprofile
+			if *flagCount != 1 {
+				outpath = fmt.Sprintf("%s_%d", outpath, count)
+			}
+			if err := ioutil.WriteFile(outpath, out, 0666); err != nil {
 				log.Print(err)
 			}
 		}

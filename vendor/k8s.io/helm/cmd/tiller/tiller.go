@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -33,7 +33,13 @@ import (
 	goprom "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
+	"k8s.io/klog"
+
+	// Import to initialize client auth plugins.
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/helm/pkg/kube"
 	"k8s.io/helm/pkg/proto/hapi/services"
@@ -83,7 +89,7 @@ var (
 
 	// rootServer is the root gRPC server.
 	//
-	// Each gRPC service registers itself to this server during init().
+	// Each gRPC service registers itself to this server during start().
 	rootServer *grpc.Server
 
 	// env is the default environment.
@@ -95,6 +101,7 @@ var (
 )
 
 func main() {
+	klog.InitFlags(nil)
 	// TODO: use spf13/cobra for tiller instead of flags
 	flag.Parse()
 
@@ -113,7 +120,10 @@ func main() {
 
 func start() {
 
-	clientset, err := kube.New(nil).ClientSet()
+	healthSrv := health.NewServer()
+	healthSrv.SetServingStatus("Tiller", healthpb.HealthCheckResponse_NOT_SERVING)
+
+	clientset, err := kube.New(nil).KubernetesClientSet()
 	if err != nil {
 		logger.Fatalf("Cannot initialize Kubernetes connection: %s", err)
 	}
@@ -122,13 +132,13 @@ func start() {
 	case storageMemory:
 		env.Releases = storage.Init(driver.NewMemory())
 	case storageConfigMap:
-		cfgmaps := driver.NewConfigMaps(clientset.Core().ConfigMaps(namespace()))
+		cfgmaps := driver.NewConfigMaps(clientset.CoreV1().ConfigMaps(namespace()))
 		cfgmaps.Log = newLogger("storage/driver").Printf
 
 		env.Releases = storage.Init(cfgmaps)
 		env.Releases.Log = newLogger("storage").Printf
 	case storageSecret:
-		secrets := driver.NewSecrets(clientset.Core().Secrets(namespace()))
+		secrets := driver.NewSecrets(clientset.CoreV1().Secrets(namespace()))
 		secrets.Log = newLogger("storage/driver").Printf
 
 		env.Releases = storage.Init(secrets)
@@ -157,13 +167,18 @@ func start() {
 			logger.Fatalf("Could not create server TLS configuration: %v", err)
 		}
 		opts = append(opts, grpc.Creds(credentials.NewTLS(cfg)))
-		opts = append(opts, grpc.KeepaliveParams(keepalive.ServerParameters{
-			MaxConnectionIdle: 10 * time.Minute,
-			// If needed, we can configure the max connection age
-		}))
 	}
 
+	opts = append(opts, grpc.KeepaliveParams(keepalive.ServerParameters{
+		MaxConnectionIdle: 10 * time.Minute,
+		// If needed, we can configure the max connection age
+	}))
+	opts = append(opts, grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+		MinTime: time.Duration(20) * time.Second, // For compatibility with the client keepalive.ClientParameters
+	}))
+
 	rootServer = tiller.NewServer(opts...)
+	healthpb.RegisterHealthServer(rootServer, healthSrv)
 
 	lstn, err := net.Listen("tcp", *grpcAddr)
 	if err != nil {
@@ -202,6 +217,8 @@ func start() {
 			probeErrCh <- err
 		}
 	}()
+
+	healthSrv.SetServingStatus("Tiller", healthpb.HealthCheckResponse_SERVING)
 
 	select {
 	case err := <-srvErrCh:

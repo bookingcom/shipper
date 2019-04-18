@@ -53,14 +53,14 @@ type transport struct {
 // packetCipher represents a combination of SSH encryption/MAC
 // protocol.  A single instance should be used for one direction only.
 type packetCipher interface {
-	// writePacket encrypts the packet and writes it to w. The
+	// writeCipherPacket encrypts the packet and writes it to w. The
 	// contents of the packet are generally scrambled.
-	writePacket(seqnum uint32, w io.Writer, rand io.Reader, packet []byte) error
+	writeCipherPacket(seqnum uint32, w io.Writer, rand io.Reader, packet []byte) error
 
-	// readPacket reads and decrypts a packet of data. The
+	// readCipherPacket reads and decrypts a packet of data. The
 	// returned packet may be overwritten by future calls of
 	// readPacket.
-	readPacket(seqnum uint32, r io.Reader) ([]byte, error)
+	readCipherPacket(seqnum uint32, r io.Reader) ([]byte, error)
 }
 
 // connectionState represents one side (read or write) of the
@@ -127,7 +127,7 @@ func (t *transport) readPacket() (p []byte, err error) {
 }
 
 func (s *connectionState) readPacket(r *bufio.Reader) ([]byte, error) {
-	packet, err := s.packetCipher.readPacket(s.seqNum, r)
+	packet, err := s.packetCipher.readCipherPacket(s.seqNum, r)
 	s.seqNum++
 	if err == nil && len(packet) == 0 {
 		err = errors.New("ssh: zero length packet")
@@ -175,7 +175,7 @@ func (t *transport) writePacket(packet []byte) error {
 func (s *connectionState) writePacket(w *bufio.Writer, rand io.Reader, packet []byte) error {
 	changeKeys := len(packet) > 0 && packet[0] == msgNewKeys
 
-	err := s.packetCipher.writePacket(s.seqNum, w, rand, packet)
+	err := s.packetCipher.writeCipherPacket(s.seqNum, w, rand, packet)
 	if err != nil {
 		return err
 	}
@@ -233,52 +233,22 @@ var (
 	clientKeys = direction{[]byte{'A'}, []byte{'C'}, []byte{'E'}}
 )
 
-// generateKeys generates key material for IV, MAC and encryption.
-func generateKeys(d direction, algs directionAlgorithms, kex *kexResult) (iv, key, macKey []byte) {
-	cipherMode := cipherModes[algs.Cipher]
-	macMode := macModes[algs.MAC]
-
-	iv = make([]byte, cipherMode.ivSize)
-	key = make([]byte, cipherMode.keySize)
-	macKey = make([]byte, macMode.keySize)
-
-	generateKeyMaterial(iv, d.ivTag, kex)
-	generateKeyMaterial(key, d.keyTag, kex)
-	generateKeyMaterial(macKey, d.macKeyTag, kex)
-	return
-}
-
 // setupKeys sets the cipher and MAC keys from kex.K, kex.H and sessionId, as
 // described in RFC 4253, section 6.4. direction should either be serverKeys
 // (to setup server->client keys) or clientKeys (for client->server keys).
 func newPacketCipher(d direction, algs directionAlgorithms, kex *kexResult) (packetCipher, error) {
-	iv, key, macKey := generateKeys(d, algs, kex)
+	cipherMode := cipherModes[algs.Cipher]
+	macMode := macModes[algs.MAC]
 
-	if algs.Cipher == gcmCipherID {
-		return newGCMCipher(iv, key)
-	}
+	iv := make([]byte, cipherMode.ivSize)
+	key := make([]byte, cipherMode.keySize)
+	macKey := make([]byte, macMode.keySize)
 
-	if algs.Cipher == aes128cbcID {
-		return newAESCBCCipher(iv, key, macKey, algs)
-	}
+	generateKeyMaterial(iv, d.ivTag, kex)
+	generateKeyMaterial(key, d.keyTag, kex)
+	generateKeyMaterial(macKey, d.macKeyTag, kex)
 
-	if algs.Cipher == tripledescbcID {
-		return newTripleDESCBCCipher(iv, key, macKey, algs)
-	}
-
-	c := &streamPacketCipher{
-		mac: macModes[algs.MAC].new(macKey),
-		etm: macModes[algs.MAC].etm,
-	}
-	c.macResult = make([]byte, c.mac.Size())
-
-	var err error
-	c.cipher, err = cipherModes[algs.Cipher].createStream(key, iv)
-	if err != nil {
-		return nil, err
-	}
-
-	return c, nil
+	return cipherModes[algs.Cipher].create(key, iv, macKey, algs)
 }
 
 // generateKeyMaterial fills out with key material generated from tag, K, H

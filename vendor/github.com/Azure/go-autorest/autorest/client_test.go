@@ -16,16 +16,20 @@ package autorest
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/Azure/go-autorest/autorest/mocks"
+	"github.com/Azure/go-autorest/tracing"
+	"go.opencensus.io/plugin/ochttp"
 )
 
 func TestLoggingInspectorWithInspection(t *testing.T) {
@@ -125,11 +129,40 @@ func TestLoggingInspectorByInspectingRestoresBody(t *testing.T) {
 func TestNewClientWithUserAgent(t *testing.T) {
 	ua := "UserAgent"
 	c := NewClientWithUserAgent(ua)
-	completeUA := fmt.Sprintf("%s %s", defaultUserAgent, ua)
-
+	completeUA := fmt.Sprintf("%s %s", UserAgent(), ua)
 	if c.UserAgent != completeUA {
 		t.Fatalf("autorest: NewClientWithUserAgent failed to set the UserAgent -- expected %s, received %s",
 			completeUA, c.UserAgent)
+	}
+	r := c.Sender.(*http.Client).Transport.(*ochttp.Transport).Base.(*http.Transport).TLSClientConfig.Renegotiation
+	if r != tls.RenegotiateNever {
+		t.Fatal("autorest: TestNewClientWithUserAgentTLSRenegotiation expected RenegotiateNever")
+	}
+}
+
+func TestNewClientWithOptions(t *testing.T) {
+	const ua = "UserAgent"
+	c1 := NewClientWithOptions(ClientOptions{
+		UserAgent:     ua,
+		Renegotiation: tls.RenegotiateFreelyAsClient,
+	})
+	r1 := c1.Sender.(*http.Client).Transport.(*ochttp.Transport).Base.(*http.Transport).TLSClientConfig.Renegotiation
+	if r1 != tls.RenegotiateFreelyAsClient {
+		t.Fatal("autorest: TestNewClientWithUserAgentTLSRenegotiation expected RenegotiateFreelyAsClient")
+	}
+	// ensure default value doesn't stomp over previous value
+	c2 := NewClientWithUserAgent(ua)
+	r2 := c2.Sender.(*http.Client).Transport.(*ochttp.Transport).Base.(*http.Transport).TLSClientConfig.Renegotiation
+	if r2 != tls.RenegotiateNever {
+		t.Fatal("autorest: TestNewClientWithUserAgentTLSRenegotiation expected RenegotiateNever")
+	}
+	r1 = c1.Sender.(*http.Client).Transport.(*ochttp.Transport).Base.(*http.Transport).TLSClientConfig.Renegotiation
+	if r1 != tls.RenegotiateFreelyAsClient {
+		t.Fatal("autorest: TestNewClientWithUserAgentTLSRenegotiation expected RenegotiateFreelyAsClient (overwritten)")
+	}
+	r2 = c2.Sender.(*http.Client).Transport.(*ochttp.Transport).Base.(*http.Transport).TLSClientConfig.Renegotiation
+	if r2 != tls.RenegotiateNever {
+		t.Fatal("autorest: TestNewClientWithUserAgentTLSRenegotiation expected RenegotiateNever (overwritten)")
 	}
 }
 
@@ -141,7 +174,7 @@ func TestAddToUserAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("autorest: AddToUserAgent returned error -- expected nil, received %s", err)
 	}
-	completeUA := fmt.Sprintf("%s %s %s", defaultUserAgent, ua, ext)
+	completeUA := fmt.Sprintf("%s %s %s", UserAgent(), ua, ext)
 
 	if c.UserAgent != completeUA {
 		t.Fatalf("autorest: AddToUserAgent failed to add an extension to the UserAgent -- expected %s, received %s",
@@ -162,7 +195,7 @@ func TestAddToUserAgent(t *testing.T) {
 func TestClientSenderReturnsHttpClientByDefault(t *testing.T) {
 	c := Client{}
 
-	if fmt.Sprintf("%T", c.sender()) != "*http.Client" {
+	if fmt.Sprintf("%T", c.sender(tls.RenegotiateNever)) != "*http.Client" {
 		t.Fatal("autorest: Client#sender failed to return http.Client by default")
 	}
 }
@@ -173,7 +206,7 @@ func TestClientSenderReturnsSetSender(t *testing.T) {
 	s := mocks.NewSender()
 	c.Sender = s
 
-	if c.sender() != s {
+	if c.sender(tls.RenegotiateNever) != s {
 		t.Fatal("autorest: Client#sender failed to return set Sender")
 	}
 }
@@ -342,6 +375,63 @@ func TestClientByInspectingSetsDefault(t *testing.T) {
 
 	if !reflect.DeepEqual(r, &http.Response{}) {
 		t.Fatal("autorest: Client#ByInspecting failed to provide a default ResponseInspector")
+	}
+}
+
+func TestClientTracing(t *testing.T) {
+	c := Client{}
+
+	httpClient, ok := c.sender(tls.RenegotiateNever).(*http.Client)
+	if !ok {
+		t.Fatal("autorest: Client#sender failed to return http.Client by default")
+	}
+	if httpClient.Transport != tracing.Transport {
+		t.Fatal("autorest: Client.Sender Default transport is not the tracing transport")
+	}
+}
+
+func TestCookies(t *testing.T) {
+	second := "second"
+	expected := http.Cookie{
+		Name:  "tastes",
+		Value: "delicious",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &expected)
+		b, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("autorest: ioutil.ReadAll failed reading request body: %s", err)
+		}
+		if string(b) == second {
+			cookie, err := r.Cookie(expected.Name)
+			if err != nil {
+				t.Fatalf("autorest: r.Cookie could not get request cookie: %s", err)
+			}
+			if cookie == nil {
+				t.Fatalf("autorest: got nil cookie, expecting %v", expected)
+			}
+			if cookie.Value != expected.Value {
+				t.Fatalf("autorest: got cookie value '%s', expecting '%s'", cookie.Value, expected.Name)
+			}
+		}
+	}))
+	defer server.Close()
+
+	client := NewClientWithUserAgent("")
+	_, err := SendWithSender(client, mocks.NewRequestForURL(server.URL))
+	if err != nil {
+		t.Fatalf("autorest: first request failed: %s", err)
+	}
+
+	r2, err := http.NewRequest(http.MethodGet, server.URL, mocks.NewBody(second))
+	if err != nil {
+		t.Fatalf("autorest: failed creating second request: %s", err)
+	}
+
+	_, err = SendWithSender(client, r2)
+	if err != nil {
+		t.Fatalf("autorest: second request failed: %s", err)
 	}
 }
 

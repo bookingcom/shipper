@@ -10,7 +10,7 @@ import (
 	ttemplate "text/template"
 	"time"
 
-	util "github.com/aokoli/goutils"
+	util "github.com/Masterminds/goutils"
 	"github.com/huandu/xstrings"
 )
 
@@ -129,6 +129,7 @@ var genericMap = map[string]interface{}{
 	"shuffle":      xstrings.Shuffle,
 	"snakecase":    xstrings.ToSnakeCase,
 	"camelcase":    xstrings.ToCamelCase,
+	"kebabcase":    xstrings.ToKebabCase,
 	"wrap":         func(l int, s string) string { return util.Wrap(s, l) },
 	"wrapWith":     func(l int, sep, str string) string { return util.WrapCustom(str, l, sep, true) },
 	// Switch order so that "foobar" | contains "foo"
@@ -142,7 +143,9 @@ var genericMap = map[string]interface{}{
 	"nindent":   nindent,
 	"replace":   replace,
 	"plural":    plural,
+	"sha1sum":   sha1sum,
 	"sha256sum": sha256sum,
+	"adler32sum": adler32sum,
 	"toString":  strval,
 
 	// Wrap Atoi to stop errors.
@@ -159,6 +162,8 @@ var genericMap = map[string]interface{}{
 	// split "/" foo/bar returns map[int]string{0: foo, 1: bar}
 	"split":     split,
 	"splitList": func(sep, orig string) []string { return strings.Split(orig, sep) },
+	// splitn "/" foo/bar/fuu returns map[int]string{0: foo, 1: bar/fuu}
+	"splitn":    splitn,
 	"toStrings": strslice,
 
 	"until":     until,
@@ -202,6 +207,7 @@ var genericMap = map[string]interface{}{
 	"compact":      compact,
 	"toJson":       toJson,
 	"toPrettyJson": toPrettyJson,
+	"ternary":      ternary,
 
 	// Reflection
 	"typeOf":     typeOf,
@@ -239,6 +245,8 @@ var genericMap = map[string]interface{}{
 	"pick":   pick,
 	"omit":   omit,
 	"merge":  merge,
+	"mergeOverwrite": mergeOverwrite,
+	"values": values,
 
 	"append": push, "push": push,
 	"prepend": prepend,
@@ -250,10 +258,12 @@ var genericMap = map[string]interface{}{
 	"uniq":    uniq,
 	"without": without,
 	"has":     has,
+	"slice":   slice,
 
 	// Crypto:
 	"genPrivateKey":     generatePrivateKey,
 	"derivePassword":    derivePassword,
+	"buildCustomCert":   buildCustomCertificate,
 	"genCA":             generateCertificateAuthority,
 	"genSelfSignedCert": generateSelfSignedCertificate,
 	"genSignedCert":     generateSignedCertificate,

@@ -47,6 +47,7 @@ acceptance/openstack/loadbalancer/v2
 
 acceptance/openstack/networking/v2
 acceptance/openstack/networking/v2/extensions
+acceptance/openstack/networking/v2/extensions/dns
 
 # Resource not found
 # acceptance/openstack/networking/v2/extensions/fwaas
@@ -59,6 +60,7 @@ acceptance/openstack/networking/v2/extensions/layer3
 # Resource not found
 # acceptance/openstack/networking/v2/extensions/lbaas_v2
 
+acceptance/openstack/networking/v2/extensions/mtu
 acceptance/openstack/networking/v2/extensions/networkipavailabilities
 acceptance/openstack/networking/v2/extensions/portsbinding
 acceptance/openstack/networking/v2/extensions/qos/ruletypes
@@ -71,9 +73,7 @@ acceptance/openstack/networking/v2/extensions/trunks
 
 acceptance/openstack/objectstorage/v1
 acceptance/openstack/orchestration/v1
-
-# Temporarily disabled, see https://github.com/gophercloud/gophercloud/issues/1345
-# acceptance/openstack/sharedfilesystems/v2
+acceptance/openstack/sharedfilesystems/v2
 
 # No suitable endpoint could be found in the service catalog
 # acceptance/openstack/workflow/v2

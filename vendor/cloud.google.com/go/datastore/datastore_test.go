@@ -240,7 +240,6 @@ type X1 struct {
 
 type X2 struct {
 	Z string
-	i int
 }
 
 type X3 struct {
@@ -364,7 +363,8 @@ type OuterFlatten struct {
 	I      []Inner1 `datastore:",flatten"`
 	J      Inner2   `datastore:",flatten,noindex"`
 	Inner3 `datastore:",flatten"`
-	K      Inner4 `datastore:",flatten"`
+	K      Inner4  `datastore:",flatten"`
+	L      *Inner2 `datastore:",flatten"`
 }
 
 type OuterEquivalent struct {
@@ -416,8 +416,6 @@ type EntityWithKey struct {
 	K *Key `datastore:"__key__"`
 }
 
-type EntityWithKey2 EntityWithKey
-
 type WithNestedEntityWithKey struct {
 	N EntityWithKey
 }
@@ -441,8 +439,6 @@ type PtrToStructField struct {
 	*Basic
 	D []*Basic
 }
-
-var two = 2
 
 type EmbeddedTime struct {
 	time.Time
@@ -1121,6 +1117,9 @@ var testCases = []testCase{
 					WW: 12,
 				},
 			},
+			L: &Inner2{
+				Y: 2.71,
+			},
 		},
 		&PropertyList{
 			Property{Name: "A", Value: int64(1), NoIndex: false},
@@ -1128,6 +1127,7 @@ var testCases = []testCase{
 			Property{Name: "I.X", Value: []interface{}{"ten", "twenty", "thirty"}, NoIndex: false},
 			Property{Name: "J.Y", Value: float64(3.14), NoIndex: true},
 			Property{Name: "K.X.WW", Value: int64(12), NoIndex: false},
+			Property{Name: "L.Y", Value: float64(2.71), NoIndex: false},
 			Property{Name: "Z", Value: true, NoIndex: false},
 		},
 		"",
@@ -1140,6 +1140,7 @@ var testCases = []testCase{
 			Property{Name: "I.W", Value: []interface{}{int64(10), int64(20), int64(30)}, NoIndex: false},
 			Property{Name: "I.X", Value: []interface{}{"ten", "twenty", "thirty"}, NoIndex: false},
 			Property{Name: "J.Y", Value: float64(3.14), NoIndex: true},
+			Property{Name: "L.Y", Value: float64(2.71), NoIndex: false},
 			Property{Name: "Z", Value: true, NoIndex: false},
 		},
 		&OuterFlatten{
@@ -1154,6 +1155,9 @@ var testCases = []testCase{
 			},
 			Inner3: Inner3{
 				Z: true,
+			},
+			L: &Inner2{
+				Y: 2.71,
 			},
 		},
 		"",
@@ -1949,7 +1953,7 @@ var testCases = []testCase{
 func checkErr(want string, err error) string {
 	if err != nil {
 		got := err.Error()
-		if want == "" || strings.Index(got, want) == -1 {
+		if want == "" || !strings.Contains(got, want) {
 			return got
 		}
 	} else if want != "" {

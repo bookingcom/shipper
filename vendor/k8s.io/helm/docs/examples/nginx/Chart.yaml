@@ -1,12 +1,13 @@
 name: nginx
 description: A basic NGINX HTTP server
 version: 0.1.0
+kubeVersion: ">=1.2.0"
 keywords:
   - http
   - nginx
   - www
   - web
-home: https://github.com/kubernetes/helm
+home: https://github.com/helm/helm
 sources:
   - https://hub.docker.com/_/nginx/
 maintainers:

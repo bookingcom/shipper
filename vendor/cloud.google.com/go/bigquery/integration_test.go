@@ -38,7 +38,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	gax "github.com/googleapis/gax-go"
+	gax "github.com/googleapis/gax-go/v2"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
@@ -253,6 +253,8 @@ func TestIntegration_TableCreateView(t *testing.T) {
 }
 
 func TestIntegration_TableMetadata(t *testing.T) {
+	t.Skip("Internal bug 128670231")
+
 	if client == nil {
 		t.Skip("Integration tests skipped")
 	}
@@ -382,6 +384,46 @@ func TestIntegration_TableMetadata(t *testing.T) {
 		}
 	}
 
+}
+
+func TestIntegration_RemoveTimePartitioning(t *testing.T) {
+	if client == nil {
+		t.Skip("Integration tests skipped")
+	}
+	ctx := context.Background()
+	table := dataset.Table(tableIDs.New())
+	want := 24 * time.Hour
+	err := table.Create(ctx, &TableMetadata{
+		ExpirationTime: testTableExpiration,
+		TimePartitioning: &TimePartitioning{
+			Expiration: want,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer table.Delete(ctx)
+
+	md, err := table.Metadata(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := md.TimePartitioning.Expiration; got != want {
+		t.Fatalf("TimeParitioning expiration want = %v, got = %v", want, got)
+	}
+
+	// Remove time partitioning expiration
+	md, err = table.Update(context.Background(), TableMetadataToUpdate{
+		TimePartitioning: &TimePartitioning{Expiration: 0},
+	}, md.ETag)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want = time.Duration(0)
+	if got := md.TimePartitioning.Expiration; got != want {
+		t.Fatalf("TimeParitioning expiration want = %v, got = %v", want, got)
+	}
 }
 
 func TestIntegration_DatasetCreate(t *testing.T) {
@@ -825,6 +867,7 @@ type TestStruct struct {
 	Time      civil.Time
 	DateTime  civil.DateTime
 	Numeric   *big.Rat
+	Geography string
 
 	StringArray    []string
 	IntegerArray   []int64
@@ -835,6 +878,7 @@ type TestStruct struct {
 	TimeArray      []civil.Time
 	DateTimeArray  []civil.DateTime
 	NumericArray   []*big.Rat
+	GeographyArray []string
 
 	Record      SubTestStruct
 	RecordArray []SubTestStruct
@@ -865,6 +909,8 @@ func TestIntegration_InsertAndReadStructs(t *testing.T) {
 	tm2 := civil.Time{Hour: 1, Minute: 2, Second: 4, Nanosecond: 0}
 	ts2 := time.Date(1994, 5, 15, 1, 2, 4, 0, time.UTC)
 	dtm2 := civil.DateTime{Date: d2, Time: tm2}
+	g := "POINT(-122.350220 47.649154)"
+	g2 := "POINT(-122.0836791 37.421827)"
 
 	// Populate the table.
 	ins := table.Inserter()
@@ -880,6 +926,7 @@ func TestIntegration_InsertAndReadStructs(t *testing.T) {
 			tm,
 			dtm,
 			big.NewRat(57, 100),
+			g,
 			[]string{"a", "b"},
 			[]int64{1, 2},
 			[]float64{1, 1.41},
@@ -889,6 +936,7 @@ func TestIntegration_InsertAndReadStructs(t *testing.T) {
 			[]civil.Time{tm, tm2},
 			[]civil.DateTime{dtm, dtm2},
 			[]*big.Rat{big.NewRat(1, 2), big.NewRat(3, 5)},
+			[]string{g, g2},
 			SubTestStruct{
 				"string",
 				SubSubTestStruct{24},
@@ -969,7 +1017,26 @@ func TestIntegration_InsertAndReadNullable(t *testing.T) {
 	ctm := civil.Time{Hour: 15, Minute: 4, Second: 5, Nanosecond: 6000}
 	cdt := civil.DateTime{Date: testDate, Time: ctm}
 	rat := big.NewRat(33, 100)
+	geo := "POINT(-122.198939 47.669865)"
+
+	// Nil fields in the struct.
 	testInsertAndReadNullable(t, testStructNullable{}, make([]Value, len(testStructNullableSchema)))
+
+	// Explicitly invalidate the Null* types within the struct.
+	testInsertAndReadNullable(t, testStructNullable{
+		String:    NullString{Valid: false},
+		Integer:   NullInt64{Valid: false},
+		Float:     NullFloat64{Valid: false},
+		Boolean:   NullBool{Valid: false},
+		Timestamp: NullTimestamp{Valid: false},
+		Date:      NullDate{Valid: false},
+		Time:      NullTime{Valid: false},
+		DateTime:  NullDateTime{Valid: false},
+		Geography: NullGeography{Valid: false},
+	},
+		make([]Value, len(testStructNullableSchema)))
+
+	// Populate the struct with values.
 	testInsertAndReadNullable(t, testStructNullable{
 		String:    NullString{"x", true},
 		Bytes:     []byte{1, 2, 3},
@@ -981,9 +1048,10 @@ func TestIntegration_InsertAndReadNullable(t *testing.T) {
 		Time:      NullTime{ctm, true},
 		DateTime:  NullDateTime{cdt, true},
 		Numeric:   rat,
+		Geography: NullGeography{geo, true},
 		Record:    &subNullable{X: NullInt64{4, true}},
 	},
-		[]Value{"x", []byte{1, 2, 3}, int64(1), 2.3, true, testTimestamp, testDate, ctm, cdt, rat, []Value{int64(4)}})
+		[]Value{"x", []byte{1, 2, 3}, int64(1), 2.3, true, testTimestamp, testDate, ctm, cdt, rat, geo, []Value{int64(4)}})
 }
 
 func testInsertAndReadNullable(t *testing.T, ts testStructNullable, wantRow []Value) {
@@ -1549,6 +1617,9 @@ func TestIntegration_QueryDryRun(t *testing.T) {
 	if s.Statistics.Details.(*QueryStatistics).Schema == nil {
 		t.Fatal("no schema")
 	}
+	if s.Statistics.Details.(*QueryStatistics).TotalBytesProcessedAccuracy == "" {
+		t.Fatal("no cost accuracy")
+	}
 }
 
 func TestIntegration_ExtractExternal(t *testing.T) {
@@ -1605,7 +1676,12 @@ func TestIntegration_ExtractExternal(t *testing.T) {
 		SourceFormat: CSV,
 		SourceURIs:   []string{uri},
 		Schema:       schema,
-		Options:      &CSVOptions{SkipLeadingRows: 1},
+		Options: &CSVOptions{
+			SkipLeadingRows: 1,
+			// This is the default. Since we use edc as an expectation later on,
+			// let's just be explicit.
+			FieldDelimiter: ",",
+		},
 	}
 	// Query that CSV file directly.
 	q := client.Query("SELECT * FROM csv")

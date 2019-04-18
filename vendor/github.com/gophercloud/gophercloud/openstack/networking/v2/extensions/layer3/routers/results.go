@@ -8,7 +8,7 @@ import (
 // GatewayInfo represents the information of an external gateway for any
 // particular network router.
 type GatewayInfo struct {
-	NetworkID        string            `json:"network_id"`
+	NetworkID        string            `json:"network_id,omitempty"`
 	EnableSNAT       *bool             `json:"enable_snat,omitempty"`
 	ExternalFixedIPs []ExternalFixedIP `json:"external_fixed_ips,omitempty"`
 }
@@ -16,7 +16,7 @@ type GatewayInfo struct {
 // ExternalFixedIP is the IP address and subnet ID of the external gateway of a
 // router.
 type ExternalFixedIP struct {
-	IPAddress string `json:"ip_address"`
+	IPAddress string `json:"ip_address,omitempty"`
 	SubnetID  string `json:"subnet_id"`
 }
 

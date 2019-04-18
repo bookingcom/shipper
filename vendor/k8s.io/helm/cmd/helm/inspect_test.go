@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,8 +19,11 @@ package main
 import (
 	"bytes"
 	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
+
+	"k8s.io/helm/pkg/repo/repotest"
 )
 
 func TestInspect(t *testing.T) {
@@ -28,7 +31,7 @@ func TestInspect(t *testing.T) {
 
 	insp := &inspectCmd{
 		chartpath: "testdata/testcharts/alpine",
-		output:    "both",
+		output:    all,
 		out:       b,
 	}
 	insp.run()
@@ -42,15 +45,19 @@ func TestInspect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	parts := strings.SplitN(b.String(), "---", 2)
-	if len(parts) != 2 {
+	readmeData, err := ioutil.ReadFile("testdata/testcharts/alpine/README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.SplitN(b.String(), "---", 3)
+	if len(parts) != 3 {
 		t.Fatalf("Expected 2 parts, got %d", len(parts))
 	}
 
 	expect := []string{
 		strings.Replace(strings.TrimSpace(string(cdata)), "\r", "", -1),
 		strings.Replace(strings.TrimSpace(string(data)), "\r", "", -1),
+		strings.Replace(strings.TrimSpace(string(readmeData)), "\r", "", -1),
 	}
 
 	// Problem: ghodss/yaml doesn't marshal into struct order. To solve, we
@@ -73,5 +80,67 @@ func TestInspect(t *testing.T) {
 	if b.Len() != 0 {
 		t.Errorf("expected empty values buffer, got %q", b.String())
 	}
+}
 
+func TestInspectPreReleaseChart(t *testing.T) {
+	hh, err := tempHelmHome(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanup := resetEnv()
+	defer func() {
+		os.RemoveAll(hh.String())
+		cleanup()
+	}()
+
+	settings.Home = hh
+
+	srv := repotest.NewServer(hh.String())
+	defer srv.Stop()
+
+	if _, err := srv.CopyCharts("testdata/testcharts/*.tgz*"); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.LinkIndices(); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name        string
+		args        []string
+		flags       []string
+		fail        bool
+		expectedErr string
+	}{
+		{
+			name:        "inspect pre-release chart",
+			args:        []string{"prerelease"},
+			fail:        true,
+			expectedErr: "chart \"prerelease\" not found",
+		},
+		{
+			name:  "inspect pre-release chart with 'devel' flag",
+			args:  []string{"prerelease"},
+			flags: []string{"--devel"},
+			fail:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.flags = append(tt.flags, "--repo", srv.URL())
+			cmd := newInspectCmd(ioutil.Discard)
+			cmd.SetArgs(tt.args)
+			cmd.ParseFlags(tt.flags)
+			if err := cmd.RunE(cmd, tt.args); err != nil {
+				if tt.fail {
+					if !strings.Contains(err.Error(), tt.expectedErr) {
+						t.Errorf("%q expected error: %s, got: %s", tt.name, tt.expectedErr, err.Error())
+					}
+					return
+				}
+				t.Errorf("%q reported error: %s", tt.name, err)
+			}
+		})
+	}
 }

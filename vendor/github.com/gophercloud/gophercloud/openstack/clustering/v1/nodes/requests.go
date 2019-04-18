@@ -60,7 +60,7 @@ type UpdateOpts struct {
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
-// ToClusterUpdateMap constructs a request body from UpdateOpts.
+// ToNodeUpdateMap constructs a request body from UpdateOpts.
 func (opts UpdateOpts) ToNodeUpdateMap() (map[string]interface{}, error) {
 	return gophercloud.BuildRequestBody(opts, "node")
 }
@@ -138,6 +138,115 @@ func Get(client *gophercloud.ServiceClient, id string) (r GetResult) {
 	var result *http.Response
 	result, r.Err = client.Get(getURL(client, id), &r.Body, &gophercloud.RequestOpts{
 		OkCodes: []int{200},
+	})
+	if r.Err == nil {
+		r.Header = result.Header
+	}
+	return
+}
+
+// OperationName represents valid values for node operation
+type OperationName string
+
+const (
+	// Nova Profile Op Names
+	RebootOperation         OperationName = "reboot"
+	RebuildOperation        OperationName = "rebuild"
+	ChangePasswordOperation OperationName = "change_password"
+	PauseOperation          OperationName = "pause"
+	UnpauseOperation        OperationName = "unpause"
+	SuspendOperation        OperationName = "suspend"
+	ResumeOperation         OperationName = "resume"
+	LockOperation           OperationName = "lock"
+	UnlockOperation         OperationName = "unlock"
+	StartOperation          OperationName = "start"
+	StopOperation           OperationName = "stop"
+	RescueOperation         OperationName = "rescue"
+	UnrescueOperation       OperationName = "unrescue"
+	EvacuateOperation       OperationName = "evacuate"
+
+	// Heat Pofile Op Names
+	AbandonOperation OperationName = "abandon"
+)
+
+// ToNodeOperationMap constructs a request body from OperationOpts.
+func (opts OperationOpts) ToNodeOperationMap() (map[string]interface{}, error) {
+	optsMap := map[string]interface{}{string(opts.Operation): opts.Params}
+	return optsMap, nil
+}
+
+// OperationOptsBuilder allows extensions to add additional parameters to the
+// Op request.
+type OperationOptsBuilder interface {
+	ToNodeOperationMap() (map[string]interface{}, error)
+}
+type OperationParams map[string]interface{}
+
+// OperationOpts represents options used to perform an operation on a node
+type OperationOpts struct {
+	Operation OperationName   `json:"operation" required:"true"`
+	Params    OperationParams `json:"params,omitempty"`
+}
+
+func Ops(client *gophercloud.ServiceClient, id string, opts OperationOptsBuilder) (r ActionResult) {
+	b, err := opts.ToNodeOperationMap()
+	if err != nil {
+		r.Err = err
+		return
+	}
+
+	var result *http.Response
+	result, r.Err = client.Post(opsURL(client, id), b, &r.Body, &gophercloud.RequestOpts{
+		OkCodes: []int{202},
+	})
+	if r.Err == nil {
+		r.Header = result.Header
+	}
+
+	return
+}
+
+func (opts RecoverOpts) ToNodeRecoverMap() (map[string]interface{}, error) {
+	return gophercloud.BuildRequestBody(opts, "recover")
+}
+
+// RecoverAction represents valid values for recovering a node.
+type RecoverAction string
+
+const (
+	RebootRecovery  RecoverAction = "REBOOT"
+	RebuildRecovery RecoverAction = "REBUILD"
+	// RECREATE currently is NOT supported. See https://github.com/openstack/senlin/blob/b30b2b8496b2b8af243ccd5292f38aec7a95664f/senlin/profiles/base.py#L533
+	RecreateRecovery RecoverAction = "RECREATE"
+)
+
+type RecoverOpts struct {
+	Operation RecoverAction `json:"operation,omitempty"`
+	Check     *bool         `json:"check,omitempty"`
+}
+
+func Recover(client *gophercloud.ServiceClient, id string, opts RecoverOpts) (r ActionResult) {
+	b, err := opts.ToNodeRecoverMap()
+	if err != nil {
+		r.Err = err
+		return
+	}
+	var result *http.Response
+	result, r.Err = client.Post(actionURL(client, id), b, &r.Body, &gophercloud.RequestOpts{
+		OkCodes: []int{202},
+	})
+	r.Header = result.Header
+	return
+}
+
+func Check(client *gophercloud.ServiceClient, id string) (r ActionResult) {
+	b := map[string]interface{}{
+		"check": map[string]interface{}{},
+	}
+
+	var result *http.Response
+	result, r.Err = client.Post(actionURL(client, id), b, &r.Body, &gophercloud.RequestOpts{
+		OkCodes: []int{202},
 	})
 	if r.Err == nil {
 		r.Header = result.Header

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,9 +20,10 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
-	"k8s.io/kubernetes/pkg/apis/core"
+	"k8s.io/api/core/v1"
 
 	"k8s.io/helm/pkg/proto/hapi/release"
 	"k8s.io/helm/pkg/proto/hapi/services"
@@ -31,10 +32,13 @@ import (
 
 // Environment encapsulates information about where test suite executes and returns results
 type Environment struct {
-	Namespace  string
-	KubeClient environment.KubeClient
-	Stream     services.ReleaseService_RunReleaseTestServer
-	Timeout    int64
+	Namespace   string
+	KubeClient  environment.KubeClient
+	Stream      services.ReleaseService_RunReleaseTestServer
+	Timeout     int64
+	Parallel    bool
+	Parallelism uint32
+	streamLock  sync.Mutex
 }
 
 func (env *Environment) createTestPod(test *test) error {
@@ -49,7 +53,7 @@ func (env *Environment) createTestPod(test *test) error {
 	return nil
 }
 
-func (env *Environment) getTestPodStatus(test *test) (core.PodPhase, error) {
+func (env *Environment) getTestPodStatus(test *test) (v1.PodPhase, error) {
 	b := bytes.NewBufferString(test.manifest)
 	status, err := env.KubeClient.WaitAndGetCompletedPodPhase(env.Namespace, b, time.Duration(env.Timeout)*time.Second)
 	if err != nil {
@@ -108,6 +112,8 @@ func (env *Environment) streamUnknown(name, info string) error {
 
 func (env *Environment) streamMessage(msg string, status release.TestRun_Status) error {
 	resp := &services.TestReleaseResponse{Msg: msg, Status: status}
+	env.streamLock.Lock()
+	defer env.streamLock.Unlock()
 	return env.Stream.Send(resp)
 }
 

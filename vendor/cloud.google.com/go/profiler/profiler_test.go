@@ -38,7 +38,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/pprof/profile"
-	gax "github.com/googleapis/gax-go"
+	gax "github.com/googleapis/gax-go/v2"
 	gtransport "google.golang.org/api/transport/grpc"
 	pb "google.golang.org/genproto/googleapis/devtools/cloudprofiler/v2"
 	edpb "google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -95,6 +95,7 @@ func TestCreateProfile(t *testing.T) {
 	a := createTestAgent(mpc)
 	p := &pb.Profile{Name: "test_profile"}
 	wantRequest := pb.CreateProfileRequest{
+		Parent:      "projects/" + a.deployment.ProjectId,
 		Deployment:  a.deployment,
 		ProfileType: a.profileTypes,
 	}
@@ -374,13 +375,13 @@ func TestInitializeAgent(t *testing.T) {
 		wantProfileLabels    map[string]string
 	}{
 		{
-			config:               Config{ServiceVersion: testSvcVersion, zone: testZone},
+			config:               Config{ServiceVersion: testSvcVersion, Zone: testZone},
 			wantProfileTypes:     []pb.ProfileType{pb.ProfileType_CPU, pb.ProfileType_HEAP, pb.ProfileType_THREADS, pb.ProfileType_HEAP_ALLOC},
 			wantDeploymentLabels: map[string]string{zoneNameLabel: testZone, versionLabel: testSvcVersion, languageLabel: "go"},
 			wantProfileLabels:    map[string]string{},
 		},
 		{
-			config:               Config{zone: testZone},
+			config:               Config{Zone: testZone},
 			wantProfileTypes:     []pb.ProfileType{pb.ProfileType_CPU, pb.ProfileType_HEAP, pb.ProfileType_THREADS, pb.ProfileType_HEAP_ALLOC},
 			wantDeploymentLabels: map[string]string{zoneNameLabel: testZone, languageLabel: "go"},
 			wantProfileLabels:    map[string]string{},
@@ -392,13 +393,13 @@ func TestInitializeAgent(t *testing.T) {
 			wantProfileLabels:    map[string]string{},
 		},
 		{
-			config:               Config{instance: testInstance},
+			config:               Config{Instance: testInstance},
 			wantProfileTypes:     []pb.ProfileType{pb.ProfileType_CPU, pb.ProfileType_HEAP, pb.ProfileType_THREADS, pb.ProfileType_HEAP_ALLOC},
 			wantDeploymentLabels: map[string]string{languageLabel: "go"},
 			wantProfileLabels:    map[string]string{instanceLabel: testInstance},
 		},
 		{
-			config:               Config{instance: testInstance},
+			config:               Config{Instance: testInstance},
 			enableMutex:          true,
 			wantProfileTypes:     []pb.ProfileType{pb.ProfileType_CPU, pb.ProfileType_HEAP, pb.ProfileType_THREADS, pb.ProfileType_HEAP_ALLOC, pb.ProfileType_CONTENTION},
 			wantDeploymentLabels: map[string]string{languageLabel: "go"},
@@ -442,13 +443,19 @@ func TestInitializeAgent(t *testing.T) {
 }
 
 func TestInitializeConfig(t *testing.T) {
-	oldConfig, oldService, oldVersion, oldEnvProjectID, oldGetProjectID, oldGetInstanceName, oldGetZone, oldOnGCE := config, os.Getenv("GAE_SERVICE"), os.Getenv("GAE_VERSION"), os.Getenv("GOOGLE_CLOUD_PROJECT"), getProjectID, getInstanceName, getZone, onGCE
+	oldConfig, oldGAEService, oldGAEVersion, oldKnativeService, oldKnativeVersion, oldEnvProjectID, oldGetProjectID, oldGetInstanceName, oldGetZone, oldOnGCE := config, os.Getenv("GAE_SERVICE"), os.Getenv("GAE_VERSION"), os.Getenv("K_SERVICE"), os.Getenv("K_REVISION"), os.Getenv("GOOGLE_CLOUD_PROJECT"), getProjectID, getInstanceName, getZone, onGCE
 	defer func() {
 		config, getProjectID, getInstanceName, getZone, onGCE = oldConfig, oldGetProjectID, oldGetInstanceName, oldGetZone, oldOnGCE
-		if err := os.Setenv("GAE_SERVICE", oldService); err != nil {
+		if err := os.Setenv("GAE_SERVICE", oldGAEService); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Setenv("GAE_VERSION", oldVersion); err != nil {
+		if err := os.Setenv("GAE_VERSION", oldGAEVersion); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Setenv("K_SERVICE", oldKnativeService); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Setenv("K_REVISION", oldKnativeVersion); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.Setenv("GOOGLE_CLOUD_PROJECT", oldEnvProjectID); err != nil {
@@ -456,10 +463,12 @@ func TestInitializeConfig(t *testing.T) {
 		}
 	}()
 	const (
-		testGAEService   = "test-gae-service"
-		testGAEVersion   = "test-gae-version"
-		testGCEProjectID = "test-gce-project-id"
-		testEnvProjectID = "test-env-project-id"
+		testGAEService     = "test-gae-service"
+		testGAEVersion     = "test-gae-version"
+		testKnativeService = "test-knative-service"
+		testKnativeVersion = "test-knative-version"
+		testGCEProjectID   = "test-gce-project-id"
+		testEnvProjectID   = "test-env-project-id"
 	)
 	for _, tt := range []struct {
 		desc            string
@@ -467,14 +476,16 @@ func TestInitializeConfig(t *testing.T) {
 		wantConfig      Config
 		wantErrorString string
 		onGAE           bool
+		onKnative       bool
 		onGCE           bool
 		envProjectID    bool
 	}{
 		{
 			"accepts service name",
 			Config{Service: testService},
-			Config{Service: testService, ProjectID: testGCEProjectID, zone: testZone, instance: testInstance},
+			Config{Service: testService, ProjectID: testGCEProjectID, Zone: testZone, Instance: testInstance},
 			"",
+			false,
 			false,
 			true,
 			false,
@@ -482,8 +493,9 @@ func TestInitializeConfig(t *testing.T) {
 		{
 			"env project overrides GCE project",
 			Config{Service: testService},
-			Config{Service: testService, ProjectID: testEnvProjectID, zone: testZone, instance: testInstance},
+			Config{Service: testService, ProjectID: testEnvProjectID, Zone: testZone, Instance: testInstance},
 			"",
+			false,
 			false,
 			true,
 			true,
@@ -494,6 +506,7 @@ func TestInitializeConfig(t *testing.T) {
 			Config{},
 			"service name must be configured",
 			false,
+			false,
 			true,
 			false,
 		},
@@ -503,23 +516,36 @@ func TestInitializeConfig(t *testing.T) {
 			Config{Service: "Service"},
 			"service name \"Service\" does not match regular expression ^[a-z]([-a-z0-9_.]{0,253}[a-z0-9])?$",
 			false,
+			false,
 			true,
 			false,
 		},
 		{
 			"accepts service name from config and service version from GAE",
 			Config{Service: testService},
-			Config{Service: testService, ServiceVersion: testGAEVersion, ProjectID: testGCEProjectID, zone: testZone, instance: testInstance},
+			Config{Service: testService, ServiceVersion: testGAEVersion, ProjectID: testGCEProjectID, Zone: testZone, Instance: testInstance},
 			"",
 			true,
+			false,
 			true,
 			false,
 		},
 		{
 			"reads both service name and version from GAE env vars",
 			Config{},
-			Config{Service: testGAEService, ServiceVersion: testGAEVersion, ProjectID: testGCEProjectID, zone: testZone, instance: testInstance},
+			Config{Service: testGAEService, ServiceVersion: testGAEVersion, ProjectID: testGCEProjectID, Zone: testZone, Instance: testInstance},
 			"",
+			true,
+			false,
+			true,
+			false,
+		},
+		{
+			"reads both service name and version from Knative env vars",
+			Config{},
+			Config{Service: testKnativeService, ServiceVersion: testKnativeVersion, ProjectID: testGCEProjectID, Zone: testZone, Instance: testInstance},
+			"",
+			false,
 			true,
 			true,
 			false,
@@ -527,8 +553,9 @@ func TestInitializeConfig(t *testing.T) {
 		{
 			"accepts service version from config",
 			Config{Service: testService, ServiceVersion: testSvcVersion},
-			Config{Service: testService, ServiceVersion: testSvcVersion, ProjectID: testGCEProjectID, zone: testZone, instance: testInstance},
+			Config{Service: testService, ServiceVersion: testSvcVersion, ProjectID: testGCEProjectID, Zone: testZone, Instance: testInstance},
 			"",
+			false,
 			false,
 			true,
 			false,
@@ -536,8 +563,29 @@ func TestInitializeConfig(t *testing.T) {
 		{
 			"configured version has priority over GAE-provided version",
 			Config{Service: testService, ServiceVersion: testSvcVersion},
-			Config{Service: testService, ServiceVersion: testSvcVersion, ProjectID: testGCEProjectID, zone: testZone, instance: testInstance},
+			Config{Service: testService, ServiceVersion: testSvcVersion, ProjectID: testGCEProjectID, Zone: testZone, Instance: testInstance},
 			"",
+			true,
+			false,
+			true,
+			false,
+		},
+		{
+			"configured version has priority over Knative-provided version",
+			Config{Service: testService, ServiceVersion: testSvcVersion},
+			Config{Service: testService, ServiceVersion: testSvcVersion, ProjectID: testGCEProjectID, Zone: testZone, Instance: testInstance},
+			"",
+			false,
+			true,
+			true,
+			false,
+		},
+		{
+			"GAE version has priority over Knative-provided version",
+			Config{},
+			Config{Service: testGAEService, ServiceVersion: testGAEVersion, ProjectID: testGCEProjectID, Zone: testZone, Instance: testInstance},
+			"",
+			true,
 			true,
 			true,
 			false,
@@ -545,8 +593,9 @@ func TestInitializeConfig(t *testing.T) {
 		{
 			"configured project ID has priority over metadata-provided project ID",
 			Config{Service: testService, ProjectID: testProjectID},
-			Config{Service: testService, ProjectID: testProjectID, zone: testZone, instance: testInstance},
+			Config{Service: testService, ProjectID: testProjectID, Zone: testZone, Instance: testInstance},
 			"",
+			false,
 			false,
 			true,
 			false,
@@ -556,6 +605,7 @@ func TestInitializeConfig(t *testing.T) {
 			Config{Service: testService, ProjectID: testProjectID},
 			Config{Service: testService, ProjectID: testProjectID},
 			"",
+			false,
 			false,
 			false,
 			true,
@@ -568,17 +618,48 @@ func TestInitializeConfig(t *testing.T) {
 			false,
 			false,
 			false,
+			false,
+		},
+		{
+			"configured zone has priority over metadata-provided zone",
+			Config{Service: testService, ProjectID: testProjectID, Zone: testZone + "-override"},
+			Config{Service: testService, ProjectID: testProjectID, Zone: testZone + "-override", Instance: testInstance},
+			"",
+			false,
+			false,
+			true,
+			false,
+		},
+		{
+			"configured instance has priority over metadata-provided instance",
+			Config{Service: testService, ProjectID: testProjectID, Instance: testInstance + "-override"},
+			Config{Service: testService, ProjectID: testProjectID, Zone: testZone, Instance: testInstance + "-override"},
+			"",
+			false,
+			false,
+			true,
+			false,
 		},
 	} {
 		t.Logf("Running test: %s", tt.desc)
-		envService, envVersion := "", ""
+		gaeEnvService, gaeEnvVersion := "", ""
 		if tt.onGAE {
-			envService, envVersion = testGAEService, testGAEVersion
+			gaeEnvService, gaeEnvVersion = testGAEService, testGAEVersion
 		}
-		if err := os.Setenv("GAE_SERVICE", envService); err != nil {
+		if err := os.Setenv("GAE_SERVICE", gaeEnvService); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Setenv("GAE_VERSION", envVersion); err != nil {
+		if err := os.Setenv("GAE_VERSION", gaeEnvVersion); err != nil {
+			t.Fatal(err)
+		}
+		knEnvService, knEnvVersion := "", ""
+		if tt.onKnative {
+			knEnvService, knEnvVersion = testKnativeService, testKnativeVersion
+		}
+		if err := os.Setenv("K_SERVICE", knEnvService); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Setenv("K_REVISION", knEnvVersion); err != nil {
 			t.Fatal(err)
 		}
 		if tt.onGCE {
@@ -857,8 +938,8 @@ func TestAgentWithServer(t *testing.T) {
 		Service:   testService,
 		ProjectID: testProjectID,
 		APIAddr:   srv.Addr,
-		instance:  testInstance,
-		zone:      testZone,
+		Instance:  testInstance,
+		Zone:      testZone,
 	}); err != nil {
 		t.Fatalf("Start(): %v", err)
 	}

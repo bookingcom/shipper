@@ -1090,7 +1090,7 @@ func TestValidateInt_inclusiveMaximumConstraintValid(t *testing.T) {
 	c := Constraint{
 		Target: "str",
 		Name:   InclusiveMaximum,
-		Rule:   2,
+		Rule:   int64(2),
 		Chain:  nil,
 	}
 	require.Nil(t, validateInt(reflect.ValueOf(1), c))
@@ -1101,7 +1101,7 @@ func TestValidateInt_inclusiveMaximumConstraintInvalid(t *testing.T) {
 	c := Constraint{
 		Target: "str",
 		Name:   InclusiveMaximum,
-		Rule:   1,
+		Rule:   int64(1),
 		Chain:  nil,
 	}
 	require.Equal(t, validateInt(reflect.ValueOf(x), c).Error(),
@@ -1112,7 +1112,7 @@ func TestValidateInt_inclusiveMaximumConstraintBoundary(t *testing.T) {
 	c := Constraint{
 		Target: "str",
 		Name:   InclusiveMaximum,
-		Rule:   1,
+		Rule:   int64(1),
 		Chain:  nil,
 	}
 	require.Nil(t, validateInt(reflect.ValueOf(1), c))
@@ -1918,7 +1918,7 @@ func TestValidate_IntPointer(t *testing.T) {
 		createError(reflect.ValueOf(n), v[0].Constraints[0].Chain[0],
 			"value must be greater than 100").Error())
 
-	// required paramter
+	// required parameter
 	p = nil
 	v = []Validation{
 		{p,
@@ -1966,7 +1966,7 @@ func TestValidate_IntStruct(t *testing.T) {
 		createError(reflect.ValueOf(n), v[0].Constraints[0].Chain[0].Chain[0],
 			"value must be greater than 100").Error())
 
-	// required paramter
+	// required parameter
 	p = &Product{}
 	v = []Validation{
 		{p, []Constraint{{"p", Null, true,
@@ -2023,7 +2023,7 @@ func TestValidate_String(t *testing.T) {
 		createError(reflect.ValueOf(s), v[0].Constraints[1].Chain[0],
 			"value length must be less than or equal to 3").Error())
 
-	// required paramter
+	// required parameter
 	s = ""
 	v = []Validation{
 		{s,
@@ -2038,7 +2038,7 @@ func TestValidate_String(t *testing.T) {
 		createError(reflect.ValueOf(s), v[0].Constraints[1],
 			"value can not be null or empty; required parameter").Error())
 
-	// not required paramter
+	// not required parameter
 	s = ""
 	v = []Validation{
 		{s,
@@ -2081,7 +2081,7 @@ func TestValidate_StringStruct(t *testing.T) {
 		createError(reflect.ValueOf(s), v[0].Constraints[0].Chain[0].Chain[1],
 			"value length must be less than or equal to 3").Error())
 
-	// required paramter - can't be Empty
+	// required parameter - can't be Empty
 	s = ""
 	p = &Product{
 		Str: &s,
@@ -2100,7 +2100,7 @@ func TestValidate_StringStruct(t *testing.T) {
 		createError(reflect.ValueOf(s), v[0].Constraints[0].Chain[0].Chain[0],
 			"value can not be null or empty; required parameter").Error())
 
-	// required paramter - can't be null
+	// required parameter - can't be null
 	p = &Product{}
 	v = []Validation{
 		{p, []Constraint{{"p", Null, true,
@@ -2193,7 +2193,7 @@ func TestValidate_Array(t *testing.T) {
 		createError(reflect.ValueOf(s1), v[0].Constraints[0],
 			"value can not be null; required parameter").Error())
 
-	// not required paramter
+	// not required parameter
 	v = []Validation{
 		{s1,
 			[]Constraint{
@@ -2255,7 +2255,7 @@ func TestValidate_ArrayPointer(t *testing.T) {
 		createError(reflect.ValueOf(s1), v[0].Constraints[0],
 			"value can not be null; required parameter").Error())
 
-	// not required paramter
+	// not required parameter
 	v = []Validation{
 		{s1,
 			[]Constraint{
@@ -2289,7 +2289,7 @@ func TestValidate_ArrayInStruct(t *testing.T) {
 		createError(reflect.ValueOf(s), v[0].Constraints[0].Chain[0].Chain[1],
 			fmt.Sprintf("minimum item limit is 2; got: %v", len(s))).Error())
 
-	// required paramter - can't be Empty
+	// required parameter - can't be Empty
 	p = &Product{
 		Arr: &[]string{},
 	}
@@ -2307,7 +2307,7 @@ func TestValidate_ArrayInStruct(t *testing.T) {
 		createError(reflect.ValueOf([]string{}), v[0].Constraints[0].Chain[0].Chain[0],
 			"value can not be null or empty; required parameter").Error())
 
-	// required paramter - can't be null
+	// required parameter - can't be null
 	p = &Product{}
 	v = []Validation{
 		{p, []Constraint{{"p", Null, true,
@@ -2366,7 +2366,7 @@ func TestValidate_StructInStruct(t *testing.T) {
 		createError(reflect.ValueOf(p.C.I), v[0].Constraints[0].Chain[0].Chain[0],
 			"value length must be greater than or equal to 7").Error())
 
-	// required paramter - can't be Empty
+	// required parameter - can't be Empty
 	p = &Product{
 		C: &Child{I: ""},
 	}
@@ -2382,7 +2382,7 @@ func TestValidate_StructInStruct(t *testing.T) {
 		createError(reflect.ValueOf(p.C.I), v[0].Constraints[0].Chain[0].Chain[0],
 			"value can not be null or empty; required parameter").Error())
 
-	// required paramter - can't be null
+	// required parameter - can't be null
 	p = &Product{}
 	v = []Validation{
 		{p, []Constraint{{"p", Null, true,
@@ -2417,7 +2417,7 @@ func TestValidate_StructInStruct(t *testing.T) {
 	require.Nil(t, Validate(v))
 }
 
-func TestNewErrorWithValidationError(t *testing.T) {
+func TestNewError(t *testing.T) {
 	p := &Product{}
 	v := []Validation{
 		{p, []Constraint{{"p", Null, true,
@@ -2429,5 +2429,5 @@ func TestNewErrorWithValidationError(t *testing.T) {
 	err := createError(reflect.ValueOf(p.C), v[0].Constraints[0].Chain[0], "value can not be null; required parameter")
 	z := fmt.Sprintf("batch.AccountClient#Create: Invalid input: %s",
 		err.Error())
-	require.Equal(t, NewErrorWithValidationError(err, "batch.AccountClient", "Create").Error(), z)
+	require.Equal(t, NewError("batch.AccountClient", "Create", err.Error()).Error(), z)
 }

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"fmt"
 	"io"
 	"testing"
 
@@ -31,7 +32,7 @@ func TestGetHooks(t *testing.T) {
 		{
 			name:     "get hooks with release",
 			args:     []string{"aeneas"},
-			expected: helm.MockHookTemplate,
+			expected: fmt.Sprintf("---\n# %s\n%s\n", "pre-install-hook", helm.MockHookTemplate),
 			resp:     helm.ReleaseMock(&helm.MockReleaseOptions{Name: "aeneas"}),
 			rels:     []*release.Release{helm.ReleaseMock(&helm.MockReleaseOptions{Name: "aeneas"})},
 		},

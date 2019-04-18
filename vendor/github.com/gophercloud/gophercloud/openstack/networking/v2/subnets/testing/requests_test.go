@@ -334,6 +334,55 @@ func TestCreateWithNoCIDR(t *testing.T) {
 	th.AssertEquals(t, s.SubnetPoolID, "b80340c7-9960-4f67-a99c-02501656284b")
 }
 
+func TestCreateWithPrefixlen(t *testing.T) {
+	th.SetupHTTP()
+	defer th.TeardownHTTP()
+
+	th.Mux.HandleFunc("/v2.0/subnets", func(w http.ResponseWriter, r *http.Request) {
+		th.TestMethod(t, r, "POST")
+		th.TestHeader(t, r, "X-Auth-Token", fake.TokenID)
+		th.TestHeader(t, r, "Content-Type", "application/json")
+		th.TestHeader(t, r, "Accept", "application/json")
+		th.TestJSONRequest(t, r, SubnetCreateRequestWithPrefixlen)
+
+		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+
+		fmt.Fprintf(w, SubnetCreateResult)
+	})
+
+	opts := subnets.CreateOpts{
+		NetworkID:      "d32019d3-bc6e-4319-9c1d-6722fc136a22",
+		IPVersion:      4,
+		DNSNameservers: []string{"foo"},
+		HostRoutes: []subnets.HostRoute{
+			{NextHop: "bar"},
+		},
+		SubnetPoolID: "b80340c7-9960-4f67-a99c-02501656284b",
+		Prefixlen:    12,
+	}
+	s, err := subnets.Create(fake.ServiceClient(), opts).Extract()
+	th.AssertNoErr(t, err)
+
+	th.AssertEquals(t, s.Name, "")
+	th.AssertEquals(t, s.EnableDHCP, true)
+	th.AssertEquals(t, s.NetworkID, "d32019d3-bc6e-4319-9c1d-6722fc136a22")
+	th.AssertEquals(t, s.TenantID, "4fd44f30292945e481c7b8a0c8908869")
+	th.AssertDeepEquals(t, s.DNSNameservers, []string{})
+	th.AssertDeepEquals(t, s.AllocationPools, []subnets.AllocationPool{
+		{
+			Start: "192.168.199.2",
+			End:   "192.168.199.254",
+		},
+	})
+	th.AssertDeepEquals(t, s.HostRoutes, []subnets.HostRoute{})
+	th.AssertEquals(t, s.IPVersion, 4)
+	th.AssertEquals(t, s.GatewayIP, "192.168.199.1")
+	th.AssertEquals(t, s.CIDR, "192.168.199.0/24")
+	th.AssertEquals(t, s.ID, "3b80198d-4f7b-4f77-9ef5-774d54e17126")
+	th.AssertEquals(t, s.SubnetPoolID, "b80340c7-9960-4f67-a99c-02501656284b")
+}
+
 func TestRequiredCreateOpts(t *testing.T) {
 	res := subnets.Create(fake.ServiceClient(), subnets.CreateOpts{})
 	if res.Err == nil {
@@ -368,9 +417,11 @@ func TestUpdate(t *testing.T) {
 		fmt.Fprintf(w, SubnetUpdateResponse)
 	})
 
+	dnsNameservers := []string{"foo"}
+	name := "my_new_subnet"
 	opts := subnets.UpdateOpts{
-		Name:           "my_new_subnet",
-		DNSNameservers: []string{"foo"},
+		Name:           &name,
+		DNSNameservers: &dnsNameservers,
 		HostRoutes: &[]subnets.HostRoute{
 			{NextHop: "bar"},
 		},
@@ -400,8 +451,9 @@ func TestUpdateGateway(t *testing.T) {
 	})
 
 	var gatewayIP = "10.0.0.1"
+	name := "my_new_subnet"
 	opts := subnets.UpdateOpts{
-		Name:      "my_new_subnet",
+		Name:      &name,
 		GatewayIP: &gatewayIP,
 	}
 	s, err := subnets.Update(fake.ServiceClient(), "08eae331-0402-425a-923c-34f7cfe39c1b", opts).Extract()
@@ -430,8 +482,9 @@ func TestUpdateRemoveGateway(t *testing.T) {
 	})
 
 	var noGateway = ""
+	name := "my_new_subnet"
 	opts := subnets.UpdateOpts{
-		Name:      "my_new_subnet",
+		Name:      &name,
 		GatewayIP: &noGateway,
 	}
 	s, err := subnets.Update(fake.ServiceClient(), "08eae331-0402-425a-923c-34f7cfe39c1b", opts).Extract()
@@ -466,8 +519,9 @@ func TestUpdateHostRoutes(t *testing.T) {
 		},
 	}
 
+	name := "my_new_subnet"
 	opts := subnets.UpdateOpts{
-		Name:       "my_new_subnet",
+		Name:       &name,
 		HostRoutes: &HostRoutes,
 	}
 	s, err := subnets.Update(fake.ServiceClient(), "08eae331-0402-425a-923c-34f7cfe39c1b", opts).Extract()
@@ -524,8 +578,9 @@ func TestUpdateAllocationPool(t *testing.T) {
 		fmt.Fprintf(w, SubnetUpdateAllocationPoolResponse)
 	})
 
+	name := "my_new_subnet"
 	opts := subnets.UpdateOpts{
-		Name: "my_new_subnet",
+		Name: &name,
 		AllocationPools: []subnets.AllocationPool{
 			{
 				Start: "10.1.0.2",

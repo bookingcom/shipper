@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -91,10 +91,10 @@ var indexfileEntries = map[string]repo.ChartVersions{
 			},
 		},
 		{
-			URLs: []string{"http://example.com/charts/santa-maria-1.2.2.tgz"},
+			URLs: []string{"http://example.com/charts/santa-maria-1.2.2-rc-1.tgz"},
 			Metadata: &chart.Metadata{
 				Name:        "santa-maria",
-				Version:     "1.2.2",
+				Version:     "1.2.2-RC-1",
 				Description: "Three boat",
 			},
 		},

@@ -233,7 +233,6 @@ type Logger struct {
 	// Options
 	commonResource *mrpb.MonitoredResource
 	commonLabels   map[string]string
-	writeTimeout   time.Duration
 	ctxFunc        func() (context.Context, func())
 }
 
@@ -274,12 +273,17 @@ func detectResource() *mrpb.MonitoredResource {
 		if err != nil {
 			return
 		}
+		name, err := metadata.InstanceName()
+		if err != nil {
+			return
+		}
 		detectedResource.pb = &mrpb.MonitoredResource{
 			Type: "gce_instance",
 			Labels: map[string]string{
-				"project_id":  projectID,
-				"instance_id": id,
-				"zone":        zone,
+				"project_id":    projectID,
+				"instance_id":   id,
+				"instance_name": name,
+				"zone":          zone,
 			},
 		}
 	})
@@ -597,6 +601,10 @@ type Entry struct {
 	// be relative to //tracing.googleapis.com.
 	Trace string
 
+	// ID of the span within the trace associated with the log entry.
+	// The ID is a 16-character hexadecimal encoding of an 8-byte array.
+	SpanID string
+
 	// Optional. Source code location information associated with the log entry,
 	// if any.
 	SourceLocation *logpb.LogEntrySourceLocation
@@ -825,6 +833,7 @@ func (l *Logger) toLogEntry(e Entry) (*logpb.LogEntry, error) {
 		Operation:      e.Operation,
 		Labels:         e.Labels,
 		Trace:          e.Trace,
+		SpanId:         e.SpanID,
 		Resource:       e.Resource,
 		SourceLocation: e.SourceLocation,
 	}

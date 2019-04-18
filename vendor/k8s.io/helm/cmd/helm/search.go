@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -47,6 +47,7 @@ type searchCmd struct {
 	versions bool
 	regexp   bool
 	version  string
+	colWidth uint
 }
 
 func newSearchCmd(out io.Writer) *cobra.Command {
@@ -66,6 +67,7 @@ func newSearchCmd(out io.Writer) *cobra.Command {
 	f.BoolVarP(&sc.regexp, "regexp", "r", false, "use regular expressions for searching")
 	f.BoolVarP(&sc.versions, "versions", "l", false, "show the long listing, with each version of each chart on its own line")
 	f.StringVarP(&sc.version, "version", "v", "", "search using semantic versioning constraints")
+	f.UintVar(&sc.colWidth, "col-width", 60, "specifies the max column width of output")
 
 	return cmd
 }
@@ -83,7 +85,7 @@ func (s *searchCmd) run(args []string) error {
 		q := strings.Join(args, " ")
 		res, err = index.Search(q, searchMaxScore, s.regexp)
 		if err != nil {
-			return nil
+			return err
 		}
 	}
 
@@ -93,7 +95,7 @@ func (s *searchCmd) run(args []string) error {
 		return err
 	}
 
-	fmt.Fprintln(s.out, s.formatSearchResults(data))
+	fmt.Fprintln(s.out, s.formatSearchResults(data, s.colWidth))
 
 	return nil
 }
@@ -126,12 +128,12 @@ func (s *searchCmd) applyConstraint(res []*search.Result) ([]*search.Result, err
 	return data, nil
 }
 
-func (s *searchCmd) formatSearchResults(res []*search.Result) string {
+func (s *searchCmd) formatSearchResults(res []*search.Result, colWidth uint) string {
 	if len(res) == 0 {
 		return "No results found"
 	}
 	table := uitable.New()
-	table.MaxColWidth = 50
+	table.MaxColWidth = colWidth
 	table.AddRow("NAME", "CHART VERSION", "APP VERSION", "DESCRIPTION")
 	for _, r := range res {
 		table.AddRow(r.Name, r.Chart.Version, r.Chart.AppVersion, r.Chart.Description)
@@ -152,7 +154,7 @@ func (s *searchCmd) buildIndex() (*search.Index, error) {
 		f := s.helmhome.CacheIndex(n)
 		ind, err := repo.LoadIndexFile(f)
 		if err != nil {
-			fmt.Fprintf(s.out, "WARNING: Repo %q is corrupt or missing. Try 'helm repo update'.", n)
+			fmt.Fprintf(s.out, "WARNING: Repo %q is corrupt or missing. Try 'helm repo update'.\n", n)
 			continue
 		}
 

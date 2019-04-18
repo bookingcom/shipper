@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"os"
+	"io/ioutil"
 	"testing"
 
 	"k8s.io/helm/pkg/proto/hapi/release"
@@ -121,10 +121,11 @@ func newMockTestingEnvironment() *MockTestingEnvironment {
 
 	return &MockTestingEnvironment{
 		Environment: &Environment{
-			Namespace:  "default",
-			KubeClient: tEnv.KubeClient,
-			Timeout:    5,
-			Stream:     &mockStream{},
+			Namespace:   "default",
+			KubeClient:  tEnv.KubeClient,
+			Timeout:     5,
+			Stream:      &mockStream{},
+			Parallelism: 20,
 		},
 	}
 }
@@ -145,7 +146,7 @@ type getFailingKubeClient struct {
 
 func newGetFailingKubeClient() *getFailingKubeClient {
 	return &getFailingKubeClient{
-		PrintingKubeClient: tillerEnv.PrintingKubeClient{Out: os.Stdout},
+		PrintingKubeClient: tillerEnv.PrintingKubeClient{Out: ioutil.Discard},
 	}
 }
 
@@ -159,7 +160,7 @@ type deleteFailingKubeClient struct {
 
 func newDeleteFailingKubeClient() *deleteFailingKubeClient {
 	return &deleteFailingKubeClient{
-		PrintingKubeClient: tillerEnv.PrintingKubeClient{Out: os.Stdout},
+		PrintingKubeClient: tillerEnv.PrintingKubeClient{Out: ioutil.Discard},
 	}
 }
 
@@ -173,7 +174,7 @@ type createFailingKubeClient struct {
 
 func newCreateFailingKubeClient() *createFailingKubeClient {
 	return &createFailingKubeClient{
-		PrintingKubeClient: tillerEnv.PrintingKubeClient{Out: os.Stdout},
+		PrintingKubeClient: tillerEnv.PrintingKubeClient{Out: ioutil.Discard},
 	}
 }
 

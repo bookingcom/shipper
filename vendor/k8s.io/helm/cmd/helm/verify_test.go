@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -28,7 +28,7 @@ func TestVerifyCmd(t *testing.T) {
 	statPathMsg := "no such file or directory"
 	statFileMsg := statPathMsg
 	if runtime.GOOS == "windows" {
-		statExe = "GetFileAttributesEx"
+		statExe = "FindFirstFile"
 		statPathMsg = "The system cannot find the path specified."
 		statFileMsg = "The system cannot find the file specified."
 	}

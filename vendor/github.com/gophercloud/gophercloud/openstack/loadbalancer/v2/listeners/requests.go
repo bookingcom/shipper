@@ -12,6 +12,7 @@ type Protocol string
 const (
 	ProtocolTCP   Protocol = "TCP"
 	ProtocolUDP   Protocol = "UDP"
+	ProtocolPROXY Protocol = "PROXY"
 	ProtocolHTTP  Protocol = "HTTP"
 	ProtocolHTTPS Protocol = "HTTPS"
 )
@@ -28,19 +29,23 @@ type ListOptsBuilder interface {
 // sort by a particular listener attribute. SortDir sets the direction, and is
 // either `asc' or `desc'. Marker and Limit are used for pagination.
 type ListOpts struct {
-	ID              string `q:"id"`
-	Name            string `q:"name"`
-	AdminStateUp    *bool  `q:"admin_state_up"`
-	ProjectID       string `q:"project_id"`
-	LoadbalancerID  string `q:"loadbalancer_id"`
-	DefaultPoolID   string `q:"default_pool_id"`
-	Protocol        string `q:"protocol"`
-	ProtocolPort    int    `q:"protocol_port"`
-	ConnectionLimit int    `q:"connection_limit"`
-	Limit           int    `q:"limit"`
-	Marker          string `q:"marker"`
-	SortKey         string `q:"sort_key"`
-	SortDir         string `q:"sort_dir"`
+	ID                   string `q:"id"`
+	Name                 string `q:"name"`
+	AdminStateUp         *bool  `q:"admin_state_up"`
+	ProjectID            string `q:"project_id"`
+	LoadbalancerID       string `q:"loadbalancer_id"`
+	DefaultPoolID        string `q:"default_pool_id"`
+	Protocol             string `q:"protocol"`
+	ProtocolPort         int    `q:"protocol_port"`
+	ConnectionLimit      int    `q:"connection_limit"`
+	Limit                int    `q:"limit"`
+	Marker               string `q:"marker"`
+	SortKey              string `q:"sort_key"`
+	SortDir              string `q:"sort_dir"`
+	TimeoutClientData    *int   `q:"timeout_client_data"`
+	TimeoutMemberData    *int   `q:"timeout_member_data"`
+	TimeoutMemberConnect *int   `q:"timeout_member_connect"`
+	TimeoutTCPInspect    *int   `q:"timeout_tcp_inspect"`
 }
 
 // ToListenerListQuery formats a ListOpts into a query string.
@@ -111,6 +116,21 @@ type CreateOpts struct {
 	// The administrative state of the Listener. A valid value is true (UP)
 	// or false (DOWN).
 	AdminStateUp *bool `json:"admin_state_up,omitempty"`
+
+	// Frontend client inactivity timeout in milliseconds
+	TimeoutClientData *int `json:"timeout_client_data,omitempty"`
+
+	// Backend member inactivity timeout in milliseconds
+	TimeoutMemberData *int `json:"timeout_member_data,omitempty"`
+
+	// Backend member connection timeout in milliseconds
+	TimeoutMemberConnect *int `json:"timeout_member_connect,omitempty"`
+
+	// Time, in milliseconds, to wait for additional TCP packets for content inspection
+	TimeoutTCPInspect *int `json:"timeout_tcp_inspect,omitempty"`
+
+	// A dictionary of optional headers to insert into the request before it is sent to the backend member.
+	InsertHeaders map[string]string `json:"insert_headers,omitempty"`
 }
 
 // ToListenerCreateMap builds a request body from CreateOpts.
@@ -170,11 +190,32 @@ type UpdateOpts struct {
 	// The administrative state of the Listener. A valid value is true (UP)
 	// or false (DOWN).
 	AdminStateUp *bool `json:"admin_state_up,omitempty"`
+
+	// Frontend client inactivity timeout in milliseconds
+	TimeoutClientData *int `json:"timeout_client_data,omitempty"`
+
+	// Backend member inactivity timeout in milliseconds
+	TimeoutMemberData *int `json:"timeout_member_data,omitempty"`
+
+	// Backend member connection timeout in milliseconds
+	TimeoutMemberConnect *int `json:"timeout_member_connect,omitempty"`
+
+	// Time, in milliseconds, to wait for additional TCP packets for content inspection
+	TimeoutTCPInspect *int `json:"timeout_tcp_inspect,omitempty"`
 }
 
 // ToListenerUpdateMap builds a request body from UpdateOpts.
 func (opts UpdateOpts) ToListenerUpdateMap() (map[string]interface{}, error) {
-	return gophercloud.BuildRequestBody(opts, "listener")
+	b, err := gophercloud.BuildRequestBody(opts, "listener")
+	if err != nil {
+		return nil, err
+	}
+
+	if m := b["listener"].(map[string]interface{}); m["default_pool_id"] == "" {
+		m["default_pool_id"] = nil
+	}
+
+	return b, nil
 }
 
 // Update is an operation which modifies the attributes of the specified

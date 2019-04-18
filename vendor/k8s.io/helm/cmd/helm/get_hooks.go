@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -47,7 +47,7 @@ func newGetHooksCmd(client helm.Interface, out io.Writer) *cobra.Command {
 		Use:     "hooks [flags] RELEASE_NAME",
 		Short:   "download all hooks for a named release",
 		Long:    getHooksHelp,
-		PreRunE: setupConnection,
+		PreRunE: func(_ *cobra.Command, _ []string) error { return setupConnection() },
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return errReleaseRequired
@@ -57,7 +57,13 @@ func newGetHooksCmd(client helm.Interface, out io.Writer) *cobra.Command {
 			return ghc.run()
 		},
 	}
-	cmd.Flags().Int32Var(&ghc.version, "revision", 0, "get the named release with revision")
+	f := cmd.Flags()
+	settings.AddFlagsTLS(f)
+	f.Int32Var(&ghc.version, "revision", 0, "get the named release with revision")
+
+	// set defaults from environment
+	settings.InitTLS(f)
+
 	return cmd
 }
 
@@ -69,7 +75,7 @@ func (g *getHooksCmd) run() error {
 	}
 
 	for _, hook := range res.Release.Hooks {
-		fmt.Fprintf(g.out, "---\n# %s\n%s", hook.Name, hook.Manifest)
+		fmt.Fprintf(g.out, "---\n# %s\n%s\n", hook.Name, hook.Manifest)
 	}
 	return nil
 }

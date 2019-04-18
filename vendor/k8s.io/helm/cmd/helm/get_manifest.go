@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -49,20 +49,24 @@ func newGetManifestCmd(client helm.Interface, out io.Writer) *cobra.Command {
 		Use:     "manifest [flags] RELEASE_NAME",
 		Short:   "download the manifest for a named release",
 		Long:    getManifestHelp,
-		PreRunE: setupConnection,
+		PreRunE: func(_ *cobra.Command, _ []string) error { return setupConnection() },
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return errReleaseRequired
 			}
 			get.release = args[0]
-			if get.client == nil {
-				get.client = helm.NewClient(helm.Host(settings.TillerHost))
-			}
+			get.client = ensureHelmClient(get.client)
 			return get.run()
 		},
 	}
 
-	cmd.Flags().Int32Var(&get.version, "revision", 0, "get the named release with revision")
+	f := cmd.Flags()
+	settings.AddFlagsTLS(f)
+	f.Int32Var(&get.version, "revision", 0, "get the named release with revision")
+
+	// set defaults from environment
+	settings.InitTLS(f)
+
 	return cmd
 }
 

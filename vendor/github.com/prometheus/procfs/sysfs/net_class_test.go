@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build !windows
+
 package sysfs
 
 import (
@@ -18,8 +20,27 @@ import (
 	"testing"
 )
 
+func TestNewNetClassDevices(t *testing.T) {
+	fs, err := NewFS(sysTestFixtures)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	devices, err := fs.NetClassDevices()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(devices) != 1 {
+		t.Errorf("Unexpected number of devices, want %d, have %d", 1, len(devices))
+	}
+	if devices[0] != "eth0" {
+		t.Errorf("Found unexpected device, want %s, have %s", "eth0", devices[0])
+	}
+}
+
 func TestNewNetClass(t *testing.T) {
-	fs, err := NewFS("fixtures")
+	fs, err := NewFS(sysTestFixtures)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,35 +50,56 @@ func TestNewNetClass(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	var (
+		addrAssignType   int64 = 3
+		addrLen          int64 = 6
+		carrier          int64 = 1
+		carrierChanges   int64 = 2
+		carrierDownCount int64 = 1
+		carrierUpCount   int64 = 1
+		devID            int64 = 32
+		dormant          int64 = 1
+		flags            int64 = 4867
+		ifIndex          int64 = 2
+		ifLink           int64 = 2
+		linkMode         int64 = 1
+		mtu              int64 = 1500
+		nameAssignType   int64 = 2
+		netDevGroup      int64 = 0
+		speed            int64 = 1000
+		txQueueLen       int64 = 1000
+		netType          int64 = 1
+	)
+
 	netClass := NetClass{
 		"eth0": {
 			Address:          "01:01:01:01:01:01",
-			AddrAssignType:   3,
-			AddrLen:          6,
+			AddrAssignType:   &addrAssignType,
+			AddrLen:          &addrLen,
 			Broadcast:        "ff:ff:ff:ff:ff:ff",
-			Carrier:          1,
-			CarrierChanges:   2,
-			CarrierDownCount: 1,
-			CarrierUpCount:   1,
-			DevID:            32,
-			Dormant:          1,
+			Carrier:          &carrier,
+			CarrierChanges:   &carrierChanges,
+			CarrierDownCount: &carrierDownCount,
+			CarrierUpCount:   &carrierUpCount,
+			DevID:            &devID,
+			Dormant:          &dormant,
 			Duplex:           "full",
-			Flags:            4867,
+			Flags:            &flags,
 			IfAlias:          "",
-			IfIndex:          2,
-			IfLink:           2,
-			LinkMode:         1,
-			MTU:              1500,
+			IfIndex:          &ifIndex,
+			IfLink:           &ifLink,
+			LinkMode:         &linkMode,
+			MTU:              &mtu,
 			Name:             "eth0",
-			NameAssignType:   2,
-			NetDevGroup:      0,
+			NameAssignType:   &nameAssignType,
+			NetDevGroup:      &netDevGroup,
 			OperState:        "up",
 			PhysPortID:       "",
 			PhysPortName:     "",
 			PhysSwitchID:     "",
-			Speed:            1000,
-			TxQueueLen:       1000,
-			Type:             1,
+			Speed:            &speed,
+			TxQueueLen:       &txQueueLen,
+			Type:             &netType,
 		},
 	}
 

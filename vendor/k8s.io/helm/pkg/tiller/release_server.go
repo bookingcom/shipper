@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import (
 	"github.com/technosophos/moniker"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
+	"k8s.io/client-go/kubernetes"
 
 	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/hooks"
@@ -82,12 +82,12 @@ var ValidName = regexp.MustCompile("^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])+
 type ReleaseServer struct {
 	ReleaseModule
 	env       *environment.Environment
-	clientset internalclientset.Interface
+	clientset kubernetes.Interface
 	Log       func(string, ...interface{})
 }
 
 // NewReleaseServer creates a new release server.
-func NewReleaseServer(env *environment.Environment, clientset internalclientset.Interface, useRemote bool) *ReleaseServer {
+func NewReleaseServer(env *environment.Environment, clientset kubernetes.Interface, useRemote bool) *ReleaseServer {
 	var releaseModule ReleaseModule
 	if useRemote {
 		releaseModule = &RemoteReleaseModule{}
@@ -136,6 +136,27 @@ func (s *ReleaseServer) reuseValues(req *services.UpdateReleaseRequest, current 
 			return err
 		}
 		req.Chart.Values = &chart.Config{Raw: nv}
+
+		reqValues, err := chartutil.ReadValues([]byte(req.Values.Raw))
+		if err != nil {
+			return err
+		}
+
+		currentConfig := chartutil.Values{}
+		if current.Config != nil && current.Config.Raw != "" && current.Config.Raw != "{}\n" {
+			currentConfig, err = chartutil.ReadValues([]byte(current.Config.Raw))
+			if err != nil {
+				return err
+			}
+		}
+
+		currentConfig.MergeInto(reqValues)
+		data, err := currentConfig.YAML()
+		if err != nil {
+			return err
+		}
+
+		req.Values.Raw = data
 		return nil
 	}
 
@@ -174,21 +195,34 @@ func (s *ReleaseServer) uniqName(start string, reuse bool) (string, error) {
 			s.Log("name %s exists but is not in use, reusing name", start)
 			return start, nil
 		} else if reuse {
-			return "", errors.New("cannot re-use a name that is still in use")
+			return "", fmt.Errorf("a released named %s is in use, cannot re-use a name that is still in use", start)
 		}
 
 		return "", fmt.Errorf("a release named %s already exists.\nRun: helm ls --all %s; to check the status of the release\nOr run: helm del --purge %s; to delete it", start, start, start)
 	}
 
+	moniker := moniker.New()
+	newname, err := s.createUniqName(moniker)
+	if err != nil {
+		return "ERROR", err
+	}
+
+	s.Log("info: Created new release name %s", newname)
+	return newname, nil
+
+}
+
+func (s *ReleaseServer) createUniqName(m moniker.Namer) (string, error) {
 	maxTries := 5
 	for i := 0; i < maxTries; i++ {
-		namer := moniker.New()
-		name := namer.NameSep("-")
+		name := m.NameSep("-")
 		if len(name) > releaseNameMaxLen {
 			name = name[:releaseNameMaxLen]
 		}
-		if _, err := s.env.Releases.Get(name, 1); strings.Contains(err.Error(), "not found") {
-			return name, nil
+		if _, err := s.env.Releases.Get(name, 1); err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				return name, nil
+			}
 		}
 		s.Log("info: generated name %s is taken. Searching again.", name)
 	}
@@ -244,7 +278,7 @@ func GetVersionSet(client discovery.ServerGroupsInterface) (chartutil.VersionSet
 	return chartutil.NewVersionSet(versions...), nil
 }
 
-func (s *ReleaseServer) renderResources(ch *chart.Chart, values chartutil.Values, vs chartutil.VersionSet) ([]*release.Hook, *bytes.Buffer, string, error) {
+func (s *ReleaseServer) renderResources(ch *chart.Chart, values chartutil.Values, subNotes bool, vs chartutil.VersionSet) ([]*release.Hook, *bytes.Buffer, string, error) {
 	// Guard to make sure Tiller is at the right version to handle this chart.
 	sver := version.GetVersion()
 	if ch.Metadata.TillerVersion != "" &&
@@ -273,17 +307,22 @@ func (s *ReleaseServer) renderResources(ch *chart.Chart, values chartutil.Values
 	// text file. We have to spin through this map because the file contains path information, so we
 	// look for terminating NOTES.txt. We also remove it from the files so that we don't have to skip
 	// it in the sortHooks.
-	notes := ""
+	var notesBuffer bytes.Buffer
 	for k, v := range files {
 		if strings.HasSuffix(k, notesFileSuffix) {
-			// Only apply the notes if it belongs to the parent chart
-			// Note: Do not use filePath.Join since it creates a path with \ which is not expected
-			if k == path.Join(ch.Metadata.Name, "templates", notesFileSuffix) {
-				notes = v
+			if subNotes || (k == path.Join(ch.Metadata.Name, "templates", notesFileSuffix)) {
+
+				// If buffer contains data, add newline before adding more
+				if notesBuffer.Len() > 0 {
+					notesBuffer.WriteString("\n")
+				}
+				notesBuffer.WriteString(v)
 			}
 			delete(files, k)
 		}
 	}
+
+	notes := notesBuffer.String()
 
 	// Sort hooks, manifests, and partials. Only hooks and manifests are returned,
 	// as partials are not used after renderer.Render. Empty manifests are also
@@ -316,6 +355,7 @@ func (s *ReleaseServer) renderResources(ch *chart.Chart, values chartutil.Values
 	return hooks, b, notes, nil
 }
 
+// recordRelease with an update operation in case reuse has been set.
 func (s *ReleaseServer) recordRelease(r *release.Release, reuse bool) {
 	if reuse {
 		if err := s.env.Releases.Update(r); err != nil {
@@ -346,6 +386,9 @@ func (s *ReleaseServer) execHook(hs []*release.Hook, name, namespace, hook strin
 	executingHooks = sortByHookWeight(executingHooks)
 
 	for _, h := range executingHooks {
+		if err := s.deleteHookByPolicy(h, hooks.BeforeHookCreation, name, namespace, hook, kubeCli); err != nil {
+			return err
+		}
 
 		b := bytes.NewBufferString(h.Manifest)
 		if err := kubeCli.Create(namespace, b, timeout, false); err != nil {
@@ -355,20 +398,18 @@ func (s *ReleaseServer) execHook(hs []*release.Hook, name, namespace, hook strin
 		// No way to rewind a bytes.Buffer()?
 		b.Reset()
 		b.WriteString(h.Manifest)
-		if err := kubeCli.WatchUntilReady(namespace, b, timeout, false); err != nil {
-			s.Log("warning: Release %s %s %s could not complete: %s", name, hook, h.Path, err)
-			// If a hook is failed, checkout the annotation of the hook to determine whether the hook should be deleted
-			// under failed condition. If so, then clear the corresponding resource object in the hook
-			if hookShouldBeDeleted(h, hooks.HookFailed) {
-				b.Reset()
-				b.WriteString(h.Manifest)
-				s.Log("deleting %s hook %s for release %s due to %q policy", hook, h.Name, name, hooks.HookFailed)
-				if errHookDelete := kubeCli.Delete(namespace, b); errHookDelete != nil {
-					s.Log("warning: Release %s %s %S could not be deleted: %s", name, hook, h.Path, errHookDelete)
-					return errHookDelete
+
+		// We can't watch CRDs
+		if hook != hooks.CRDInstall {
+			if err := kubeCli.WatchUntilReady(namespace, b, timeout, false); err != nil {
+				s.Log("warning: Release %s %s %s could not complete: %s", name, hook, h.Path, err)
+				// If a hook is failed, checkout the annotation of the hook to determine whether the hook should be deleted
+				// under failed condition. If so, then clear the corresponding resource object in the hook
+				if err := s.deleteHookByPolicy(h, hooks.HookFailed, name, namespace, hook, kubeCli); err != nil {
+					return err
 				}
+				return err
 			}
-			return err
 		}
 	}
 
@@ -376,13 +417,8 @@ func (s *ReleaseServer) execHook(hs []*release.Hook, name, namespace, hook strin
 	// If all hooks are succeeded, checkout the annotation of each hook to determine whether the hook should be deleted
 	// under succeeded condition. If so, then clear the corresponding resource object in each hook
 	for _, h := range executingHooks {
-		b := bytes.NewBufferString(h.Manifest)
-		if hookShouldBeDeleted(h, hooks.HookSucceeded) {
-			s.Log("deleting %s hook %s for release %s due to %q policy", hook, h.Name, name, hooks.HookSucceeded)
-			if errHookDelete := kubeCli.Delete(namespace, b); errHookDelete != nil {
-				s.Log("warning: Release %s %s %S could not be deleted: %s", name, hook, h.Path, errHookDelete)
-				return errHookDelete
-			}
+		if err := s.deleteHookByPolicy(h, hooks.HookSucceeded, name, namespace, hook, kubeCli); err != nil {
+			return err
 		}
 		h.LastRun = timeconv.Now()
 	}
@@ -408,11 +444,23 @@ func validateReleaseName(releaseName string) error {
 	return nil
 }
 
-// hookShouldBeDeleted determines whether the defined hook deletion policy matches the hook deletion polices
+func (s *ReleaseServer) deleteHookByPolicy(h *release.Hook, policy string, name, namespace, hook string, kubeCli environment.KubeClient) error {
+	b := bytes.NewBufferString(h.Manifest)
+	if hookHasDeletePolicy(h, policy) {
+		s.Log("deleting %s hook %s for release %s due to %q policy", hook, h.Name, name, policy)
+		if errHookDelete := kubeCli.Delete(namespace, b); errHookDelete != nil {
+			s.Log("warning: Release %s %s %S could not be deleted: %s", name, hook, h.Path, errHookDelete)
+			return errHookDelete
+		}
+	}
+	return nil
+}
+
+// hookHasDeletePolicy determines whether the defined hook deletion policy matches the hook deletion polices
 // supported by helm. If so, mark the hook as one should be deleted.
-func hookShouldBeDeleted(hook *release.Hook, policy string) bool {
+func hookHasDeletePolicy(h *release.Hook, policy string) bool {
 	if dp, ok := deletePolices[policy]; ok {
-		for _, v := range hook.DeletePolicies {
+		for _, v := range h.DeletePolicies {
 			if dp == v {
 				return true
 			}

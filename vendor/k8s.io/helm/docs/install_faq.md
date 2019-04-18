@@ -4,7 +4,7 @@ This section tracks some of the more frequently encountered issues with installi
 or getting started with Helm.
 
 **We'd love your help** making this document better. To add, correct, or remove
-information, [file an issue](https://github.com/kubernetes/helm/issues) or
+information, [file an issue](https://github.com/helm/helm/issues) or
 send us a pull request.
 
 ## Downloading
@@ -94,8 +94,8 @@ recommends reading this:
 
 Here are a few resolved issues that may help you get started:
 
-- https://github.com/kubernetes/helm/issues/1371
-- https://github.com/kubernetes/helm/issues/966
+- https://github.com/helm/helm/issues/1371
+- https://github.com/helm/helm/issues/966
 
 **Q: Trying to use Helm, I get the error "lookup XXXXX on 8.8.8.8:53: no such host"**
 
@@ -106,14 +106,14 @@ Error: Error forwarding ports: error upgrading connection: dial tcp: lookup kube
 A: We have seen this issue with Ubuntu and Kubeadm in multi-node clusters. The
 issue is that the nodes expect certain DNS records to be obtainable via global
 DNS. Until this is resolved upstream, you can work around the issue as
-follows:
+follows. On each of the control plane nodes:
 
-1) Add entries to `/etc/hosts` on the master mapping your hostnames to their public IPs
-2) Install `dnsmasq` on the master (e.g. `apt install -y dnsmasq`)
-3) Kill the k8s api server container on master (kubelet will recreate it)
-4) Then `systemctl restart docker` (or reboot the master) for it to pick up the /etc/resolv.conf changes
+1) Add entries to `/etc/hosts`, mapping your hostnames to their public IPs
+2) Install `dnsmasq` (e.g. `apt install -y dnsmasq`)
+3) Remove the k8s api server container (kubelet will recreate it)
+4) Then `systemctl restart docker` (or reboot the node) for it to pick up the /etc/resolv.conf changes
 
-See this issue for more information: https://github.com/kubernetes/helm/issues/1455
+See this issue for more information: https://github.com/helm/helm/issues/1455
 
 **Q: On GKE (Google Container Engine) I get "No SSH tunnels currently open"**
 
@@ -224,7 +224,7 @@ I am trying to remove stuff.
 **Q: When I delete the Tiller deployment, how come all the releases are still there?**
 
 Releases are stored in ConfigMaps inside of the `kube-system` namespace. You will
-have to manually delete them to get rid of the record.
+have to manually delete them to get rid of the record, or use ```helm delete --purge```.
 
 **Q: I want to delete my local Helm. Where are all its files?**
 

@@ -2,6 +2,14 @@
 
 Sprig provides a couple of advanced cryptographic functions.
 
+## sha1sum
+
+The `sha1sum` function receives a string, and computes it's SHA1 digest.
+
+```
+sha1sum "Hello world!"
+```
+
 ## sha256sum
 
 The `sha256sum` function receives a string, and computes it's SHA256 digest.
@@ -12,6 +20,14 @@ sha256sum "Hello world!"
 
 The above will compute the SHA 256 sum in an "ASCII armored" format that is
 safe to print.
+
+## adler32sum
+
+The `adler32sum` function receives a string, and computes its Adler-32 checksum.
+
+```
+adler32sum "Hello world!"
+```
 
 ## derivePassword
 
@@ -35,6 +51,29 @@ It takes one of the values for its first param:
 - `ecdsa`: Generate an elyptical curve DSA key (P256)
 - `dsa`: Generate a DSA key (L2048N256)
 - `rsa`: Generate an RSA 4096 key
+
+## buildCustomCert
+
+The `buildCustomCert` function allows customizing the certificate.
+
+It takes the following string parameters:
+
+- A base64 encoded PEM format certificate
+- A base64 encoded PEM format private key
+
+It returns a certificate object with the following attributes:
+
+- `Cert`: A PEM-encoded certificate
+- `Key`: A PEM-encoded private key
+
+Example:
+
+```
+$ca := buildCustomCert "base64-encoded-ca-crt" "base64-encoded-ca-key"
+```
+
+Note that the returned object can be passed to the `genSignedCert` function
+to sign a certificate using this CA.
 
 ## genCA
 

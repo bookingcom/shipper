@@ -16,7 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
+	dynamic "k8s.io/client-go/deprecated-dynamic"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -442,7 +442,7 @@ func startInstallationController(cfg *cfg) (bool, error) {
 			config.Timeout = *cfg.restTimeout
 		}
 
-		dynamicClient, newClientErr := dynamic.NewClient(config)
+		dynamicClient, newClientErr := dynamic.NewClient(config, gvk.GroupVersion())
 		if newClientErr != nil {
 			glog.Fatal(newClientErr)
 		}

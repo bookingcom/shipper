@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ import (
 	"k8s.io/helm/pkg/version"
 )
 
-func TestDeploymentManifest(t *testing.T) {
+func TestDeployment(t *testing.T) {
 	tests := []struct {
 		name            string
 		image           string
@@ -48,15 +48,15 @@ func TestDeploymentManifest(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		o, err := DeploymentManifest(&Options{Namespace: v1.NamespaceDefault, ImageSpec: tt.image, UseCanary: tt.canary})
+		dep, err := Deployment(&Options{Namespace: v1.NamespaceDefault, ImageSpec: tt.image, UseCanary: tt.canary})
 		if err != nil {
 			t.Fatalf("%s: error %q", tt.name, err)
 		}
-		var dep v1beta1.Deployment
-		if err := yaml.Unmarshal([]byte(o), &dep); err != nil {
-			t.Fatalf("%s: error %q", tt.name, err)
-		}
 
+		// Unreleased versions of helm don't have a release image. See issue 3370
+		if tt.name == "default" && version.BuildMetadata == "unreleased" {
+			tt.expect = "gcr.io/kubernetes-helm/tiller:canary"
+		}
 		if got := dep.Spec.Template.Spec.Containers[0].Image; got != tt.expect {
 			t.Errorf("%s: expected image %q, got %q", tt.name, tt.expect, got)
 		}
@@ -71,7 +71,7 @@ func TestDeploymentManifest(t *testing.T) {
 	}
 }
 
-func TestDeploymentManifestForServiceAccount(t *testing.T) {
+func TestDeploymentForServiceAccount(t *testing.T) {
 	tests := []struct {
 		name            string
 		image           string
@@ -84,22 +84,31 @@ func TestDeploymentManifestForServiceAccount(t *testing.T) {
 		{"withoutSA", "", false, "gcr.io/kubernetes-helm/tiller:latest", "IfNotPresent", ""},
 	}
 	for _, tt := range tests {
-		o, err := DeploymentManifest(&Options{Namespace: v1.NamespaceDefault, ImageSpec: tt.image, UseCanary: tt.canary, ServiceAccount: tt.serviceAccount})
+		opts := &Options{Namespace: v1.NamespaceDefault, ImageSpec: tt.image, UseCanary: tt.canary, ServiceAccount: tt.serviceAccount}
+		d, err := Deployment(opts)
 		if err != nil {
 			t.Fatalf("%s: error %q", tt.name, err)
 		}
 
-		var d v1beta1.Deployment
-		if err := yaml.Unmarshal([]byte(o), &d); err != nil {
-			t.Fatalf("%s: error %q", tt.name, err)
-		}
 		if got := d.Spec.Template.Spec.ServiceAccountName; got != tt.serviceAccount {
 			t.Errorf("%s: expected service account value %q, got %q", tt.name, tt.serviceAccount, got)
+		}
+		if got := *d.Spec.Template.Spec.AutomountServiceAccountToken; got != false {
+			t.Errorf("%s: expected AutomountServiceAccountToken = %t, got %t", tt.name, false, got)
+		}
+
+		opts.AutoMountServiceAccountToken = true
+		d, err = Deployment(opts)
+		if err != nil {
+			t.Fatalf("%s: error %q", tt.name, err)
+		}
+		if got := *d.Spec.Template.Spec.AutomountServiceAccountToken; got != true {
+			t.Errorf("%s: expected AutomountServiceAccountToken = %t, got %t", tt.name, true, got)
 		}
 	}
 }
 
-func TestDeploymentManifest_WithTLS(t *testing.T) {
+func TestDeployment_WithTLS(t *testing.T) {
 	tests := []struct {
 		opts   Options
 		name   string
@@ -126,15 +135,11 @@ func TestDeploymentManifest_WithTLS(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		o, err := DeploymentManifest(&tt.opts)
+		d, err := Deployment(&tt.opts)
 		if err != nil {
 			t.Fatalf("%s: error %q", tt.name, err)
 		}
 
-		var d v1beta1.Deployment
-		if err := yaml.Unmarshal([]byte(o), &d); err != nil {
-			t.Fatalf("%s: error %q", tt.name, err)
-		}
 		// verify environment variable in deployment reflect the use of tls being enabled.
 		if got := d.Spec.Template.Spec.Containers[0].Env[2].Value; got != tt.verify {
 			t.Errorf("%s: expected tls verify env value %q, got %q", tt.name, tt.verify, got)
@@ -146,14 +151,7 @@ func TestDeploymentManifest_WithTLS(t *testing.T) {
 }
 
 func TestServiceManifest(t *testing.T) {
-	o, err := ServiceManifest(v1.NamespaceDefault)
-	if err != nil {
-		t.Fatalf("error %q", err)
-	}
-	var svc v1.Service
-	if err := yaml.Unmarshal([]byte(o), &svc); err != nil {
-		t.Fatalf("error %q", err)
-	}
+	svc := Service(v1.NamespaceDefault)
 
 	if got := svc.ObjectMeta.Namespace; got != v1.NamespaceDefault {
 		t.Errorf("expected namespace %s, got %s", v1.NamespaceDefault, got)
@@ -161,7 +159,7 @@ func TestServiceManifest(t *testing.T) {
 }
 
 func TestSecretManifest(t *testing.T) {
-	o, err := SecretManifest(&Options{
+	obj, err := Secret(&Options{
 		VerifyTLS:     true,
 		EnableTLS:     true,
 		Namespace:     v1.NamespaceDefault,
@@ -171,11 +169,6 @@ func TestSecretManifest(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Fatalf("error %q", err)
-	}
-
-	var obj v1.Secret
-	if err := yaml.Unmarshal([]byte(o), &obj); err != nil {
 		t.Fatalf("error %q", err)
 	}
 
@@ -211,6 +204,10 @@ func TestInstall(t *testing.T) {
 		if ports != 2 {
 			t.Errorf("expected ports = 2, got '%d'", ports)
 		}
+		replicas := obj.Spec.Replicas
+		if int(*replicas) != 1 {
+			t.Errorf("expected replicas = 1, got '%d'", replicas)
+		}
 		return true, obj, nil
 	})
 	fc.AddReactor("create", "services", func(action testcore.Action) (bool, runtime.Object, error) {
@@ -233,6 +230,29 @@ func TestInstall(t *testing.T) {
 
 	if actions := fc.Actions(); len(actions) != 2 {
 		t.Errorf("unexpected actions: %v, expected 2 actions got %d", actions, len(actions))
+	}
+}
+
+func TestInstallHA(t *testing.T) {
+	image := "gcr.io/kubernetes-helm/tiller:v2.0.0"
+
+	fc := &fake.Clientset{}
+	fc.AddReactor("create", "deployments", func(action testcore.Action) (bool, runtime.Object, error) {
+		obj := action.(testcore.CreateAction).GetObject().(*v1beta1.Deployment)
+		replicas := obj.Spec.Replicas
+		if int(*replicas) != 2 {
+			t.Errorf("expected replicas = 2, got '%d'", replicas)
+		}
+		return true, obj, nil
+	})
+
+	opts := &Options{
+		Namespace: v1.NamespaceDefault,
+		ImageSpec: image,
+		Replicas:  2,
+	}
+	if err := Install(fc, opts); err != nil {
+		t.Errorf("unexpected error: %#+v", err)
 	}
 }
 
@@ -335,13 +355,13 @@ func TestInstall_canary(t *testing.T) {
 func TestUpgrade(t *testing.T) {
 	image := "gcr.io/kubernetes-helm/tiller:v2.0.0"
 	serviceAccount := "newServiceAccount"
-	existingDeployment, _ := deployment(&Options{
+	existingDeployment, _ := generateDeployment(&Options{
 		Namespace:      v1.NamespaceDefault,
 		ImageSpec:      "imageToReplace:v1.0.0",
 		ServiceAccount: "serviceAccountToReplace",
 		UseCanary:      false,
 	})
-	existingService := service(v1.NamespaceDefault)
+	existingService := generateService(v1.NamespaceDefault)
 
 	fc := &fake.Clientset{}
 	fc.AddReactor("get", "deployments", func(action testcore.Action) (bool, runtime.Object, error) {
@@ -376,7 +396,7 @@ func TestUpgrade(t *testing.T) {
 func TestUpgrade_serviceNotFound(t *testing.T) {
 	image := "gcr.io/kubernetes-helm/tiller:v2.0.0"
 
-	existingDeployment, _ := deployment(&Options{
+	existingDeployment, _ := generateDeployment(&Options{
 		Namespace: v1.NamespaceDefault,
 		ImageSpec: "imageToReplace",
 		UseCanary: false,
@@ -419,13 +439,13 @@ func TestUpgrade_serviceNotFound(t *testing.T) {
 func TestUgrade_newerVersion(t *testing.T) {
 	image := "gcr.io/kubernetes-helm/tiller:v2.0.0"
 	serviceAccount := "newServiceAccount"
-	existingDeployment, _ := deployment(&Options{
+	existingDeployment, _ := generateDeployment(&Options{
 		Namespace:      v1.NamespaceDefault,
 		ImageSpec:      "imageToReplace:v100.5.0",
 		ServiceAccount: "serviceAccountToReplace",
 		UseCanary:      false,
 	})
-	existingService := service(v1.NamespaceDefault)
+	existingService := generateService(v1.NamespaceDefault)
 
 	fc := &fake.Clientset{}
 	fc.AddReactor("get", "deployments", func(action testcore.Action) (bool, runtime.Object, error) {
@@ -476,6 +496,129 @@ func TestUgrade_newerVersion(t *testing.T) {
 	}
 }
 
+func TestUpgrade_identical(t *testing.T) {
+	image := "gcr.io/kubernetes-helm/tiller:v2.0.0"
+	serviceAccount := "newServiceAccount"
+	existingDeployment, _ := generateDeployment(&Options{
+		Namespace:      v1.NamespaceDefault,
+		ImageSpec:      "imageToReplace:v2.0.0",
+		ServiceAccount: "serviceAccountToReplace",
+		UseCanary:      false,
+	})
+	existingService := generateService(v1.NamespaceDefault)
+
+	fc := &fake.Clientset{}
+	fc.AddReactor("get", "deployments", func(action testcore.Action) (bool, runtime.Object, error) {
+		return true, existingDeployment, nil
+	})
+	fc.AddReactor("update", "deployments", func(action testcore.Action) (bool, runtime.Object, error) {
+		obj := action.(testcore.UpdateAction).GetObject().(*v1beta1.Deployment)
+		i := obj.Spec.Template.Spec.Containers[0].Image
+		if i != image {
+			t.Errorf("expected image = '%s', got '%s'", image, i)
+		}
+		sa := obj.Spec.Template.Spec.ServiceAccountName
+		if sa != serviceAccount {
+			t.Errorf("expected serviceAccountName = '%s', got '%s'", serviceAccount, sa)
+		}
+		return true, obj, nil
+	})
+	fc.AddReactor("get", "services", func(action testcore.Action) (bool, runtime.Object, error) {
+		return true, existingService, nil
+	})
+
+	opts := &Options{Namespace: v1.NamespaceDefault, ImageSpec: image, ServiceAccount: serviceAccount}
+	if err := Upgrade(fc, opts); err != nil {
+		t.Errorf("unexpected error: %#+v", err)
+	}
+
+	if actions := fc.Actions(); len(actions) != 3 {
+		t.Errorf("unexpected actions: %v, expected 3 actions got %d", actions, len(actions))
+	}
+}
+
+func TestUpgrade_canaryClient(t *testing.T) {
+	image := "gcr.io/kubernetes-helm/tiller:canary"
+	serviceAccount := "newServiceAccount"
+	existingDeployment, _ := generateDeployment(&Options{
+		Namespace:      v1.NamespaceDefault,
+		ImageSpec:      "imageToReplace:v1.0.0",
+		ServiceAccount: "serviceAccountToReplace",
+		UseCanary:      false,
+	})
+	existingService := generateService(v1.NamespaceDefault)
+
+	fc := &fake.Clientset{}
+	fc.AddReactor("get", "deployments", func(action testcore.Action) (bool, runtime.Object, error) {
+		return true, existingDeployment, nil
+	})
+	fc.AddReactor("update", "deployments", func(action testcore.Action) (bool, runtime.Object, error) {
+		obj := action.(testcore.UpdateAction).GetObject().(*v1beta1.Deployment)
+		i := obj.Spec.Template.Spec.Containers[0].Image
+		if i != image {
+			t.Errorf("expected image = '%s', got '%s'", image, i)
+		}
+		sa := obj.Spec.Template.Spec.ServiceAccountName
+		if sa != serviceAccount {
+			t.Errorf("expected serviceAccountName = '%s', got '%s'", serviceAccount, sa)
+		}
+		return true, obj, nil
+	})
+	fc.AddReactor("get", "services", func(action testcore.Action) (bool, runtime.Object, error) {
+		return true, existingService, nil
+	})
+
+	opts := &Options{Namespace: v1.NamespaceDefault, ImageSpec: image, ServiceAccount: serviceAccount}
+	if err := Upgrade(fc, opts); err != nil {
+		t.Errorf("unexpected error: %#+v", err)
+	}
+
+	if actions := fc.Actions(); len(actions) != 3 {
+		t.Errorf("unexpected actions: %v, expected 3 actions got %d", actions, len(actions))
+	}
+}
+
+func TestUpgrade_canaryServer(t *testing.T) {
+	image := "gcr.io/kubernetes-helm/tiller:v2.0.0"
+	serviceAccount := "newServiceAccount"
+	existingDeployment, _ := generateDeployment(&Options{
+		Namespace:      v1.NamespaceDefault,
+		ImageSpec:      "imageToReplace:canary",
+		ServiceAccount: "serviceAccountToReplace",
+		UseCanary:      false,
+	})
+	existingService := generateService(v1.NamespaceDefault)
+
+	fc := &fake.Clientset{}
+	fc.AddReactor("get", "deployments", func(action testcore.Action) (bool, runtime.Object, error) {
+		return true, existingDeployment, nil
+	})
+	fc.AddReactor("update", "deployments", func(action testcore.Action) (bool, runtime.Object, error) {
+		obj := action.(testcore.UpdateAction).GetObject().(*v1beta1.Deployment)
+		i := obj.Spec.Template.Spec.Containers[0].Image
+		if i != image {
+			t.Errorf("expected image = '%s', got '%s'", image, i)
+		}
+		sa := obj.Spec.Template.Spec.ServiceAccountName
+		if sa != serviceAccount {
+			t.Errorf("expected serviceAccountName = '%s', got '%s'", serviceAccount, sa)
+		}
+		return true, obj, nil
+	})
+	fc.AddReactor("get", "services", func(action testcore.Action) (bool, runtime.Object, error) {
+		return true, existingService, nil
+	})
+
+	opts := &Options{Namespace: v1.NamespaceDefault, ImageSpec: image, ServiceAccount: serviceAccount}
+	if err := Upgrade(fc, opts); err != nil {
+		t.Errorf("unexpected error: %#+v", err)
+	}
+
+	if actions := fc.Actions(); len(actions) != 3 {
+		t.Errorf("unexpected actions: %v, expected 3 actions got %d", actions, len(actions))
+	}
+}
+
 func tlsTestFile(t *testing.T, path string) string {
 	const tlsTestDir = "../../../testdata"
 	path = filepath.Join(tlsTestDir, path)
@@ -484,7 +627,8 @@ func tlsTestFile(t *testing.T, path string) string {
 	}
 	return path
 }
-func TestDeploymentManifest_WithNodeSelectors(t *testing.T) {
+
+func TestDeployment_WithNodeSelectors(t *testing.T) {
 	tests := []struct {
 		opts   Options
 		name   string
@@ -508,15 +652,11 @@ func TestDeploymentManifest_WithNodeSelectors(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		o, err := DeploymentManifest(&tt.opts)
+		d, err := Deployment(&tt.opts)
 		if err != nil {
 			t.Fatalf("%s: error %q", tt.name, err)
 		}
 
-		var d v1beta1.Deployment
-		if err := yaml.Unmarshal([]byte(o), &d); err != nil {
-			t.Fatalf("%s: error %q", tt.name, err)
-		}
 		// Verify that environment variables in Deployment reflect the use of TLS being enabled.
 		got := d.Spec.Template.Spec.NodeSelector
 		for k, v := range tt.expect {
@@ -526,7 +666,8 @@ func TestDeploymentManifest_WithNodeSelectors(t *testing.T) {
 		}
 	}
 }
-func TestDeploymentManifest_WithSetValues(t *testing.T) {
+
+func TestDeployment_WithSetValues(t *testing.T) {
 	tests := []struct {
 		opts       Options
 		name       string
@@ -553,11 +694,17 @@ func TestDeploymentManifest_WithSetValues(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		o, err := DeploymentManifest(&tt.opts)
+		d, err := Deployment(&tt.opts)
 		if err != nil {
 			t.Fatalf("%s: error %q", tt.name, err)
 		}
-		values, err := chartutil.ReadValues([]byte(o))
+
+		o, err := yaml.Marshal(d)
+		if err != nil {
+			t.Errorf("Error marshaling Deployment: %s", err)
+		}
+
+		values, err := chartutil.ReadValues(o)
 		if err != nil {
 			t.Errorf("Error converting Deployment manifest to Values: %s", err)
 		}

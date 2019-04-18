@@ -1,17 +1,34 @@
+// Copyright 2015 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package route
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/julienschmidt/httprouter"
-	"golang.org/x/net/context"
 )
 
 type param string
 
-// Param returns param p for the context.
+// Param returns param p for the context, or the empty string when
+// param does not exist in context.
 func Param(ctx context.Context, p string) string {
-	return ctx.Value(param(p)).(string)
+	if v := ctx.Value(param(p)); v != nil {
+		return v.(string)
+	}
+	return ""
 }
 
 // WithParam returns a new context with param p set to v.
@@ -46,15 +63,16 @@ func (r *Router) WithPrefix(prefix string) *Router {
 
 // handle turns a HandlerFunc into an httprouter.Handle.
 func (r *Router) handle(handlerName string, h http.HandlerFunc) httprouter.Handle {
+	if r.instrh != nil {
+		// This needs to be outside the closure to avoid data race when reading and writing to 'h'.
+		h = r.instrh(handlerName, h)
+	}
 	return func(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 
 		for _, p := range params {
 			ctx = context.WithValue(ctx, param(p.Key), p.Value)
-		}
-		if r.instrh != nil {
-			h = r.instrh(handlerName, h)
 		}
 		h(w, req.WithContext(ctx))
 	}

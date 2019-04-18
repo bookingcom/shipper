@@ -14,7 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
+	dynamic "k8s.io/client-go/deprecated-dynamic"
 	"k8s.io/client-go/kubernetes"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -501,7 +501,7 @@ func (i *Installer) installManifests(
 		case *corev1.Service:
 			// Copy over clusterIP from existing object's .spec to the
 			// rendered one.
-			if clusterIP, ok := unstructured.NestedString(existingUnstructuredObj, "spec", "clusterIP"); ok {
+			if clusterIP, ok, _ := unstructured.NestedString(existingUnstructuredObj, "spec", "clusterIP"); ok {
 				unstructured.SetNestedField(newUnstructuredObj, clusterIP, "spec", "clusterIP")
 			}
 		}

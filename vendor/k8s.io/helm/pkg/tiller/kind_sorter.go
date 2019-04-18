@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -30,6 +30,8 @@ var InstallOrder SortOrder = []string{
 	"Namespace",
 	"ResourceQuota",
 	"LimitRange",
+	"PodSecurityPolicy",
+	"PodDisruptionBudget",
 	"Secret",
 	"ConfigMap",
 	"StorageClass",
@@ -80,6 +82,8 @@ var UninstallOrder SortOrder = []string{
 	"StorageClass",
 	"ConfigMap",
 	"Secret",
+	"PodDisruptionBudget",
+	"PodSecurityPolicy",
 	"LimitRange",
 	"ResourceQuota",
 	"Namespace",
@@ -120,20 +124,26 @@ func (k *kindSorter) Less(i, j int) bool {
 	b := k.manifests[j]
 	first, aok := k.ordering[a.Head.Kind]
 	second, bok := k.ordering[b.Head.Kind]
-	// if same kind (including unknown) sub sort alphanumeric
-	if first == second {
-		// if both are unknown and of different kind sort by kind alphabetically
-		if !aok && !bok && a.Head.Kind != b.Head.Kind {
+
+	if !aok && !bok {
+		// if both are unknown then sort alphabetically by kind and name
+		if a.Head.Kind != b.Head.Kind {
 			return a.Head.Kind < b.Head.Kind
 		}
 		return a.Name < b.Name
 	}
+
 	// unknown kind is last
 	if !aok {
 		return false
 	}
 	if !bok {
 		return true
+	}
+
+	// if same kind sub sort alphanumeric
+	if first == second {
+		return a.Name < b.Name
 	}
 	// sort different kinds
 	return first < second

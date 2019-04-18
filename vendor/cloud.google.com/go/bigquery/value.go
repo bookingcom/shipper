@@ -170,6 +170,14 @@ func setString(v reflect.Value, x interface{}) error {
 	return nil
 }
 
+func setGeography(v reflect.Value, x interface{}) error {
+	if x == nil {
+		return errNoNulls
+	}
+	v.SetString(x.(string))
+	return nil
+}
+
 func setBytes(v reflect.Value, x interface{}) error {
 	if x == nil {
 		v.SetBytes(nil)
@@ -285,6 +293,18 @@ func determineSetFunc(ftype reflect.Type, stype FieldType) setFunc {
 			return func(v reflect.Value, x interface{}) error {
 				return setNull(v, x, func() interface{} {
 					return NullString{StringVal: x.(string), Valid: true}
+				})
+			}
+		}
+
+	case GeographyFieldType:
+		if ftype.Kind() == reflect.String {
+			return setGeography
+		}
+		if ftype == typeOfNullGeography {
+			return func(v reflect.Value, x interface{}) error {
+				return setNull(v, x, func() interface{} {
+					return NullGeography{GeographyVal: x.(string), Valid: true}
 				})
 			}
 		}
@@ -497,7 +517,7 @@ func (vls *ValuesSaver) Save() (map[string]Value, string, error) {
 
 func valuesToMap(vs []Value, schema Schema) (map[string]Value, error) {
 	if len(vs) != len(schema) {
-		return nil, errors.New("Schema does not match length of row to be inserted")
+		return nil, errors.New("schema does not match length of row to be inserted")
 	}
 
 	m := make(map[string]Value)
@@ -864,6 +884,8 @@ func convertBasicType(val string, typ FieldType) (Value, error) {
 			return nil, fmt.Errorf("bigquery: invalid NUMERIC value %q", val)
 		}
 		return Value(r), nil
+	case GeographyFieldType:
+		return val, nil
 	default:
 		return nil, fmt.Errorf("unrecognized type: %s", typ)
 	}
