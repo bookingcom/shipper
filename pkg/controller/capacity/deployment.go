@@ -221,7 +221,8 @@ func (c Controller) getFalsePodCondition(pod *corev1.Pod) (*corev1.PodCondition,
 	for _, condition := range pod.Status.Conditions {
 		if condition.Status == corev1.ConditionFalse {
 			if sadCondition == nil {
-				sadCondition = &condition
+				c := condition
+				sadCondition = &c
 			} else {
 				glog.Errorf("Found 2 pod conditions with the status set to `false`. The first has a type of %s, and the second has a type of %s.", sadCondition.Type, condition.Type)
 			}
