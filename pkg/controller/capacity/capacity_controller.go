@@ -25,6 +25,7 @@ import (
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/conditions"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 
@@ -137,11 +138,19 @@ func (c *Controller) processNextCapacityTargetWorkItem() bool {
 
 	if key, ok = obj.(string); !ok {
 		c.capacityTargetWorkqueue.Forget(obj)
-		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
+		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
 		return true
 	}
 
-	if shouldRetry := c.capacityTargetSyncHandler(key); shouldRetry {
+	shouldRetry := false
+	err := c.capacityTargetSyncHandler(key)
+
+	if err != nil {
+		shouldRetry = shippererrors.ShouldRetry(err)
+		runtime.HandleError(fmt.Errorf("error syncing CapacityTarget %q (will retry: %t): %s", key, shouldRetry, err.Error()))
+	}
+
+	if shouldRetry {
 		if c.capacityTargetWorkqueue.NumRequeues(key) >= maxRetries {
 			// Drop the CapacityTarget's key out of the workqueue and thus reset its
 			// backoff. This limits the time a "broken" object can hog a worker.
@@ -162,29 +171,29 @@ func (c *Controller) processNextCapacityTargetWorkItem() bool {
 	return true
 }
 
-func (c *Controller) capacityTargetSyncHandler(key string) bool {
+func (c *Controller) capacityTargetSyncHandler(key string) error {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %s", key))
-		return false
+		return shippererrors.NewUnrecoverableError(err)
 	}
 
 	ct, err := c.capacityTargetsLister.CapacityTargets(namespace).Get(name)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			glog.V(3).Infof("CapacityTarget %q has been deleted", key)
-			return false
+			return nil
 		}
 
-		runtime.HandleError(fmt.Errorf("error syncing CapacityTarget %q (will retry): %s", key, err))
-		return true
+		return shippererrors.NewKubeclientGetError(
+			shipper.SchemeGroupVersion.WithKind("CapacityTarget"),
+			namespace, name, err)
 	}
 
 	ct = ct.DeepCopy()
 
-	shouldRetry := false
 	targetNamespace := ct.Namespace
 	selector := labels.Set(ct.Labels).AsSelector()
+	clusterErrors := shippererrors.NewMultiError()
 
 	for _, clusterSpec := range ct.Spec.Clusters {
 		// clusterStatus will be modified by functions called in this loop as a side
@@ -216,8 +225,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 		// their business, hence we're passing them a pointer.
 		targetDeployment, err := c.findTargetDeploymentForClusterSpec(clusterSpec, targetNamespace, selector, clusterStatus)
 		if err != nil {
-			c.recordErrorEvent(ct, err)
-			shouldRetry = true
+			clusterErrors.Append(err)
 			continue
 		}
 
@@ -229,9 +237,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 		if targetDeployment.Spec.Replicas == nil || replicaCount != *targetDeployment.Spec.Replicas {
 			_, err = c.patchDeploymentWithReplicaCount(targetDeployment, clusterSpec.Name, replicaCount, clusterStatus)
 			if err != nil {
-				c.recordErrorEvent(ct, err)
-				shouldRetry = true
-				continue
+				clusterErrors.Append(err)
 			}
 		}
 
@@ -239,20 +245,20 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 		clusterStatus.AchievedPercent = c.calculatePercentageFromAmount(clusterSpec.TotalReplicaCount, clusterStatus.AvailableReplicas)
 
 		report, err := c.getReport(targetDeployment, clusterStatus)
-		if err == nil {
+		if err != nil {
+			clusterErrors.Append(err)
+		} else {
 			clusterStatus.Reports = append(clusterStatus.Reports, *report)
 		}
 
-		sadPods, err := c.getSadPods(targetDeployment, clusterStatus)
+		sadPods, clusterOk, err := c.getSadPods(targetDeployment, clusterStatus)
 		if err != nil {
-			ct.Status.Clusters = append(ct.Status.Clusters, *clusterStatus)
-			continue
+			clusterErrors.Append(err)
+		} else {
+			clusterStatus.SadPods = sadPods
 		}
-		clusterStatus.SadPods = sadPods
 
-		if len(sadPods) == 0 {
-			// If we've got here, the capacity target has no sad pods and there have been
-			// no errors, so set conditions to true.
+		if clusterOk {
 			clusterStatus.Conditions = conditions.SetCapacityCondition(
 				clusterStatus.Conditions,
 				shipper.ClusterConditionTypeReady,
@@ -269,15 +275,30 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 		ct.Status.Clusters = append(ct.Status.Clusters, *clusterStatus)
 	}
 
+	if clusterErrors.Any() {
+		for _, err := range clusterErrors.Errors {
+			if shippererrors.ShouldBroadcast(err) {
+				c.recorder.Event(
+					ct,
+					corev1.EventTypeWarning,
+					"FailedCapacityChange",
+					err.Error())
+			}
+		}
+	}
+
 	sort.Sort(byClusterName(ct.Status.Clusters))
 
 	_, err = c.shipperclientset.ShipperV1alpha1().CapacityTargets(namespace).Update(ct)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing CapacityTarget %q (will retry): %s", key, err))
-		return true
+		clusterErrors.Append(shippererrors.NewKubeclientUpdateError(ct, err))
 	}
 
-	return shouldRetry
+	if clusterErrors.Any() {
+		return clusterErrors
+	} else {
+		return nil
+	}
 }
 
 func (c *Controller) enqueueCapacityTarget(obj interface{}) {
@@ -306,7 +327,7 @@ type clusterClientStoreInterface interface {
 	GetInformerFactory(string) (kubeinformers.SharedInformerFactory, error)
 }
 
-func (c *Controller) getSadPods(targetDeployment *appsv1.Deployment, clusterStatus *shipper.ClusterCapacityStatus) ([]shipper.PodStatus, error) {
+func (c *Controller) getSadPods(targetDeployment *appsv1.Deployment, clusterStatus *shipper.ClusterCapacityStatus) ([]shipper.PodStatus, bool, error) {
 	podCount, sadPodsCount, sadPods, err := c.getSadPodsForDeploymentOnCluster(targetDeployment, clusterStatus.Name)
 	if err != nil {
 		clusterStatus.Conditions = conditions.SetCapacityCondition(
@@ -316,19 +337,18 @@ func (c *Controller) getSadPods(targetDeployment *appsv1.Deployment, clusterStat
 			conditions.ServerError,
 			err.Error())
 
-		return nil, err
+		return nil, false, err
 	}
 
 	if targetDeployment.Spec.Replicas == nil || int(*targetDeployment.Spec.Replicas) != podCount {
-		err = NewInvalidPodCountError(*targetDeployment.Spec.Replicas, int32(podCount))
 		clusterStatus.Conditions = conditions.SetCapacityCondition(
 			clusterStatus.Conditions,
 			shipper.ClusterConditionTypeReady,
 			corev1.ConditionFalse,
 			conditions.WrongPodCount,
-			err.Error())
+			fmt.Sprintf("expected %d replicas but have %d", *targetDeployment.Spec.Replicas, int32(podCount)))
 
-		return nil, err
+		return sadPods, false, nil
 	}
 
 	if sadPodsCount > 0 {
@@ -340,21 +360,26 @@ func (c *Controller) getSadPods(targetDeployment *appsv1.Deployment, clusterStat
 			fmt.Sprintf("there are %d sad pods", sadPodsCount))
 	}
 
-	return sadPods, nil
+	return sadPods, sadPodsCount == 0, nil
 }
 
 func (c *Controller) getReport(targetDeployment *appsv1.Deployment, clusterStatus *shipper.ClusterCapacityStatus) (*shipper.ClusterCapacityReport, error) {
-	targetClusterInformer, clusterErr := c.clusterClientStore.GetInformerFactory(clusterStatus.Name)
-	if clusterErr != nil {
+	targetClusterInformer, err := c.clusterClientStore.GetInformerFactory(clusterStatus.Name)
+	if err != nil {
 		// Not sure if each method should report operational conditions for
 		// the cluster it is operating on.
-		return nil, clusterErr
+
+		// TODO(jgreff): ensure clusterclientstore returns structured
+		// errors so we don't have to wrap them here
+		return nil, shippererrors.NewRecoverable(err)
 	}
 
 	selector := labels.Set(targetDeployment.Spec.Template.Labels).AsSelector()
-	podsList, clusterErr := targetClusterInformer.Core().V1().Pods().Lister().Pods(targetDeployment.Namespace).List(selector)
-	if clusterErr != nil {
-		return nil, clusterErr
+	podsList, err := targetClusterInformer.Core().V1().Pods().Lister().Pods(targetDeployment.Namespace).List(selector)
+	if err != nil {
+		return nil, shippererrors.NewKubeclientListError(
+			corev1.SchemeGroupVersion.WithKind("Pod"),
+			targetDeployment.Namespace, selector, err)
 	}
 
 	report := buildReport(targetDeployment.Name, podsList)
@@ -363,34 +388,38 @@ func (c *Controller) getReport(targetDeployment *appsv1.Deployment, clusterStatu
 }
 
 func (c *Controller) findTargetDeploymentForClusterSpec(clusterSpec shipper.ClusterCapacityTarget, targetNamespace string, selector labels.Selector, clusterStatus *shipper.ClusterCapacityStatus) (*appsv1.Deployment, error) {
-	targetClusterInformer, clusterErr := c.clusterClientStore.GetInformerFactory(clusterSpec.Name)
-	if clusterErr != nil {
+	targetClusterInformer, err := c.clusterClientStore.GetInformerFactory(clusterSpec.Name)
+	if err != nil {
 		clusterStatus.Conditions = conditions.SetCapacityCondition(
 			clusterStatus.Conditions,
 			shipper.ClusterConditionTypeOperational,
 			corev1.ConditionFalse,
 			conditions.ServerError,
-			clusterErr.Error(),
+			err.Error(),
 		)
 
-		return nil, clusterErr
+		// TODO(jgreff): ensure clusterclientstore returns structured
+		// errors so we don't have to wrap them here
+		return nil, shippererrors.NewRecoverable(err)
 	}
 
-	deploymentsList, clusterErr := targetClusterInformer.Apps().V1().Deployments().Lister().Deployments(targetNamespace).List(selector)
-	if clusterErr != nil {
+	deploymentsList, err := targetClusterInformer.Apps().V1().Deployments().Lister().Deployments(targetNamespace).List(selector)
+	if err != nil {
 		clusterStatus.Conditions = conditions.SetCapacityCondition(
 			clusterStatus.Conditions,
 			shipper.ClusterConditionTypeOperational,
 			corev1.ConditionFalse,
 			conditions.ServerError,
-			clusterErr.Error(),
+			err.Error(),
 		)
 
-		return nil, clusterErr
+		return nil, shippererrors.NewKubeclientListError(
+			appsv1.SchemeGroupVersion.WithKind("Deployment"),
+			targetNamespace, selector, err)
 	}
 
 	if l := len(deploymentsList); l != 1 {
-		clusterErr = fmt.Errorf(
+		err = fmt.Errorf(
 			"expected exactly 1 deployment on cluster %s, namespace %s, with label %s, but %d deployments exist",
 			clusterSpec.Name, targetNamespace, selector.String(), l)
 
@@ -399,10 +428,10 @@ func (c *Controller) findTargetDeploymentForClusterSpec(clusterSpec shipper.Clus
 			shipper.ClusterConditionTypeReady,
 			corev1.ConditionFalse,
 			conditions.MissingDeployment,
-			clusterErr.Error(),
+			err.Error(),
 		)
 
-		return nil, clusterErr
+		return nil, shippererrors.NewRecoverableError(err)
 	}
 
 	targetDeployment := deploymentsList[0]
@@ -410,41 +439,35 @@ func (c *Controller) findTargetDeploymentForClusterSpec(clusterSpec shipper.Clus
 	return targetDeployment, nil
 }
 
-func (c *Controller) recordErrorEvent(capacityTarget *shipper.CapacityTarget, err error) {
-	c.recorder.Event(
-		capacityTarget,
-		corev1.EventTypeWarning,
-		"FailedCapacityChange",
-		err.Error())
-}
-
 func (c *Controller) patchDeploymentWithReplicaCount(targetDeployment *appsv1.Deployment, clusterName string, replicaCount int32, clusterStatus *shipper.ClusterCapacityStatus) (*appsv1.Deployment, error) {
-	targetClusterClient, clusterErr := c.clusterClientStore.GetClient(clusterName, AgentName)
-	if clusterErr != nil {
+	targetClusterClient, err := c.clusterClientStore.GetClient(clusterName, AgentName)
+	if err != nil {
 		clusterStatus.Conditions = conditions.SetCapacityCondition(
 			clusterStatus.Conditions,
 			shipper.ClusterConditionTypeOperational,
 			corev1.ConditionFalse,
 			conditions.ServerError,
-			clusterErr.Error(),
+			err.Error(),
 		)
 
-		return nil, clusterErr
+		// TODO(jgreff): ensure clusterclientstore returns structured
+		// errors so we don't have to wrap them here
+		return nil, shippererrors.NewRecoverable(err)
 	}
 
 	patchString := fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicaCount)
 
-	updatedDeployment, clusterErr := targetClusterClient.AppsV1().Deployments(targetDeployment.Namespace).Patch(targetDeployment.Name, types.StrategicMergePatchType, []byte(patchString))
-	if clusterErr != nil {
+	updatedDeployment, err := targetClusterClient.AppsV1().Deployments(targetDeployment.Namespace).Patch(targetDeployment.Name, types.StrategicMergePatchType, []byte(patchString))
+	if err != nil {
 		clusterStatus.Conditions = conditions.SetCapacityCondition(
 			clusterStatus.Conditions,
 			shipper.ClusterConditionTypeOperational,
 			corev1.ConditionFalse,
 			conditions.ServerError,
-			clusterErr.Error(),
+			err.Error(),
 		)
 
-		return nil, clusterErr
+		return nil, shippererrors.NewKubeclientUpdateError(targetDeployment, err)
 	}
 
 	return updatedDeployment, nil
