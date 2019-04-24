@@ -313,9 +313,7 @@ func (c *Controller) syncAnchor(item *AnchorWorkItem) error {
 
 func (c *Controller) removeAnchor(clusterName string, namespace string, name string) (bool, error) {
 	if client, err := c.clusterClientStore.GetClient(clusterName, AgentName); err != nil {
-		// TODO(jgreff): ensure clusterclientstore returns structured
-		// errors so we don't have to wrap them here
-		return false, shippererrors.NewRecoverable(err)
+		return false, err
 	} else if err := client.CoreV1().ConfigMaps(namespace).Delete(name, &metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 		return false, shippererrors.NewKubeclientDeleteError(
 			corev1.SchemeGroupVersion.WithKind("ConfigMap"), namespace, name, err)

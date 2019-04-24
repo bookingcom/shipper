@@ -3,6 +3,7 @@ package cache
 import (
 	"sync"
 
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	kubeinformers "k8s.io/client-go/informers"
 	kubernetes "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -68,7 +69,7 @@ func (c *cluster) IsReady() bool {
 // buildClient func.
 func (c *cluster) GetClient(ua string) (kubernetes.Interface, error) {
 	if !c.IsReady() {
-		return nil, ErrClusterNotReady
+		return nil, shippererrors.NewClusterNotReadyError(c.name)
 	}
 
 	c.clientsMut.Lock()
@@ -90,7 +91,7 @@ func (c *cluster) GetClient(ua string) (kubernetes.Interface, error) {
 
 func (c *cluster) GetConfig() (*rest.Config, error) {
 	if !c.IsReady() {
-		return c.config, ErrClusterNotReady
+		return c.config, shippererrors.NewClusterNotReadyError(c.name)
 	}
 
 	return c.config, nil
@@ -98,7 +99,7 @@ func (c *cluster) GetConfig() (*rest.Config, error) {
 
 func (c *cluster) GetChecksum() (string, error) {
 	if !c.IsReady() {
-		return c.checksum, ErrClusterNotReady
+		return c.checksum, shippererrors.NewClusterNotReadyError(c.name)
 	}
 
 	return c.checksum, nil
@@ -106,7 +107,7 @@ func (c *cluster) GetChecksum() (string, error) {
 
 func (c *cluster) GetInformerFactory() (kubeinformers.SharedInformerFactory, error) {
 	if !c.IsReady() {
-		return nil, ErrClusterNotReady
+		return nil, shippererrors.NewClusterNotReadyError(c.name)
 	}
 
 	return c.informerFactory, nil

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	kubeinformers "k8s.io/client-go/informers"
 	kubernetes "k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
@@ -126,22 +127,22 @@ func TestReplacement(t *testing.T) {
 	}
 
 	_, err := existing.GetChecksum()
-	if err != ErrClusterNotReady {
+	if !shippererrors.IsClusterNotReadyError(err) {
 		t.Errorf("expected GetChecksum on replaced cluster to return ClusterNotReady, got %v", err)
 	}
 
 	_, err = existing.GetClient("foo")
-	if err != ErrClusterNotReady {
+	if !shippererrors.IsClusterNotReadyError(err) {
 		t.Errorf("expected GetClient on replaced cluster to return ClusterNotReady, got %v", err)
 	}
 
 	_, err = existing.GetConfig()
-	if err != ErrClusterNotReady {
+	if !shippererrors.IsClusterNotReadyError(err) {
 		t.Errorf("expected GetConfig on replaced cluster to return ClusterNotReady, got %v", err)
 	}
 
 	_, err = existing.GetInformerFactory()
-	if err != ErrClusterNotReady {
+	if !shippererrors.IsClusterNotReadyError(err) {
 		t.Errorf("expected GetInformerFactory on replaced cluster to return ClusterNotReady, got %v", err)
 	}
 }

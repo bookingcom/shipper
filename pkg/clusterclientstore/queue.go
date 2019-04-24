@@ -10,6 +10,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
 func (s *Store) clusterWorker() {
@@ -109,12 +110,19 @@ func processNextWorkItem(wq workqueue.RateLimitingInterface, handler func(string
 
 	if key, ok = obj.(string); !ok {
 		wq.Forget(obj)
-		runtime.HandleError(fmt.Errorf("invalid object key: %#v", obj))
+		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
 		return true
 	}
 
-	if err := handler(key); err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing %q: %s", key, err))
+	shouldRetry := false
+	err := handler(key)
+
+	if err != nil {
+		shouldRetry = shippererrors.ShouldRetry(err)
+		runtime.HandleError(fmt.Errorf("error syncing %q (will retry: %t): %s", key, shouldRetry, err.Error()))
+	}
+
+	if shouldRetry {
 		wq.AddRateLimited(key)
 		return true
 	}

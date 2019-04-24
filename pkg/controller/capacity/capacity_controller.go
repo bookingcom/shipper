@@ -368,10 +368,7 @@ func (c *Controller) getReport(targetDeployment *appsv1.Deployment, clusterStatu
 	if err != nil {
 		// Not sure if each method should report operational conditions for
 		// the cluster it is operating on.
-
-		// TODO(jgreff): ensure clusterclientstore returns structured
-		// errors so we don't have to wrap them here
-		return nil, shippererrors.NewRecoverable(err)
+		return nil, err
 	}
 
 	selector := labels.Set(targetDeployment.Spec.Template.Labels).AsSelector()
@@ -398,9 +395,7 @@ func (c *Controller) findTargetDeploymentForClusterSpec(clusterSpec shipper.Clus
 			err.Error(),
 		)
 
-		// TODO(jgreff): ensure clusterclientstore returns structured
-		// errors so we don't have to wrap them here
-		return nil, shippererrors.NewRecoverable(err)
+		return nil, err
 	}
 
 	deploymentsList, err := targetClusterInformer.Apps().V1().Deployments().Lister().Deployments(targetNamespace).List(selector)
@@ -450,9 +445,7 @@ func (c *Controller) patchDeploymentWithReplicaCount(targetDeployment *appsv1.De
 			err.Error(),
 		)
 
-		// TODO(jgreff): ensure clusterclientstore returns structured
-		// errors so we don't have to wrap them here
-		return nil, shippererrors.NewRecoverable(err)
+		return nil, err
 	}
 
 	patchString := fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicaCount)

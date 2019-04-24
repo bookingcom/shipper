@@ -119,9 +119,7 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 
 	informerFactory, err := c.clusterClientStore.GetInformerFactory(item.ClusterName)
 	if err != nil {
-		// TODO(jgreff): ensure clusterclientstore returns structured
-		// errors so we don't have to wrap them here
-		return shippererrors.NewRecoverable(err)
+		return err
 	}
 
 	targetDeployment, err := informerFactory.Apps().V1().Deployments().Lister().Deployments(namespace).Get(name)
@@ -169,9 +167,7 @@ func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployme
 
 	informer, err := c.clusterClientStore.GetInformerFactory(clusterName)
 	if err != nil {
-		// TODO(jgreff): ensure clusterclientstore returns structured
-		// errors so we don't have to wrap them here
-		return 0, 0, nil, shippererrors.NewRecoverable(err)
+		return 0, 0, nil, err
 	}
 
 	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)

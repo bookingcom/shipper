@@ -17,7 +17,7 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	"github.com/bookingcom/shipper/pkg/clusterclientstore/cache"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	"github.com/bookingcom/shipper/pkg/tls"
 )
 
@@ -150,11 +150,11 @@ func TestNoClientGeneration(t *testing.T) {
 		},
 		func(s *Store) {
 			_, err := s.GetClient("foo", "baz")
-			if err != cache.ErrClusterNotInStore {
+			if !shippererrors.IsClusterNotInStoreError(err) {
 				t.Errorf("expected 'no such cluster' error, but got something else: %v", err)
 			}
 			_, err = s.GetClient("bar", "baz")
-			if err != cache.ErrClusterNotInStore {
+			if !shippererrors.IsClusterNotInStoreError(err) {
 				t.Errorf("expected 'no such cluster' error, but got something else: %v", err)
 			}
 
@@ -204,7 +204,7 @@ func TestInvalidClientCredentials(t *testing.T) {
 	)
 
 	_, err := store.GetConfig(testClusterName)
-	if err != cache.ErrClusterNotInStore {
+	if !shippererrors.IsClusterNotInStoreError(err) {
 		t.Errorf("expected NoSuchCluster for cluster called %q for invalid client credentials; instead got %v", testClusterName, err)
 	}
 }
