@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -304,28 +303,19 @@ func (c *Controller) removeAnchor(clusterName string, namespace string, name str
 	return false, nil
 }
 func (c *Controller) syncInstallationTarget(item *InstallationTargetWorkItem) error {
-	// Try to remove the anchor from all the clusters listed in item.Clusters
-	// (which was copied from the installation target spec. Even if something
-	// unexpected happen here, we just broadcast the error since the config map
-	// anchor reconciliation will keep attempting to remove the object as soon
-	// the resync period kicks in.
-	var wg sync.WaitGroup
 	for _, clusterName := range item.Clusters {
-		wg.Add(1)
-		go func(clusterName string) {
-			installationTarget := &shipper.InstallationTarget{ObjectMeta: item.ObjectMeta}
-			if ok, err := c.removeAnchor(clusterName, item.Namespace, item.AnchorName); err != nil {
-				err.Broadcast(installationTarget, c.recorder)
-			} else if ok {
-				c.recorder.Eventf(installationTarget,
-					corev1.EventTypeNormal,
-					"ConfigMapDeleted",
-					"Config map %q has been deleted from cluster %q",
-					item.Key, clusterName)
-			}
-			wg.Done()
-		}(clusterName)
+		installationTarget := &shipper.InstallationTarget{ObjectMeta: item.ObjectMeta}
+		if ok, err := c.removeAnchor(clusterName, item.Namespace, item.AnchorName); err != nil {
+			err.Broadcast(installationTarget, c.recorder)
+			return err
+		} else if ok {
+			c.recorder.Eventf(installationTarget,
+				corev1.EventTypeNormal,
+				"ConfigMapDeleted",
+				"Config map %q has been deleted from cluster %q",
+				item.Key, clusterName)
+		}
 	}
-	wg.Wait()
+
 	return nil
 }
