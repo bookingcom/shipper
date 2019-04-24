@@ -18,20 +18,22 @@ const (
 func NewCluster(
 	name,
 	checksum string,
-	client kubernetes.Interface,
 	config *rest.Config,
 	informerFactory kubeinformers.SharedInformerFactory,
+	buildClient func(string, string, *rest.Config) (kubernetes.Interface, error),
 	cacheSyncCb func(),
 ) *cluster {
 	return &cluster{
 		state:           StateNotReady,
 		name:            name,
 		checksum:        checksum,
-		client:          client,
 		config:          config,
 		informerFactory: informerFactory,
+		buildClient:     buildClient,
 		cacheSyncCb:     cacheSyncCb,
 		stopCh:          make(chan struct{}),
+
+		clients: make(map[string]kubernetes.Interface),
 	}
 }
 
@@ -41,11 +43,14 @@ type cluster struct {
 	stateMut sync.RWMutex
 	state    string
 
+	clientsMut sync.Mutex
+	clients    map[string]kubernetes.Interface
+
 	// These are all read-only after initialization, so no lock needed.
 	checksum        string
-	client          kubernetes.Interface
 	config          *rest.Config
 	informerFactory kubeinformers.SharedInformerFactory
+	buildClient     func(string, string, *rest.Config) (kubernetes.Interface, error)
 
 	cacheSyncCb func()
 
@@ -58,12 +63,29 @@ func (c *cluster) IsReady() bool {
 	return c.state == StateReady
 }
 
-func (c *cluster) GetClient() (kubernetes.Interface, error) {
+// GetClient returns a client for the user agent specified by ua. If a client
+// doesn't exist for that user agent, one will be created by calling the
+// buildClient func.
+func (c *cluster) GetClient(ua string) (kubernetes.Interface, error) {
 	if !c.IsReady() {
-		return c.client, ErrClusterNotReady
+		return nil, ErrClusterNotReady
 	}
 
-	return c.client, nil
+	c.clientsMut.Lock()
+	defer c.clientsMut.Unlock()
+
+	if client, ok := c.clients[ua]; ok {
+		return client, nil
+	}
+
+	client, err := c.buildClient(c.name, ua, c.config)
+	if err != nil {
+		return nil, err
+	}
+
+	c.clients[ua] = client
+
+	return client, nil
 }
 
 func (c *cluster) GetConfig() (*rest.Config, error) {

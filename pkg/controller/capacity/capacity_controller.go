@@ -302,7 +302,7 @@ func (c *Controller) subscribe(informerFactory kubeinformers.SharedInformerFacto
 type clusterClientStoreInterface interface {
 	AddSubscriptionCallback(clusterclientstore.SubscriptionRegisterFunc)
 	AddEventHandlerCallback(clusterclientstore.EventHandlerRegisterFunc)
-	GetClient(string) (kubernetes.Interface, error)
+	GetClient(string, string) (kubernetes.Interface, error)
 	GetInformerFactory(string) (kubeinformers.SharedInformerFactory, error)
 }
 
@@ -419,7 +419,7 @@ func (c *Controller) recordErrorEvent(capacityTarget *shipper.CapacityTarget, er
 }
 
 func (c *Controller) patchDeploymentWithReplicaCount(targetDeployment *appsv1.Deployment, clusterName string, replicaCount int32, clusterStatus *shipper.ClusterCapacityStatus) (*appsv1.Deployment, error) {
-	targetClusterClient, clusterErr := c.clusterClientStore.GetClient(clusterName)
+	targetClusterClient, clusterErr := c.clusterClientStore.GetClient(clusterName, AgentName)
 	if clusterErr != nil {
 		clusterStatus.Conditions = conditions.SetCapacityCondition(
 			clusterStatus.Conditions,

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	kubeinformers "k8s.io/client-go/informers"
+	kubernetes "k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 )
@@ -129,7 +130,7 @@ func TestReplacement(t *testing.T) {
 		t.Errorf("expected GetChecksum on replaced cluster to return ClusterNotReady, got %v", err)
 	}
 
-	_, err = existing.GetClient()
+	_, err = existing.GetClient("foo")
 	if err != ErrClusterNotReady {
 		t.Errorf("expected GetClient on replaced cluster to return ClusterNotReady, got %v", err)
 	}
@@ -152,5 +153,11 @@ func newCluster(name string) *cluster {
 	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, noResyncPeriod)
 	config := &rest.Config{}
 
-	return NewCluster(name, testChecksum, kubeClient, config, kubeInformerFactory, func() {})
+	return NewCluster(
+		name, testChecksum, config, kubeInformerFactory,
+		func(cluster, ua string, config *rest.Config) (kubernetes.Interface, error) {
+			return nil, nil
+		},
+		func() {},
+	)
 }

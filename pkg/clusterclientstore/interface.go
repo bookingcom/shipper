@@ -7,13 +7,13 @@ import (
 )
 
 type ClientProvider interface {
-	GetClient(clusterName string) (kubernetes.Interface, error)
+	GetClient(clusterName string, ua string) (kubernetes.Interface, error)
 	GetConfig(clusterName string) (*rest.Config, error)
 }
 
 type Interface interface {
 	AddSubscriptionCallback(SubscriptionRegisterFunc)
 	AddEventHandlerCallback(EventHandlerRegisterFunc)
-	GetClient(string) (kubernetes.Interface, error)
+	GetClient(clusterName string, ua string) (kubernetes.Interface, error)
 	GetInformerFactory(string) (kubeinformers.SharedInformerFactory, error)
 }

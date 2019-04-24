@@ -148,8 +148,8 @@ func main() {
 	wg := &sync.WaitGroup{}
 
 	store := clusterclientstore.NewStore(
-		func(clusterName string, config *rest.Config) (kubernetes.Interface, error) {
-			glog.V(8).Infof("Building a client for Cluster %q", clusterName)
+		func(clusterName string, ua string, config *rest.Config) (kubernetes.Interface, error) {
+			glog.V(8).Infof("Building a client for Cluster %q, UserAgent %q", clusterName, ua)
 
 			// NOTE(btyler/asurikov) Ooookaaayyy. This is temporary. I promise.
 			// No, really. This is to buy us time to think how the
@@ -162,6 +162,7 @@ func main() {
 			shallowCopy := *config
 			shallowCopy.QPS = rest.DefaultQPS * 30
 			shallowCopy.Burst = rest.DefaultBurst * 30
+			rest.AddUserAgent(&shallowCopy, ua)
 
 			return kubernetes.NewForConfig(&shallowCopy)
 		},

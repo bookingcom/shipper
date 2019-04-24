@@ -349,7 +349,7 @@ func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interfa
 	var referenceConfig *rest.Config
 	var err error
 
-	if client, err = c.clusterClientStore.GetClient(clusterName); err != nil {
+	if client, err = c.clusterClientStore.GetClient(clusterName, AgentName); err != nil {
 		return nil, nil, err
 	}
 
