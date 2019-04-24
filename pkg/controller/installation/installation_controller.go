@@ -149,7 +149,7 @@ func (c *Controller) processNextWorkItem() bool {
 		if c.workqueue.NumRequeues(key) >= maxRetries {
 			// Drop the InstallationTarget's key out of the workqueue and thus reset its
 			// backoff. This limits the time a "broken" object can hog a worker.
-			glog.Warningf("CapacityTarget %q has been retried too many times, dropping from the queue", key)
+			glog.Warningf("InstallationTarget %q has been retried too many times, dropping from the queue", key)
 			c.workqueue.Forget(key)
 
 			return true
@@ -233,18 +233,6 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 	if contenderRel.Name != release.Name {
 		glog.V(3).Infof("InstallationTarget %q: Release %q is not the contender for Application %q, skipping",
 			it.Name, release.Name, appName)
-		return nil
-	}
-
-	if appLabelValue, ok := release.GetLabels()[shipper.AppLabel]; !ok {
-		// TODO(isutton): Transform this into a real error
-		return fmt.Errorf("couldn't find label %q in release %q", shipper.AppLabel, release.GetName())
-	} else if app, appListerErr := c.appLister.Applications(release.GetNamespace()).Get(appLabelValue); appListerErr != nil {
-		// TODO(isutton): wrap this error.
-		return appListerErr
-	} else if len(app.Status.History) > 0 && app.Status.History[len(app.Status.History)-1] != release.GetName() {
-		// Current release isn't the contender, so we do not attempt to
-		// create or modify objects at all.
 		return nil
 	}
 

@@ -55,6 +55,7 @@ var controllers = []string{
 }
 
 const defaultRESTTimeout time.Duration = 10 * time.Second
+const defaultResync time.Duration = 30 * time.Second
 
 var (
 	masterURL           = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
@@ -62,12 +63,12 @@ var (
 	certPath            = flag.String("cert", "", "Path to the TLS certificate for target clusters.")
 	keyPath             = flag.String("key", "", "Path to the TLS private key for target clusters.")
 	ns                  = flag.String("namespace", shipper.ShipperNamespace, "Namespace for Shipper resources.")
-	resyncPeriod        = flag.String("resync", "30s", "Informer's cache re-sync in Go's duration format.")
 	enabledControllers  = flag.String("enable", strings.Join(controllers, ","), "comma-seperated list of controllers to run (if not all)")
 	disabledControllers = flag.String("disable", "", "comma-seperated list of controllers to disable")
 	workers             = flag.Int("workers", 2, "Number of workers to start for each controller.")
 	metricsAddr         = flag.String("metrics-addr", ":8889", "Addr to expose /metrics on.")
 	chartCacheDir       = flag.String("cachedir", filepath.Join(os.TempDir(), "chart-cache"), "location for the local cache of downloaded charts")
+	resync              = flag.Duration("resync", defaultResync, "Informer's cache re-sync in Go's duration format.")
 	restTimeout         = flag.Duration("rest-timeout", defaultRESTTimeout, "Timeout value for management and target REST clients. Does not affect informer watches.")
 )
 
@@ -87,7 +88,7 @@ type cfg struct {
 
 	kubeInformerFactory    informers.SharedInformerFactory
 	shipperInformerFactory shipperinformers.SharedInformerFactory
-	resync                 time.Duration
+	resync                 *time.Duration
 
 	recorder func(string) record.EventRecorder
 
@@ -107,11 +108,6 @@ type cfg struct {
 func main() {
 	flag.Parse()
 
-	resync, err := time.ParseDuration(*resyncPeriod)
-	if err != nil {
-		glog.Fatal(err)
-	}
-
 	baseRestCfg, err := clientcmd.BuildConfigFromFlags(*masterURL, *kubeconfig)
 	if err != nil {
 		glog.Fatal(err)
@@ -126,8 +122,8 @@ func main() {
 	stopCh := setupSignalHandler()
 	metricsReadyCh := make(chan struct{})
 
-	kubeInformerFactory := informers.NewSharedInformerFactory(informerKubeClient, resync)
-	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(informerShipperClient, resync)
+	kubeInformerFactory := informers.NewSharedInformerFactory(informerKubeClient, *resync)
+	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(informerShipperClient, *resync)
 
 	shipperscheme.AddToScheme(scheme.Scheme)
 
@@ -173,6 +169,7 @@ func main() {
 		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
 		*ns,
 		restTimeout,
+		resync,
 	)
 
 	wg.Add(1)

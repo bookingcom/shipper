@@ -138,6 +138,7 @@ func NewController(
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				controller.enqueueRelease(newObj)
 			},
+			DeleteFunc: controller.enqueueAppFromRelease,
 		})
 
 	installationTargetInformer.Informer().AddEventHandler(
@@ -146,6 +147,7 @@ func NewController(
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				controller.enqueueInstallationTarget(newObj)
 			},
+			DeleteFunc: controller.enqueueInstallationTarget,
 		})
 
 	capacityTargetInformer.Informer().AddEventHandler(
@@ -154,6 +156,7 @@ func NewController(
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				controller.enqueueCapacityTarget(newObj)
 			},
+			DeleteFunc: controller.enqueueCapacityTarget,
 		})
 
 	trafficTargetInformer.Informer().AddEventHandler(
@@ -162,6 +165,7 @@ func NewController(
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				controller.enqueueTrafficTarget(newObj)
 			},
+			DeleteFunc: controller.enqueueTrafficTarget,
 		})
 
 	return controller
@@ -442,6 +446,22 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 	}
 
 	c.releaseWorkqueue.Add(key)
+}
+
+func (c *Controller) enqueueAppFromRelease(obj interface{}) {
+	rel, ok := obj.(*shipper.Release)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", obj))
+		return
+	}
+
+	appName, err := c.getAssociatedApplicationKey(rel)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("error fetching Application key for release %v: %s", rel, err))
+		return
+	}
+
+	c.applicationWorkqueue.Add(appName)
 }
 
 func (c *Controller) enqueueInstallationTarget(obj interface{}) {
