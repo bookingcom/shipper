@@ -1,4 +1,4 @@
-package controller
+package errors
 
 import (
 	"fmt"

@@ -364,7 +364,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 // TODO(jgreff): move this out to util/release/application.go
 func (c *Controller) getAssociatedApplicationName(rel *shipper.Release) (string, error) {
 	if n := len(rel.OwnerReferences); n != 1 {
-		return "", shippercontroller.NewMultipleOwnerReferencesError(
+		return "", shippererrors.NewMultipleOwnerReferencesError(
 			shippercontroller.MetaKey(rel), n)
 	}
 
@@ -391,7 +391,7 @@ func (c *Controller) getAssociatedApplicationKey(rel *shipper.Release) (string, 
 // <namespace> / <release name>
 func (c *Controller) getAssociatedReleaseKey(obj *metav1.ObjectMeta) (string, error) {
 	if n := len(obj.OwnerReferences); n != 1 {
-		return "", shippercontroller.NewMultipleOwnerReferencesError(obj.Name, n)
+		return "", shippererrors.NewMultipleOwnerReferencesError(obj.Name, n)
 	}
 
 	owner := obj.OwnerReferences[0]

@@ -185,8 +185,8 @@ func (c *Controller) syncOne(key string) bool {
 	}
 
 	if err := c.processInstallation(it.DeepCopy()); err != nil {
-		shouldRetry := !shippercontroller.IsMultipleOwnerReferencesError(err) &&
-			!shippercontroller.IsWrongOwnerReferenceError(err) &&
+		shouldRetry := !shippererrors.IsMultipleOwnerReferencesError(err) &&
+			!shippererrors.IsWrongOwnerReferenceError(err) &&
 			!IsIncompleteReleaseError(err)
 
 		if shouldRetry {
@@ -376,7 +376,7 @@ func reasonForReadyCondition(err error) string {
 		return conditions.ServerError
 	}
 
-	if IsDecodeManifestError(err) || IsConvertUnstructuredError(err) || shippercontroller.IsInvalidChartError(err) {
+	if IsDecodeManifestError(err) || IsConvertUnstructuredError(err) || shippererrors.IsInvalidChartError(err) {
 		return conditions.ChartError
 	}
 

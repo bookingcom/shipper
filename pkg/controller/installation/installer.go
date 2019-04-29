@@ -21,8 +21,8 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
-	"github.com/bookingcom/shipper/pkg/controller"
 	"github.com/bookingcom/shipper/pkg/controller/janitor"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
 type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipper.Cluster) dynamic.Interface
@@ -171,7 +171,7 @@ func (i *Installer) patchService(
 	requiredLabels := []string{shipper.AppLabel}
 	for _, label := range requiredLabels {
 		if _, ok := labelsToInject[label]; !ok {
-			return nil, controller.NewInvalidChartError(
+			return nil, shippererrors.NewInvalidChartError(
 				fmt.Sprintf(
 					"Service is missing label %q. This means the Release is also missing it. You might be trying to use Releases without Applications, Shipper isn't ready for this yet.",
 					label,
@@ -194,7 +194,7 @@ func (i *Installer) modifyServiceSelector(
 	labels := s.Labels
 	appName, ok := labels[shipper.AppLabel]
 	if !ok {
-		return nil, controller.NewInvalidChartError(
+		return nil, shippererrors.NewInvalidChartError(
 			fmt.Sprintf("A service object metadata is expected to contain %q label, none found",
 				shipper.AppLabel))
 	}
@@ -214,14 +214,14 @@ func (i *Installer) modifyServiceSelector(
 				delete(s.Spec.Selector, shipper.HelmReleaseLabel)
 			}
 		} else if !ok || v == shipper.False {
-			return nil, controller.NewInvalidChartError(
+			return nil, shippererrors.NewInvalidChartError(
 				fmt.Sprintf("The chart contains %q label in Service object %q. This will"+
 					" break shipper traffic shifting logic. Consider adding the workaround"+
 					" label %q: true to your Application object",
 					shipper.HelmReleaseLabel, s.Name, shipper.HelmWorkaroundLabel))
 
 		} else {
-			return nil, controller.NewInvalidChartError(
+			return nil, shippererrors.NewInvalidChartError(
 				fmt.Sprintf("Unexpected value for label %q: %q. Expected values: %s/%s.",
 					shipper.HelmWorkaroundLabel, v, shipper.True, shipper.False))
 		}
@@ -342,7 +342,7 @@ func (i *Installer) installManifests(
 			deploymentName := deployment.ObjectMeta.Name
 			releaseName := i.Release.ObjectMeta.Name
 			if !strings.Contains(deploymentName, releaseName) {
-				return controller.NewInvalidChartError(
+				return shippererrors.NewInvalidChartError(
 					fmt.Sprintf("Deployment %q has invalid name."+
 						" The name of the Deployment should be"+
 						" templated with {{.Release.Name}}.",
@@ -360,7 +360,7 @@ func (i *Installer) installManifests(
 			if lbValue, ok := svc.Labels[shipper.LBLabel]; ok && lbValue == shipper.LBForProduction {
 				// If we have already seen a service marked as a prod LB, it's an error
 				if len(productionLoadBalancerServices) > 0 {
-					return controller.NewInvalidChartError(
+					return shippererrors.NewInvalidChartError(
 						fmt.Sprintf("Object %#v contains %q label, but %#v claims"+
 							" it is the production LB. This looks like a misconfig:"+
 							" only 1 service is allowed to be the production LB.",
@@ -385,7 +385,7 @@ func (i *Installer) installManifests(
 	// If, after all, we still can not identify a single Service which will
 	// be the production LB, there is nothing else to do rather than bail out
 	if len(productionLoadBalancerServices) != 1 {
-		return controller.NewInvalidChartError(
+		return shippererrors.NewInvalidChartError(
 			fmt.Sprintf(
 				"one and only one v1.Service object with label %q is required, but %d found instead",
 				shipper.LBLabel, len(productionLoadBalancerServices)))
@@ -415,7 +415,7 @@ func (i *Installer) installManifests(
 			} else {
 				// This is a weird situation and this check is kept
 				// here mostly for the sake of checking the world sanity
-				return controller.NewInvalidChartError(
+				return shippererrors.NewInvalidChartError(
 					fmt.Sprintf("Object %#v is expected to be a Service."+
 						" Can not proceed forward", decodedObj))
 			}

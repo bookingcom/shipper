@@ -7,7 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
@@ -80,7 +80,7 @@ func (s releaseNamespaceLister) ReleaseForInstallationTarget(it *shipper.Install
 	}
 
 	if rel.UID != owner.UID {
-		return nil, shippercontroller.NewWrongOwnerReferenceError(it.Name, it.UID, rel.UID)
+		return nil, shippererrors.NewWrongOwnerReferenceError(it.Name, it.UID, rel.UID)
 	}
 
 	return rel, nil
@@ -90,7 +90,7 @@ func (s releaseNamespaceLister) ReleaseForInstallationTarget(it *shipper.Install
 // or an error in the case there are multiple or no owner references.
 func extractOwnerReference(it metav1.ObjectMeta) (*metav1.OwnerReference, error) {
 	if n := len(it.OwnerReferences); n != 1 {
-		return nil, shippercontroller.NewMultipleOwnerReferencesError(it.Name, n)
+		return nil, shippererrors.NewMultipleOwnerReferencesError(it.Name, n)
 	}
 	return &it.OwnerReferences[0], nil
 }
