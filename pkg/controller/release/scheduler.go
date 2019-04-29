@@ -19,6 +19,7 @@ import (
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/controller"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
@@ -59,14 +60,18 @@ func NewScheduler(
 func (s *Scheduler) ChooseClusters(rel *shipper.Release, force bool) (*shipper.Release, error) {
 	metaKey := controller.MetaKey(rel)
 	if !force && releaseHasClusters(rel) {
-		return rel, fmt.Errorf("release %q has already been assigned to clusters", metaKey)
+		return rel, shippererrors.NewUnrecoverableError(fmt.Errorf("release %q has already been assigned to clusters", metaKey))
 	}
 	glog.Infof("Choosing clusters for release %q", metaKey)
 
-	allClusters, err := s.clusterLister.List(labels.Everything())
+	selector := labels.Everything()
+	allClusters, err := s.clusterLister.List(selector)
 	if err != nil {
-		return nil, NewFailedAPICallError("ListClsuters", err)
+		return nil, shippererrors.NewKubeclientListError(
+			shipper.SchemeGroupVersion.WithKind("Cluster"),
+			"", selector, err)
 	}
+
 	selectedClusters, err := computeTargetClusters(rel, allClusters)
 	if err != nil {
 		return nil, err
@@ -75,7 +80,7 @@ func (s *Scheduler) ChooseClusters(rel *shipper.Release, force bool) (*shipper.R
 
 	newrel, err := s.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel)
 	if err != nil {
-		return nil, NewFailedAPICallError("UpdateRelease", err)
+		return nil, shippererrors.NewKubeclientUpdateError(rel, err)
 	}
 	rel = newrel
 
@@ -97,7 +102,7 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 	defer glog.Infof("Finished processing %q", metaKey)
 
 	if !releaseHasClusters(rel) {
-		return nil, fmt.Errorf("release %q clusters have not been chosen yet", metaKey)
+		return nil, shippererrors.NewUnrecoverableError(fmt.Errorf("release %q clusters have not been chosen yet", metaKey))
 	}
 
 	replicaCount, err := s.fetchChartAndExtractReplicaCount(rel)
@@ -105,16 +110,22 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 		return nil, err
 	}
 
+	releaseErrors := shippererrors.NewMultiError()
+
 	if _, err := s.CreateOrUpdateInstallationTarget(rel); err != nil {
-		return nil, err
+		releaseErrors.Append(err)
 	}
 
 	if _, err := s.CreateOrUpdateTrafficTarget(rel); err != nil {
-		return nil, err
+		releaseErrors.Append(err)
 	}
 
 	if _, err := s.CreateOrUpdateCapacityTarget(rel, replicaCount); err != nil {
-		return nil, err
+		releaseErrors.Append(err)
+	}
+
+	if releaseErrors.Any() {
+		return nil, releaseErrors
 	}
 
 	if !releaseutil.ReleaseInstalled(rel) && !releaseutil.ReleaseScheduled(rel) && !releaseutil.ReleaseComplete(rel) {
@@ -128,7 +139,12 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 			)
 		}
 
-		return s.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel)
+		newRel, err := s.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel)
+		if err != nil {
+			return nil, shippererrors.NewKubeclientUpdateError(rel, err)
+		}
+
+		return newRel, nil
 	}
 
 	return rel, nil
@@ -258,7 +274,7 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 
 		updIt, err := s.clientset.ShipperV1alpha1().InstallationTargets(rel.GetNamespace()).Create(it)
 		if err != nil {
-			return nil, NewFailedAPICallError("CreateInstallationTarget", err)
+			return nil, shippererrors.NewKubeclientCreateError(it, err)
 		}
 
 		s.recorder.Eventf(
@@ -336,7 +352,7 @@ func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalRepl
 
 		updCt, err := s.clientset.ShipperV1alpha1().CapacityTargets(rel.GetNamespace()).Create(ct)
 		if err != nil {
-			return nil, NewFailedAPICallError("CreateCapacityTarget", err)
+			return nil, shippererrors.NewKubeclientCreateError(ct, err)
 		}
 
 		s.recorder.Eventf(
@@ -414,7 +430,7 @@ func (s *Scheduler) CreateOrUpdateTrafficTarget(rel *shipper.Release) (*shipper.
 
 		updTt, err := s.clientset.ShipperV1alpha1().TrafficTargets(rel.GetNamespace()).Create(tt)
 		if err != nil {
-			return nil, NewFailedAPICallError("CreateTrafficTarget", err)
+			return nil, shippererrors.NewKubeclientCreateError(tt, err)
 		}
 
 		s.recorder.Eventf(
@@ -476,7 +492,7 @@ func computeTargetClusters(rel *shipper.Release, clusterList []*shipper.Cluster)
 	regionReplicas := map[string]int{}
 
 	if len(regionSpecs) == 0 {
-		return nil, NewNoRegionsSpecifiedError()
+		return nil, shippererrors.NewNoRegionsSpecifiedError()
 	}
 
 	app, err := releaseutil.ApplicationNameForRelease(rel)
@@ -525,14 +541,14 @@ func computeTargetClusters(rel *shipper.Release, clusterList []*shipper.Cluster)
 			}
 		}
 		if regionReplicas[region.Name] > matchedRegion {
-			return nil, NewNotEnoughClustersInRegionError(region.Name, regionReplicas[region.Name], matchedRegion)
+			return nil, shippererrors.NewNotEnoughClustersInRegionError(region.Name, regionReplicas[region.Name], matchedRegion)
 		}
 	}
 
 	resClusters := make([]*shipper.Cluster, 0)
 	for region, clusters := range capableClustersByRegion {
 		if regionReplicas[region] > len(clusters) {
-			return nil, NewNotEnoughCapableClustersInRegionError(
+			return nil, shippererrors.NewNotEnoughCapableClustersInRegionError(
 				region,
 				requiredCapabilities,
 				regionReplicas[region],
@@ -567,7 +583,7 @@ func validateClusterRequirements(requirements shipper.ClusterRequirements) error
 	for _, capability := range requirements.Capabilities {
 		_, ok := seenCapabilities[capability]
 		if ok {
-			return NewDuplicateCapabilityRequirementError(capability)
+			return shippererrors.NewDuplicateCapabilityRequirementError(capability)
 		}
 		seenCapabilities[capability] = struct{}{}
 	}
@@ -587,7 +603,7 @@ func setReleaseClusters(rel *shipper.Release, clusters []*shipper.Cluster) {
 func (s *Scheduler) fetchChartAndExtractReplicaCount(rel *shipper.Release) (int32, error) {
 	chart, err := s.fetchChart(rel.Spec.Environment.Chart)
 	if err != nil {
-		return 0, NewChartFetchFailureError(
+		return 0, shippererrors.NewChartFetchFailureError(
 			rel.Spec.Environment.Chart.Name,
 			rel.Spec.Environment.Chart.Version,
 			rel.Spec.Environment.Chart.RepoURL,
@@ -608,13 +624,13 @@ func (s *Scheduler) fetchChartAndExtractReplicaCount(rel *shipper.Release) (int3
 func extractReplicasFromChartForRel(chart *helmchart.Chart, rel *shipper.Release) (int32, error) {
 	owners := rel.OwnerReferences
 	if l := len(owners); l != 1 {
-		return 0, NewInvalidReleaseOwnerRefsError(len(owners))
+		return 0, shippererrors.NewMultipleOwnerReferencesError(rel.Name, l)
 	}
 
 	applicationName := owners[0].Name
 	rendered, err := shipperchart.Render(chart, applicationName, rel.Namespace, rel.Spec.Environment.Values)
 	if err != nil {
-		return 0, NewBrokenChartError(
+		return 0, shippererrors.NewBrokenChartError(
 			rel.Spec.Environment.Chart.Name,
 			rel.Spec.Environment.Chart.Version,
 			rel.Spec.Environment.Chart.RepoURL,
@@ -624,7 +640,7 @@ func extractReplicasFromChartForRel(chart *helmchart.Chart, rel *shipper.Release
 
 	deployments := shipperchart.GetDeployments(rendered)
 	if len(deployments) != 1 {
-		return 0, NewWrongChartDeploymentsError(
+		return 0, shippererrors.NewWrongChartDeploymentsError(
 			rel.Spec.Environment.Chart.Name,
 			rel.Spec.Environment.Chart.Version,
 			rel.Spec.Environment.Chart.RepoURL,

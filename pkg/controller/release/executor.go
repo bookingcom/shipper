@@ -13,6 +13,7 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	"github.com/bookingcom/shipper/pkg/controller"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
@@ -45,8 +46,10 @@ func (s *Executor) Execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 	targetStep := s.contender.release.Spec.TargetStep
 
 	if targetStep >= int32(len(s.strategy.Steps)) {
-		return nil, nil, fmt.Errorf("no step %d in strategy for Release %q", targetStep,
-			controller.MetaKey(s.contender.release))
+		err := fmt.Errorf("no step %d in strategy for Release %q",
+			targetStep, controller.MetaKey(s.contender.release))
+		return nil, nil, shippererrors.NewUnrecoverableError(err)
+
 	}
 	strategyStep := s.strategy.Steps[targetStep]
 

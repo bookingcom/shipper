@@ -1,61 +1,105 @@
-package release
+package errors
 
 import (
 	"fmt"
 	"strings"
+
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
-func classifyError(err error) (string, bool) {
-	switch err.(type) {
-	case NoRegionsSpecifiedError:
-		return "NoRegionsSpecified", noRetry
-	case NotEnoughClustersInRegionError:
-		return "NotEnoughClustersInRegion", noRetry
-	case NotEnoughCapableClustersInRegionError:
-		return "NotEnoughCapableClustersInRegion", noRetry
-
-	case DuplicateCapabilityRequirementError:
-		return "DuplicateCapabilityRequirement", noRetry
-
-	case ChartFetchFailureError:
-		return "ChartFetchFailure", retry
-	case BrokenChartError:
-		return "BrokenChart", noRetry
-	case WrongChartDeploymentsError:
-		return "WrongChartDeployments", noRetry
-
-	case InvalidReleaseOwnerRefsError:
-		return "InvalidReleaseOwnerRefs", noRetry
-
-	case FailedAPICallError:
-		return "FailedAPICall", retry
-	}
-
-	return "unknown error! tell Shipper devs to classify it", retry
+type ContenderNotFoundError struct {
+	appName string
 }
 
-type FailedAPICallError struct {
-	call string
-	err  error
+func (e ContenderNotFoundError) Error() string {
+	return fmt.Sprintf("no contender release found for application %q", e.appName)
 }
 
-func (e FailedAPICallError) Error() string {
-	return fmt.Sprintf(
-		"Failed API call %q: %q", e.call, e.err,
-	)
+func (e ContenderNotFoundError) ShouldRetry() bool {
+	return true
 }
 
-func NewFailedAPICallError(call string, err error) FailedAPICallError {
-	return FailedAPICallError{
-		call: call,
-		err:  err,
-	}
+func IsContenderNotFoundError(err error) bool {
+	_, ok := err.(*ContenderNotFoundError)
+	return ok
+}
+
+func NewContenderNotFoundError(appName string) error {
+	return &ContenderNotFoundError{appName: appName}
+}
+
+type IncumbentNotFoundError struct {
+	appName string
+}
+
+func (e IncumbentNotFoundError) Error() string {
+	return fmt.Sprintf("no incumbent release found for application %q", e.appName)
+}
+
+func (e IncumbentNotFoundError) ShouldRetry() bool {
+	return true
+}
+
+func IsIncumbentNotFoundError(err error) bool {
+	_, ok := err.(*IncumbentNotFoundError)
+	return ok
+}
+
+func NewIncumbentNotFoundError(appName string) error {
+	return &IncumbentNotFoundError{appName: appName}
+}
+
+type MissingGenerationAnnotationError struct {
+	relName string
+}
+
+func (e MissingGenerationAnnotationError) Error() string {
+	return fmt.Sprintf("missing label %q in release %q", shipper.ReleaseGenerationAnnotation, e.relName)
+}
+
+func (e MissingGenerationAnnotationError) ShouldRetry() bool {
+	return true
+}
+
+func IsMissingGenerationAnnotationError(err error) bool {
+	_, ok := err.(*MissingGenerationAnnotationError)
+	return ok
+}
+
+func NewMissingGenerationAnnotationError(relName string) error {
+	return &MissingGenerationAnnotationError{relName}
+}
+
+type InvalidGenerationAnnotationError struct {
+	relName string
+	err     error
+}
+
+func (e *InvalidGenerationAnnotationError) Error() string {
+	return fmt.Sprintf("invalid value for label %q in release %q: %s", shipper.ReleaseGenerationAnnotation, e.relName, e.err)
+}
+
+func (e *InvalidGenerationAnnotationError) ShouldRetry() bool {
+	return true
+}
+
+func IsInvalidGenerationAnnotationError(err error) bool {
+	_, ok := err.(*InvalidGenerationAnnotationError)
+	return ok
+}
+
+func NewInvalidGenerationAnnotationError(relName string, err error) error {
+	return &InvalidGenerationAnnotationError{relName: relName, err: err}
 }
 
 type NoRegionsSpecifiedError struct{}
 
 func (e NoRegionsSpecifiedError) Error() string {
 	return "No regions specified in clusterRequirements. Must list at least one region"
+}
+
+func (e NoRegionsSpecifiedError) ShouldRetry() bool {
+	return false
 }
 
 func NewNoRegionsSpecifiedError() NoRegionsSpecifiedError {
@@ -70,6 +114,10 @@ type NotEnoughClustersInRegionError struct {
 
 func (e NotEnoughClustersInRegionError) Error() string {
 	return fmt.Sprintf("Not enough clusters in region %q. Required: %d / Available: %d", e.region, e.required, e.available)
+}
+
+func (e NotEnoughClustersInRegionError) ShouldRetry() bool {
+	return false
 }
 
 func NewNotEnoughClustersInRegionError(region string, required, available int) NotEnoughClustersInRegionError {
@@ -95,28 +143,16 @@ func (e NotEnoughCapableClustersInRegionError) Error() string {
 	)
 }
 
+func (e NotEnoughCapableClustersInRegionError) ShouldRetry() bool {
+	return false
+}
+
 func NewNotEnoughCapableClustersInRegionError(region string, capabilities []string, required, available int) error {
 	return NotEnoughCapableClustersInRegionError{
 		region:       region,
 		capabilities: capabilities,
 		required:     required,
 		available:    available,
-	}
-}
-
-type InvalidReleaseOwnerRefsError struct {
-	count int
-}
-
-func (e InvalidReleaseOwnerRefsError) Error() string {
-	return fmt.Sprintf(
-		"Releases should only ever have 1 owner, but this one has %d", e.count,
-	)
-}
-
-func NewInvalidReleaseOwnerRefsError(count int) InvalidReleaseOwnerRefsError {
-	return InvalidReleaseOwnerRefsError{
-		count: count,
 	}
 }
 
@@ -136,6 +172,10 @@ func (e ChartFetchFailureError) Error() string {
 		"%s-%s failed to fetch from %s: %s",
 		e.chartName, e.chartVersion, e.chartRepo, e.err,
 	)
+}
+
+func (e ChartFetchFailureError) ShouldRetry() bool {
+	return true
 }
 
 func NewChartFetchFailureError(chartName, chartVersion, chartRepo string, err error) ChartFetchFailureError {
@@ -163,6 +203,10 @@ func (e BrokenChartError) Error() string {
 	)
 }
 
+func (e BrokenChartError) ShouldRetry() bool {
+	return false
+}
+
 func NewBrokenChartError(chartName, chartVersion, chartRepo string, err error) BrokenChartError {
 	return BrokenChartError{
 		ChartError: ChartError{
@@ -188,6 +232,10 @@ func (e WrongChartDeploymentsError) Error() string {
 	)
 }
 
+func (e WrongChartDeploymentsError) ShouldRetry() bool {
+	return false
+}
+
 func NewWrongChartDeploymentsError(chartName, chartVersion, chartRepo string, deploymentCount int) WrongChartDeploymentsError {
 	return WrongChartDeploymentsError{
 		ChartError: ChartError{
@@ -210,6 +258,10 @@ func (e DuplicateCapabilityRequirementError) Error() string {
 	)
 }
 
+func (e DuplicateCapabilityRequirementError) ShouldRetry() bool {
+	return false
+}
+
 func NewDuplicateCapabilityRequirementError(capability string) DuplicateCapabilityRequirementError {
 	return DuplicateCapabilityRequirementError{
 		capability: capability,
@@ -220,60 +272,16 @@ type NotWorkingOnStrategyError struct {
 	contenderReleaseKey string
 }
 
-func NewNotWorkingOnStrategyError(contenderReleaseKey string) NotWorkingOnStrategyError {
-	return NotWorkingOnStrategyError{
-		contenderReleaseKey: contenderReleaseKey,
-	}
-}
-
 func (e NotWorkingOnStrategyError) Error() string {
 	return fmt.Sprintf("found %s as a contender, but it is not currently working on any strategy", e.contenderReleaseKey)
 }
 
-type RetrievingInstallationTargetForReleaseError struct {
-	releaseKey string
-	err        error
+func (e NotWorkingOnStrategyError) ShouldRetry() bool {
+	return false
 }
 
-func NewRetrievingInstallationTargetForReleaseError(releaseKey string, err error) RetrievingInstallationTargetForReleaseError {
-	return RetrievingInstallationTargetForReleaseError{
-		releaseKey: releaseKey,
-		err:        err,
+func NewNotWorkingOnStrategyError(contenderReleaseKey string) NotWorkingOnStrategyError {
+	return NotWorkingOnStrategyError{
+		contenderReleaseKey: contenderReleaseKey,
 	}
-}
-
-func (e RetrievingInstallationTargetForReleaseError) Error() string {
-	return fmt.Sprintf("error when retrieving installation target for release %s: %s", e.releaseKey, e.err)
-}
-
-type RetrievingCapacityTargetForReleaseError struct {
-	releaseKey string
-	err        error
-}
-
-func NewRetrievingCapacityTargetForReleaseError(releaseKey string, err error) RetrievingCapacityTargetForReleaseError {
-	return RetrievingCapacityTargetForReleaseError{
-		releaseKey: releaseKey,
-		err:        err,
-	}
-}
-
-func (e RetrievingCapacityTargetForReleaseError) Error() string {
-	return fmt.Sprintf("error when retrieving capacity target for release %s: %s", e.releaseKey, e.err)
-}
-
-type RetrievingTrafficTargetForReleaseError struct {
-	releaseKey string
-	err        error
-}
-
-func NewRetrievingTrafficTargetForReleaseError(releaseKey string, err error) RetrievingTrafficTargetForReleaseError {
-	return RetrievingTrafficTargetForReleaseError{
-		releaseKey: releaseKey,
-		err:        err,
-	}
-}
-
-func (e RetrievingTrafficTargetForReleaseError) Error() string {
-	return fmt.Sprintf("error when retrieving traffic target for release %s: %s", e.releaseKey, e.err)
 }

@@ -11,6 +11,10 @@ func (e MultipleOwnerReferencesError) Error() string {
 	return string(e)
 }
 
+func (e MultipleOwnerReferencesError) ShouldRetry() bool {
+	return false
+}
+
 func IsMultipleOwnerReferencesError(err error) bool {
 	_, ok := err.(MultipleOwnerReferencesError)
 	return ok
@@ -26,6 +30,10 @@ type WrongOwnerReferenceError string
 
 func (e WrongOwnerReferenceError) Error() string {
 	return string(e)
+}
+
+func (e WrongOwnerReferenceError) ShouldRetry() bool {
+	return false
 }
 
 func IsWrongOwnerReferenceError(err error) bool {
@@ -46,6 +54,14 @@ type InvalidChartError struct {
 	message string
 }
 
+func (e InvalidChartError) Error() string {
+	return e.message
+}
+
+func (e InvalidChartError) ShouldRetry() bool {
+	return false
+}
+
 func IsInvalidChartError(err error) bool {
 	_, ok := err.(InvalidChartError)
 	return ok
@@ -53,8 +69,4 @@ func IsInvalidChartError(err error) bool {
 
 func NewInvalidChartError(m string) InvalidChartError {
 	return InvalidChartError{message: m}
-}
-
-func (e InvalidChartError) Error() string {
-	return e.message
 }

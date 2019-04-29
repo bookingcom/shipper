@@ -21,6 +21,7 @@ import (
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
@@ -28,11 +29,6 @@ const (
 	AgentName = "release-controller"
 
 	maxRetries = 11
-)
-
-const (
-	retry   = true
-	noRetry = false
 )
 
 // Controller is a Kubernetes controller whose role is to pick up a newly created
@@ -231,11 +227,19 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 
 	if key, ok = obj.(string); !ok {
 		c.releaseWorkqueue.Forget(obj)
-		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
+		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
 		return true
 	}
 
-	if shouldRetry := c.syncOneReleaseHandler(key); shouldRetry {
+	shouldRetry := false
+	err := c.syncOneReleaseHandler(key)
+
+	if err != nil {
+		shouldRetry = shippererrors.ShouldRetry(err)
+		runtime.HandleError(fmt.Errorf("error syncing Release %q (will retry: %t): %s", key, shouldRetry, err.Error()))
+	}
+
+	if shouldRetry {
 		if c.releaseWorkqueue.NumRequeues(key) >= maxRetries {
 			glog.Warningf("Release %q has been retried too many times, droppping from the queue", key)
 			c.releaseWorkqueue.Forget(key)
@@ -247,8 +251,8 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 		return true
 	}
 
-	c.releaseWorkqueue.Forget(obj)
 	glog.V(4).Infof("Successfully synced Release %q", key)
+	c.releaseWorkqueue.Forget(obj)
 
 	return true
 }
@@ -256,28 +260,26 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 // syncOneReleaseHandler processes release keys one-by-one. This stage progresses
 // the release through a scheduler: assigns a set of chosen clusters, creates
 // required associated objects and marks the release as scheduled.
-func (c *Controller) syncOneReleaseHandler(key string) bool {
+func (c *Controller) syncOneReleaseHandler(key string) error {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %q", key))
-		return noRetry
+		return shippererrors.NewUnrecoverableError(err)
 	}
 
 	rel, err := c.releaseLister.Releases(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			glog.V(3).Infof("Release %q not found", key)
-			return noRetry
+			return nil
 		}
 
-		runtime.HandleError(fmt.Errorf("failed to process release %q (will retry): %s", key, err))
-
-		return retry
+		return shippererrors.NewKubeclientGetError(
+			shipper.SchemeGroupVersion.WithKind("Release"),
+			namespace, name, err)
 	}
 
 	if releaseutil.HasEmptyEnvironment(rel) {
-		glog.Infof("Release %q has an empty Environment, bailing out", key)
-		return noRetry
+		return nil
 	}
 
 	glog.V(4).Infof("Start processing Release %q", key)
@@ -297,8 +299,7 @@ func (c *Controller) syncOneReleaseHandler(key string) bool {
 	// finalizes release scheduling process.
 	if !releaseHasClusters(rel) {
 		if _, err := scheduler.ChooseClusters(rel.DeepCopy(), false); err != nil {
-			runtime.HandleError(fmt.Errorf("failed to choose clusters for release %q (will retry): %s", key, err))
-			return retry
+			return shippererrors.NewRecoverableError(fmt.Errorf("failed to choose clusters for release %q (will retry): %s", key, err))
 		}
 
 		// If all went fine, we return here and let informers pick up
@@ -311,18 +312,20 @@ func (c *Controller) syncOneReleaseHandler(key string) bool {
 		// happened due to the synchronisation/replication lag in etcd.
 		// This approach helps to eliminate this as a notification will
 		// be delivered once all parties are in sync.
-		return noRetry
+		return nil
 	}
 
 	if _, err = scheduler.ScheduleRelease(rel.DeepCopy()); err != nil {
-		c.recorder.Eventf(
-			rel,
-			corev1.EventTypeWarning,
-			"FailedReleaseScheduling",
-			err.Error(),
-		)
+		if shippererrors.ShouldBroadcast(err) {
+			c.recorder.Eventf(
+				rel,
+				corev1.EventTypeWarning,
+				"FailedReleaseScheduling",
+				err.Error(),
+			)
+		}
 
-		reason, shouldRetry := classifyError(err)
+		reason := reasonForReleaseCondition(err)
 		condition := releaseutil.NewReleaseCondition(
 			shipper.ReleaseConditionTypeScheduled,
 			corev1.ConditionFalse,
@@ -331,28 +334,18 @@ func (c *Controller) syncOneReleaseHandler(key string) bool {
 		)
 		releaseutil.SetReleaseCondition(&rel.Status, *condition)
 
-		if _, updErr := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); updErr != nil {
-			// always retry failing to write the error out to the Release: we need to communicate this to the user
-			err = updErr
-			shouldRetry = retry
+		if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); err != nil {
+			return shippererrors.NewKubeclientUpdateError(rel, err)
 		}
 
-		if shouldRetry {
-			runtime.HandleError(fmt.Errorf("error syncing Release %q (will retry): %s", key, err))
-			return retry
-		}
-
-		runtime.HandleError(fmt.Errorf("error syncing Release %q (will not retry): %s", key, err))
-
-		return noRetry
+		return err
 	}
 
 	glog.V(4).Infof("Release %q has been successfully scheduled", key)
 
 	appKey, err := c.getAssociatedApplicationKey(rel)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("error fetching Application key for release %q (will not retry): %s", key, err))
-		return noRetry
+		return err
 	}
 
 	// If everything went fine, scheduling an application key in the
@@ -362,12 +355,13 @@ func (c *Controller) syncOneReleaseHandler(key string) bool {
 
 	glog.V(4).Infof("Done processing Release %q", key)
 
-	return noRetry
+	return nil
 }
 
 // getAssociatedApplicationName returns the owner application name from the
 // release owner reference. It expects exactly 1 owner reference to exist, and
 // returns an error othewrwise.
+// TODO(jgreff): move this out to util/release/application.go
 func (c *Controller) getAssociatedApplicationName(rel *shipper.Release) (string, error) {
 	if n := len(rel.OwnerReferences); n != 1 {
 		return "", shippercontroller.NewMultipleOwnerReferencesError(
@@ -409,19 +403,28 @@ func (c *Controller) getAssociatedReleaseKey(obj *metav1.ObjectMeta) (string, er
 // the lister interface. If some of them could not be found, it returns a
 // corresponding error.
 func (c *Controller) buildReleaseInfo(rel *shipper.Release) (*releaseInfo, error) {
-	installationTarget, err := c.installationTargetLister.InstallationTargets(rel.Namespace).Get(rel.Name)
+	ns := rel.Namespace
+	name := rel.Name
+
+	installationTarget, err := c.installationTargetLister.InstallationTargets(ns).Get(name)
 	if err != nil {
-		return nil, NewRetrievingInstallationTargetForReleaseError(shippercontroller.MetaKey(rel), err)
+		return nil, shippererrors.NewKubeclientGetError(
+			shipper.SchemeGroupVersion.WithKind("InstallationTarget"),
+			ns, name, err)
 	}
 
-	capacityTarget, err := c.capacityTargetLister.CapacityTargets(rel.Namespace).Get(rel.Name)
+	capacityTarget, err := c.capacityTargetLister.CapacityTargets(ns).Get(name)
 	if err != nil {
-		return nil, NewRetrievingCapacityTargetForReleaseError(shippercontroller.MetaKey(rel), err)
+		return nil, shippererrors.NewKubeclientGetError(
+			shipper.SchemeGroupVersion.WithKind("CapacityTarget"),
+			ns, name, err)
 	}
 
-	trafficTarget, err := c.trafficTargetLister.TrafficTargets(rel.Namespace).Get(rel.Name)
+	trafficTarget, err := c.trafficTargetLister.TrafficTargets(ns).Get(name)
 	if err != nil {
-		return nil, NewRetrievingTrafficTargetForReleaseError(shippercontroller.MetaKey(rel), err)
+		return nil, shippererrors.NewKubeclientGetError(
+			shipper.SchemeGroupVersion.WithKind("TrafficTarget"),
+			ns, name, err)
 	}
 
 	return &releaseInfo{
@@ -510,4 +513,31 @@ func (c *Controller) enqueueTrafficTarget(obj interface{}) {
 	}
 
 	c.releaseWorkqueue.Add(releaseKey)
+}
+
+func reasonForReleaseCondition(err error) string {
+	switch err.(type) {
+	case shippererrors.NoRegionsSpecifiedError:
+		return "NoRegionsSpecified"
+	case shippererrors.NotEnoughClustersInRegionError:
+		return "NotEnoughClustersInRegion"
+	case shippererrors.NotEnoughCapableClustersInRegionError:
+		return "NotEnoughCapableClustersInRegion"
+
+	case shippererrors.DuplicateCapabilityRequirementError:
+		return "DuplicateCapabilityRequirement"
+
+	case shippererrors.ChartFetchFailureError:
+		return "ChartFetchFailure"
+	case shippererrors.BrokenChartError:
+		return "BrokenChart"
+	case shippererrors.WrongChartDeploymentsError:
+		return "WrongChartDeployments"
+	}
+
+	if shippererrors.IsKubeclientError(err) {
+		return "FailedAPICall"
+	}
+
+	return "unknown error! tell Shipper devs to classify it"
 }
