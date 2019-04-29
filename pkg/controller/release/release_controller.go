@@ -20,7 +20,6 @@ import (
 	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
-	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
@@ -358,25 +357,10 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 	return nil
 }
 
-// getAssociatedApplicationName returns the owner application name from the
-// release owner reference. It expects exactly 1 owner reference to exist, and
-// returns an error othewrwise.
-// TODO(jgreff): move this out to util/release/application.go
-func (c *Controller) getAssociatedApplicationName(rel *shipper.Release) (string, error) {
-	if n := len(rel.OwnerReferences); n != 1 {
-		return "", shippererrors.NewMultipleOwnerReferencesError(
-			shippercontroller.MetaKey(rel), n)
-	}
-
-	appref := rel.OwnerReferences[0]
-
-	return appref.Name, nil
-}
-
 // getAssociatedApplicationKey returns an application key in the format:
 // <namespace>/<application name>
 func (c *Controller) getAssociatedApplicationKey(rel *shipper.Release) (string, error) {
-	appName, err := c.getAssociatedApplicationName(rel)
+	appName, err := releaseutil.ApplicationNameForRelease(rel)
 	if err != nil {
 		return "", err
 	}
