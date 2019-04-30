@@ -83,9 +83,8 @@ func (c *Controller) syncOneApplicationHandler(key string) error {
 			return nil
 		}
 
-		return shippererrors.NewKubeclientGetError(
-			shipper.SchemeGroupVersion.WithKind("Application"),
-			namespace, name, err)
+		return shippererrors.NewKubeclientGetError(namespace, name, err).
+			WithShipperKind("Application")
 	}
 
 	glog.V(4).Infof("Fetching release pair for Application %q", key)
@@ -141,7 +140,7 @@ func (c *Controller) syncOneApplicationHandler(key string) error {
 			return shippererrors.NewUnrecoverableError(fmt.Errorf("error syncing Application %q (will not retry): unknown GVK resource name: %s", key, gvk.Kind))
 		}
 		if err != nil {
-			return shippererrors.NewKubeclientPatchError(gvk, namespace, name, err)
+			return shippererrors.NewKubeclientPatchError(namespace, name, err).WithKind(gvk)
 		}
 	}
 

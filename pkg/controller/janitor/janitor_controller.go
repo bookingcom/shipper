@@ -280,9 +280,8 @@ func (c *Controller) syncAnchor(item *AnchorWorkItem) error {
 		// Return an error only if the error is different than not found, since
 		// if the installation target object doesn't exist anymore we want to
 		// remove the anchor config map.
-		return shippererrors.NewKubeclientGetError(
-			shipper.SchemeGroupVersion.WithKind("InstallationTarget"),
-			item.Namespace, item.ReleaseName, err)
+		return shippererrors.NewKubeclientGetError(item.Namespace, item.ReleaseName, err).
+			WithShipperKind("InstallationTarget")
 	} else if it != nil && string(it.UID) == item.InstallationTargetUID {
 		// The anchor config map's installation target UID and the installation
 		// target object in the manage cluster match, so we just bail out here.
@@ -315,8 +314,8 @@ func (c *Controller) removeAnchor(clusterName string, namespace string, name str
 	if client, err := c.clusterClientStore.GetClient(clusterName, AgentName); err != nil {
 		return false, err
 	} else if err := client.CoreV1().ConfigMaps(namespace).Delete(name, &metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
-		return false, shippererrors.NewKubeclientDeleteError(
-			corev1.SchemeGroupVersion.WithKind("ConfigMap"), namespace, name, err)
+		return false, shippererrors.NewKubeclientDeleteError(namespace, name, err).
+			WithCoreV1Kind("ConfigMap")
 	} else if err == nil {
 		return true, nil
 	}

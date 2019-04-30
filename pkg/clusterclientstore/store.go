@@ -162,9 +162,8 @@ func (s *Store) syncCluster(name string) error {
 			return nil
 		}
 
-		return shippererrors.NewKubeclientGetError(
-			shipper.SchemeGroupVersion.WithKind("Cluster"),
-			"", name, err)
+		return shippererrors.NewKubeclientGetError("", name, err).
+			WithShipperKind("Cluster")
 	}
 
 	cachedCluster, ok := s.cache.Fetch(name)
@@ -192,9 +191,8 @@ func (s *Store) syncCluster(name string) error {
 			return nil
 		}
 
-		return shippererrors.NewKubeclientGetError(
-			corev1.SchemeGroupVersion.WithKind("Secret"),
-			s.ns, name, err)
+		return shippererrors.NewKubeclientGetError(s.ns, name, err).
+			WithCoreV1Kind("Secret")
 	}
 
 	return s.create(clusterObj, secret)
@@ -220,9 +218,8 @@ func (s *Store) syncSecret(key string) error {
 			return nil
 		}
 
-		return shippererrors.NewKubeclientGetError(
-			corev1.SchemeGroupVersion.WithKind("Secret"),
-			s.ns, name, err)
+		return shippererrors.NewKubeclientGetError(s.ns, name, err).
+			WithCoreV1Kind("Secret")
 	}
 
 	clusterObj, err := s.clusterInformer.Lister().Get(secret.Name)
@@ -232,8 +229,8 @@ func (s *Store) syncSecret(key string) error {
 			return nil
 		}
 
-		return shippererrors.NewKubeclientGetError(
-			shipper.SchemeGroupVersion.WithKind("Cluster"), "", secret.Name, err)
+		return shippererrors.NewKubeclientGetError("", secret.Name, err).
+			WithShipperKind("Cluster")
 	}
 
 	checksum, ok := secret.GetAnnotations()[shipper.SecretChecksumAnnotation]

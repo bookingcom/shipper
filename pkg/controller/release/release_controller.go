@@ -272,9 +272,8 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 			return nil
 		}
 
-		return shippererrors.NewKubeclientGetError(
-			shipper.SchemeGroupVersion.WithKind("Release"),
-			namespace, name, err)
+		return shippererrors.NewKubeclientGetError(namespace, name, err).
+			WithShipperKind("Release")
 	}
 
 	if releaseutil.HasEmptyEnvironment(rel) {
@@ -392,23 +391,20 @@ func (c *Controller) buildReleaseInfo(rel *shipper.Release) (*releaseInfo, error
 
 	installationTarget, err := c.installationTargetLister.InstallationTargets(ns).Get(name)
 	if err != nil {
-		return nil, shippererrors.NewKubeclientGetError(
-			shipper.SchemeGroupVersion.WithKind("InstallationTarget"),
-			ns, name, err)
+		return nil, shippererrors.NewKubeclientGetError(ns, name, err).
+			WithShipperKind("InstallationTarget")
 	}
 
 	capacityTarget, err := c.capacityTargetLister.CapacityTargets(ns).Get(name)
 	if err != nil {
-		return nil, shippererrors.NewKubeclientGetError(
-			shipper.SchemeGroupVersion.WithKind("CapacityTarget"),
-			ns, name, err)
+		return nil, shippererrors.NewKubeclientGetError(ns, name, err).
+			WithShipperKind("CapacityTarget")
 	}
 
 	trafficTarget, err := c.trafficTargetLister.TrafficTargets(ns).Get(name)
 	if err != nil {
-		return nil, shippererrors.NewKubeclientGetError(
-			shipper.SchemeGroupVersion.WithKind("TrafficTarget"),
-			ns, name, err)
+		return nil, shippererrors.NewKubeclientGetError(ns, name, err).
+			WithShipperKind("TrafficTarget")
 	}
 
 	return &releaseInfo{

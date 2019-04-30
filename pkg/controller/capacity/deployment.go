@@ -124,9 +124,8 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 
 	targetDeployment, err := informerFactory.Apps().V1().Deployments().Lister().Deployments(namespace).Get(name)
 	if err != nil {
-		return shippererrors.NewKubeclientGetError(
-			shipper.SchemeGroupVersion.WithKind("Application"),
-			namespace, name, err)
+		return shippererrors.NewKubeclientGetError(namespace, name, err).
+			WithShipperKind("Application")
 	}
 
 	// Using ReleaseLabel here instead of the full set of Deployment labels because

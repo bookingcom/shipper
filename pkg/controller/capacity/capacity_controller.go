@@ -184,9 +184,8 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 			return nil
 		}
 
-		return shippererrors.NewKubeclientGetError(
-			shipper.SchemeGroupVersion.WithKind("CapacityTarget"),
-			namespace, name, err)
+		return shippererrors.NewKubeclientGetError(namespace, name, err).
+			WithShipperKind("CapacityTarget")
 	}
 
 	ct = ct.DeepCopy()
