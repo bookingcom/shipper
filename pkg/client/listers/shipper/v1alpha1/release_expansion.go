@@ -39,7 +39,9 @@ func (s releaseNamespaceLister) ReleasesForApplication(appName string) ([]*shipp
 	selector := labels.Set{shipper.AppLabel: appName}.AsSelector()
 	selectedRels, err := s.List(selector)
 	if err != nil {
-		return nil, err
+		return nil, shippererrors.NewKubeclientListError(
+			shipper.SchemeGroupVersion.WithKind("Release"),
+			s.namespace, selector, err)
 	}
 	for _, e := range selectedRels {
 		_, err := releaseutil.GetGeneration(e)
