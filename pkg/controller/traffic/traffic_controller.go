@@ -24,6 +24,7 @@ import (
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/conditions"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
 const AgentName = "traffic-controller"
@@ -130,11 +131,19 @@ func (c *Controller) processNextWorkItem() bool {
 
 	if key, ok = obj.(string); !ok {
 		c.workqueue.Forget(obj)
-		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
+		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
 		return true
 	}
 
-	if shouldRetry := c.syncHandler(key); shouldRetry {
+	shouldRetry := false
+	err := c.syncHandler(key)
+
+	if err != nil {
+		shouldRetry = shippererrors.ShouldRetry(err)
+		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will retry: %t): %s", key, shouldRetry, err.Error()))
+	}
+
+	if shouldRetry {
 		if c.workqueue.NumRequeues(key) >= maxRetries {
 			// Drop the TrafficTarget's key out of the workqueue and thus reset its
 			// backoff. This limits the time a "broken" object can hog a worker.
@@ -155,56 +164,47 @@ func (c *Controller) processNextWorkItem() bool {
 	return true
 }
 
-func (c *Controller) syncHandler(key string) bool {
+func (c *Controller) syncHandler(key string) error {
 	namespace, ttName, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", key))
-		return false
+		return shippererrors.NewUnrecoverableError(err)
 	}
 
 	syncingTT, err := c.trafficTargetsLister.TrafficTargets(namespace).Get(ttName)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			glog.V(3).Infof("TrafficTarget %q has been deleted", key)
-			return false
+			return nil
 		}
 
-		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will retry): %s", key, err))
-		return true
+		return shippererrors.NewKubeclientGetError(namespace, ttName, err).
+			WithShipperKind("TrafficTarget")
 	}
 
 	syncingReleaseName, ok := syncingTT.Labels[shipper.ReleaseLabel]
 	if !ok {
-		// This needs human intervention or a Shipper fix so not retrying here.
-		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will not retry): no %q label",
-			key, shipper.ReleaseLabel))
 		// TODO(asurikov): log an event.
-		return false
+		return shippererrors.NewMissingShipperLabelError(syncingTT, shipper.ReleaseLabel)
 	}
 
 	appName, ok := syncingTT.Labels[shipper.AppLabel]
 	if !ok {
-		// This needs human intervention or a Shipper fix so not retrying here.
-		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will not retry): no %q label",
-			key, shipper.AppLabel))
 		// TODO(asurikov): log an event.
-		return false
+		return shippererrors.NewMissingShipperLabelError(syncingTT, shipper.AppLabel)
 	}
 
 	appSelector := labels.Set{shipper.AppLabel: appName}.AsSelector()
 	list, err := c.trafficTargetsLister.TrafficTargets(namespace).List(appSelector)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will retry): %s", key, err))
-		return true
+		return shippererrors.NewKubeclientListError(
+			shipper.SchemeGroupVersion.WithKind("TrafficTarget"),
+			namespace, appSelector, err)
 	}
 
 	shifter, err := newPodLabelShifter(appName, namespace, list)
 	if err != nil {
-		// This needs human intervention or a Shipper fix so not retrying here.
-		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will not retry): %s",
-			key, err))
 		// TODO(asurikov): log an event.
-		return false
+		return err
 	}
 
 	var statuses []*shipper.ClusterTrafficStatus
@@ -272,21 +272,21 @@ func (c *Controller) syncHandler(key string) bool {
 
 		if err != nil {
 			switch err.(type) {
-			case TargetClusterServiceError:
+			case shippererrors.TargetClusterServiceError:
 				clusterStatus.Conditions = conditions.SetTrafficCondition(
 					clusterStatus.Conditions,
 					shipper.ClusterConditionTypeReady,
 					corev1.ConditionFalse,
 					conditions.MissingService,
 					err.Error())
-			case TargetClusterPodListingError, TargetClusterTrafficError:
+			case shippererrors.KubeclientError:
 				clusterStatus.Conditions = conditions.SetTrafficCondition(
 					clusterStatus.Conditions,
 					shipper.ClusterConditionTypeReady,
 					corev1.ConditionFalse,
 					conditions.ServerError,
 					err.Error())
-			case TargetClusterMathError:
+			case shippererrors.TargetClusterMathError:
 				clusterStatus.Conditions = conditions.SetTrafficCondition(
 					clusterStatus.Conditions,
 					shipper.ClusterConditionTypeReady,
@@ -358,8 +358,8 @@ func (c *Controller) syncHandler(key string) bool {
 
 	_, err = c.shipperclientset.ShipperV1alpha1().TrafficTargets(namespace).Update(ttCopy)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing TrafficTarget %q (will retry): %s", key, err))
-		return true
+		return shippererrors.NewKubeclientUpdateError(ttCopy, err).
+			WithShipperKind("TrafficTarget")
 	}
 
 	// TODO(btyler): don't record "success" if it wasn't a total success: this
@@ -367,7 +367,7 @@ func (c *Controller) syncHandler(key string) bool {
 	// did not.
 	c.recorder.Event(syncingTT, corev1.EventTypeNormal, "Synced", "TrafficTarget synced successfully")
 
-	return false
+	return nil
 }
 
 // enqueueTrafficTarget takes a TrafficTarget resource and converts it into a
