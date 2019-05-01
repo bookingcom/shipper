@@ -2,7 +2,6 @@ package clustersecret
 
 import (
 	"encoding/hex"
-	"fmt"
 
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
@@ -10,6 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
 func (c *Controller) processCluster(cluster *shipper.Cluster) error {
@@ -30,12 +30,13 @@ func (c *Controller) processCluster(cluster *shipper.Cluster) error {
 			return c.createSecretForCluster(cluster, crt, key, csum)
 		}
 
-		return err
+		return shippererrors.NewKubeclientGetError(c.ownNamespace, secretName, err).
+			WithCoreV1Kind("Secret")
 	}
 
 	crt, key, csum, err := c.tls.GetAll()
 	if err != nil {
-		return err
+		return shippererrors.NewUnrecoverableError(err)
 	}
 
 	// From this point on we can modify the Secret.
@@ -94,10 +95,10 @@ func (c *Controller) createSecretForCluster(cluster *shipper.Cluster, crt, key, 
 		},
 	}
 
-	var err error
-	secret, err = c.kubeClientset.CoreV1().Secrets(c.ownNamespace).Create(secret)
+	secret, err := c.kubeClientset.CoreV1().Secrets(c.ownNamespace).Create(secret)
 	if err != nil {
-		return fmt.Errorf("create Secret %q for Cluster %q: %s", secretName, clusterName, err)
+		return shippererrors.NewKubeclientCreateError(secret, err).
+			WithCoreV1Kind("Secret")
 	}
 
 	c.recorder.Eventf(
@@ -109,7 +110,7 @@ func (c *Controller) createSecretForCluster(cluster *shipper.Cluster, crt, key, 
 		clusterName,
 	)
 
-	return err
+	return nil
 }
 
 func (c *Controller) updateClusterSecret(secret *corev1.Secret, clusterName string, crt, key, csum []byte) error {
@@ -127,7 +128,8 @@ func (c *Controller) updateClusterSecret(secret *corev1.Secret, clusterName stri
 	secret.Data[corev1.TLSPrivateKeyKey] = key
 
 	if _, err := c.kubeClientset.CoreV1().Secrets(c.ownNamespace).Update(secret); err != nil {
-		return fmt.Errorf("update Secret %q for Cluster %q: %s", secretName, clusterName, err)
+		return shippererrors.NewKubeclientUpdateError(secret, err).
+			WithCoreV1Kind("Secret")
 	}
 
 	// NOTE(asurikov): do we need to update ownership info, just in case?
