@@ -279,9 +279,9 @@ func TestMissingRelease(t *testing.T) {
 // TestClientError tests a case where an error has been returned by the
 // clusterclientstore when requesting a client.
 //
-// This doesn't raise an error, but it updates the installation target status,
-// so this test checks whether the manifest has been updated with the desired
-// status.
+// This raises an error so the operation can be retried, but it also updates
+// the installation target status, so this test checks whether the manifest has
+// been updated with the desired status.
 func TestClientError(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
 
@@ -316,7 +316,7 @@ func TestClientError(t *testing.T) {
 		t.Fatal("Could not process work item")
 	}
 
-	expectedHandleErrors := 0
+	expectedHandleErrors := 1
 	if handleErrors != expectedHandleErrors {
 		t.Fatalf("expected %d handle errors, got %d instead", expectedHandleErrors, handleErrors)
 	}
@@ -326,19 +326,19 @@ func TestClientError(t *testing.T) {
 		{
 			Name:    "minikube-a",
 			Status:  shipper.InstallationStatusFailed,
-			Message: "client error",
+			Message: `cluster "minikube-a" not ready for use yet; cluster client is being initialized`,
 			Conditions: []shipper.ClusterInstallationCondition{
 				{
 					Type:    shipper.ClusterConditionTypeOperational,
 					Status:  corev1.ConditionFalse,
-					Reason:  conditions.ServerError,
-					Message: "client error",
+					Reason:  conditions.TargetClusterClientError,
+					Message: `cluster "minikube-a" not ready for use yet; cluster client is being initialized`,
 				},
 				{
 					Type:    shipper.ClusterConditionTypeReady,
 					Status:  corev1.ConditionUnknown,
-					Reason:  conditions.ServerError,
-					Message: "client error",
+					Reason:  conditions.TargetClusterClientError,
+					Message: `cluster "minikube-a" not ready for use yet; cluster client is being initialized`,
 				},
 			},
 		},
@@ -363,8 +363,8 @@ func TestClientError(t *testing.T) {
 // TestTargetClusterMissesGVK tests a case where the rendered manifest refers to
 // a GroupVersionKind that the Target Cluster doesn't understand.
 //
-// This doesn't raise an error, but it updates the installation target status,
-// so this test checks whether the manifest has been updated with the desired
+// This raises an error, but it also updates the installation target status, so
+// this test checks whether the manifest has been updated with the desired
 // status.
 func TestTargetClusterMissesGVK(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
@@ -399,7 +399,7 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 		t.Fatal("Could not process work item")
 	}
 
-	expectedHandleErrors := 0
+	expectedHandleErrors := 1
 	if handleErrors != expectedHandleErrors {
 		t.Fatalf("expected %d handle errors, got %d instead", expectedHandleErrors, handleErrors)
 	}
@@ -409,7 +409,7 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 		{
 			Name:    "minikube-a",
 			Status:  shipper.InstallationStatusFailed,
-			Message: `error building resource client: GroupVersion "v1" not found`,
+			Message: `failed to discover server resources for GroupVersion "v1": GroupVersion "v1" not found`,
 			Conditions: []shipper.ClusterInstallationCondition{
 				{
 					Type:   shipper.ClusterConditionTypeOperational,
@@ -419,7 +419,7 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 					Type:    shipper.ClusterConditionTypeReady,
 					Status:  corev1.ConditionFalse,
 					Reason:  conditions.ServerError,
-					Message: `error building resource client: GroupVersion "v1" not found`,
+					Message: `failed to discover server resources for GroupVersion "v1": GroupVersion "v1" not found`,
 				},
 			},
 		},
@@ -444,9 +444,9 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 // TestManagementServerMissesCluster tests a case where the installation target
 // refers to a cluster the management cluster doesn't know.
 //
-// This doesn't raise an error, but it updates the installation target status,
-// so this test checks whether the manifest has been updated with the desired
-// status.
+// This raises an error so the operation can be retried, but it also updates
+// the installation target status, so this test checks whether the manifest has
+// been updated with the desired status.
 func TestManagementServerMissesCluster(t *testing.T) {
 	var shipperclientset *shipperfake.Clientset
 
@@ -479,7 +479,7 @@ func TestManagementServerMissesCluster(t *testing.T) {
 		t.Fatal("Could not process work item")
 	}
 
-	expectedHandleErrors := 0
+	expectedHandleErrors := 1
 	if handleErrors != expectedHandleErrors {
 		t.Fatalf("expected %d handle errors, got %d instead", expectedHandleErrors, handleErrors)
 	}
@@ -489,19 +489,19 @@ func TestManagementServerMissesCluster(t *testing.T) {
 		{
 			Name:    "minikube-a",
 			Status:  shipper.InstallationStatusFailed,
-			Message: `cluster.shipper.booking.com "minikube-a" not found`,
+			Message: `failed to GET Cluster "minikube-a": cluster.shipper.booking.com "minikube-a" not found`,
 			Conditions: []shipper.ClusterInstallationCondition{
 				{
 					Type:    shipper.ClusterConditionTypeOperational,
 					Status:  corev1.ConditionFalse,
 					Reason:  conditions.ServerError,
-					Message: `cluster.shipper.booking.com "minikube-a" not found`,
+					Message: `failed to GET Cluster "minikube-a": cluster.shipper.booking.com "minikube-a" not found`,
 				},
 				{
 					Type:    shipper.ClusterConditionTypeReady,
 					Status:  corev1.ConditionUnknown,
 					Reason:  conditions.ServerError,
-					Message: `cluster.shipper.booking.com "minikube-a" not found`,
+					Message: `failed to GET Cluster "minikube-a": cluster.shipper.booking.com "minikube-a" not found`,
 				},
 			},
 		},

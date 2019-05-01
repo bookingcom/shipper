@@ -78,7 +78,8 @@ func (s releaseNamespaceLister) ReleaseForInstallationTarget(it *shipper.Install
 
 	rel, err := s.Get(owner.Name)
 	if err != nil {
-		return nil, err
+		return nil, shippererrors.NewKubeclientGetError(s.namespace, owner.Name, err).
+			WithShipperKind("Release")
 	}
 
 	if rel.UID != owner.UID {

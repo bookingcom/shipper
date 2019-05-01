@@ -141,11 +141,19 @@ func (c *Controller) processNextWorkItem() bool {
 
 	if key, ok = obj.(string); !ok {
 		c.workqueue.Forget(obj)
-		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
+		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
 		return true
 	}
 
-	if shouldRetry := c.syncOne(key); shouldRetry {
+	shouldRetry := false
+	err := c.syncOne(key)
+
+	if err != nil {
+		shouldRetry = shippererrors.ShouldRetry(err)
+		runtime.HandleError(fmt.Errorf("error syncing InstallationTarget%q (will retry: %t): %s", key, shouldRetry, err.Error()))
+	}
+
+	if shouldRetry {
 		if c.workqueue.NumRequeues(key) >= maxRetries {
 			// Drop the InstallationTarget's key out of the workqueue and thus reset its
 			// backoff. This limits the time a "broken" object can hog a worker.
@@ -166,39 +174,28 @@ func (c *Controller) processNextWorkItem() bool {
 	return true
 }
 
-func (c *Controller) syncOne(key string) bool {
+func (c *Controller) syncOne(key string) error {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %q", key))
-		return false
+		return shippererrors.NewUnrecoverableError(err)
 	}
 
 	it, err := c.installationTargetsLister.InstallationTargets(namespace).Get(name)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			glog.V(3).Infof("InstallationTarget %q has been deleted", key)
-			return false
+			return nil
 		}
 
-		runtime.HandleError(fmt.Errorf("error syncing InstallationTarget %q (will retry): %s", key, err))
-		return true
+		return shippererrors.NewKubeclientGetError(namespace, name, err).
+			WithShipperKind("InstallationTarget")
 	}
 
 	if err := c.processInstallation(it.DeepCopy()); err != nil {
-		shouldRetry := !shippererrors.IsMultipleOwnerReferencesError(err) &&
-			!shippererrors.IsWrongOwnerReferenceError(err) &&
-			!IsIncompleteReleaseError(err)
-
-		if shouldRetry {
-			runtime.HandleError(fmt.Errorf("error syncing InstallationTarget %q (will retry): %s", key, err))
-			return true
-		}
-
-		runtime.HandleError(fmt.Errorf("error syncing InstallationTarget %q (will not retry): %s", key, err))
-		return false
+		return err
 	}
 
-	return false
+	return nil
 }
 
 func (c *Controller) enqueueInstallationTarget(obj interface{}) {
@@ -222,7 +219,7 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 
 	appName, ok := release.GetLabels()[shipper.AppLabel]
 	if !ok {
-		return NewIncompleteReleaseError(`couldn't find label %q in release %q`, shipper.AppLabel, release.Name)
+		return shippererrors.NewIncompleteReleaseError(`couldn't find label %q in release %q`, shipper.AppLabel, release.Name)
 	}
 
 	contenderRel, err := relNamespaceLister.ContenderForApplication(appName)
@@ -250,6 +247,9 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 	// about an application cluster status, so it just report that a cluster might
 	// not be operational if operations on the application cluster fail for any
 	// reason.
+
+	clusterErrors := shippererrors.NewMultiError()
+
 	for _, name := range it.Spec.Clusters {
 
 		// IMPORTANT: Since we keep existing conditions from previous syncing
@@ -265,11 +265,12 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 
 		var cluster *shipper.Cluster
 		if cluster, err = c.clusterLister.Get(name); err != nil {
+			err = shippererrors.NewKubeclientGetError("", name, err).WithShipperKind("Cluster")
+			clusterErrors.Append(err)
 			status.Status = shipper.InstallationStatusFailed
 			status.Message = err.Error()
 			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeOperational, corev1.ConditionFalse, reasonForOperationalCondition(err), err.Error())
 			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeReady, corev1.ConditionUnknown, reasonForReadyCondition(err), err.Error())
-			glog.Warningf("Get Cluster %q for InstallationTarget %q: %s", name, shippercontroller.MetaKey(it), err)
 			continue
 		}
 
@@ -277,11 +278,11 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 		var restConfig *rest.Config
 		client, restConfig, err = c.GetClusterAndConfig(name)
 		if err != nil {
+			clusterErrors.Append(err)
 			status.Status = shipper.InstallationStatusFailed
 			status.Message = err.Error()
 			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeOperational, corev1.ConditionFalse, reasonForOperationalCondition(err), err.Error())
 			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeReady, corev1.ConditionUnknown, reasonForReadyCondition(err), err.Error())
-			glog.Warningf("Get config for Cluster %q for InstallationTarget %q: %s", name, shippercontroller.MetaKey(it), err)
 			continue
 		}
 
@@ -291,10 +292,10 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 		status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeOperational, corev1.ConditionTrue, "", "")
 
 		if err = installer.installRelease(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
+			clusterErrors.Append(err)
 			status.Status = shipper.InstallationStatusFailed
 			status.Message = err.Error()
 			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeReady, corev1.ConditionFalse, reasonForReadyCondition(err), err.Error())
-			glog.Warningf("Install InstallationTarget %q for Cluster %q: %s", shippercontroller.MetaKey(it), name, err)
 			continue
 		}
 
@@ -306,29 +307,41 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 	it.Status.Clusters = newClusterStatuses
 
 	_, err = c.shipperclientset.ShipperV1alpha1().InstallationTargets(it.Namespace).Update(it)
-	if err == nil {
-		newClusterStatusesVal := make([]string, 0, len(newClusterStatuses))
-		for _, clusterStatus := range newClusterStatuses {
-			newClusterStatusesVal = append(newClusterStatusesVal, fmt.Sprintf("%s", *clusterStatus))
+	if err != nil {
+		err = shippererrors.NewKubeclientUpdateError(it, err).
+			WithShipperKind("InstallationTarget")
+
+		clusterErrors.Append(err)
+
+		if shippererrors.ShouldBroadcast(err) {
+			c.recorder.Event(
+				it,
+				corev1.EventTypeWarning,
+				"FailedInstallationStatusChange",
+				err.Error(),
+			)
 		}
-		c.recorder.Eventf(
-			it,
-			corev1.EventTypeNormal,
-			"InstallationStatusChanged",
-			"Set %q status to %v",
-			shippercontroller.MetaKey(it),
-			newClusterStatusesVal,
-		)
-	} else {
-		c.recorder.Event(
-			it,
-			corev1.EventTypeWarning,
-			"FailedInstallationStatusChange",
-			err.Error(),
-		)
 	}
 
-	return err
+	newClusterStatusesVal := make([]string, 0, len(newClusterStatuses))
+	for _, clusterStatus := range newClusterStatuses {
+		newClusterStatusesVal = append(newClusterStatusesVal, fmt.Sprintf("%s", *clusterStatus))
+	}
+
+	c.recorder.Eventf(
+		it,
+		corev1.EventTypeNormal,
+		"InstallationStatusChanged",
+		"Set %q status to %v",
+		shippercontroller.MetaKey(it),
+		newClusterStatusesVal,
+	)
+
+	if clusterErrors.Any() {
+		return clusterErrors
+	} else {
+		return nil
+	}
 }
 
 // extractExistingConditionsPerCluster builds a map with values being a list of conditions.
@@ -372,16 +385,16 @@ func reasonForOperationalCondition(err error) string {
 }
 
 func reasonForReadyCondition(err error) string {
-	if IsCreateResourceError(err) || IsGetResourceError(err) {
+	if shippererrors.IsKubeclientError(err) {
 		return conditions.ServerError
 	}
 
-	if IsDecodeManifestError(err) || IsConvertUnstructuredError(err) || shippererrors.IsInvalidChartError(err) {
+	if shippererrors.IsDecodeManifestError(err) || shippererrors.IsConvertUnstructuredError(err) || shippererrors.IsInvalidChartError(err) {
 		return conditions.ChartError
 	}
 
-	if IsResourceClientError(err) {
-		return conditions.ClientError
+	if shippererrors.IsClusterClientStoreError(err) {
+		return conditions.TargetClusterClientError
 	}
 
 	return conditions.UnknownError

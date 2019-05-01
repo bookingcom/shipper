@@ -56,7 +56,7 @@ func (i *Installer) renderManifests(_ *shipper.Cluster) ([]string, error) {
 	rel := i.Release
 	chart, err := i.fetchChart(rel.Spec.Environment.Chart)
 	if err != nil {
-		return nil, RenderManifestError(err)
+		return nil, shippererrors.NewRenderManifestError(err)
 	}
 
 	rendered, err := shipperchart.Render(
@@ -67,7 +67,7 @@ func (i *Installer) renderManifests(_ *shipper.Cluster) ([]string, error) {
 	)
 
 	if err != nil {
-		err = RenderManifestError(err)
+		err = shippererrors.NewRenderManifestError(err)
 	}
 
 	for _, v := range rendered {
@@ -91,9 +91,9 @@ func (i *Installer) buildResourceClient(
 	// From the list of resources the target cluster knows about, find the resource for the
 	// kind of object we have at hand.
 	var resource *metav1.APIResource
-	gv := gvk.GroupVersion().String()
-	if resources, err := client.Discovery().ServerResourcesForGroupVersion(gv); err != nil {
-		return nil, err
+	gv := gvk.GroupVersion()
+	if resources, err := client.Discovery().ServerResourcesForGroupVersion(gv.String()); err != nil {
+		return nil, shippererrors.NewKubeclientDiscoverError(gvk.GroupVersion(), err)
 	} else {
 		for _, e := range resources.APIResources {
 			if e.Kind == gvk.Kind {
@@ -101,8 +101,10 @@ func (i *Installer) buildResourceClient(
 				break
 			}
 		}
+
 		if resource == nil {
-			return nil, fmt.Errorf("resource %s not found", gvk.Kind)
+			err := fmt.Errorf("resource %s not found", gvk.Kind)
+			return nil, shippererrors.NewUnrecoverableError(err)
 		}
 	}
 
@@ -265,7 +267,7 @@ func (i *Installer) patchObject(
 		unstructuredObj := &unstructured.Unstructured{}
 		err := i.Scheme.Convert(object, unstructuredObj, nil)
 		if err != nil {
-			return nil, err
+			return nil, shippererrors.NewConvertUnstructuredError("error converting object to unstructured: %s", err)
 		}
 		return i.patchUnstructured(unstructuredObj, labelsToInject, ownerReference)
 	}
@@ -286,14 +288,14 @@ func (i *Installer) installManifests(
 	var err error
 
 	if configMap, err = janitor.CreateConfigMapAnchor(i.InstallationTarget); err != nil {
-		return NewCreateResourceError("error creating anchor config map: %s ", err)
+		return err
 	} else if existingConfigMap, err = client.CoreV1().ConfigMaps(i.Release.Namespace).Get(configMap.Name, metav1.GetOptions{}); err != nil && !errors.IsNotFound(err) {
-		return NewGetResourceError(`error getting anchor %q: %s`, configMap.Name, err)
+		return shippererrors.NewKubeclientGetError(i.Release.Name, configMap.Name, err).
+			WithCoreV1Kind("ConfigMap")
 	} else if err != nil { // errors.IsNotFound(err) == true
 		if createdConfigMap, err = client.CoreV1().ConfigMaps(configMap.Namespace).Create(configMap); err != nil {
-			return NewCreateResourceError(
-				`error creating anchor resource %s "%s/%s": %s`,
-				configMap.Kind, configMap.Namespace, configMap.Name, err)
+			return shippererrors.NewKubeclientCreateError(configMap, err).
+				WithCoreV1Kind("ConfigMap")
 		}
 	} else {
 		createdConfigMap = existingConfigMap
@@ -330,7 +332,7 @@ func (i *Installer) installManifests(
 				Decode([]byte(manifest), nil, nil)
 
 		if err != nil {
-			return NewDecodeManifestError("error decoding manifest: %s", err)
+			return shippererrors.NewDecodeManifestError("error decoding manifest: %s", err)
 		}
 
 		// We need the Deployment in the chart to have a unique name,
@@ -426,9 +428,11 @@ func (i *Installer) installManifests(
 		unstrObj := &unstructured.Unstructured{}
 		err = i.Scheme.Convert(decodedObj, unstrObj, nil)
 		if err != nil {
-			return NewConvertUnstructuredError("error converting object to unstructured: %s", err)
+			return shippererrors.NewConvertUnstructuredError("error converting object to unstructured: %s", err)
 		}
 
+		name := unstrObj.GetName()
+		namespace := unstrObj.GetNamespace()
 		gvk := unstrObj.GroupVersionKind()
 
 		// Once we've gathered enough information about the document we want to
@@ -436,7 +440,7 @@ func (i *Installer) installManifests(
 		// cluster.
 		resourceClient, err := i.buildResourceClient(cluster, client, restConfig, dynamicClientBuilderFunc, &gvk)
 		if err != nil {
-			return NewResourceClientError("error building resource client: %s", err)
+			return err
 		}
 
 		// "fetch-and-create-or-update" strategy in here; this is required to
@@ -446,12 +450,13 @@ func (i *Installer) installManifests(
 		// attempts to create the resource, taking some time to re-sync
 		// the quota information when objects can't be created since they
 		// already exist.
-		existingObj, err := resourceClient.Get(unstrObj.GetName(), metav1.GetOptions{})
+		existingObj, err := resourceClient.Get(name, metav1.GetOptions{})
 
 		// Any error other than NotFound is not recoverable from this point on.
 		if err != nil && !errors.IsNotFound(err) {
-			return NewGetResourceError(`error getting resource %s '%s/%s': %s`,
-				unstrObj.GetKind(), unstrObj.GetNamespace(), unstrObj.GetName(), err)
+			return shippererrors.
+				NewKubeclientGetError(namespace, name, err).
+				WithKind(gvk)
 		}
 
 		// If have an error here, it means it is NotFound, so proceed to
@@ -459,8 +464,9 @@ func (i *Installer) installManifests(
 		if err != nil {
 			_, err = resourceClient.Create(unstrObj)
 			if err != nil {
-				return NewCreateResourceError(`error creating resource %s "%s/%s": %s`,
-					unstrObj.GetKind(), unstrObj.GetNamespace(), unstrObj.GetName(), err)
+				return shippererrors.
+					NewKubeclientCreateError(unstrObj, err).
+					WithKind(gvk)
 			}
 			continue
 		}
@@ -477,7 +483,7 @@ func (i *Installer) installManifests(
 		if releaseLabelValue, ok := existingObj.GetLabels()[shipper.ReleaseLabel]; ok && releaseLabelValue == i.Release.Name {
 			continue
 		} else if !ok {
-			return NewIncompleteReleaseError(`Release "%s/%s" misses the required label %q`, existingObj.GetNamespace(), existingObj.GetName(), shipper.ReleaseLabel)
+			return shippererrors.NewIncompleteReleaseError(`Release "%s/%s" misses the required label %q`, existingObj.GetNamespace(), existingObj.GetName(), shipper.ReleaseLabel)
 		}
 
 		ownerReferenceFound := false
@@ -508,8 +514,9 @@ func (i *Installer) installManifests(
 		unstructured.SetNestedField(existingUnstructuredObj, newUnstructuredObj["spec"], "spec")
 		existingObj.SetUnstructuredContent(existingUnstructuredObj)
 		if _, clientErr := resourceClient.Update(existingObj); clientErr != nil {
-			return NewUpdateResourceError(`error updating resource %s "%s/%s": %s`,
-				existingObj.GetKind(), unstrObj.GetNamespace(), unstrObj.GetName(), clientErr)
+			return shippererrors.
+				NewKubeclientUpdateError(unstrObj, err).
+				WithKind(gvk)
 		}
 	}
 
