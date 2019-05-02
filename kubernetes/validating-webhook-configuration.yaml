@@ -26,4 +26,5 @@ webhooks:
     - installationtargets
     - capacitytargets
     - traffictargets
+    - clusters
   failurePolicy: "Fail"

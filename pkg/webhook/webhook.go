@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"mime"
 	"net/http"
 
 	"github.com/golang/glog"
@@ -13,8 +14,6 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
-
-	"mime"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
@@ -129,10 +128,12 @@ func adaptHandler(handler func(*admission_v1beta1.AdmissionReview) *admission_v1
 		resp, err := json.Marshal(admissionReview)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("could not encode response: %v", err), http.StatusInternalServerError)
+			return
 		}
 
 		if _, err := w.Write(resp); err != nil {
 			http.Error(w, fmt.Sprintf("could not write response: %v", err), http.StatusInternalServerError)
+			return
 		}
 	}
 }
