@@ -293,11 +293,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		clusterErrors.Append(shippererrors.NewKubeclientUpdateError(ct, err))
 	}
 
-	if clusterErrors.Any() {
-		return clusterErrors
-	} else {
-		return nil
-	}
+	return clusterErrors.Flatten()
 }
 
 func (c *Controller) enqueueCapacityTarget(obj interface{}) {

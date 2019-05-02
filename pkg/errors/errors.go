@@ -130,6 +130,17 @@ func (e *MultiError) Any() bool {
 	return len(e.Errors) > 0
 }
 
+func (e *MultiError) Flatten() error {
+	l := len(e.Errors)
+	if l == 0 {
+		return nil
+	} else if l == 1 {
+		return e.Errors[0]
+	} else {
+		return e
+	}
+}
+
 func (e *MultiError) ShouldRetry() bool {
 	for _, err := range e.Errors {
 		if ShouldRetry(err) {

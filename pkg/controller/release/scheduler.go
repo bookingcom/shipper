@@ -125,7 +125,7 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 	}
 
 	if releaseErrors.Any() {
-		return nil, releaseErrors
+		return nil, releaseErrors.Flatten()
 	}
 
 	if !releaseutil.ReleaseInstalled(rel) && !releaseutil.ReleaseScheduled(rel) && !releaseutil.ReleaseComplete(rel) {

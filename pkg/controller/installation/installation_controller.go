@@ -337,11 +337,7 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 		newClusterStatusesVal,
 	)
 
-	if clusterErrors.Any() {
-		return clusterErrors
-	} else {
-		return nil
-	}
+	return clusterErrors.Flatten()
 }
 
 // extractExistingConditionsPerCluster builds a map with values being a list of conditions.
