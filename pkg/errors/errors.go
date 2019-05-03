@@ -1,19 +1,3 @@
-// Package errors provides detailed error types for Shipper issues.
-
-// Shipper errors can be classified into recoverable and unrecoverable errors.
-
-// A recoverable error represents a transient issue that is expected to
-// eventually recover, either on its own (a cluster that was unreachable and
-// becomes reachable again) or through use action on resources we cannot
-// observe (like an agent acquiring access rights through an external party).
-// Actions causing such an error are expected to be retried indefinitely until
-// they eventually succeed.
-
-// An unrecoverable error represents an issue that is not expected to ever
-// succeed by retrying the actions that caused it without being corrected by
-// the user, such as trying to create a malformed or inherently invalid object.
-// The actions that cause these errors are NOT expected to be retried, and
-// should be permanently dropped from any worker queues.
 package errors
 
 import (
@@ -28,10 +12,16 @@ type RetryAware interface {
 	ShouldRetry() bool
 }
 
+// BroadcastAware is an error that knows if the action that caused it should
+// be broadcasted to the outside world through Kubernetes events.
 type BroadcastAware interface {
 	ShouldBroadcast() bool
 }
 
+// ShouldRetry determines if err should be retried. It trusts err.ShouldRetry
+// if err implements RetryAware, but otherwise assumes that all errors should
+// be retried, in order not to stop retries for errors that haven't been
+// classified yet.
 func ShouldRetry(err error) bool {
 	retryAware, ok := err.(RetryAware)
 	if ok {
@@ -43,6 +33,11 @@ func ShouldRetry(err error) bool {
 	return true
 }
 
+// ShouldBroadcast determines if err should be broadcasted through Kubernetes
+// events. It trusts err.ShouldBroadcast if err implements BroadcastAware, but
+// otherwise assumes that all errors should be broadcasted, under the
+// assumption that most errors are interesting enough to be broadcasted, and
+// we'll actively suppress the few that we don't want to expose.
 func ShouldBroadcast(err error) bool {
 	broadcastAware, ok := err.(BroadcastAware)
 	if ok {
@@ -100,16 +95,14 @@ func NewUnrecoverableError(err error) UnrecoverableError {
 	return UnrecoverableError{err: err}
 }
 
-// MultiError is an collection of errors that is retry aware, so it knows if any
-// of the collected errors are to be retried.
+// MultiError is an collection of errors that implements both RetryAware and
+// BroadcastAware.
 type MultiError struct {
 	Errors []error
 }
 
-func NewMultiError() *MultiError {
-	return &MultiError{}
-}
-
+// Error implements the error interface. It concatenates the messages for all
+// the errors in the collection.
 func (e *MultiError) Error() string {
 	nErrors := len(e.Errors)
 	points := make([]string, nErrors)
@@ -122,14 +115,18 @@ func (e *MultiError) Error() string {
 		nErrors, strings.Join(points, ";"))
 }
 
+// Append appends an error to the collection.
 func (e *MultiError) Append(err error) {
 	e.Errors = append(e.Errors, err)
 }
 
+// Any returns true if there are any errors in the collection.
 func (e *MultiError) Any() bool {
 	return len(e.Errors) > 0
 }
 
+// Flatten unboxes a MultiError into a single error if there's only one in the
+// collection, nil if there are none, or itself otherwise.
 func (e *MultiError) Flatten() error {
 	l := len(e.Errors)
 	if l == 0 {
@@ -141,6 +138,8 @@ func (e *MultiError) Flatten() error {
 	}
 }
 
+// ShouldRetry returns true when at least one error in the collection
+// should be retried, and false otherwise.
 func (e *MultiError) ShouldRetry() bool {
 	for _, err := range e.Errors {
 		if ShouldRetry(err) {
@@ -151,6 +150,8 @@ func (e *MultiError) ShouldRetry() bool {
 	return false
 }
 
+// ShouldBroadcast returns true when at least one error in the collection
+// should be broadcasted, and false otherwise.
 func (e *MultiError) ShouldBroadcast() bool {
 	for _, err := range e.Errors {
 		if ShouldBroadcast(err) {
@@ -159,4 +160,8 @@ func (e *MultiError) ShouldBroadcast() bool {
 	}
 
 	return false
+}
+
+func NewMultiError() *MultiError {
+	return &MultiError{}
 }
