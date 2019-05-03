@@ -1,0 +1,30 @@
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: shipper-webhook-configuration
+  labels:
+    app: shipper
+webhooks:
+- clientConfig:
+    service:
+      name: shipper-webhook-svc
+      namespace: shipper-system
+      path: "/validate"
+    caBundle: "${CA_BUNDLE}"
+  name: shipper-webhook.booking.com
+  rules:
+  - operations:
+    - CREATE
+    - UPDATE
+    apiGroups:
+    - "shipper.booking.com"
+    apiVersions:
+    - v1alpha1
+    resources:
+    - applications
+    - releases
+    - installationtargets
+    - capacitytargets
+    - traffictargets
+    - clusters
+  failurePolicy: "Fail"

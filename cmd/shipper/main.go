@@ -42,6 +42,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller/traffic"
 	"github.com/bookingcom/shipper/pkg/metrics/instrumentedclient"
 	shippermetrics "github.com/bookingcom/shipper/pkg/metrics/prometheus"
+	"github.com/bookingcom/shipper/pkg/webhook"
 )
 
 var controllers = []string{
@@ -52,6 +53,7 @@ var controllers = []string{
 	"capacity",
 	"traffic",
 	"janitor",
+	"webhook",
 }
 
 const defaultRESTTimeout time.Duration = 10 * time.Second
@@ -70,6 +72,10 @@ var (
 	chartCacheDir       = flag.String("cachedir", filepath.Join(os.TempDir(), "chart-cache"), "location for the local cache of downloaded charts")
 	resync              = flag.Duration("resync", defaultResync, "Informer's cache re-sync in Go's duration format.")
 	restTimeout         = flag.Duration("rest-timeout", defaultRESTTimeout, "Timeout value for management and target REST clients. Does not affect informer watches.")
+	webhookCertPath     = flag.String("webhook-cert", "", "Path to the TLS certificate for the webhook controller.")
+	webhookKeyPath      = flag.String("webhook-key", "", "Path to the TLS private key for the webhook controller.")
+	webhookBindAddr     = flag.String("webhook-addr", "0.0.0.0", "Addr to bind the webhook controller.")
+	webhookBindPort     = flag.String("webhook-port", "9443", "Port to bind the webhook controller.")
 )
 
 type metricsCfg struct {
@@ -98,6 +104,9 @@ type cfg struct {
 	certPath, keyPath string
 	ns                string
 	workers           int
+
+	webhookCertPath, webhookKeyPath  string
+	webhookBindAddr, webhookBindPort string
 
 	wg     *sync.WaitGroup
 	stopCh <-chan struct{}
@@ -200,6 +209,11 @@ func main() {
 		keyPath:  *keyPath,
 		ns:       *ns,
 		workers:  *workers,
+
+		webhookCertPath: *webhookCertPath,
+		webhookKeyPath:  *webhookKeyPath,
+		webhookBindAddr: *webhookBindAddr,
+		webhookBindPort: *webhookBindPort,
 
 		wg:     wg,
 		stopCh: stopCh,
@@ -355,6 +369,7 @@ func buildInitializers() map[string]initFunc {
 	controllers["capacity"] = startCapacityController
 	controllers["traffic"] = startTrafficController
 	controllers["janitor"] = startJanitorController
+	controllers["webhook"] = startWebhook
 	return controllers
 }
 
@@ -501,6 +516,23 @@ func startTrafficController(cfg *cfg) (bool, error) {
 	cfg.wg.Add(1)
 	go func() {
 		c.Run(cfg.workers, cfg.stopCh)
+		cfg.wg.Done()
+	}()
+
+	return true, nil
+}
+
+func startWebhook(cfg *cfg) (bool, error) {
+	enabled := cfg.enabledControllers["webhook"]
+	if !enabled {
+		return false, nil
+	}
+
+	c := webhook.NewWebhook(cfg.webhookBindAddr, cfg.webhookBindPort, cfg.webhookKeyPath, cfg.webhookCertPath)
+
+	cfg.wg.Add(1)
+	go func() {
+		c.Run(cfg.stopCh)
 		cfg.wg.Done()
 	}()
 

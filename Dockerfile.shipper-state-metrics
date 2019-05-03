@@ -1,5 +1,4 @@
-ARG BASE_IMAGE=alpine:3.8
-FROM ${BASE_IMAGE}
+FROM alpine:3.8
 LABEL authors="Parham Doustdar <parham.doustdar@booking.com>, Alexey Surikov <alexey.surikov@booking.com>, Igor Sutton <igor.sutton@booking.com>, Ben Tyler <benjamin.tyler@booking.com>"
 RUN apk add ca-certificates
 ADD shipper-state-metrics /bin/shipper-state-metrics

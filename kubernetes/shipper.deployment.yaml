@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shipper
+  namespace: shipper-system
+  labels:
+    app: shipper
+spec:
+  selector:
+    matchLabels:
+      app: shipper
+  template:
+    metadata:
+      labels:
+        app: shipper
+    spec:
+      containers:
+      - name: shipper
+        image: bookingcom/shipper:latest
+        imagePullPolicy: Always
+        args:
+          - "-webhook-cert"
+          - "/etc/webhook/certs/tls.crt"
+          - "-webhook-key"
+          - "/etc/webhook/certs/tls.key"
+          - "-webhook-port"
+          - "9443"
+        ports:
+        - containerPort: 9443
+        volumeMounts:
+        - mountPath: /etc/webhook/certs
+          name: webhook-certs
+          readOnly: true
+      volumes:
+      - name: webhook-certs
+        secret:
+          secretName: shipper-validating-webhook
