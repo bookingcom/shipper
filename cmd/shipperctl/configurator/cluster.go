@@ -32,7 +32,7 @@ const (
 	shipperValidatingWebhookSecretName  = "shipper-validating-webhook"
 	shipperValidatingWebhookName        = "shipper.booking.com"
 	shipperValidatingWebhookServiceName = "shipper-validating-webhook"
-	MaximumRetries                      = 10
+	MaximumRetries                      = 20
 )
 
 type Cluster struct {
@@ -371,7 +371,7 @@ func (c *Cluster) FetchCertificateFromCSR() ([]byte, error) {
 	}
 
 	// If we reach here, we have failed to get the certificate after all the retries
-	return nil, fmt.Errorf("certificate is not populated after 10 retries")
+	return nil, fmt.Errorf("certificate is not populated after %d retries", MaximumRetries)
 }
 
 func (c *Cluster) ValidatingWebhookSecretExists(namespace string) (bool, error) {
