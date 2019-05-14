@@ -1,7 +1,7 @@
-SHIPPER_IMAGE = bookingcom/shipper:latest
-METRICS_IMAGE = bookingcom/shipper-state-metrics:latest
-SHIPPER_NAMESPACE = shipper-system
-KUBECTL = kubectl -n $(SHIPPER_NAMESPACE)
+SHIPPER_IMAGE ?= bookingcom/shipper:latest
+METRICS_IMAGE ?= bookingcom/shipper-state-metrics:latest
+SHIPPER_NAMESPACE ?= shipper-system
+KUBECTL ?= kubectl -n $(SHIPPER_NAMESPACE)
 
 shipper: cmd/shipper/* pkg/* vendor/* Dockerfile.shipper
 	GOARCH=amd64 CGO_ENABLED=0 GOOS=linux go build -o shipper ./cmd/shipper/*.go
