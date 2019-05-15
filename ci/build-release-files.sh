@@ -46,7 +46,7 @@ function package {
 }
 
 function create_deployment_yaml {
-    sed s/\<IMAGE_TAG\>/$TRAVIS_TAG/ kubernetes/shipper.deployment.yaml > $BASE/kubernetes-deployment.yaml
+    sed s=\<IMAGE\>=bookingcom/shipper:$TRAVIS_TAG= kubernetes/shipper.deployment.yaml > ./kubernetes-deployment.yaml
 }
 
 function build_and_package {
