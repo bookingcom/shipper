@@ -11,14 +11,14 @@ import (
 func NewFakeClusterClientStore(
 	fakeClient *fake.Clientset,
 	informer informers.SharedInformerFactory,
-	fakeClusterName string,
+	fakeClusterNames []string,
 ) *FakeClusterClientStore {
 	return &FakeClusterClientStore{
 		client:                fakeClient,
 		informerFactory:       informer,
 		subscriptionCallbacks: []clusterclientstore.SubscriptionRegisterFunc{},
 		eventHandlerCallbacks: []clusterclientstore.EventHandlerRegisterFunc{},
-		FakeClusterName:       fakeClusterName,
+		FakeClusterNames:      fakeClusterNames,
 	}
 }
 
@@ -35,7 +35,7 @@ type FakeClusterClientStore struct {
 	subscriptionCallbacks []clusterclientstore.SubscriptionRegisterFunc
 	eventHandlerCallbacks []clusterclientstore.EventHandlerRegisterFunc
 	// Passed to the registered event handler callbacks.
-	FakeClusterName string
+	FakeClusterNames []string
 }
 
 func (s *FakeClusterClientStore) AddSubscriptionCallback(subscriptionCallback clusterclientstore.SubscriptionRegisterFunc) {
@@ -52,7 +52,9 @@ func (s *FakeClusterClientStore) Run(stopCh <-chan struct{}) {
 	}
 
 	for _, eventHandlerCallback := range s.eventHandlerCallbacks {
-		eventHandlerCallback(s.informerFactory, s.FakeClusterName)
+		for _, clusName := range s.FakeClusterNames {
+			eventHandlerCallback(s.informerFactory, clusName)
+		}
 	}
 }
 
