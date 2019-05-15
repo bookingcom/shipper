@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: shipper
-        image: bookingcom/shipper:<IMAGE_TAG>
+        image: <IMAGE>
         imagePullPolicy: Always
         args:
           - "-webhook-cert"
