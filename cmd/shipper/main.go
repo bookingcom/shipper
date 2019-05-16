@@ -38,25 +38,26 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller/clustersecret"
 	"github.com/bookingcom/shipper/pkg/controller/installation"
 	"github.com/bookingcom/shipper/pkg/controller/janitor"
-	"github.com/bookingcom/shipper/pkg/controller/schedulecontroller"
-	"github.com/bookingcom/shipper/pkg/controller/strategy"
+	"github.com/bookingcom/shipper/pkg/controller/release"
 	"github.com/bookingcom/shipper/pkg/controller/traffic"
 	"github.com/bookingcom/shipper/pkg/metrics/instrumentedclient"
 	shippermetrics "github.com/bookingcom/shipper/pkg/metrics/prometheus"
+	"github.com/bookingcom/shipper/pkg/webhook"
 )
 
 var controllers = []string{
 	"application",
 	"clustersecret",
-	"schedule",
-	"strategy",
+	"release",
 	"installation",
 	"capacity",
 	"traffic",
 	"janitor",
+	"webhook",
 }
 
 const defaultRESTTimeout time.Duration = 10 * time.Second
+const defaultResync time.Duration = 30 * time.Second
 
 var (
 	masterURL           = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
@@ -64,13 +65,17 @@ var (
 	certPath            = flag.String("cert", "", "Path to the TLS certificate for target clusters.")
 	keyPath             = flag.String("key", "", "Path to the TLS private key for target clusters.")
 	ns                  = flag.String("namespace", shipper.ShipperNamespace, "Namespace for Shipper resources.")
-	resyncPeriod        = flag.String("resync", "30s", "Informer's cache re-sync in Go's duration format.")
 	enabledControllers  = flag.String("enable", strings.Join(controllers, ","), "comma-seperated list of controllers to run (if not all)")
 	disabledControllers = flag.String("disable", "", "comma-seperated list of controllers to disable")
 	workers             = flag.Int("workers", 2, "Number of workers to start for each controller.")
 	metricsAddr         = flag.String("metrics-addr", ":8889", "Addr to expose /metrics on.")
 	chartCacheDir       = flag.String("cachedir", filepath.Join(os.TempDir(), "chart-cache"), "location for the local cache of downloaded charts")
+	resync              = flag.Duration("resync", defaultResync, "Informer's cache re-sync in Go's duration format.")
 	restTimeout         = flag.Duration("rest-timeout", defaultRESTTimeout, "Timeout value for management and target REST clients. Does not affect informer watches.")
+	webhookCertPath     = flag.String("webhook-cert", "", "Path to the TLS certificate for the webhook controller.")
+	webhookKeyPath      = flag.String("webhook-key", "", "Path to the TLS private key for the webhook controller.")
+	webhookBindAddr     = flag.String("webhook-addr", "0.0.0.0", "Addr to bind the webhook controller.")
+	webhookBindPort     = flag.String("webhook-port", "9443", "Port to bind the webhook controller.")
 )
 
 type metricsCfg struct {
@@ -89,7 +94,7 @@ type cfg struct {
 
 	kubeInformerFactory    informers.SharedInformerFactory
 	shipperInformerFactory shipperinformers.SharedInformerFactory
-	resync                 time.Duration
+	resync                 *time.Duration
 
 	recorder func(string) record.EventRecorder
 
@@ -100,6 +105,9 @@ type cfg struct {
 	ns                string
 	workers           int
 
+	webhookCertPath, webhookKeyPath  string
+	webhookBindAddr, webhookBindPort string
+
 	wg     *sync.WaitGroup
 	stopCh <-chan struct{}
 
@@ -108,11 +116,6 @@ type cfg struct {
 
 func main() {
 	flag.Parse()
-
-	resync, err := time.ParseDuration(*resyncPeriod)
-	if err != nil {
-		glog.Fatal(err)
-	}
 
 	baseRestCfg, err := clientcmd.BuildConfigFromFlags(*masterURL, *kubeconfig)
 	if err != nil {
@@ -128,8 +131,8 @@ func main() {
 	stopCh := setupSignalHandler()
 	metricsReadyCh := make(chan struct{})
 
-	kubeInformerFactory := informers.NewSharedInformerFactory(informerKubeClient, resync)
-	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(informerShipperClient, resync)
+	kubeInformerFactory := informers.NewSharedInformerFactory(informerKubeClient, *resync)
+	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(informerShipperClient, *resync)
 
 	shipperscheme.AddToScheme(scheme.Scheme)
 
@@ -154,8 +157,8 @@ func main() {
 	wg := &sync.WaitGroup{}
 
 	store := clusterclientstore.NewStore(
-		func(clusterName string, config *rest.Config) (kubernetes.Interface, error) {
-			glog.V(8).Infof("Building a client for Cluster %q", clusterName)
+		func(clusterName string, ua string, config *rest.Config) (kubernetes.Interface, error) {
+			glog.V(8).Infof("Building a client for Cluster %q, UserAgent %q", clusterName, ua)
 
 			// NOTE(btyler/asurikov) Ooookaaayyy. This is temporary. I promise.
 			// No, really. This is to buy us time to think how the
@@ -168,6 +171,7 @@ func main() {
 			shallowCopy := *config
 			shallowCopy.QPS = rest.DefaultQPS * 30
 			shallowCopy.Burst = rest.DefaultBurst * 30
+			rest.AddUserAgent(&shallowCopy, ua)
 
 			return kubernetes.NewForConfig(&shallowCopy)
 		},
@@ -175,6 +179,7 @@ func main() {
 		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
 		*ns,
 		restTimeout,
+		resync,
 	)
 
 	wg.Add(1)
@@ -204,6 +209,11 @@ func main() {
 		keyPath:  *keyPath,
 		ns:       *ns,
 		workers:  *workers,
+
+		webhookCertPath: *webhookCertPath,
+		webhookKeyPath:  *webhookKeyPath,
+		webhookBindAddr: *webhookBindAddr,
+		webhookBindPort: *webhookBindPort,
 
 		wg:     wg,
 		stopCh: stopCh,
@@ -354,12 +364,12 @@ func buildInitializers() map[string]initFunc {
 	controllers := map[string]initFunc{}
 	controllers["application"] = startApplicationController
 	controllers["clustersecret"] = startClusterSecretController
-	controllers["schedule"] = startScheduleController
-	controllers["strategy"] = startStrategyController
+	controllers["release"] = startReleaseController
 	controllers["installation"] = startInstallationController
 	controllers["capacity"] = startCapacityController
 	controllers["traffic"] = startTrafficController
 	controllers["janitor"] = startJanitorController
+	controllers["webhook"] = startWebhook
 	return controllers
 }
 
@@ -409,39 +419,17 @@ func startClusterSecretController(cfg *cfg) (bool, error) {
 	return true, nil
 }
 
-func startScheduleController(cfg *cfg) (bool, error) {
-	enabled := cfg.enabledControllers["schedule"]
+func startReleaseController(cfg *cfg) (bool, error) {
+	enabled := cfg.enabledControllers["release"]
 	if !enabled {
 		return false, nil
 	}
 
-	c := schedulecontroller.NewController(
-		buildShipperClient(cfg.restCfg, schedulecontroller.AgentName, cfg.restTimeout),
+	c := release.NewController(
+		buildShipperClient(cfg.restCfg, release.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.chartFetchFunc,
-		cfg.recorder(schedulecontroller.AgentName),
-	)
-
-	cfg.wg.Add(1)
-	go func() {
-		c.Run(cfg.workers, cfg.stopCh)
-		cfg.wg.Done()
-	}()
-
-	return true, nil
-}
-
-func startStrategyController(cfg *cfg) (bool, error) {
-	enabled := cfg.enabledControllers["strategy"]
-	if !enabled {
-		return false, nil
-	}
-
-	c := strategy.NewController(
-		buildShipperClient(cfg.restCfg, strategy.AgentName, cfg.restTimeout),
-		cfg.shipperInformerFactory,
-		dynamic.NewDynamicClientPool(cfg.restCfg),
-		cfg.recorder(strategy.AgentName),
+		cfg.recorder(release.AgentName),
 	)
 
 	cfg.wg.Add(1)
@@ -528,6 +516,23 @@ func startTrafficController(cfg *cfg) (bool, error) {
 	cfg.wg.Add(1)
 	go func() {
 		c.Run(cfg.workers, cfg.stopCh)
+		cfg.wg.Done()
+	}()
+
+	return true, nil
+}
+
+func startWebhook(cfg *cfg) (bool, error) {
+	enabled := cfg.enabledControllers["webhook"]
+	if !enabled {
+		return false, nil
+	}
+
+	c := webhook.NewWebhook(cfg.webhookBindAddr, cfg.webhookBindPort, cfg.webhookKeyPath, cfg.webhookCertPath)
+
+	cfg.wg.Add(1)
+	go func() {
+		c.Run(cfg.stopCh)
 		cfg.wg.Done()
 	}()
 

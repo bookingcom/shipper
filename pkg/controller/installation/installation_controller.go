@@ -149,7 +149,7 @@ func (c *Controller) processNextWorkItem() bool {
 		if c.workqueue.NumRequeues(key) >= maxRetries {
 			// Drop the InstallationTarget's key out of the workqueue and thus reset its
 			// backoff. This limits the time a "broken" object can hog a worker.
-			glog.Warningf("CapacityTarget %q has been retried too many times, dropping from the queue", key)
+			glog.Warningf("InstallationTarget %q has been retried too many times, dropping from the queue", key)
 			c.workqueue.Forget(key)
 
 			return true
@@ -236,18 +236,6 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 		return nil
 	}
 
-	if appLabelValue, ok := release.GetLabels()[shipper.AppLabel]; !ok {
-		// TODO(isutton): Transform this into a real error
-		return fmt.Errorf("couldn't find label %q in release %q", shipper.AppLabel, release.GetName())
-	} else if app, appListerErr := c.appLister.Applications(release.GetNamespace()).Get(appLabelValue); appListerErr != nil {
-		// TODO(isutton): wrap this error.
-		return appListerErr
-	} else if len(app.Status.History) > 0 && app.Status.History[len(app.Status.History)-1] != release.GetName() {
-		// Current release isn't the contender, so we do not attempt to
-		// create or modify objects at all.
-		return nil
-	}
-
 	installer := NewInstaller(c.chartFetchFunc, release, it)
 
 	// Build .status over based on the current .spec.clusters.
@@ -319,13 +307,17 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 
 	_, err = c.shipperclientset.ShipperV1alpha1().InstallationTargets(it.Namespace).Update(it)
 	if err == nil {
+		newClusterStatusesVal := make([]string, 0, len(newClusterStatuses))
+		for _, clusterStatus := range newClusterStatuses {
+			newClusterStatusesVal = append(newClusterStatusesVal, fmt.Sprintf("%s", *clusterStatus))
+		}
 		c.recorder.Eventf(
 			it,
 			corev1.EventTypeNormal,
 			"InstallationStatusChanged",
 			"Set %q status to %v",
 			shippercontroller.MetaKey(it),
-			newClusterStatuses,
+			newClusterStatusesVal,
 		)
 	} else {
 		c.recorder.Event(
@@ -357,7 +349,7 @@ func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interfa
 	var referenceConfig *rest.Config
 	var err error
 
-	if client, err = c.clusterClientStore.GetClient(clusterName); err != nil {
+	if client, err = c.clusterClientStore.GetClient(clusterName, AgentName); err != nil {
 		return nil, nil, err
 	}
 

@@ -22,7 +22,7 @@ echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
 docker build -t bookingcom/shipper:$TRAVIS_COMMIT -f Dockerfile.shipper .
 docker push bookingcom/shipper:$TRAVIS_COMMIT
 
-docker build -t bookingcom/shipper-state-metrics:$TRAVIS_COMMIT -f Dockerfile.metrics .
+docker build -t bookingcom/shipper-state-metrics:$TRAVIS_COMMIT -f Dockerfile.shipper-state-metrics .
 docker push bookingcom/shipper-state-metrics:$TRAVIS_COMMIT
 
 # building a tagged release

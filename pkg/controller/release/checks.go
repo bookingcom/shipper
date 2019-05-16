@@ -1,9 +1,17 @@
-package strategy
+package release
 
 import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	replicasutil "github.com/bookingcom/shipper/pkg/util/replicas"
 )
+
+func contenderTrafficComparison(achieved uint32, desired uint32) bool {
+	return achieved >= desired
+}
+
+func incumbentTrafficComparison(achieved uint32, desired uint32) bool {
+	return achieved <= desired
+}
 
 func checkInstallation(contenderRelease *releaseInfo) (bool, []string) {
 	clustersFromStatus := contenderRelease.installationTarget.Status.Clusters

@@ -1,13 +1,8 @@
-package schedulecontroller
+package release
 
 import (
 	"fmt"
 	"strings"
-)
-
-const (
-	retry   = true
-	noRetry = false
 )
 
 func classifyError(err error) (string, bool) {
@@ -219,4 +214,66 @@ func NewDuplicateCapabilityRequirementError(capability string) DuplicateCapabili
 	return DuplicateCapabilityRequirementError{
 		capability: capability,
 	}
+}
+
+type NotWorkingOnStrategyError struct {
+	contenderReleaseKey string
+}
+
+func NewNotWorkingOnStrategyError(contenderReleaseKey string) NotWorkingOnStrategyError {
+	return NotWorkingOnStrategyError{
+		contenderReleaseKey: contenderReleaseKey,
+	}
+}
+
+func (e NotWorkingOnStrategyError) Error() string {
+	return fmt.Sprintf("found %s as a contender, but it is not currently working on any strategy", e.contenderReleaseKey)
+}
+
+type RetrievingInstallationTargetForReleaseError struct {
+	releaseKey string
+	err        error
+}
+
+func NewRetrievingInstallationTargetForReleaseError(releaseKey string, err error) RetrievingInstallationTargetForReleaseError {
+	return RetrievingInstallationTargetForReleaseError{
+		releaseKey: releaseKey,
+		err:        err,
+	}
+}
+
+func (e RetrievingInstallationTargetForReleaseError) Error() string {
+	return fmt.Sprintf("error when retrieving installation target for release %s: %s", e.releaseKey, e.err)
+}
+
+type RetrievingCapacityTargetForReleaseError struct {
+	releaseKey string
+	err        error
+}
+
+func NewRetrievingCapacityTargetForReleaseError(releaseKey string, err error) RetrievingCapacityTargetForReleaseError {
+	return RetrievingCapacityTargetForReleaseError{
+		releaseKey: releaseKey,
+		err:        err,
+	}
+}
+
+func (e RetrievingCapacityTargetForReleaseError) Error() string {
+	return fmt.Sprintf("error when retrieving capacity target for release %s: %s", e.releaseKey, e.err)
+}
+
+type RetrievingTrafficTargetForReleaseError struct {
+	releaseKey string
+	err        error
+}
+
+func NewRetrievingTrafficTargetForReleaseError(releaseKey string, err error) RetrievingTrafficTargetForReleaseError {
+	return RetrievingTrafficTargetForReleaseError{
+		releaseKey: releaseKey,
+		err:        err,
+	}
+}
+
+func (e RetrievingTrafficTargetForReleaseError) Error() string {
+	return fmt.Sprintf("error when retrieving traffic target for release %s: %s", e.releaseKey, e.err)
 }

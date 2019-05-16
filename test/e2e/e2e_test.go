@@ -621,10 +621,10 @@ func TestRolloutAbort(t *testing.T) {
 	// The strategy emulates deployment all way down to 50/50 (steps 0 and 1)
 	for _, i := range []int{0, 1} {
 		step := vanguard.Steps[i]
-		t.Logf("setting release %q targetStep to %d", contenderName, i)
+		t.Logf("setting contender release %q targetStep to %d", contenderName, i)
 		f.targetStep(i, contenderName)
 
-		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
+		t.Logf("waiting for contender release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
 		f.waitForReleaseStrategyState("command", contenderName, i)
 
 		expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
@@ -645,7 +645,7 @@ func TestRolloutAbort(t *testing.T) {
 	}
 
 	// The test emulates an interruption in the middle of the rollout, which
-	// means the incumbant becomes a new contender and it will stay in 50%
+	// means the incumbent becomes a new contender and it will stay in 50%
 	// capacity state (step 1 according to the vanguard definition) for a bit
 	// until shipper detects the need for capacity and spins up the missing
 	// pods
@@ -748,7 +748,7 @@ func (f *fixture) waitForRelease(appName string, historyIndex int) *shipper.Rele
 		f.t.Fatalf("error waiting for release to be scheduled: %q", err)
 	}
 
-	f.t.Logf("waiting for release took %s", time.Since(start))
+	f.t.Logf("waiting for release %q took %s", newRelease.Name, time.Since(start))
 	return newRelease
 }
 
@@ -811,12 +811,12 @@ func (f *fixture) waitForReleaseStrategyState(waitingFor string, releaseName str
 
 	if err != nil {
 		if err == wait.ErrWaitTimeout {
-			f.t.Fatalf("timed out waiting for release to be 'waitingForCommand': waited %s. final state: %s", globalTimeout, state)
+			f.t.Fatalf("timed out waiting for release to be waiting for %s: waited %s. final state: %s", waitingFor, globalTimeout, state)
 		}
-		f.t.Fatalf("error waiting for release to be 'waitingForCommand': %q", err)
+		f.t.Fatalf("error waiting for release to be waiting for %s: %q", waitingFor, err)
 	}
 
-	f.t.Logf("waiting for command took %s", time.Since(start))
+	f.t.Logf("waiting for %s took %s", waitingFor, time.Since(start))
 }
 
 func (f *fixture) waitForComplete(releaseName string) {
@@ -837,7 +837,7 @@ func (f *fixture) waitForComplete(releaseName string) {
 	if err != nil {
 		f.t.Fatalf("error waiting for release to complete: %q", err)
 	}
-	f.t.Logf("waiting for completion took %s", time.Since(start))
+	f.t.Logf("waiting for completion of %q took %s", releaseName, time.Since(start))
 }
 
 func poll(timeout time.Duration, waitCondition func() (bool, error)) error {

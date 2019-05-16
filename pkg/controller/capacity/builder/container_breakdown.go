@@ -15,8 +15,7 @@ func NewContainerBreakdown(containerName string) *ContainerStateBreakdown {
 	return &ContainerStateBreakdown{containerName: containerName}
 }
 
-func (c *ContainerStateBreakdown) AddState(
-	containerCount uint32,
+func (c *ContainerStateBreakdown) AddOrIncrementState(
 	podExampleName string,
 	containerConditionType string,
 	containerConditionReason string,
@@ -28,8 +27,15 @@ func (c *ContainerStateBreakdown) AddState(
 		m = &containerExampleMessage
 	}
 
+	for _, s := range c.states {
+		if s.Type == containerConditionType && s.Reason == containerConditionReason {
+			s.Count += 1
+			return c
+		}
+	}
+
 	breakdown := shipper.ClusterCapacityReportContainerStateBreakdown{
-		Count:  containerCount,
+		Count:  1,
 		Type:   containerConditionType,
 		Reason: containerConditionReason,
 		Example: shipper.ClusterCapacityReportContainerBreakdownExample{
@@ -37,14 +43,6 @@ func (c *ContainerStateBreakdown) AddState(
 			Message: m,
 		},
 	}
-
-	for _, s := range c.states {
-		if s.Type == breakdown.Type && s.Reason == breakdown.Reason {
-			s.Count += 1
-			return c
-		}
-	}
-
 	c.states = append(c.states, &breakdown)
 	return c
 }

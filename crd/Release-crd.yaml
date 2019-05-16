@@ -4,6 +4,17 @@ metadata:
   # name must match the spec fields below, and be in the form: <plural>.<group>
   name: releases.shipper.booking.com
 spec:
+  # additional columns to print for kubectl get command besides NAME and AGE
+  # and NAMESPACE (in case of passing --all-namespaces flag)
+  additionalPrinterColumns:
+  - JSONPath: .metadata.annotations.shipper\.booking\.com\/release\.clusters
+    description: The list of clusters where a release is supposed to be rolled out as per strategy.
+    name: Clusters
+    type: string
+  - JSONPath: .status.achievedStep.name
+    description: The current achieved step for a release as defined in the rollout strategy.
+    name: Step
+    type: string
   # group name to use for REST API: /apis/<group>/<version>
   group: shipper.booking.com
   # version name to use for REST API: /apis/<group>/<version>

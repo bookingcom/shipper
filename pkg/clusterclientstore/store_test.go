@@ -64,12 +64,21 @@ func TestClientCreation(t *testing.T) {
 			return ok && cluster.IsReady(), nil
 		},
 		func(s *Store) {
-			_, err := s.GetClient(testClusterName)
+			ua := "foo"
+			expected, err := s.GetClient(testClusterName, ua)
 			if err != nil {
 				t.Errorf("unexpected error getting client %v", err)
 			}
 			if s.cache.Count() != 1 {
 				t.Errorf("expected exactly one cluster, found %q", s.cache.Count())
+			}
+
+			found, err := s.GetClient(testClusterName, ua)
+			if err != nil {
+				t.Errorf("unexpected error getting client %v", err)
+			}
+			if found != expected {
+				t.Errorf("expected client %v to be reused, but instead got a new client %v", expected, found)
 			}
 		})
 
@@ -104,7 +113,7 @@ func TestClientCreation(t *testing.T) {
 		},
 		func(s *Store) {
 			for _, name := range clusterList {
-				_, err := s.GetClient(name)
+				_, err := s.GetClient(name, "foo")
 				if err != nil {
 					t.Errorf("unexpected error getting client %q %v", name, err)
 				}
@@ -140,11 +149,11 @@ func TestNoClientGeneration(t *testing.T) {
 			return true, nil
 		},
 		func(s *Store) {
-			_, err := s.GetClient("foo")
+			_, err := s.GetClient("foo", "baz")
 			if err != cache.ErrClusterNotInStore {
 				t.Errorf("expected 'no such cluster' error, but got something else: %v", err)
 			}
-			_, err = s.GetClient("bar")
+			_, err = s.GetClient("bar", "baz")
 			if err != cache.ErrClusterNotInStore {
 				t.Errorf("expected 'no such cluster' error, but got something else: %v", err)
 			}
@@ -263,18 +272,19 @@ func (f *fixture) newStore() (*Store, kubeinformers.SharedInformerFactory, shipp
 	f.kubeClient = kubefake.NewSimpleClientset(f.kubeObjects...)
 	f.shipperClient = shipperfake.NewSimpleClientset(f.shipperObjects...)
 
-	const noResyncPeriod time.Duration = 0
+	noResyncPeriod := time.Duration(0)
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(f.shipperClient, noResyncPeriod)
 	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(f.kubeClient, noResyncPeriod)
 
 	store := NewStore(
-		func(_ string, config *rest.Config) (kubernetes.Interface, error) {
+		func(_ string, _ string, config *rest.Config) (kubernetes.Interface, error) {
 			return kubernetes.NewForConfig(config)
 		},
 		kubeInformerFactory.Core().V1().Secrets(),
 		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
 		shipper.ShipperNamespace,
 		f.restTimeout,
+		&noResyncPeriod,
 	)
 
 	return store, kubeInformerFactory, shipperInformerFactory

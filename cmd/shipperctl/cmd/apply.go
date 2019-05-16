@@ -9,9 +9,16 @@ import (
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/validation"
+
+	"crypto/rand"
+	"crypto/rsa"
+
+	"crypto/x509"
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
+	"github.com/bookingcom/shipper/cmd/shipperctl/tls"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/crds"
 )
@@ -31,6 +38,8 @@ var (
 
 // Name constants
 const (
+	level1Padding                              = "    "
+	shipperManagementServiceName               = "shipper-validating-webhook"
 	shipperManagementClusterServiceAccountName = "shipper-management-cluster"
 	shipperManagementClusterRoleName           = "shipper:management-cluster"
 	shipperManagementClusterRoleBindingName    = "shipper:management-cluster"
@@ -60,6 +69,10 @@ func init() {
 func runApplyClustersCommand(cmd *cobra.Command, args []string) error {
 	clustersConfiguration, err := loadClustersConfiguration()
 	if err != nil {
+		return err
+	}
+
+	if err := validateApplicationClusters(clustersConfiguration); err != nil {
 		return err
 	}
 
@@ -94,6 +107,20 @@ func runApplyClustersCommand(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func validateApplicationClusters(configuration *config.ClustersConfiguration) error {
+	for _, cluster := range configuration.ApplicationClusters {
+		if msgs := validation.IsDNS1123Subdomain(cluster.Name); len(msgs) > 0 {
+			return fmt.Errorf("%q is not a valid cluster name in Kubernetes. If this is the name of a context in your Kubernetes configuration, check out the relevant example at https://docs.shipper-k8s.io/en/latest/operations/shipperctl.html#using-google-kubernetes-engine-gke-context-names", cluster.Name)
+		}
+
+		if cluster.Region == "" {
+			return fmt.Errorf("you must specify region for cluster %s", cluster.Name)
+		}
+	}
+
+	return nil
+}
+
 func setupManagementCluster(managementCluster *config.ClusterConfiguration, cmd *cobra.Command) error {
 	configurator, err := configurator.NewClusterConfigurator(managementCluster, kubeConfigFile)
 	if err != nil {
@@ -117,6 +144,18 @@ func setupManagementCluster(managementCluster *config.ClusterConfiguration, cmd 
 	}
 
 	if err := createManagementClusterRoleBinding(cmd, configurator); err != nil {
+		return err
+	}
+
+	if err := createValidatingWebhookSecret(cmd, configurator); err != nil {
+		return err
+	}
+
+	if err := createValidatingWebhookConfiguration(cmd, configurator); err != nil {
+		return err
+	}
+
+	if err := createValidatingWebhookService(cmd, configurator); err != nil {
 		return err
 	}
 
@@ -231,6 +270,104 @@ func createManagementServiceAccount(cmd *cobra.Command, configurator *configurat
 	}
 
 	cmd.Println("done")
+	return nil
+}
+
+func createValidatingWebhookSecret(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	cmd.Printf("Checking if a secret already exists for the validating webhook in the %s namespace... ", shipperSystemNamespace)
+
+	exists, err := configurator.ValidatingWebhookSecretExists(shipperSystemNamespace)
+	if err != nil {
+		return err
+	}
+
+	if exists {
+		cmd.Println("yes. Skipping")
+		return nil
+	}
+	cmd.Println("no.")
+
+	cmd.Println("Creating a secret for the validating webhook:")
+
+	cmd.Printf("%sGenerating a private key... ", level1Padding)
+	privatekey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return err
+	}
+	cmd.Println("done")
+
+	cmd.Printf("%sCreating a TLS certificate signing request... ", level1Padding)
+	csr, err := tls.GenerateCSRForServiceInNamespace(privatekey, shipperManagementServiceName, shipperSystemNamespace)
+	if err != nil {
+		return err
+	}
+	cmd.Println("done")
+
+	cmd.Printf("%sCreating a Kubernetes CertificateSigningRequest... ", level1Padding)
+	if err := configurator.CreateCertificateSigningRequest(csr); err != nil {
+		return err
+	}
+	cmd.Println("done")
+
+	cmd.Printf("%sApproving the CertificateSigningRequest... ", level1Padding)
+	if err := configurator.ApproveShipperCSR(); err != nil {
+		return err
+	}
+	cmd.Println("done")
+
+	cmd.Printf("%sFetching the certificate from the CertificateSigningRequest object... ", level1Padding)
+	certificate, err := configurator.FetchCertificateFromCSR()
+	if err != nil {
+		return err
+	}
+	cmd.Println("done")
+
+	// The private key we generated is not encoded as PEM, so we
+	// have to convert it. The certificate, however, is already
+	// PEM-encoded when we get it from Kubernetes above.
+	privatekeyPEM := tls.EncodePrivateKeyAsPEM(x509.MarshalPKCS1PrivateKey(privatekey))
+
+	cmd.Printf("%sCreating the Secret using the private key and certificate in the %s namespace... ", level1Padding, shipperSystemNamespace)
+	if err := configurator.CreateValidatingWebhookSecret(privatekeyPEM, certificate, shipperSystemNamespace); err != nil {
+		return err
+	}
+	cmd.Println("done")
+
+	return nil
+}
+
+func createValidatingWebhookConfiguration(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	cmd.Printf("Creating the ValidatingWebhookConfiguration in %s namespace... ", shipperSystemNamespace)
+	caBundle, err := configurator.FetchKubernetesCABundle()
+	if err != nil {
+		return err
+	}
+
+	if err := configurator.CreateValidatingWebhookConfiguration(caBundle, shipperSystemNamespace); err != nil {
+		if errors.IsAlreadyExists(err) {
+			cmd.Println("already exists. Skipping")
+			return nil
+		}
+
+		return err
+	}
+	cmd.Println("done")
+
+	return nil
+}
+
+func createValidatingWebhookService(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	cmd.Print("Creating a Service object for the validating webhook... ")
+	if err := configurator.CreateValidatingWebhookService(shipperSystemNamespace); err != nil {
+		if errors.IsAlreadyExists(err) {
+			cmd.Println("already exists. Skipping")
+			return nil
+		}
+
+		return err
+	}
+	cmd.Println("done")
+
 	return nil
 }
 
@@ -367,17 +504,12 @@ func copySecretFromApplicationToManagementCluster(cmd *cobra.Command, applicatio
 
 func createApplicationClusterObjectOnManagementCluster(cmd *cobra.Command, managementClusterConfigurator *configurator.Cluster, applicationCluster *config.ClusterConfiguration, host string) error {
 	cmd.Printf("Creating or updating the cluster object for cluster %s on the management cluster... ", applicationCluster.Name)
-	// Doing a priliminary validation
-	if applicationCluster.Region == "" {
-		return fmt.Errorf("must specify region for cluster %s", applicationCluster.Name)
-	}
 
 	// Initialize the map of capabilities if it's null so that we
 	// don't fire an error when creating it
 	if applicationCluster.Capabilities == nil {
 		applicationCluster.Capabilities = []string{}
 	}
-
 	if err := managementClusterConfigurator.CreateOrUpdateClusterWithConfig(applicationCluster, host); err != nil {
 		return err
 	}

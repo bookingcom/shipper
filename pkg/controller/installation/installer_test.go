@@ -18,6 +18,7 @@ import (
 	kubetesting "k8s.io/client-go/testing"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	"github.com/bookingcom/shipper/pkg/controller"
 	"github.com/bookingcom/shipper/pkg/controller/janitor"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
@@ -278,6 +279,35 @@ func TestInstallerChartTarballBrokenService(t *testing.T) {
 	restConfig := &rest.Config{}
 	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
 		t.Fatal("installRelease should fail, invalid tarball")
+	}
+}
+
+// TestInstallerChartTarballInvalidDeploymentName tests if the installation
+// process fails when the release contains a deployment that doesn't have a
+// name templated with the release's name.
+func TestInstallerChartTarballInvalidDeploymentName(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+
+	// there is a reviews-api-invalid-tarball.tgz in testdata which contains invalid deployment and service templates
+	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+	release.Spec.Environment.Chart.Version = "invalid-deployment-name"
+
+	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
+	installer := newInstaller(release, it)
+
+	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: []runtime.Object{}})
+
+	fakePair := clientsPerCluster[cluster.Name]
+
+	restConfig := &rest.Config{}
+
+	err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder)
+	if err == nil {
+		t.Fatal("installRelease should fail, invalid deployment name")
+	}
+
+	if _, ok := err.(controller.InvalidChartError); !ok {
+		t.Fatalf("installRelease should fail with InvalidChartError, got %v instead", err)
 	}
 }
 

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: shipper-validating-webhook
+  namespace: shipper-system
+  labels:
+    app: shipper
+spec:
+  selector:
+    app: shipper
+  ports:
+  - port: 443
+    protocol: TCP
+    targetPort: 9443

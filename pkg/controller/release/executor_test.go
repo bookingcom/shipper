@@ -1,4 +1,4 @@
-package strategy
+package release
 
 import (
 	"fmt"
@@ -33,26 +33,6 @@ var app = &shipper.Application{
 	},
 	Status: shipper.ApplicationStatus{
 		History: []string{incumbentName, contenderName},
-	},
-}
-
-var vanguard = shipper.RolloutStrategy{
-	Steps: []shipper.RolloutStrategyStep{
-		{
-			Name:     "staging",
-			Capacity: shipper.RolloutStrategyStepValue{Incumbent: 100, Contender: 1},
-			Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 100, Contender: 0},
-		},
-		{
-			Name:     "50/50",
-			Capacity: shipper.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
-			Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 50, Contender: 50},
-		},
-		{
-			Name:     "full on",
-			Capacity: shipper.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
-			Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
-		},
 	},
 }
 
@@ -488,34 +468,12 @@ func buildContender(totalReplicaCount uint) *releaseInfo {
 	}
 }
 
-func addCluster(ri *releaseInfo, name string) {
-	ri.installationTarget.Spec.Clusters = append(ri.installationTarget.Spec.Clusters, name)
-	ri.installationTarget.Status.Clusters = append(ri.installationTarget.Status.Clusters,
-		&shipper.ClusterInstallationStatus{Name: name, Status: shipper.InstallationStatusInstalled},
-	)
-
-	ri.capacityTarget.Status.Clusters = append(ri.capacityTarget.Status.Clusters,
-		shipper.ClusterCapacityStatus{Name: name, AchievedPercent: 100},
-	)
-
-	ri.capacityTarget.Spec.Clusters = append(ri.capacityTarget.Spec.Clusters,
-		shipper.ClusterCapacityTarget{Name: name, Percent: 0},
-	)
-
-	ri.trafficTarget.Spec.Clusters = append(ri.trafficTarget.Spec.Clusters,
-		shipper.ClusterTrafficTarget{Name: name, Weight: 0},
-	)
-	ri.trafficTarget.Status.Clusters = append(ri.trafficTarget.Status.Clusters,
-		&shipper.ClusterTrafficStatus{Name: name, AchievedTraffic: 100},
-	)
-}
-
 // ensureCapacityPatch executes the strategy and returns the content of the
 // patch it produced, if any. Returns an error if the number of patches is
 // wrong, the patch doesn't implement the CapacityTargetOutdatedResult
 // interface or the name is different than the given expectedName.
 func ensureCapacityPatch(e *Executor, expectedName string, role role) (*shipper.CapacityTargetSpec, error) {
-	if patches, _, err := e.execute(); err != nil {
+	if patches, _, err := e.Execute(); err != nil {
 		return nil, err
 	} else {
 
@@ -558,7 +516,7 @@ func ensureCapacityPatch(e *Executor, expectedName string, role role) (*shipper.
 // wrong, the patch doesn't implement the TrafficTargetOutdatedResult
 // interface or the name is different than the given expectedName.
 func ensureTrafficPatch(e *Executor, expectedName string, role role) (*shipper.TrafficTargetSpec, error) {
-	if patches, _, err := e.execute(); err != nil {
+	if patches, _, err := e.Execute(); err != nil {
 		return nil, err
 	} else {
 
@@ -597,7 +555,7 @@ func ensureTrafficPatch(e *Executor, expectedName string, role role) (*shipper.T
 // wrong, the patch doesn't implement the ReleaseUpdateResult interface or
 // the name is different than the given expectedName.
 func ensureReleasePatch(e *Executor, expectedName string) (*shipper.ReleaseStatus, error) {
-	if patches, _, err := e.execute(); err != nil {
+	if patches, _, err := e.Execute(); err != nil {
 		return nil, err
 	} else {
 
@@ -627,7 +585,7 @@ func ensureReleasePatch(e *Executor, expectedName string) (*shipper.ReleaseStatu
 // the number of patches is wrong, the patches' phases are wrong for either
 // incumbent or contender.
 func ensureFinalReleasePatches(e *Executor) error {
-	if patches, _, err := e.execute(); err != nil {
+	if patches, _, err := e.Execute(); err != nil {
 		return err
 	} else {
 
