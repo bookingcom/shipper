@@ -187,12 +187,21 @@ func (c *Controller) capacityTargetSyncHandler(key string) bool {
 
 	newClusterStatuses := make([]shipper.ClusterCapacityStatus, 0, len(ct.Spec.Clusters))
 
-	for _, clusterSpec := range ct.Spec.Clusters {
+	// This algorithm assumes cluster names are unique
+	curClusterStatuses := make(map[string]shipper.ClusterCapacityStatus)
+	for _, clusterStatus := range ct.Status.Clusters {
+		curClusterStatuses[clusterStatus.Name] = clusterStatus
+	}
 
-		clusterStatus := shipper.ClusterCapacityStatus{
-			Name:    clusterSpec.Name,
-			Reports: []shipper.ClusterCapacityReport{},
+	for _, clusterSpec := range ct.Spec.Clusters {
+		if _, ok := curClusterStatuses[clusterSpec.Name]; !ok {
+			curClusterStatuses[clusterSpec.Name] = shipper.ClusterCapacityStatus{
+				Name:    clusterSpec.Name,
+				Reports: []shipper.ClusterCapacityReport{},
+			}
 		}
+
+		clusterStatus := curClusterStatuses[clusterSpec.Name]
 
 		// all the below functions add conditions to the clusterStatus as they do
 		// their business, hence we're passing them a pointer.
