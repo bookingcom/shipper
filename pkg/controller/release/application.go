@@ -14,6 +14,7 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
@@ -25,6 +26,7 @@ func (c *Controller) processNextAppWorkItem() bool {
 	if shutdown {
 		return false
 	}
+
 	defer c.applicationWorkqueue.Done(obj)
 
 	var (
@@ -34,11 +36,19 @@ func (c *Controller) processNextAppWorkItem() bool {
 
 	if key, ok = obj.(string); !ok {
 		c.applicationWorkqueue.Forget(obj)
-		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
+		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
 		return true
 	}
 
-	if shouldRetry := c.syncOneApplicationHandler(key); shouldRetry {
+	shouldRetry := false
+	err := c.syncOneApplicationHandler(key)
+
+	if err != nil {
+		shouldRetry = shippererrors.ShouldRetry(err)
+		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry: %t): %s", key, shouldRetry, err.Error()))
+	}
+
+	if shouldRetry {
 		if c.applicationWorkqueue.NumRequeues(key) >= maxRetries {
 			glog.Warningf("Application %q has been retried too many times, droppping from the queue", key)
 			c.applicationWorkqueue.Forget(key)
@@ -60,44 +70,39 @@ func (c *Controller) processNextAppWorkItem() bool {
 // syncOneApplicationHandler processes application keys one-by-one. On this stage a
 // release is expected to be scheduled. This handler instantiates a strategy
 // executor and executes it.
-func (c *Controller) syncOneApplicationHandler(key string) bool {
+func (c *Controller) syncOneApplicationHandler(key string) error {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %q", key))
-		return noRetry
+		return shippererrors.NewUnrecoverableError(err)
 	}
+
 	app, err := c.applicationLister.Applications(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			glog.V(3).Infof("Application %q not found", key)
-			return noRetry
+			return nil
 		}
 
-		runtime.HandleError(fmt.Errorf("failed to process Application %q (will retry): %s", key, err))
-
-		return retry
+		return shippererrors.NewKubeclientGetError(namespace, name, err).
+			WithShipperKind("Application")
 	}
 
 	glog.V(4).Infof("Fetching release pair for Application %q", key)
 	incumbent, contender, err := c.getWorkingReleasePair(app)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
-		return retry
+		return err
 	}
 
 	glog.V(4).Infof("Building a strategy excecutor for Application %q", key)
 	strategyExecutor, err := c.buildExecutor(incumbent, contender)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
-		return retry
+		return err
 	}
 
 	glog.V(4).Infof("Executing the strategy on Application %q", key)
 	patches, transitions, err := strategyExecutor.Execute()
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing Application %q (will not retry): %s", key, err))
-
-		return noRetry
+		return err
 	}
 
 	for _, t := range transitions {
@@ -114,45 +119,37 @@ func (c *Controller) syncOneApplicationHandler(key string) bool {
 
 	if len(patches) == 0 {
 		glog.V(4).Infof("Strategy verified, nothing to patch")
-		return noRetry
+		return nil
 	}
 
 	glog.V(4).Infof("Strategy has been executed, applying patches")
 	for _, patch := range patches {
 		name, gvk, b := patch.PatchSpec()
+
+		var err error
 		switch gvk.Kind {
 		case "Release":
-			if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Patch(name, types.MergePatchType, b); err != nil {
-				runtime.HandleError(fmt.Errorf("error syncing Release for Application %q (will retry): %s", key, err))
-				return retry
-			}
+			_, err = c.clientset.ShipperV1alpha1().Releases(namespace).Patch(name, types.MergePatchType, b)
 		case "InstallationTarget":
-			if _, err := c.clientset.ShipperV1alpha1().InstallationTargets(namespace).Patch(name, types.MergePatchType, b); err != nil {
-				runtime.HandleError(fmt.Errorf("error syncing InstallationTarget for Application %q (will retry): %s", key, err))
-				return retry
-			}
+			_, err = c.clientset.ShipperV1alpha1().InstallationTargets(namespace).Patch(name, types.MergePatchType, b)
 		case "CapacityTarget":
-			if _, err := c.clientset.ShipperV1alpha1().CapacityTargets(namespace).Patch(name, types.MergePatchType, b); err != nil {
-				runtime.HandleError(fmt.Errorf("error syncing CapacityTarget for Application %q (will retry): %s", key, err))
-				return retry
-			}
+			_, err = c.clientset.ShipperV1alpha1().CapacityTargets(namespace).Patch(name, types.MergePatchType, b)
 		case "TrafficTarget":
-			if _, err := c.clientset.ShipperV1alpha1().TrafficTargets(namespace).Patch(name, types.MergePatchType, b); err != nil {
-				runtime.HandleError(fmt.Errorf("error syncing TrafficTarget for Application %q (will retry): %s", key, err))
-				return retry
-			}
+			_, err = c.clientset.ShipperV1alpha1().TrafficTargets(namespace).Patch(name, types.MergePatchType, b)
 		default:
-			runtime.HandleError(fmt.Errorf("error syncing Application %q (will not retry): unknown GVK resource name: %s", key, gvk.Kind))
-			return noRetry
+			return shippererrors.NewUnrecoverableError(fmt.Errorf("error syncing Application %q (will not retry): unknown GVK resource name: %s", key, gvk.Kind))
+		}
+		if err != nil {
+			return shippererrors.NewKubeclientPatchError(namespace, name, err).WithKind(gvk)
 		}
 	}
 
-	return noRetry
+	return nil
 }
 
 func (c *Controller) buildExecutor(incumbentRelease, contenderRelease *shipper.Release) (*Executor, error) {
 	if !releaseutil.ReleaseScheduled(contenderRelease) {
-		return nil, NewNotWorkingOnStrategyError(shippercontroller.MetaKey(contenderRelease))
+		return nil, shippererrors.NewNotWorkingOnStrategyError(shippercontroller.MetaKey(contenderRelease))
 	}
 
 	contenderReleaseInfo, err := c.buildReleaseInfo(contenderRelease)
@@ -191,7 +188,9 @@ func (c *Controller) sortedReleasesForApp(namespace, name string) ([]*shipper.Re
 
 	releases, err := c.releaseLister.Releases(namespace).List(selector)
 	if err != nil {
-		return nil, err
+		return nil, shippererrors.NewKubeclientListError(
+			shipper.SchemeGroupVersion.WithKind("Release"),
+			namespace, selector, err)
 	}
 
 	sorted, err := shippercontroller.SortReleasesByGeneration(releases)
@@ -209,10 +208,10 @@ func (c *Controller) getWorkingReleasePair(app *shipper.Application) (*shipper.R
 	}
 
 	if len(appReleases) == 0 {
-		return nil, nil, fmt.Errorf(
+		err := fmt.Errorf(
 			"zero release records in app %q: will not execute strategy",
-			shippercontroller.MetaKey(app),
-		)
+			shippercontroller.MetaKey(app))
+		return nil, nil, shippererrors.NewRecoverableError(err)
 	}
 
 	// Walk backwards until we find a scheduled release. There may be pending
@@ -226,8 +225,9 @@ func (c *Controller) getWorkingReleasePair(app *shipper.Application) (*shipper.R
 	}
 
 	if contender == nil {
-		return nil, nil, fmt.Errorf("couldn't find a contender for Application %q",
+		err := fmt.Errorf("couldn't find a contender for Application %q",
 			shippercontroller.MetaKey(app))
+		return nil, nil, shippererrors.NewRecoverableError(err)
 	}
 
 	var incumbent *shipper.Release

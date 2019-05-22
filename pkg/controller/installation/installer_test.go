@@ -18,8 +18,8 @@ import (
 	kubetesting "k8s.io/client-go/testing"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	"github.com/bookingcom/shipper/pkg/controller"
 	"github.com/bookingcom/shipper/pkg/controller/janitor"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
@@ -306,7 +306,7 @@ func TestInstallerChartTarballInvalidDeploymentName(t *testing.T) {
 		t.Fatal("installRelease should fail, invalid deployment name")
 	}
 
-	if _, ok := err.(controller.InvalidChartError); !ok {
+	if _, ok := err.(shippererrors.InvalidChartError); !ok {
 		t.Fatalf("installRelease should fail with InvalidChartError, got %v instead", err)
 	}
 }

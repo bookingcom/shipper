@@ -20,7 +20,7 @@ import (
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/conditions"
-	"github.com/bookingcom/shipper/pkg/errors"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
@@ -144,11 +144,19 @@ func (c *Controller) processNextWorkItem() bool {
 
 	if key, ok = obj.(string); !ok {
 		c.appWorkqueue.Forget(obj)
-		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %#v", obj))
+		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
 		return true
 	}
 
-	if shouldRetry := c.syncApplication(key); shouldRetry {
+	shouldRetry := false
+	err := c.syncApplication(key)
+
+	if err != nil {
+		shouldRetry = shippererrors.ShouldRetry(err)
+		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry: %t): %s", key, shouldRetry, err.Error()))
+	}
+
+	if shouldRetry {
 		if c.appWorkqueue.NumRequeues(key) >= maxRetries {
 			// Drop the Application's key out of the workqueue and thus reset its
 			// backoff. This limits the time a "broken" object can hog a worker.
@@ -202,22 +210,21 @@ func (c *Controller) enqueueApp(obj interface{}) {
 	c.appWorkqueue.Add(key)
 }
 
-func (c *Controller) syncApplication(key string) bool {
+func (c *Controller) syncApplication(key string) error {
 	ns, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("invalid object key (will not retry): %q", key))
-		return false
+		return shippererrors.NewUnrecoverableError(err)
 	}
 
 	app, err := c.appLister.Applications(ns).Get(name)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			glog.V(3).Infof("Application %q has been deleted", key)
-			return false
+			return nil
 		}
 
-		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
-		return true
+		return shippererrors.NewKubeclientGetError(ns, name, err).
+			WithShipperKind("Application")
 	}
 
 	app = app.DeepCopy()
@@ -244,22 +251,24 @@ func (c *Controller) syncApplication(key string) bool {
 		app.Spec.RevisionHistoryLimit = &max
 	}
 
-	var shouldRetry bool
-
 	if err = c.processApplication(app); err != nil {
-		shouldRetry = true
-		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
-		c.recorder.Event(app, corev1.EventTypeWarning, "FailedApplication", err.Error())
+		if shippererrors.ShouldBroadcast(err) {
+			c.recorder.Event(app,
+				corev1.EventTypeWarning,
+				"FailedApplication",
+				err.Error())
+		}
+		return err
 	}
 
 	// TODO(asurikov): change to UpdateStatus when it's available.
 	_, err = c.shipperClientset.ShipperV1alpha1().Applications(app.Namespace).Update(app)
 	if err != nil {
-		shouldRetry = true
-		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", key, err))
+		return shippererrors.NewKubeclientUpdateError(app, err).
+			WithShipperKind("Application")
 	}
 
-	return shouldRetry
+	return nil
 }
 
 // wrapUpApplicationConditions fills conditions into the given shipper.Application
@@ -296,7 +305,7 @@ func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels 
 		goto End
 	}
 
-	if incumbentRel, err = apputil.GetIncumbent(app.Name, rels); err != nil && !errors.IsIncumbentNotFoundError(err) {
+	if incumbentRel, err = apputil.GetIncumbent(app.Name, rels); err != nil && !shippererrors.IsIncumbentNotFoundError(err) {
 		// Errors other than incumbent release not found bail out to not
 		// report inconsistent status.
 		rollingOutCond.Message = err.Error()
@@ -351,14 +360,18 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 	}()
 
 	if contender, err = apputil.GetContender(app.Name, appReleases); err != nil {
-		if errors.IsContenderNotFoundError(err) {
+		if shippererrors.IsContenderNotFoundError(err) {
 			// Contender doesn't exist, so we are covering the case where Shipper
 			// is creating the first release for this application.
 			var generation = 0
 			if releaseName, iteration, err := c.releaseNameForApplication(app); err != nil {
 				return err
 			} else if rel, err := c.createReleaseForApplication(app, releaseName, iteration, generation); err != nil {
-				releaseSyncedCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeReleaseSynced, corev1.ConditionFalse, conditions.CreateReleaseFailed, fmt.Sprintf("could not create a new release: %q", err))
+				releaseSyncedCond := apputil.NewApplicationCondition(
+					shipper.ApplicationConditionTypeReleaseSynced,
+					corev1.ConditionFalse,
+					conditions.CreateReleaseFailed,
+					fmt.Sprintf("could not create a new release: %q", err))
 				apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
 				return err
 			} else {
@@ -431,6 +444,9 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 	return c.wrapUpApplicationConditions(app, appReleases)
 }
 
+// TODO(jgreff): wrap bare errors with shippererrors and actually return them
+// so they can be retried if needed, instead of relying on resyncs to do the
+// trick.
 func (c *Controller) cleanUpReleasesForApplication(app *shipper.Application, releases []*shipper.Release) {
 	var installedReleases []*shipper.Release
 

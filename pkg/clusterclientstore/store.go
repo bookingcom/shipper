@@ -20,6 +20,7 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperinformer "github.com/bookingcom/shipper/pkg/client/informers/externalversions/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore/cache"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
 const AgentName = "clusterclientstore"
@@ -124,7 +125,7 @@ func (s *Store) AddEventHandlerCallback(eventHandler EventHandlerRegisterFunc) {
 func (s *Store) GetClient(clusterName string, ua string) (kubernetes.Interface, error) {
 	cluster, ok := s.cache.Fetch(clusterName)
 	if !ok {
-		return nil, cache.ErrClusterNotInStore
+		return nil, shippererrors.NewClusterNotInStoreError(clusterName)
 	}
 
 	return cluster.GetClient(ua)
@@ -134,7 +135,7 @@ func (s *Store) GetClient(clusterName string, ua string) (kubernetes.Interface, 
 func (s *Store) GetConfig(clusterName string) (*rest.Config, error) {
 	cluster, ok := s.cache.Fetch(clusterName)
 	if !ok {
-		return nil, cache.ErrClusterNotInStore
+		return nil, shippererrors.NewClusterNotInStoreError(clusterName)
 	}
 
 	return cluster.GetConfig()
@@ -145,7 +146,7 @@ func (s *Store) GetConfig(clusterName string) (*rest.Config, error) {
 func (s *Store) GetInformerFactory(clusterName string) (kubeinformers.SharedInformerFactory, error) {
 	cluster, ok := s.cache.Fetch(clusterName)
 	if !ok {
-		return nil, cache.ErrClusterNotInStore
+		return nil, shippererrors.NewClusterNotInStoreError(clusterName)
 	}
 
 	return cluster.GetInformerFactory()
@@ -161,7 +162,8 @@ func (s *Store) syncCluster(name string) error {
 			return nil
 		}
 
-		return err
+		return shippererrors.NewKubeclientGetError("", name, err).
+			WithShipperKind("Cluster")
 	}
 
 	cachedCluster, ok := s.cache.Fetch(name)
@@ -174,7 +176,7 @@ func (s *Store) syncCluster(name string) error {
 		// needlessly, or could even end up in a livelock where waiting for informer
 		// cache to fill takes longer than the resync period, and resync resets the
 		// informer.
-		if err == nil || err == cache.ErrClusterNotReady {
+		if err == nil || shippererrors.IsClusterNotReadyError(err) {
 			if config != nil && config.Host == clusterObj.Spec.APIMaster {
 				glog.Infof("Cluster %q syncing, but we already have a client with the right host in the cache", name)
 				return nil
@@ -189,7 +191,8 @@ func (s *Store) syncCluster(name string) error {
 			return nil
 		}
 
-		return err
+		return shippererrors.NewKubeclientGetError(s.ns, name, err).
+			WithCoreV1Kind("Secret")
 	}
 
 	return s.create(clusterObj, secret)
@@ -198,7 +201,7 @@ func (s *Store) syncCluster(name string) error {
 func (s *Store) syncSecret(key string) error {
 	ns, name, err := kubecache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		return fmt.Errorf("invalid resource key: %q", key)
+		return shippererrors.NewUnrecoverableError(err)
 	}
 
 	// Programmer error: there's a filter func on the callbacks before things get
@@ -215,7 +218,8 @@ func (s *Store) syncSecret(key string) error {
 			return nil
 		}
 
-		return err
+		return shippererrors.NewKubeclientGetError(s.ns, name, err).
+			WithCoreV1Kind("Secret")
 	}
 
 	clusterObj, err := s.clusterInformer.Lister().Get(secret.Name)
@@ -225,12 +229,14 @@ func (s *Store) syncSecret(key string) error {
 			return nil
 		}
 
-		return err
+		return shippererrors.NewKubeclientGetError("", secret.Name, err).
+			WithShipperKind("Cluster")
 	}
 
 	checksum, ok := secret.GetAnnotations()[shipper.SecretChecksumAnnotation]
 	if !ok {
-		return fmt.Errorf("secret %q looks like a cluster secret but doesn't have a checksum", key)
+		err := fmt.Errorf("secret %q looks like a cluster secret but doesn't have a checksum", key)
+		return shippererrors.NewUnrecoverableError(err)
 	}
 
 	cachedCluster, ok := s.cache.Fetch(secret.Name)
@@ -242,7 +248,7 @@ func (s *Store) syncSecret(key string) error {
 		// needlessly, or could even end up in a livelock where waiting for informer
 		// cache to fill takes longer than the resync period, and resync resets the
 		// informer.
-		if err == nil || err == cache.ErrClusterNotReady {
+		if err == nil || shippererrors.IsClusterNotReadyError(err) {
 			if existingChecksum == checksum {
 				glog.Infof("Secret %q syncing but we already have a client based on the same checksum in the cache", key)
 				return nil
@@ -262,7 +268,7 @@ func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
 
 	config, err := buildConfig(cluster.Spec.APIMaster, secret, s.restTimeout)
 	if err != nil {
-		return fmt.Errorf("create client configuration for Cluster %q: %s", cluster.Name, err)
+		return shippererrors.NewClusterClientBuild(cluster.Name, err)
 	}
 
 	// These are only used in shared informers. Setting HTTP timeout here would
@@ -270,12 +276,12 @@ func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
 	// k8s.io/client-go/tools/cache) to govern watch durations.
 	informerConfig, err := buildConfig(cluster.Spec.APIMaster, secret, nil)
 	if err != nil {
-		return fmt.Errorf("build informer client configuration for Cluster %q: %s", cluster.Name, err)
+		return shippererrors.NewClusterClientBuild(cluster.Name, err)
 	}
 
 	informerClient, err := s.buildClient(cluster.Name, AgentName, informerConfig)
 	if err != nil {
-		return fmt.Errorf("create informer client for Cluster %q: %s", cluster.Name, err)
+		return shippererrors.NewClusterClientBuild(cluster.Name, err)
 	}
 
 	var resyncPeriod time.Duration

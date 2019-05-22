@@ -14,13 +14,14 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 
 type podLabelShifter struct {
 	appName               string
 	namespace             string
-	serviceSelector       string
+	serviceSelector       labels.Selector
 	clusterReleaseWeights clusterReleaseWeights
 }
 
@@ -45,7 +46,7 @@ func newPodLabelShifter(
 	return &podLabelShifter{
 		appName:               appName,
 		namespace:             namespace,
-		serviceSelector:       labels.Set(serviceSelector).AsSelector().String(),
+		serviceSelector:       labels.Set(serviceSelector).AsSelector(),
 		clusterReleaseWeights: weights,
 	}, nil
 }
@@ -66,26 +67,30 @@ func (p *podLabelShifter) SyncCluster(
 ) (map[string]uint32, []error, error) {
 	releaseWeights, ok := p.clusterReleaseWeights[cluster]
 	if !ok {
-		return nil, nil, fmt.Errorf(
-			"podLabelShifter has no weights for cluster %q", cluster)
+		return nil, nil, shippererrors.NewMissingTrafficWeightsForClusterError(
+			p.namespace, p.appName, cluster)
 	}
 
 	podsClient := clientset.CoreV1().Pods(p.namespace)
 	servicesClient := clientset.CoreV1().Services(p.namespace)
 
-	svcList, err := servicesClient.List(metav1.ListOptions{LabelSelector: p.serviceSelector})
+	svcList, err := servicesClient.List(metav1.ListOptions{LabelSelector: p.serviceSelector.String()})
 	if err != nil {
-		return nil, nil, NewTargetClusterFetchServiceFailedError(cluster, p.serviceSelector, p.namespace, err)
+		return nil, nil, shippererrors.NewKubeclientListError(
+			corev1.SchemeGroupVersion.WithKind("Service"),
+			p.namespace, p.serviceSelector, err)
 	} else if n := len(svcList.Items); n != 1 {
 		return nil, nil,
-			NewTargetClusterWrongServiceCountError(cluster, p.serviceSelector, p.namespace, n)
+			shippererrors.NewTargetClusterWrongServiceCountError(
+				cluster, p.serviceSelector, p.namespace, n)
 	}
 
 	prodSvc := svcList.Items[0]
 	trafficSelector := prodSvc.Spec.Selector
 	if trafficSelector == nil {
 		return nil, nil,
-			NewTargetClusterServiceMissesSelectorError(cluster, p.namespace, prodSvc.Name)
+			shippererrors.NewTargetClusterServiceMissesSelectorError(
+				cluster, p.namespace, prodSvc.Name)
 	}
 
 	nsPodLister := informer.Lister().Pods(p.namespace)
@@ -93,8 +98,9 @@ func (p *podLabelShifter) SyncCluster(
 	appSelector := labels.Set{shipper.AppLabel: p.appName}.AsSelector()
 	pods, err := nsPodLister.List(appSelector)
 	if err != nil {
-		return nil, nil,
-			NewTargetClusterPodListingError(cluster, p.namespace, err)
+		return nil, nil, shippererrors.NewKubeclientListError(
+			corev1.SchemeGroupVersion.WithKind("Pod"),
+			p.namespace, appSelector, err)
 	}
 
 	totalPods := len(pods)
@@ -110,9 +116,9 @@ func (p *podLabelShifter) SyncCluster(
 		releaseSelector := labels.Set{shipper.ReleaseLabel: release}.AsSelector()
 		releasePods, err := nsPodLister.List(releaseSelector)
 		if err != nil {
-			return nil, nil,
-				NewTargetClusterReleasePodListingError(
-					release, cluster, p.namespace, err)
+			return nil, nil, shippererrors.NewKubeclientListError(
+				shipper.SchemeGroupVersion.WithKind("Release"),
+				p.namespace, releaseSelector, err)
 		}
 
 		targetPods := calculateReleasePodTarget(len(releasePods), weight, totalPods, totalWeight)
@@ -143,9 +149,9 @@ func (p *podLabelShifter) SyncCluster(
 					patch := patchPodTrafficStatusLabel(pod, shipper.Disabled)
 					_, err := podsClient.Patch(pod.Name, types.JSONPatchType, patch)
 					if err != nil {
-						errors = append(errors,
-							NewTargetClusterTrafficModifyingLabelError(
-								cluster, p.namespace, pod.Name, err))
+						err = shippererrors.NewKubeclientPatchError(p.namespace, pod.Name, err).
+							WithCoreV1Kind("Pod")
+						errors = append(errors, err)
 						continue
 					}
 				}
@@ -163,7 +169,7 @@ func (p *podLabelShifter) SyncCluster(
 			addedToLB := 0
 			if missing > len(idlePods) {
 				errors = append(errors,
-					NewTargetClusterMathError(release, len(idlePods), missing))
+					shippererrors.NewTargetClusterMathError(release, len(idlePods), missing))
 				continue
 			}
 
@@ -174,9 +180,9 @@ func (p *podLabelShifter) SyncCluster(
 					patch := patchPodTrafficStatusLabel(pod, shipper.Enabled)
 					_, err := podsClient.Patch(pod.Name, types.JSONPatchType, patch)
 					if err != nil {
-						errors = append(errors,
-							NewTargetClusterTrafficModifyingLabelError(
-								cluster, p.namespace, pod.Name, err))
+						err = shippererrors.NewKubeclientPatchError(p.namespace, pod.Name, err).
+							WithCoreV1Kind("Pod")
+						errors = append(errors, err)
 						continue
 					}
 				}
@@ -279,20 +285,18 @@ func calculateReleasePodTarget(releasePods int, releaseWeight uint32, totalPods 
 func buildClusterReleaseWeights(trafficTargets []*shipper.TrafficTarget) (clusterReleaseWeights, error) {
 	clusterReleases := map[string]map[string]uint32{}
 	releaseTT := map[string]*shipper.TrafficTarget{}
+
 	for _, tt := range trafficTargets {
 		release, ok := tt.Labels[shipper.ReleaseLabel]
 		if !ok {
-			return nil, fmt.Errorf(
-				"trafficTarget '%s/%s' needs a 'release' label in order to select resources in the target clusters",
-				tt.Namespace, tt.Name,
-			)
+			err := shippererrors.NewMissingShipperLabelError(tt, shipper.ReleaseLabel)
+			return nil, err
 		}
+
 		existingTT, ok := releaseTT[release]
 		if ok {
-			return nil, fmt.Errorf(
-				"trafficTargets %q and %q in namespace %q both operate on release %q",
-				existingTT.Name, tt.Name, tt.Namespace, release,
-			)
+			return nil, shippererrors.NewMultipleTrafficTargetsForReleaseError(
+				tt.Namespace, release, []string{tt.Name, existingTT.Name})
 		}
 		releaseTT[release] = tt
 
@@ -305,6 +309,7 @@ func buildClusterReleaseWeights(trafficTargets []*shipper.TrafficTarget) (cluste
 			weights[release] += cluster.Weight
 		}
 	}
+
 	return clusterReleaseWeights(clusterReleases), nil
 }
 

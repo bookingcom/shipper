@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -23,9 +22,20 @@ import (
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
-const AgentName = "janitor-controller"
+const (
+	AgentName             = "janitor-controller"
+	AnchorSuffix          = "-anchor"
+	InstallationTargetUID = "InstallationTargetUID"
+
+	// maxRetries is the number of times a WorkItem will be retried before we
+	// drop it out of the workqueue. The number is chosen with the default rate
+	// limiter in mind. This results in the following backoff times: 5ms, 10ms,
+	// 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s.
+	maxRetries = 11
+)
 
 type Controller struct {
 	shipperClientset   shipperclient.Interface
@@ -36,10 +46,6 @@ type Controller struct {
 	itLister shipperlisters.InstallationTargetLister
 	itSynced cache.InformerSynced
 }
-
-const AnchorSuffix = "-anchor"
-
-const InstallationTargetUID = "InstallationTargetUID"
 
 func NewController(
 	shipperclientset shipperclient.Interface,
@@ -236,19 +242,37 @@ func (c *Controller) processNextWorkItem() bool {
 			c.workqueue.Forget(obj)
 		}
 
+		shouldRetry := false
+		key := workItem.GetKey()
+
 		if err != nil {
-			glog.Infof("error syncing %q: %s", workItem.GetKey(), err.Error())
-		} else {
-			c.workqueue.Forget(obj)
-			glog.Infof("Successfully synced %q", workItem.GetKey())
+			shouldRetry = shippererrors.ShouldRetry(err)
+			runtime.HandleError(fmt.Errorf("error syncing %q (will retry: %t): %s", key, shouldRetry, err.Error()))
 		}
+
+		if shouldRetry {
+			if c.workqueue.NumRequeues(obj) >= maxRetries {
+				// Drop the CapacityTarget's key out of the workqueue and thus reset its
+				// backoff. This limits the time a "broken" object can hog a worker.
+				glog.Warningf("WorkItem %q has been retried too many times, dropping from the queue", key)
+				c.workqueue.Forget(obj)
+
+				return true
+			}
+
+			c.workqueue.AddRateLimited(obj)
+
+			return true
+		}
+
+		c.workqueue.Forget(obj)
+		glog.Infof("Successfully synced %q", key)
 	}
 
 	return true
 }
 
 func (c *Controller) syncAnchor(item *AnchorWorkItem) error {
-
 	// Attempt to fetch the installation target the anchor config map is
 	// pointing to.
 	it, err := c.itLister.InstallationTargets(item.Namespace).Get(item.ReleaseName)
@@ -256,7 +280,8 @@ func (c *Controller) syncAnchor(item *AnchorWorkItem) error {
 		// Return an error only if the error is different than not found, since
 		// if the installation target object doesn't exist anymore we want to
 		// remove the anchor config map.
-		return err
+		return shippererrors.NewKubeclientGetError(item.Namespace, item.ReleaseName, err).
+			WithShipperKind("InstallationTarget")
 	} else if it != nil && string(it.UID) == item.InstallationTargetUID {
 		// The anchor config map's installation target UID and the installation
 		// target object in the manage cluster match, so we just bail out here.
@@ -269,7 +294,10 @@ func (c *Controller) syncAnchor(item *AnchorWorkItem) error {
 
 	configMap := &corev1.ConfigMap{ObjectMeta: item.ObjectMeta}
 	if ok, err := c.removeAnchor(item.ClusterName, item.Namespace, item.Name); err != nil {
-		err.Broadcast(configMap, c.recorder)
+		c.recorder.Eventf(configMap,
+			corev1.EventTypeWarning,
+			"ConfigMapDeletionFailed",
+			err.Error())
 		return err
 	} else if ok {
 		c.recorder.Eventf(configMap,
@@ -282,19 +310,12 @@ func (c *Controller) syncAnchor(item *AnchorWorkItem) error {
 	return nil
 }
 
-func (c *Controller) removeAnchor(clusterName string, namespace string, name string) (bool, *RecordableError) {
+func (c *Controller) removeAnchor(clusterName string, namespace string, name string) (bool, error) {
 	if client, err := c.clusterClientStore.GetClient(clusterName, AgentName); err != nil {
-		return false, NewRecordableError(
-			corev1.EventTypeWarning,
-			"ClusterClientError",
-			"Error acquiring a client for cluster %q: %s",
-			clusterName, err)
+		return false, err
 	} else if err := client.CoreV1().ConfigMaps(namespace).Delete(name, &metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
-		return false, NewRecordableError(
-			corev1.EventTypeWarning,
-			"ConfigMapDeletionFailed",
-			"Config map '%s/%s' deletion on cluster %q failed: %s",
-			namespace, name, clusterName, err)
+		return false, shippererrors.NewKubeclientDeleteError(namespace, name, err).
+			WithCoreV1Kind("ConfigMap")
 	} else if err == nil {
 		return true, nil
 	}
@@ -304,28 +325,23 @@ func (c *Controller) removeAnchor(clusterName string, namespace string, name str
 	return false, nil
 }
 func (c *Controller) syncInstallationTarget(item *InstallationTargetWorkItem) error {
-	// Try to remove the anchor from all the clusters listed in item.Clusters
-	// (which was copied from the installation target spec. Even if something
-	// unexpected happen here, we just broadcast the error since the config map
-	// anchor reconciliation will keep attempting to remove the object as soon
-	// the resync period kicks in.
-	var wg sync.WaitGroup
 	for _, clusterName := range item.Clusters {
-		wg.Add(1)
-		go func(clusterName string) {
-			installationTarget := &shipper.InstallationTarget{ObjectMeta: item.ObjectMeta}
-			if ok, err := c.removeAnchor(clusterName, item.Namespace, item.AnchorName); err != nil {
-				err.Broadcast(installationTarget, c.recorder)
-			} else if ok {
-				c.recorder.Eventf(installationTarget,
-					corev1.EventTypeNormal,
-					"ConfigMapDeleted",
-					"Config map %q has been deleted from cluster %q",
-					item.Key, clusterName)
-			}
-			wg.Done()
-		}(clusterName)
+		installationTarget := &shipper.InstallationTarget{ObjectMeta: item.ObjectMeta}
+		if ok, err := c.removeAnchor(clusterName, item.Namespace, item.AnchorName); err != nil {
+			c.recorder.Eventf(installationTarget,
+				corev1.EventTypeWarning,
+				"ConfigMapDeleted",
+				"Config map %q has been deleted from cluster %q",
+				err.Error())
+			return err
+		} else if ok {
+			c.recorder.Eventf(installationTarget,
+				corev1.EventTypeNormal,
+				"ConfigMapDeleted",
+				"Config map %q has been deleted from cluster %q",
+				item.Key, clusterName)
+		}
 	}
-	wg.Wait()
+
 	return nil
 }

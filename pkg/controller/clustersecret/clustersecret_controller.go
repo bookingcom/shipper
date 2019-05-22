@@ -20,6 +20,7 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	"github.com/bookingcom/shipper/pkg/tls"
 )
 
@@ -133,19 +134,26 @@ func (c *Controller) processNextWorkItem() bool {
 
 	if key, ok = obj.(string); !ok {
 		c.workqueue.Forget(obj)
-		runtime.HandleError(fmt.Errorf("invalid object key: %#v", obj))
+		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
 		return true
 	}
 
-	if err := c.syncOne(key); err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing %q: %s", key, err))
+	shouldRetry := false
+	err := c.syncOne(key)
+
+	if err != nil {
+		shouldRetry = shippererrors.ShouldRetry(err)
+		runtime.HandleError(fmt.Errorf("error syncing Cluster %q (will retry: %t): %s", key, shouldRetry, err.Error()))
+	}
+
+	if shouldRetry {
 		c.workqueue.AddRateLimited(key)
 		return true
 	}
 
 	c.workqueue.Forget(obj)
 
-	glog.V(6).Infof("Successfully synced %q", key)
+	glog.V(6).Infof("Successfully synced Cluster %q", key)
 
 	return true
 }
@@ -195,7 +203,7 @@ func (c *Controller) enqueueCluster(obj interface{}) {
 func (c *Controller) syncOne(key string) error {
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		return fmt.Errorf("invalid resource key: %q", key)
+		return shippererrors.NewUnrecoverableError(err)
 	}
 
 	cluster, err := c.clusterLister.Get(name)
@@ -207,11 +215,15 @@ func (c *Controller) syncOne(key string) error {
 			return nil
 		}
 
-		return err
+		return shippererrors.NewKubeclientGetError("", name, err).
+			WithCoreV1Kind("Cluster")
 	}
 
 	if err := c.processCluster(cluster); err != nil {
-		c.recorder.Event(cluster, corev1.EventTypeWarning, "ClusterSecretError", err.Error())
+		if shippererrors.ShouldBroadcast(err) {
+			c.recorder.Event(cluster, corev1.EventTypeWarning, "ClusterSecretError", err.Error())
+		}
+
 		return err
 	}
 
@@ -226,7 +238,8 @@ func (c *Controller) resolveOwnerRef(meta metav1.Object) (*shipper.Cluster, erro
 
 	owner, err := c.clusterLister.Get(refs[0].Name)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve owner ref for Secret %q: %s", meta.GetName(), err)
+		return nil, shippererrors.NewKubeclientGetError("", refs[0].Name, err).
+			WithCoreV1Kind("Cluster")
 	} else if owner.UID != refs[0].UID {
 		return nil, nil
 	}

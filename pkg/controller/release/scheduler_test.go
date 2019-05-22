@@ -711,7 +711,7 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetNoOwner(t *testing.T)
 
 	c, _ := newScheduler(fixtures)
 
-	_, err := c.ScheduleRelease(release.DeepCopy())
+	_, err := c.CreateOrUpdateInstallationTarget(release.DeepCopy())
 	if err == nil {
 		t.Fatalf("Expected an error here, none received")
 	}
@@ -812,7 +812,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetNoOwner(t *testing.T) {
 
 	c, _ := newScheduler(fixtures)
 
-	_, err := c.ScheduleRelease(release.DeepCopy())
+	_, err := c.CreateOrUpdateTrafficTarget(release.DeepCopy())
 	if err == nil {
 		t.Fatalf("Expected an error here, none received")
 	}
@@ -912,7 +912,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetNoOwner(t *testing.T) {
 
 	c, _ := newScheduler(fixtures)
 
-	_, err := c.ScheduleRelease(release.DeepCopy())
+	_, err := c.CreateOrUpdateCapacityTarget(release.DeepCopy(), 1)
 	if err == nil {
 		t.Fatalf("Expected an error here, none received")
 	}

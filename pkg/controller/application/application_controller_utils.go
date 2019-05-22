@@ -14,6 +14,7 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/controller"
 	"github.com/bookingcom/shipper/pkg/errors"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
 func (c *Controller) createReleaseForApplication(app *shipper.Application, releaseName string, iteration, generation int) (*shipper.Release, error) {
@@ -54,7 +55,8 @@ func (c *Controller) createReleaseForApplication(app *shipper.Application, relea
 
 	rel, err := c.shipperClientset.ShipperV1alpha1().Releases(app.Namespace).Create(newRelease)
 	if err != nil {
-		return nil, fmt.Errorf("create Release for Application %q: %s", controller.MetaKey(app), err)
+		return nil, shippererrors.NewKubeclientCreateError(newRelease, err).
+			WithShipperKind("Release")
 	}
 	return rel, nil
 }
@@ -69,7 +71,9 @@ func (c *Controller) releaseNameForApplication(app *shipper.Application) (string
 
 	releases, err := c.relLister.Releases(app.GetNamespace()).List(selector)
 	if err != nil {
-		return "", 0, err
+		return "", 0, shippererrors.NewKubeclientListError(
+			shipper.SchemeGroupVersion.WithKind("Release"),
+			app.GetNamespace(), selector, err)
 	}
 
 	if len(releases) == 0 {
@@ -86,8 +90,7 @@ func (c *Controller) releaseNameForApplication(app *shipper.Application) (string
 
 		iteration, err := strconv.Atoi(iterationStr)
 		if err != nil {
-			return "", 0, fmt.Errorf("generate name for Release %q: %s",
-				controller.MetaKey(rel), err)
+			return "", 0, shippererrors.NewUnrecoverableError(err)
 		}
 
 		if iteration > highestObserved {

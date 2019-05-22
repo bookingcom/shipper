@@ -27,6 +27,7 @@ import (
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
@@ -42,7 +43,7 @@ type FakeClientProvider struct {
 
 func (f *FakeClientProvider) GetClient(clusterName string, ua string) (kubernetes.Interface, error) {
 	if f.getClientShouldFail {
-		return nil, fmt.Errorf("client error")
+		return nil, shippererrors.NewClusterNotReadyError(clusterName)
 	} else {
 		fakePair := f.clientsPerCluster[clusterName]
 		return fakePair.fakeClient, nil
@@ -51,7 +52,7 @@ func (f *FakeClientProvider) GetClient(clusterName string, ua string) (kubernete
 
 func (f *FakeClientProvider) GetConfig(clusterName string) (*rest.Config, error) {
 	if f.getConfigShouldFail {
-		return nil, fmt.Errorf("config error")
+		return nil, shippererrors.NewClusterNotReadyError(clusterName)
 	} else {
 		return f.restConfig, nil
 	}
