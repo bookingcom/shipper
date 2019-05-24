@@ -508,6 +508,42 @@ const (
 	StrategyStateFalse   StrategyState = "False"
 )
 
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// A RolloutBlock defines the a state where rollouts are blocked, locally or globally.
+// This is used by the ApplicationController to unable rollouts.
+type RolloutBlock struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   RolloutBlockSpec   `json:"spec"`
+	Status RolloutBlockStatus `json:"status,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type RolloutBlockList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
+
+	Items []RolloutBlock `json:"items"`
+}
+
+type RolloutBlockStatus struct {
+	InService bool `json:"inService"`
+}
+
+type RolloutBlockSpec struct {
+	Message string `json:"message"`
+	Author RolloutBlockAuthor `json:"author"`
+}
+
+type RolloutBlockAuthor struct {
+	Type              string `json:"type"`
+	Name              string `json:"name"`
+}
+
 func (ss *StrategyState) UnmarshalJSON(b []byte) error {
 	var s string
 	if err := json.Unmarshal(b, &s); err != nil {
