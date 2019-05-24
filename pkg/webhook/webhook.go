@@ -161,6 +161,9 @@ func (c *Webhook) validateHandlerFunc(review *admission_v1beta1.AdmissionReview)
 	case "TrafficTarget":
 		var trafficTarget shipper.TrafficTarget
 		err = json.Unmarshal(request.Object.Raw, &trafficTarget)
+	case "RolloutBlock":
+		var rolloutBlock shipper.RolloutBlock
+		err = json.Unmarshal(request.Object.Raw, &rolloutBlock)
 	}
 
 	if err != nil {

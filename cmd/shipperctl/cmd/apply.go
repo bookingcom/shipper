@@ -231,6 +231,10 @@ func createOrUpdateCrds(cmd *cobra.Command, configurator *configurator.Cluster) 
 		return err
 	}
 
+	if err := configurator.CreateOrUpdateCRD(crds.RolloutBlock); err != nil {
+		return err
+	}
+
 	cmd.Println("done")
 
 	return nil
