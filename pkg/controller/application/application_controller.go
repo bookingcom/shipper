@@ -2,7 +2,9 @@ package application
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/labels"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -50,6 +52,9 @@ type Controller struct {
 	relLister listers.ReleaseLister
 	relSynced cache.InformerSynced
 
+	rbLister listers.RolloutBlockLister
+	rbSynced cache.InformerSynced
+
 	recorder record.EventRecorder
 }
 
@@ -61,6 +66,7 @@ func NewController(
 ) *Controller {
 	appInformer := shipperInformerFactory.Shipper().V1alpha1().Applications()
 	relInformer := shipperInformerFactory.Shipper().V1alpha1().Releases()
+	rbInformer  := shipperInformerFactory.Shipper().V1alpha1().RolloutBlocks()
 
 	c := &Controller{
 		shipperClientset: shipperClientset,
@@ -71,6 +77,9 @@ func NewController(
 
 		relLister: relInformer.Lister(),
 		relSynced: relInformer.Informer().HasSynced,
+
+		rbLister: rbInformer.Lister(),
+		rbSynced: rbInformer.Informer().HasSynced,
 
 		recorder: recorder,
 	}
@@ -96,6 +105,21 @@ func NewController(
 			c.enqueueRel(newRel)
 		},
 		DeleteFunc: c.enqueueRel,
+	})
+
+	rbInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: c.enqueueRB,
+		UpdateFunc: func(old, new interface{}) {
+			oldRB, oldOk := old.(*shipper.RolloutBlock)
+			newRB, newOk := new.(*shipper.RolloutBlock)
+			if oldOk && newOk && oldRB.ResourceVersion == newRB.ResourceVersion {
+				glog.V(4).Info("Received RolloutBlock Update")
+				return
+			}
+
+			c.enqueueRel(newRB)
+		},
+		DeleteFunc: c.enqueueRB,
 	})
 
 	return c
@@ -177,6 +201,29 @@ func (c *Controller) processNextWorkItem() bool {
 	return true
 }
 
+func (c *Controller) enqueueRB(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	rb, ok := obj.(*shipper.RolloutBlock)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.RolloutBlock: %#v", obj))
+		return
+	}
+
+	if n := len(rb.OwnerReferences); n != 1 {
+		runtime.HandleError(fmt.Errorf("expected exactly one owner for RolloutBlock %q but got %d", key, n))
+		return
+	}
+
+	owner := rb.OwnerReferences[0]
+
+	c.appWorkqueue.Add(fmt.Sprintf("%s/%s", rb.Namespace, owner.Name))
+}
+
 func (c *Controller) enqueueRel(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
@@ -225,6 +272,28 @@ func (c *Controller) syncApplication(key string) error {
 
 		return shippererrors.NewKubeclientGetError(ns, name, err).
 			WithShipperKind("Application")
+	}
+
+	nsRBs, err := c.rbLister.RolloutBlocks(ns).List(labels.Everything())
+	if err != nil {
+		glog.V(1).Info(fmt.Sprintf("error syncing Application %q Because of ns RolloutBlocks (will retry): %s", key, err))
+		//return true
+	}
+	if len(nsRBs) > 0 {
+		//runtime.HandleError(fmt.Errorf("error syncing Application %q Because of Namespace RolloutBlocks (will retry): %s", key, nsRBs))
+		c.recorder.Event(app, corev1.EventTypeWarning, "FailedApplication", fmt.Sprintf("Namespace RolloutBlocks %s", nsRBs))
+		return true
+	}
+
+	gbRBs, err := c.rbLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything())
+	if err != nil {
+		glog.V(1).Info(fmt.Sprintf("error syncing Application %q Because of global RolloutBlocks (will retry): %s", key, err))
+		//return true
+	}
+	if len(gbRBs) > 0 {
+		//runtime.HandleError(fmt.Errorf("error syncing Application %q Because of Global RolloutBlocks (will retry): %s", key, gbRBs))
+		c.recorder.Event(app, corev1.EventTypeWarning, "FailedApplication", fmt.Sprintf("Global RolloutBlocks %s", gbRBs))
+		return true
 	}
 
 	app = app.DeepCopy()
@@ -280,7 +349,7 @@ func (c *Controller) syncApplication(key string) error {
 // given Release slice, whether it is the first release being rolled out, a
 // transition between two releases or, if stable and a release process is not
 // ongoing, inform which Release is currently active.
-func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels []*shipper.Release) error {
+func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels []*shipper.Release, rbs []*shipper.RolloutBlock) error {
 	var (
 		contenderRel *shipper.Release
 		incumbentRel *shipper.Release
@@ -289,6 +358,18 @@ func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels 
 
 	// Required by GetContender() and GetIncumbent() below.
 	rels = releaseutil.SortByGenerationDescending(rels)
+
+	if len(rbs) > 0 {
+		var sb strings.Builder
+		for _, rb := range rbs {
+			sb.WriteString(rb.Name + " ")
+		}
+		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionTrue, "", sb.String())
+		apputil.SetApplicationCondition(&app.Status, *rolloutBlockCond)
+	} else {
+		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionFalse, "", "")
+		apputil.SetApplicationCondition(&app.Status, *rolloutBlockCond)
+	}
 
 	abortingCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeAborting, corev1.ConditionFalse, "", "")
 	apputil.SetApplicationCondition(&app.Status, *abortingCond)
@@ -340,6 +421,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 
 	var (
 		appReleases     []*shipper.Release
+		rbs		        []*shipper.RolloutBlock
 		contender       *shipper.Release
 		err             error
 		generation      int
@@ -349,6 +431,17 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 	if appReleases, err = c.relLister.Releases(app.Namespace).ReleasesForApplication(app.Name); err != nil {
 		return err
 	}
+
+	var nsRolloutBlocks, globalRolloutBlocks []*shipper.RolloutBlock
+	if nsRolloutBlocks, err = c.rbLister.RolloutBlocks(app.Namespace).List(labels.Everything()); err != nil {
+		glog.V(1).Info("error in Namespace RolloutBlocks? ")
+		//return err
+	}
+	if globalRolloutBlocks, err = c.rbLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything()); err != nil {
+		glog.V(1).Info("error in Global RolloutBlocks? ")
+		//return err
+	}
+	rbs = append(nsRolloutBlocks, globalRolloutBlocks...)
 
 	// Required by subsequent calls to GetContender and GetIncumbent.
 	appReleases = releaseutil.SortByGenerationDescending(appReleases)
@@ -381,7 +474,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 			// update listers and informers automatically during tests...
 			// How should we do it then?
 			apputil.SetHighestObservedGeneration(app, generation)
-			return c.wrapUpApplicationConditions(app, appReleases)
+			return c.wrapUpApplicationConditions(app, appReleases, rbs)
 		}
 		return err
 	}
@@ -441,7 +534,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 	}
 
 	apputil.SetHighestObservedGeneration(app, highestObserved)
-	return c.wrapUpApplicationConditions(app, appReleases)
+	return c.wrapUpApplicationConditions(app, appReleases, rbs)
 }
 
 // TODO(jgreff): wrap bare errors with shippererrors and actually return them

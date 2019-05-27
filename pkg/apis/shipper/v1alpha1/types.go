@@ -98,6 +98,7 @@ const (
 	ApplicationConditionTypeReleaseSynced ApplicationConditionType = "ReleaseSynced"
 	ApplicationConditionTypeAborting      ApplicationConditionType = "Aborting"
 	ApplicationConditionTypeRollingOut    ApplicationConditionType = "RollingOut"
+	ApplicationConditionTypeRolloutBlock  ApplicationConditionType = "RolloutBlock"
 )
 
 type ApplicationCondition struct {
