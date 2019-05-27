@@ -2,6 +2,7 @@ package release
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/labels"
 	"time"
 
 	"github.com/golang/glog"
@@ -59,6 +60,9 @@ type Controller struct {
 	capacityTargetLister  shipperlisters.CapacityTargetLister
 	capacityTargetsSynced cache.InformerSynced
 
+	rolloutBlockLister shipperlisters.RolloutBlockLister
+	rolloutBlockSynced cache.InformerSynced
+
 	releaseWorkqueue     workqueue.RateLimitingInterface
 	applicationWorkqueue workqueue.RateLimitingInterface
 }
@@ -89,6 +93,7 @@ func NewController(
 	installationTargetInformer := informerFactory.Shipper().V1alpha1().InstallationTargets()
 	trafficTargetInformer := informerFactory.Shipper().V1alpha1().TrafficTargets()
 	capacityTargetInformer := informerFactory.Shipper().V1alpha1().CapacityTargets()
+	rolloutBlockInformer := informerFactory.Shipper().V1alpha1().RolloutBlocks()
 
 	glog.Info("Building a release controller")
 
@@ -114,6 +119,9 @@ func NewController(
 
 		capacityTargetLister:  capacityTargetInformer.Lister(),
 		capacityTargetsSynced: capacityTargetInformer.Informer().HasSynced,
+
+		rolloutBlockLister: rolloutBlockInformer.Lister(),
+		rolloutBlockSynced: rolloutBlockInformer.Informer().HasSynced,
 
 		releaseWorkqueue: workqueue.NewNamedRateLimitingQueue(
 			workqueue.DefaultControllerRateLimiter(),
@@ -163,6 +171,15 @@ func NewController(
 			DeleteFunc: controller.enqueueTrafficTarget,
 		})
 
+	rolloutBlockInformer.Informer().AddEventHandler(
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: controller.enqueueRolloutBlock,
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				controller.enqueueRolloutBlock(newObj)
+			},
+			DeleteFunc: controller.enqueueRolloutBlock,
+		})
+
 	return controller
 }
 
@@ -183,6 +200,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 		c.installationTargetsSynced,
 		c.trafficTargetsSynced,
 		c.capacityTargetsSynced,
+		c.rolloutBlockSynced,
 	); !ok {
 		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
 		return
@@ -274,6 +292,28 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 
 		return shippererrors.NewKubeclientGetError(namespace, name, err).
 			WithShipperKind("Release")
+	}
+
+	nsRBs, err := c.rolloutBlockLister.RolloutBlocks(namespace).List(labels.Everything())
+	if err != nil {
+		glog.V(1).Info(fmt.Sprintf("error syncing Application %q Because of ns RolloutBlocks (will retry): %s", key, err))
+		//return true
+	}
+	if len(nsRBs) > 0 {
+		//runtime.HandleError(fmt.Errorf("error syncing Application %q Because of Namespace RolloutBlocks (will retry): %s", key, nsRBs))
+		c.recorder.Event(rel, corev1.EventTypeWarning, "RolloutBlock", fmt.Sprintf("Namespace RolloutBlocks %s", nsRBs))
+		//return true
+	}
+
+	gbRBs, err := c.rolloutBlockLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything())
+	if err != nil {
+		glog.V(1).Info(fmt.Sprintf("error syncing Application %q Because of global RolloutBlocks (will retry): %s", key, err))
+		//return true
+	}
+	if len(gbRBs) > 0 {
+		//runtime.HandleError(fmt.Errorf("error syncing Application %q Because of Global RolloutBlocks (will retry): %s", key, gbRBs))
+		c.recorder.Event(rel, corev1.EventTypeWarning, "RolloutBlock", fmt.Sprintf("Global RolloutBlocks %s", gbRBs))
+		//return true
 	}
 
 	if releaseutil.HasEmptyEnvironment(rel) {
@@ -520,4 +560,20 @@ func reasonForReleaseCondition(err error) string {
 	}
 
 	return "unknown error! tell Shipper devs to classify it"
+}
+
+func (c *Controller) enqueueRolloutBlock(obj interface{}) {
+	rb, ok := obj.(*shipper.RolloutBlock)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.RolloutBlock: %#v", obj))
+		return
+	}
+
+	releaseKey, err := c.getAssociatedReleaseKey(&rb.ObjectMeta)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	c.releaseWorkqueue.Add(releaseKey)
 }
