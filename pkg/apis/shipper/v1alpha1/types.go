@@ -31,6 +31,7 @@ const (
 	InstallationStatusFailed    = "Failed"
 
 	AppHighestObservedGenerationAnnotation = "shipper.booking.com/app.highestObservedGeneration"
+	AppOverrideRolloutBlocksAnnotation     = "shipper.booking.com/app.overrideRolloutBlocks"
 
 	ReleaseGenerationAnnotation        = "shipper.booking.com/release.generation"
 	ReleaseTemplateIterationAnnotation = "shipper.booking.com/release.template.iteration"

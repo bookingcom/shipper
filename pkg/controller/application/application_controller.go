@@ -2,6 +2,7 @@ package application
 
 import (
 	"fmt"
+	"github.com/bookingcom/shipper/pkg/controller/rolloutblock"
 	"k8s.io/apimachinery/pkg/labels"
 	"math"
 	"strings"
@@ -134,7 +135,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	glog.V(2).Info("Starting Application controller")
 	defer glog.V(2).Info("Shutting down Application controller")
 
-	if !cache.WaitForCacheSync(stopCh, c.appSynced, c.relSynced) {
+	if !cache.WaitForCacheSync(stopCh, c.appSynced, c.relSynced, c.rbSynced) {
 		runtime.HandleError(fmt.Errorf("failed to sync caches for the Application controller"))
 		return
 	}
@@ -202,26 +203,19 @@ func (c *Controller) processNextWorkItem() bool {
 }
 
 func (c *Controller) enqueueRB(obj interface{}) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	_, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
 
-	rb, ok := obj.(*shipper.RolloutBlock)
+	_, ok := obj.(*shipper.RolloutBlock)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.RolloutBlock: %#v", obj))
 		return
 	}
 
-	if n := len(rb.OwnerReferences); n != 1 {
-		runtime.HandleError(fmt.Errorf("expected exactly one owner for RolloutBlock %q but got %d", key, n))
-		return
-	}
-
-	owner := rb.OwnerReferences[0]
-
-	c.appWorkqueue.Add(fmt.Sprintf("%s/%s", rb.Namespace, owner.Name))
+	//c.appWorkqueueappWorkqueue.Add(fmt.Sprintf("%s/%s", rb.Namespace, rb.Name))
 }
 
 func (c *Controller) enqueueRel(obj interface{}) {
@@ -274,33 +268,15 @@ func (c *Controller) syncApplication(key string) error {
 			WithShipperKind("Application")
 	}
 
-	nsRBs, err := c.rbLister.RolloutBlocks(ns).List(labels.Everything())
-	if err != nil {
-		glog.V(1).Info(fmt.Sprintf("error syncing Application %q Because of ns RolloutBlocks (will retry): %s", key, err))
-		//return true
-	}
-	if len(nsRBs) > 0 {
-		//runtime.HandleError(fmt.Errorf("error syncing Application %q Because of Namespace RolloutBlocks (will retry): %s", key, nsRBs))
-		c.recorder.Event(app, corev1.EventTypeWarning, "FailedApplication", fmt.Sprintf("Namespace RolloutBlocks %s", nsRBs))
-		return true
-	}
-
-	gbRBs, err := c.rbLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything())
-	if err != nil {
-		glog.V(1).Info(fmt.Sprintf("error syncing Application %q Because of global RolloutBlocks (will retry): %s", key, err))
-		//return true
-	}
-	if len(gbRBs) > 0 {
-		//runtime.HandleError(fmt.Errorf("error syncing Application %q Because of Global RolloutBlocks (will retry): %s", key, gbRBs))
-		c.recorder.Event(app, corev1.EventTypeWarning, "FailedApplication", fmt.Sprintf("Global RolloutBlocks %s", gbRBs))
-		return true
-	}
-
 	app = app.DeepCopy()
 
 	// Initialize annotations
 	if app.Annotations == nil {
 		app.Annotations = map[string]string{}
+	}
+
+	if c.shouldBlockRollout(app) {
+		return true
 	}
 
 	if app.Spec.RevisionHistoryLimit == nil {
@@ -340,6 +316,30 @@ func (c *Controller) syncApplication(key string) error {
 	return nil
 }
 
+func (c *Controller) shouldBlockRollout(app *shipper.Application) bool {
+	nsRBs, err := c.rbLister.RolloutBlocks(app.Namespace).List(labels.Everything())
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("error syncing Application %q Because of namespace RolloutBlocks (will retry): %s", app.Name, err))
+	}
+
+	gbRBs, err := c.rbLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything())
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("error syncing Application %q Because of global RolloutBlocks (will retry): %s", app.Name, err))
+	}
+
+	overrideRolloutBlock, eventMessage := rolloutblock.ShouldOverrideRolloutBlock(app, nsRBs, gbRBs)
+
+	if !overrideRolloutBlock {
+		glog.Info("HILLA")
+		c.updateApplicationRolloutCondition(append(nsRBs, gbRBs...), app)
+		glog.Info("HILLA")
+		c.recorder.Event(app, corev1.EventTypeWarning, "RolloutBlock", eventMessage)
+	}
+	return !overrideRolloutBlock
+}
+
+
+
 // wrapUpApplicationConditions fills conditions into the given shipper.Application
 // object. It is meant to be called by processApplication() after a successful
 // execution when other conditions have not been populated since no errors have
@@ -359,17 +359,7 @@ func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels 
 	// Required by GetContender() and GetIncumbent() below.
 	rels = releaseutil.SortByGenerationDescending(rels)
 
-	if len(rbs) > 0 {
-		var sb strings.Builder
-		for _, rb := range rbs {
-			sb.WriteString(rb.Name + " ")
-		}
-		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionTrue, "", sb.String())
-		apputil.SetApplicationCondition(&app.Status, *rolloutBlockCond)
-	} else {
-		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionFalse, "", "")
-		apputil.SetApplicationCondition(&app.Status, *rolloutBlockCond)
-	}
+	c.updateApplicationRolloutCondition(rbs, app)
 
 	abortingCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeAborting, corev1.ConditionFalse, "", "")
 	apputil.SetApplicationCondition(&app.Status, *abortingCond)
@@ -502,6 +492,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		apputil.SetApplicationCondition(&app.Status, *abortingCond)
 		rollingOutCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
 		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
+		c.updateApplicationRolloutCondition(rbs, app)
 		return nil
 	}
 
@@ -527,6 +518,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 			apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
 			rollingOutCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRollingOut, corev1.ConditionFalse, conditions.CreateReleaseFailed, err.Error())
 			apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
+			c.updateApplicationRolloutCondition(rbs, app)
 			return err
 		} else {
 			appReleases = append(appReleases, rel)
@@ -535,6 +527,20 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 
 	apputil.SetHighestObservedGeneration(app, highestObserved)
 	return c.wrapUpApplicationConditions(app, appReleases, rbs)
+}
+
+func (c *Controller) updateApplicationRolloutCondition(rbs []*shipper.RolloutBlock, app *shipper.Application) {
+	if len(rbs) > 0 {
+		var sb strings.Builder
+		for _, rb := range rbs {
+			sb.WriteString(rb.Name + " ")
+		}
+		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionTrue, "", sb.String())
+		apputil.SetApplicationCondition(&app.Status, *rolloutBlockCond)
+	} else {
+		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionFalse, "", "")
+		apputil.SetApplicationCondition(&app.Status, *rolloutBlockCond)
+	}
 }
 
 // TODO(jgreff): wrap bare errors with shippererrors and actually return them

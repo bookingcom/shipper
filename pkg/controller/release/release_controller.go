@@ -2,6 +2,7 @@ package release
 
 import (
 	"fmt"
+	"github.com/bookingcom/shipper/pkg/controller/rolloutblock"
 	"k8s.io/apimachinery/pkg/labels"
 	"time"
 
@@ -316,7 +317,13 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 		//return true
 	}
 
-	if releaseutil.HasEmptyEnvironment(rel) {
+
+	if c.shouldBlockRollout(rel) {
+		//return true // TODO return error
+	}
+
+
+		if releaseutil.HasEmptyEnvironment(rel) {
 		return nil
 	}
 
@@ -394,6 +401,33 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 	glog.V(4).Infof("Done processing Release %q", key)
 
 	return nil
+}
+
+
+func (c *Controller) shouldBlockRollout(rel *shipper.Release) bool {
+	nsRBs, err := c.rolloutBlockLister.RolloutBlocks(rel.Namespace).List(labels.Everything())
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("error syncing Application %q Because of namespace RolloutBlocks (will retry): %s", rel.Name, err))
+	}
+
+	gbRBs, err := c.rolloutBlockLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything())
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("error syncing Application %q Because of global RolloutBlocks (will retry): %s", rel.Name, err))
+	}
+
+	app, err := c.applicationLister.Applications(rel.Namespace).Get(rel.Labels[shipper.AppLabel])
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", rel.Name, err))
+		return false
+	}
+
+	overrideRolloutBlock, eventMessage := rolloutblock.ShouldOverrideRolloutBlock(app, nsRBs, gbRBs)
+
+	if !overrideRolloutBlock {
+		c.recorder.Event(rel, corev1.EventTypeWarning, "RolloutBlock", eventMessage)
+	}
+
+	return !overrideRolloutBlock
 }
 
 // getAssociatedApplicationKey returns an application key in the format:
@@ -563,17 +597,11 @@ func reasonForReleaseCondition(err error) string {
 }
 
 func (c *Controller) enqueueRolloutBlock(obj interface{}) {
-	rb, ok := obj.(*shipper.RolloutBlock)
+	_, ok := obj.(*shipper.RolloutBlock)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.RolloutBlock: %#v", obj))
 		return
 	}
 
-	releaseKey, err := c.getAssociatedReleaseKey(&rb.ObjectMeta)
-	if err != nil {
-		runtime.HandleError(err)
-		return
-	}
-
-	c.releaseWorkqueue.Add(releaseKey)
+	//c.releaseWorkqueue.Add(fmt.Sprintf("%s/%s", rb.Namespace, rb.Name))
 }
