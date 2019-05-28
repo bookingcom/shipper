@@ -330,9 +330,7 @@ func (c *Controller) shouldBlockRollout(app *shipper.Application) bool {
 	overrideRolloutBlock, eventMessage := rolloutblock.ShouldOverrideRolloutBlock(app, nsRBs, gbRBs)
 
 	if !overrideRolloutBlock {
-		glog.Info("HILLA")
 		c.updateApplicationRolloutCondition(append(nsRBs, gbRBs...), app)
-		glog.Info("HILLA")
 		c.recorder.Event(app, corev1.EventTypeWarning, "RolloutBlock", eventMessage)
 	}
 	return !overrideRolloutBlock

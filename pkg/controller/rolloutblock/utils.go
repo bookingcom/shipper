@@ -17,20 +17,21 @@ func ShouldOverrideRolloutBlock(app *shipper.Application, nsRBs []*shipper.Rollo
 	overrideRBs := strings.Split(overrideRB, ",")
 	RBs := append(nsRBs, gbRBs...)
 
-	diff := Difference(RBs, overrideRBs)
+	nonOverriddenRBs := Difference(RBs, overrideRBs)
 
-	return len(diff) == 0, strings.Join(diff, ", ")
+	return len(nonOverriddenRBs) == 0, strings.Join(nonOverriddenRBs, ", ")
 }
 
-// Set Difference: A - B
-func Difference(a []*shipper.RolloutBlock, b []string) (diff []string) {
+// Set Difference: existingRBs - overrideRBs
+// finding all RolloutBlocks that are not overridden
+func Difference(existingRBs []*shipper.RolloutBlock, overrideRBs []string) (diff []string) {
 	m := make(map[string]bool)
 
-	for _, item := range b {
+	for _, item := range overrideRBs {
 		m[item] = true
 	}
 
-	for _, item := range a {
+	for _, item := range existingRBs {
 		if _, ok := m[item.Name]; !ok {
 			diff = append(diff, item.Name)
 		}
