@@ -275,10 +275,6 @@ func (c *Controller) syncApplication(key string) error {
 		app.Annotations = map[string]string{}
 	}
 
-	if c.shouldBlockRollout(app) {
-		return true
-	}
-
 	if app.Spec.RevisionHistoryLimit == nil {
 		var i int32 = DefaultRevisionHistoryLimit
 		app.Spec.RevisionHistoryLimit = &i
@@ -315,28 +311,6 @@ func (c *Controller) syncApplication(key string) error {
 
 	return nil
 }
-
-func (c *Controller) shouldBlockRollout(app *shipper.Application) bool {
-	nsRBs, err := c.rbLister.RolloutBlocks(app.Namespace).List(labels.Everything())
-	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing Application %q Because of namespace RolloutBlocks (will retry): %s", app.Name, err))
-	}
-
-	gbRBs, err := c.rbLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything())
-	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing Application %q Because of global RolloutBlocks (will retry): %s", app.Name, err))
-	}
-
-	overrideRolloutBlock, eventMessage := rolloutblock.ShouldOverrideRolloutBlock(app, nsRBs, gbRBs)
-
-	if !overrideRolloutBlock {
-		c.updateApplicationRolloutCondition(append(nsRBs, gbRBs...), app)
-		c.recorder.Event(app, corev1.EventTypeWarning, "RolloutBlock", eventMessage)
-	}
-	return !overrideRolloutBlock
-}
-
-
 
 // wrapUpApplicationConditions fills conditions into the given shipper.Application
 // object. It is meant to be called by processApplication() after a successful
@@ -422,12 +396,10 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 
 	var nsRolloutBlocks, globalRolloutBlocks []*shipper.RolloutBlock
 	if nsRolloutBlocks, err = c.rbLister.RolloutBlocks(app.Namespace).List(labels.Everything()); err != nil {
-		glog.V(1).Info("error in Namespace RolloutBlocks? ")
-		//return err
+		glog.Warning("error getting Namespace RolloutBlocks %s", err)
 	}
 	if globalRolloutBlocks, err = c.rbLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything()); err != nil {
-		glog.V(1).Info("error in Global RolloutBlocks? ")
-		//return err
+		glog.Warning("error getting Global RolloutBlocks %s", err)
 	}
 	rbs = append(nsRolloutBlocks, globalRolloutBlocks...)
 
@@ -439,6 +411,10 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		app.Status.History = apputil.ReleasesToApplicationHistory(appReleases)
 		c.cleanUpReleasesForApplication(app, appReleases)
 	}()
+
+	if c.shouldBlockRollout(app) {
+		return c.wrapUpApplicationConditions(app, appReleases, rbs)
+	}
 
 	if contender, err = apputil.GetContender(app.Name, appReleases); err != nil {
 		if shippererrors.IsContenderNotFoundError(err) {
@@ -527,13 +503,34 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 	return c.wrapUpApplicationConditions(app, appReleases, rbs)
 }
 
+func (c *Controller) shouldBlockRollout(app *shipper.Application) bool {
+	nsRBs, err := c.rbLister.RolloutBlocks(app.Namespace).List(labels.Everything())
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("error syncing Application %q Because of namespace RolloutBlocks (will retry): %s", app.Name, err))
+	}
+
+	gbRBs, err := c.rbLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything())
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("error syncing Application %q Because of global RolloutBlocks (will retry): %s", app.Name, err))
+	}
+
+	overrideRolloutBlock, eventMessage := rolloutblock.ShouldOverrideRolloutBlock(app, nsRBs, gbRBs)
+
+	if !overrideRolloutBlock {
+		c.recorder.Event(app, corev1.EventTypeWarning, "RolloutBlock", eventMessage)
+	} else {
+		c.recorder.Event(app, corev1.EventTypeWarning, "Overriding RolloutBlock", eventMessage)
+	}
+	return !overrideRolloutBlock
+}
+
 func (c *Controller) updateApplicationRolloutCondition(rbs []*shipper.RolloutBlock, app *shipper.Application) {
 	if len(rbs) > 0 {
 		var sb strings.Builder
 		for _, rb := range rbs {
 			sb.WriteString(rb.Name + " ")
 		}
-		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionTrue, "", sb.String())
+		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionTrue, sb.String(), "")
 		apputil.SetApplicationCondition(&app.Status, *rolloutBlockCond)
 	} else {
 		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionFalse, "", "")

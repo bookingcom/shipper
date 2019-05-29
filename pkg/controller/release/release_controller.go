@@ -295,31 +295,8 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 			WithShipperKind("Release")
 	}
 
-	nsRBs, err := c.rolloutBlockLister.RolloutBlocks(namespace).List(labels.Everything())
-	if err != nil {
-		glog.V(1).Info(fmt.Sprintf("error syncing Application %q Because of ns RolloutBlocks (will retry): %s", key, err))
-		//return true
-	}
-	if len(nsRBs) > 0 {
-		//runtime.HandleError(fmt.Errorf("error syncing Application %q Because of Namespace RolloutBlocks (will retry): %s", key, nsRBs))
-		c.recorder.Event(rel, corev1.EventTypeWarning, "RolloutBlock", fmt.Sprintf("Namespace RolloutBlocks %s", nsRBs))
-		//return true
-	}
-
-	gbRBs, err := c.rolloutBlockLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything())
-	if err != nil {
-		glog.V(1).Info(fmt.Sprintf("error syncing Application %q Because of global RolloutBlocks (will retry): %s", key, err))
-		//return true
-	}
-	if len(gbRBs) > 0 {
-		//runtime.HandleError(fmt.Errorf("error syncing Application %q Because of Global RolloutBlocks (will retry): %s", key, gbRBs))
-		c.recorder.Event(rel, corev1.EventTypeWarning, "RolloutBlock", fmt.Sprintf("Global RolloutBlocks %s", gbRBs))
-		//return true
-	}
-
-
 	if c.shouldBlockRollout(rel) {
-		//return true // TODO return error
+		return shippererrors.NewKubeclientUpdateError(rel, fmt.Errorf("rollout blocks exists"))
 	}
 
 
