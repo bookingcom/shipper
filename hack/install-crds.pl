@@ -1,6 +1,5 @@
 use strict;
 use warnings;
-use Data::Dumper qw(Dumper);
 use Getopt::Long;
 
 my $clean = '';
