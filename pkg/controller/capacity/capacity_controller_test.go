@@ -2,6 +2,7 @@ package capacity
 
 import (
 	"fmt"
+	"math/rand"
 	"sort"
 	"testing"
 	"time"
@@ -24,14 +25,20 @@ import (
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
+var (
+	numClus int32
+)
+
 func init() {
+	rand.Seed(time.Now().UTC().UnixNano())
+	numClus = 1 + rand.Int31n(5)
 	conditions.CapacityConditionsShouldDiscardTimestamps = true
 }
 
 func TestUpdatingCapacityTargetUpdatesDeployment(t *testing.T) {
 	f := NewFixture(t)
 
-	capacityTarget := newCapacityTarget(10, 50)
+	capacityTarget := newCapacityTarget(10, 50, numClus)
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
 	deployment := newDeployment(0, 0)
@@ -58,7 +65,7 @@ func TestUpdatingCapacityTargetUpdatesDeployment(t *testing.T) {
 func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePod(t *testing.T) {
 	f := NewFixture(t)
 
-	capacityTarget := newCapacityTarget(1, 100)
+	capacityTarget := newCapacityTarget(1, 100, numClus)
 
 	deployment := newDeployment(1, 1)
 	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
@@ -89,16 +96,18 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePod(t *testing.T
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
-	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
-		Name:              "minikube",
-		Reports:           []shipper.ClusterCapacityReport{*c.Build()},
-		AchievedPercent:   100,
-		AvailableReplicas: 1,
-		Conditions: []shipper.ClusterCapacityCondition{
-			{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
-			{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
-		},
-	})
+	for i := int32(0); i < numClus; i++ {
+		capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
+			Name:              fmt.Sprintf("cluster_%d", i),
+			Reports:           []shipper.ClusterCapacityReport{*c.Build()},
+			AchievedPercent:   100,
+			AvailableReplicas: 1,
+			Conditions: []shipper.ClusterCapacityCondition{
+				{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
+				{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+			},
+		})
+	}
 
 	updateAction := kubetesting.NewUpdateAction(
 		schema.GroupVersionResource{
@@ -121,7 +130,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePod(t *testing.T
 func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodCompletedContainer(t *testing.T) {
 	f := NewFixture(t)
 
-	capacityTarget := newCapacityTarget(1, 100)
+	capacityTarget := newCapacityTarget(1, 100, numClus)
 
 	deployment := newDeployment(1, 1)
 	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
@@ -140,16 +149,18 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodCompletedCont
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
-	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
-		Name:              "minikube",
-		Reports:           []shipper.ClusterCapacityReport{*c.Build()},
-		AchievedPercent:   100,
-		AvailableReplicas: 1,
-		Conditions: []shipper.ClusterCapacityCondition{
-			{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
-			{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
-		},
-	})
+	for i := int32(0); i < numClus; i++ {
+		capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
+			Name:              fmt.Sprintf("cluster_%d", i),
+			Reports:           []shipper.ClusterCapacityReport{*c.Build()},
+			AchievedPercent:   100,
+			AvailableReplicas: 1,
+			Conditions: []shipper.ClusterCapacityCondition{
+				{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
+				{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+			},
+		})
+	}
 
 	updateAction := kubetesting.NewUpdateAction(
 		schema.GroupVersionResource{
@@ -172,7 +183,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodCompletedCont
 func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodTerminatedContainer(t *testing.T) {
 	f := NewFixture(t)
 
-	capacityTarget := newCapacityTarget(1, 100)
+	capacityTarget := newCapacityTarget(1, 100, numClus)
 
 	deployment := newDeployment(1, 1)
 	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
@@ -191,16 +202,18 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodTerminatedCon
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
-	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
-		Name:              "minikube",
-		Reports:           []shipper.ClusterCapacityReport{*c.Build()},
-		AchievedPercent:   100,
-		AvailableReplicas: 1,
-		Conditions: []shipper.ClusterCapacityCondition{
-			{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
-			{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
-		},
-	})
+	for i := int32(0); i < numClus; i++ {
+		capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
+			Name:              fmt.Sprintf("cluster_%d", i),
+			Reports:           []shipper.ClusterCapacityReport{*c.Build()},
+			AchievedPercent:   100,
+			AvailableReplicas: 1,
+			Conditions: []shipper.ClusterCapacityCondition{
+				{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
+				{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+			},
+		})
+	}
 
 	updateAction := kubetesting.NewUpdateAction(
 		schema.GroupVersionResource{
@@ -223,7 +236,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodTerminatedCon
 func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodRestartedContainer(t *testing.T) {
 	f := NewFixture(t)
 
-	capacityTarget := newCapacityTarget(1, 100)
+	capacityTarget := newCapacityTarget(1, 100, numClus)
 
 	deployment := newDeployment(1, 1)
 	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
@@ -242,16 +255,18 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodRestartedCont
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
-	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
-		Name:              "minikube",
-		Reports:           []shipper.ClusterCapacityReport{*c.Build()},
-		AchievedPercent:   100,
-		AvailableReplicas: 1,
-		Conditions: []shipper.ClusterCapacityCondition{
-			{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
-			{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
-		},
-	})
+	for i := int32(0); i < numClus; i++ {
+		capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
+			Name:              fmt.Sprintf("cluster_%d", i),
+			Reports:           []shipper.ClusterCapacityReport{*c.Build()},
+			AchievedPercent:   100,
+			AvailableReplicas: 1,
+			Conditions: []shipper.ClusterCapacityCondition{
+				{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
+				{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+			},
+		})
+	}
 
 	updateAction := kubetesting.NewUpdateAction(
 		schema.GroupVersionResource{
@@ -274,7 +289,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodRestartedCont
 func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodRestartedContainerWithTerminationMessage(t *testing.T) {
 	f := NewFixture(t)
 
-	capacityTarget := newCapacityTarget(1, 100)
+	capacityTarget := newCapacityTarget(1, 100, numClus)
 
 	deployment := newDeployment(1, 1)
 	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
@@ -293,16 +308,18 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodRestartedCont
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
-	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
-		Name:              "minikube",
-		Reports:           []shipper.ClusterCapacityReport{*c.Build()},
-		AchievedPercent:   100,
-		AvailableReplicas: 1,
-		Conditions: []shipper.ClusterCapacityCondition{
-			{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
-			{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
-		},
-	})
+	for i := int32(0); i < numClus; i++ {
+		capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
+			Name:              fmt.Sprintf("cluster_%d", i),
+			Reports:           []shipper.ClusterCapacityReport{*c.Build()},
+			AchievedPercent:   100,
+			AvailableReplicas: 1,
+			Conditions: []shipper.ClusterCapacityCondition{
+				{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
+				{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+			},
+		})
+	}
 
 	updateAction := kubetesting.NewUpdateAction(
 		schema.GroupVersionResource{
@@ -325,7 +342,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodRestartedCont
 func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePods(t *testing.T) {
 	f := NewFixture(t)
 
-	capacityTarget := newCapacityTarget(2, 100)
+	capacityTarget := newCapacityTarget(2, 100, numClus)
 
 	deployment := newDeployment(2, 2)
 	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
@@ -368,16 +385,18 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePods(t *testin
 
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
-	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
-		Name:              "minikube",
-		Reports:           []shipper.ClusterCapacityReport{*c.Build()},
-		AchievedPercent:   100,
-		AvailableReplicas: 2,
-		Conditions: []shipper.ClusterCapacityCondition{
-			{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
-			{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
-		},
-	})
+	for i := int32(0); i < numClus; i++ {
+		capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
+			Name:              fmt.Sprintf("cluster_%d", i),
+			Reports:           []shipper.ClusterCapacityReport{*c.Build()},
+			AchievedPercent:   100,
+			AvailableReplicas: 2,
+			Conditions: []shipper.ClusterCapacityCondition{
+				{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
+				{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+			},
+		})
+	}
 
 	updateAction := kubetesting.NewUpdateAction(
 		schema.GroupVersionResource{
@@ -400,7 +419,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePods(t *testin
 func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePodsWithDifferentConditions(t *testing.T) {
 	f := NewFixture(t)
 
-	capacityTarget := newCapacityTarget(3, 100)
+	capacityTarget := newCapacityTarget(3, 100, numClus)
 
 	deployment := newDeployment(3, 3)
 	podLabels, _ := metav1.LabelSelectorAsMap(deployment.Spec.Selector)
@@ -508,16 +527,18 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePodsWithDiffer
 		return sadPodsStatuses[i].Name < sadPodsStatuses[j].Name
 	})
 
-	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
-		Name:              "minikube",
-		Reports:           []shipper.ClusterCapacityReport{*c.Build()},
-		AchievedPercent:   100,
-		AvailableReplicas: 3,
-		Conditions: []shipper.ClusterCapacityCondition{
-			{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionFalse, Reason: conditions.PodsNotReady, Message: "there are 3 sad pods"},
-		},
-		SadPods: sadPodsStatuses,
-	})
+	for i := int32(0); i < numClus; i++ {
+		capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, shipper.ClusterCapacityStatus{
+			Name:              fmt.Sprintf("cluster_%d", i),
+			Reports:           []shipper.ClusterCapacityReport{*c.Build()},
+			AchievedPercent:   100,
+			AvailableReplicas: 3,
+			Conditions: []shipper.ClusterCapacityCondition{
+				{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionFalse, Reason: conditions.PodsNotReady, Message: "there are 3 sad pods"},
+			},
+			SadPods: sadPodsStatuses,
+		})
+	}
 
 	sort.Slice(capacityTarget.Status.Clusters[0].SadPods, func(i, j int) bool {
 		return capacityTarget.Status.Clusters[0].SadPods[i].Name < capacityTarget.Status.Clusters[0].SadPods[j].Name
@@ -544,7 +565,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePodsWithDiffer
 func TestUpdatingDeploymentsUpdatesTheCapacityTargetStatus(t *testing.T) {
 	f := NewFixture(t)
 
-	capacityTarget := newCapacityTarget(10, 50)
+	capacityTarget := newCapacityTarget(10, 50, numClus)
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
 	deployment := newDeployment(5, 5)
@@ -569,7 +590,7 @@ func TestUpdatingDeploymentsUpdatesTheCapacityTargetStatus(t *testing.T) {
 func TestSadPodsAreReflectedInCapacityTargetStatus(t *testing.T) {
 	f := NewFixture(t)
 
-	capacityTarget := newCapacityTarget(2, 100)
+	capacityTarget := newCapacityTarget(2, 100, numClus)
 	f.managementObjects = append(f.managementObjects, capacityTarget.DeepCopy())
 
 	deployment := newDeployment(2, 1)
@@ -628,7 +649,11 @@ func (f *fixture) initializeFixture() {
 	f.targetClusterInformerFactory = kubeinformers.NewSharedInformerFactory(f.targetClusterClientset, noResyncPeriod)
 	f.managementInformerFactory = shipperinformers.NewSharedInformerFactory(f.managementClientset, noResyncPeriod)
 
-	f.store = shippertesting.NewFakeClusterClientStore(f.targetClusterClientset, f.targetClusterInformerFactory, "minikube")
+	clusterNames := make([]string, 0, numClus)
+	for i := int32(0); i < numClus; i++ {
+		clusterNames = append(clusterNames, fmt.Sprintf("cluster_%d", i))
+	}
+	f.store = shippertesting.NewFakeClusterClientStore(f.targetClusterClientset, f.targetClusterInformerFactory, clusterNames)
 }
 
 func (f *fixture) newController() *Controller {
@@ -675,26 +700,31 @@ func (f *fixture) runCapacityTargetSyncHandler() {
 }
 
 func (f *fixture) ExpectDeploymentPatchWithReplicas(deployment *appsv1.Deployment, replicas int32) {
-	patchAction := kubetesting.NewPatchSubresourceAction(
-		schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"},
-		deployment.GetNamespace(),
-		deployment.GetName(),
-		[]byte(fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicas)),
-	)
-	f.targetClusterActions = append(f.targetClusterActions, patchAction)
+	for i := int32(0); i < numClus; i++ {
+		patchAction := kubetesting.NewPatchSubresourceAction(
+			schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"},
+			deployment.GetNamespace(),
+			deployment.GetName(),
+			[]byte(fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicas)),
+		)
+		f.targetClusterActions = append(f.targetClusterActions, patchAction)
+	}
 }
 
 func (f *fixture) expectCapacityTargetStatusUpdate(capacityTarget *shipper.CapacityTarget, availableReplicas, achievedPercent int32, clusterConditions []shipper.ClusterCapacityCondition, reports []shipper.ClusterCapacityReport, sadPods ...shipper.PodStatus) {
-	clusterStatus := shipper.ClusterCapacityStatus{
-		Name:              capacityTarget.Spec.Clusters[0].Name,
-		AvailableReplicas: availableReplicas,
-		AchievedPercent:   achievedPercent,
-		Conditions:        clusterConditions,
-		SadPods:           sadPods,
-		Reports:           reports,
-	}
 
-	capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, clusterStatus)
+	for _, clusterSpec := range capacityTarget.Spec.Clusters {
+		clusterStatus := shipper.ClusterCapacityStatus{
+			Name:              clusterSpec.Name,
+			AvailableReplicas: availableReplicas,
+			AchievedPercent:   achievedPercent,
+			Conditions:        clusterConditions,
+			SadPods:           sadPods,
+			Reports:           reports,
+		}
+
+		capacityTarget.Status.Clusters = append(capacityTarget.Status.Clusters, clusterStatus)
+	}
 
 	updateAction := kubetesting.NewUpdateAction(
 		schema.GroupVersionResource{
@@ -709,16 +739,20 @@ func (f *fixture) expectCapacityTargetStatusUpdate(capacityTarget *shipper.Capac
 	f.managementClusterActions = append(f.managementClusterActions, updateAction)
 }
 
-func newCapacityTarget(totalReplicaCount, percent int32) *shipper.CapacityTarget {
+func newCapacityTarget(totalReplicaCount, percent int32, numClus int32) *shipper.CapacityTarget {
 	name := "capacity-v0.0.1"
 	namespace := "reviewsapi"
-	minikube := shipper.ClusterCapacityTarget{
-		Name:              "minikube",
-		Percent:           percent,
-		TotalReplicaCount: totalReplicaCount,
-	}
 
-	clusters := []shipper.ClusterCapacityTarget{minikube}
+	clusters := make([]shipper.ClusterCapacityTarget, 0, numClus)
+
+	for i := int32(0); i < numClus; i++ {
+		clus := shipper.ClusterCapacityTarget{
+			Name:              fmt.Sprintf("cluster_%d", i),
+			Percent:           percent,
+			TotalReplicaCount: totalReplicaCount,
+		}
+		clusters = append(clusters, clus)
+	}
 
 	metaLabels := map[string]string{
 		shipper.ReleaseLabel: "0.0.1",

@@ -44,6 +44,7 @@ func (c *ContainerStateBreakdown) AddOrIncrementState(
 		},
 	}
 	c.states = append(c.states, &breakdown)
+
 	return c
 }
 
