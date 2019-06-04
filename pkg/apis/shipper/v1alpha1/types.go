@@ -31,7 +31,6 @@ const (
 	InstallationStatusFailed    = "Failed"
 
 	AppHighestObservedGenerationAnnotation = "shipper.booking.com/app.highestObservedGeneration"
-	AppOverrideRolloutBlocksAnnotation     = "shipper.booking.com/app.overrideRolloutBlocks"
 
 	ReleaseGenerationAnnotation        = "shipper.booking.com/release.generation"
 	ReleaseTemplateIterationAnnotation = "shipper.booking.com/release.template.iteration"
@@ -40,6 +39,8 @@ const (
 	SecretChecksumAnnotation             = "shipper.booking.com/cluster-secret.checksum"
 	SecretClusterNameAnnotation          = "shipper.booking.com/cluster-secret.clusterName"
 	SecretClusterSkipTlsVerifyAnnotation = "shipper.booking.com/cluster-secret.insecure-tls-skip-verify"
+
+	RolloutBlocksOverrideAnnotation = "shipper.booking.com/block.override"
 
 	LBLabel         = "shipper-lb"
 	LBForProduction = "production"
@@ -213,9 +214,9 @@ type AchievedStep struct {
 type ReleaseConditionType string
 
 const (
-	ReleaseConditionTypeScheduled ReleaseConditionType = "Scheduled"
-	ReleaseConditionTypeInstalled ReleaseConditionType = "Installed"
-	ReleaseConditionTypeComplete  ReleaseConditionType = "Complete"
+	ReleaseConditionTypeScheduled 	 ReleaseConditionType = "Scheduled"
+	ReleaseConditionTypeInstalled 	 ReleaseConditionType = "Installed"
+	ReleaseConditionTypeComplete  	 ReleaseConditionType = "Complete"
 )
 
 type ReleaseCondition struct {
@@ -520,7 +521,7 @@ type RolloutBlock struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   RolloutBlockSpec   `json:"spec"`
-	Status RolloutBlockStatus `json:"status,omitempty"`
+	Status RolloutBlockStatus `json:"status"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -533,7 +534,12 @@ type RolloutBlockList struct {
 }
 
 type RolloutBlockStatus struct {
-	InService bool `json:"inService"`
+	Overrides RolloutBlockOverrides `json:"overrides"`
+}
+
+type RolloutBlockOverrides struct {
+	Application []string `json:"application"`
+	Release		[]string `json:"release"`
 }
 
 type RolloutBlockSpec struct {

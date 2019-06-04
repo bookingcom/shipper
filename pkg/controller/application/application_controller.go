@@ -2,8 +2,6 @@ package application
 
 import (
 	"fmt"
-	"github.com/bookingcom/shipper/pkg/controller/rolloutblock"
-	"k8s.io/apimachinery/pkg/labels"
 	"math"
 	"strings"
 	"time"
@@ -12,6 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -53,8 +52,9 @@ type Controller struct {
 	relLister listers.ReleaseLister
 	relSynced cache.InformerSynced
 
-	rbLister listers.RolloutBlockLister
-	rbSynced cache.InformerSynced
+	rbLister 	listers.RolloutBlockLister
+	rbSynced 	cache.InformerSynced
+	rbWorkqueue	workqueue.RateLimitingInterface
 
 	recorder record.EventRecorder
 }
@@ -81,6 +81,7 @@ func NewController(
 
 		rbLister: rbInformer.Lister(),
 		rbSynced: rbInformer.Informer().HasSynced,
+		rbWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "application_controller_rolloutblocks"),
 
 		recorder: recorder,
 	}
@@ -109,17 +110,17 @@ func NewController(
 	})
 
 	rbInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: c.enqueueRB,
-		UpdateFunc: func(old, new interface{}) {
-			oldRB, oldOk := old.(*shipper.RolloutBlock)
-			newRB, newOk := new.(*shipper.RolloutBlock)
-			if oldOk && newOk && oldRB.ResourceVersion == newRB.ResourceVersion {
-				glog.V(4).Info("Received RolloutBlock Update")
-				return
-			}
-
-			c.enqueueRel(newRB)
-		},
+		//AddFunc: c.enqueueRB,
+		//UpdateFunc: func(old, new interface{}) {
+		//	oldRB, oldOk := old.(*shipper.RolloutBlock)
+		//	newRB, newOk := new.(*shipper.RolloutBlock)
+		//	if oldOk && newOk && oldRB.ResourceVersion == newRB.ResourceVersion {
+		//		glog.V(4).Info("Received RolloutBlock Update")
+		//		return
+		//	}
+		//
+		//	c.enqueueRel(newRB)
+		//},
 		DeleteFunc: c.enqueueRB,
 	})
 
@@ -142,6 +143,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.applicationWorker, time.Second, stopCh)
+		go wait.Until(c.rolloutblockWorker, time.Second, stopCh)
 	}
 
 	glog.V(2).Info("Started Application controller")
@@ -151,6 +153,11 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 
 func (c *Controller) applicationWorker() {
 	for c.processNextWorkItem() {
+	}
+}
+
+func (c *Controller) rolloutblockWorker() {
+	for c.processNextRolloutBlockWorkItem() {
 	}
 }
 
@@ -209,13 +216,24 @@ func (c *Controller) enqueueRB(obj interface{}) {
 		return
 	}
 
-	_, ok := obj.(*shipper.RolloutBlock)
+	rb, ok := obj.(*shipper.RolloutBlock)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.RolloutBlock: %#v", obj))
 		return
 	}
 
-	//c.appWorkqueueappWorkqueue.Add(fmt.Sprintf("%s/%s", rb.Namespace, rb.Name))
+	key, err := cache.MetaNamespaceKeyFunc(obj)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	if len(rb.Status.Overrides.Application) == 0 {
+		return
+	}
+
+
+	c.rbWorkqueue.Add(fmt.Sprintf("%s*%s", key, strings.Join(rb.Status.Overrides.Application, ",")))
 }
 
 func (c *Controller) enqueueRel(obj interface{}) {
@@ -330,6 +348,7 @@ func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels 
 
 	// Required by GetContender() and GetIncumbent() below.
 	rels = releaseutil.SortByGenerationDescending(rels)
+
 
 	c.updateApplicationRolloutCondition(rbs, app)
 
@@ -501,41 +520,6 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 
 	apputil.SetHighestObservedGeneration(app, highestObserved)
 	return c.wrapUpApplicationConditions(app, appReleases, rbs)
-}
-
-func (c *Controller) shouldBlockRollout(app *shipper.Application) bool {
-	nsRBs, err := c.rbLister.RolloutBlocks(app.Namespace).List(labels.Everything())
-	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing Application %q Because of namespace RolloutBlocks (will retry): %s", app.Name, err))
-	}
-
-	gbRBs, err := c.rbLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything())
-	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing Application %q Because of global RolloutBlocks (will retry): %s", app.Name, err))
-	}
-
-	overrideRolloutBlock, eventMessage := rolloutblock.ShouldOverrideRolloutBlock(app, nsRBs, gbRBs)
-
-	if !overrideRolloutBlock {
-		c.recorder.Event(app, corev1.EventTypeWarning, "RolloutBlock", eventMessage)
-	} else {
-		c.recorder.Event(app, corev1.EventTypeWarning, "Overriding RolloutBlock", eventMessage)
-	}
-	return !overrideRolloutBlock
-}
-
-func (c *Controller) updateApplicationRolloutCondition(rbs []*shipper.RolloutBlock, app *shipper.Application) {
-	if len(rbs) > 0 {
-		var sb strings.Builder
-		for _, rb := range rbs {
-			sb.WriteString(rb.Name + " ")
-		}
-		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionTrue, sb.String(), "")
-		apputil.SetApplicationCondition(&app.Status, *rolloutBlockCond)
-	} else {
-		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionFalse, "", "")
-		apputil.SetApplicationCondition(&app.Status, *rolloutBlockCond)
-	}
 }
 
 // TODO(jgreff): wrap bare errors with shippererrors and actually return them

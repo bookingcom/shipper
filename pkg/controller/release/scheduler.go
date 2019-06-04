@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 
@@ -30,6 +30,7 @@ type Scheduler struct {
 	installationTargetLister listers.InstallationTargetLister
 	trafficTargetLister      listers.TrafficTargetLister
 	capacityTargetLister     listers.CapacityTargetLister
+	rolloutBlockLister 		 listers.RolloutBlockLister
 
 	fetchChart shipperchart.FetchFunc
 	recorder   record.EventRecorder
@@ -41,6 +42,7 @@ func NewScheduler(
 	installationTargerLister listers.InstallationTargetLister,
 	capacityTargetLister listers.CapacityTargetLister,
 	trafficTargetLister listers.TrafficTargetLister,
+	rolloutBlockLister listers.RolloutBlockLister,
 	fetchChart shipperchart.FetchFunc,
 	recorder record.EventRecorder,
 ) *Scheduler {
@@ -51,6 +53,7 @@ func NewScheduler(
 		installationTargetLister: installationTargerLister,
 		trafficTargetLister:      trafficTargetLister,
 		capacityTargetLister:     capacityTargetLister,
+		rolloutBlockLister:		  rolloutBlockLister,
 
 		fetchChart: fetchChart,
 		recorder:   recorder,
@@ -100,6 +103,21 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 	metaKey := controller.MetaKey(rel)
 	glog.Infof("Processing release %q", metaKey)
 	defer glog.Infof("Finished processing %q", metaKey)
+
+	shouldBlockRollout, err, rbs := s.shouldBlockRollout(rel)
+	if err != nil {
+		condition := releaseutil.NewReleaseCondition(
+			shipper.ReleaseConditionTypeComplete,
+			corev1.ConditionFalse,
+			"Invalid RolloutBlock Override",
+			err.Error(),
+		)
+		releaseutil.SetReleaseCondition(&rel.Status, *condition)
+		return nil, err
+	}
+	 if shouldBlockRollout {
+	 	return nil, shippererrors.NewRolloutBlockError(rbs)
+	 }
 
 	if !releaseHasClusters(rel) {
 		return nil, shippererrors.NewUnrecoverableError(fmt.Errorf("release %q clusters have not been chosen yet", metaKey))

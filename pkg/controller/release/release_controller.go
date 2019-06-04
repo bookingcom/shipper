@@ -2,8 +2,7 @@ package release
 
 import (
 	"fmt"
-	"github.com/bookingcom/shipper/pkg/controller/rolloutblock"
-	"k8s.io/apimachinery/pkg/labels"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -66,6 +65,7 @@ type Controller struct {
 
 	releaseWorkqueue     workqueue.RateLimitingInterface
 	applicationWorkqueue workqueue.RateLimitingInterface
+	rbWorkqueue 		 workqueue.RateLimitingInterface
 }
 
 type releaseInfo struct {
@@ -132,6 +132,10 @@ func NewController(
 			workqueue.DefaultControllerRateLimiter(),
 			"release_controller_applications",
 		),
+		rbWorkqueue: workqueue.NewNamedRateLimitingQueue(
+			workqueue.DefaultControllerRateLimiter(),
+			"release_controller_rolloutblocks",
+		),
 	}
 
 	glog.Info("Setting up event handlers")
@@ -174,10 +178,10 @@ func NewController(
 
 	rolloutBlockInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.enqueueRolloutBlock,
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueRolloutBlock(newObj)
-			},
+			//AddFunc: controller.enqueueRolloutBlock,
+			//UpdateFunc: func(oldObj, newObj interface{}) {
+			//	controller.enqueueRolloutBlock(newObj)
+			//},
 			DeleteFunc: controller.enqueueRolloutBlock,
 		})
 
@@ -189,6 +193,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.releaseWorkqueue.ShutDown()
 	defer c.applicationWorkqueue.ShutDown()
+	defer c.rbWorkqueue.ShutDown()
 
 	glog.V(2).Info("Starting Release controller")
 	defer glog.V(2).Info("Shutting down Release controller")
@@ -210,6 +215,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.runReleaseWorker, time.Second, stopCh)
 		go wait.Until(c.runApplicationWorker, time.Second, stopCh)
+		go wait.Until(c.runRolloutblockWorker, time.Second, stopCh)
 	}
 
 	glog.V(4).Info("Started Release controller")
@@ -224,6 +230,11 @@ func (c *Controller) runReleaseWorker() {
 
 func (c *Controller) runApplicationWorker() {
 	for c.processNextAppWorkItem() {
+	}
+}
+
+func (c *Controller) runRolloutblockWorker() {
+	for c.processNextRolloutBlockWorkItem() {
 	}
 }
 
@@ -295,12 +306,24 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 			WithShipperKind("Release")
 	}
 
-	if c.shouldBlockRollout(rel) {
-		return shippererrors.NewKubeclientUpdateError(rel, fmt.Errorf("rollout blocks exists"))
+	// transfer application rolloutblock override to release
+	app, err := c.applicationLister.Applications(rel.Namespace).Get(rel.Labels[shipper.AppLabel])
+	if err != nil {
+		if errors.IsNotFound(err) {
+			glog.V(3).Infof("Application for Release %q not found", key)
+			return nil
+		}
+
+		return shippererrors.NewKubeclientGetError(namespace, name, err).
+			WithShipperKind("Application")
 	}
 
+	overrideRB, ok := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
+	if ok {
+		rel.Annotations[shipper.RolloutBlocksOverrideAnnotation] = overrideRB
+	}
 
-		if releaseutil.HasEmptyEnvironment(rel) {
+	if releaseutil.HasEmptyEnvironment(rel) {
 		return nil
 	}
 
@@ -312,6 +335,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 		c.installationTargetLister,
 		c.capacityTargetLister,
 		c.trafficTargetLister,
+		c.rolloutBlockLister,
 		c.chartFetchFunc,
 		c.recorder,
 	)
@@ -378,33 +402,6 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 	glog.V(4).Infof("Done processing Release %q", key)
 
 	return nil
-}
-
-
-func (c *Controller) shouldBlockRollout(rel *shipper.Release) bool {
-	nsRBs, err := c.rolloutBlockLister.RolloutBlocks(rel.Namespace).List(labels.Everything())
-	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing Application %q Because of namespace RolloutBlocks (will retry): %s", rel.Name, err))
-	}
-
-	gbRBs, err := c.rolloutBlockLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything())
-	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing Application %q Because of global RolloutBlocks (will retry): %s", rel.Name, err))
-	}
-
-	app, err := c.applicationLister.Applications(rel.Namespace).Get(rel.Labels[shipper.AppLabel])
-	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry): %s", rel.Name, err))
-		return false
-	}
-
-	overrideRolloutBlock, eventMessage := rolloutblock.ShouldOverrideRolloutBlock(app, nsRBs, gbRBs)
-
-	if !overrideRolloutBlock {
-		c.recorder.Event(rel, corev1.EventTypeWarning, "RolloutBlock", eventMessage)
-	}
-
-	return !overrideRolloutBlock
 }
 
 // getAssociatedApplicationKey returns an application key in the format:
@@ -546,6 +543,32 @@ func (c *Controller) enqueueTrafficTarget(obj interface{}) {
 	c.releaseWorkqueue.Add(releaseKey)
 }
 
+func (c *Controller) enqueueRolloutBlock(obj interface{}) {
+	_, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	rb, ok := obj.(*shipper.RolloutBlock)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.RolloutBlock: %#v", obj))
+		return
+	}
+
+	key, err := cache.MetaNamespaceKeyFunc(obj)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	if len(rb.Status.Overrides.Release) == 0 {
+		return
+	}
+
+	c.rbWorkqueue.Add(fmt.Sprintf("%s*%s", key, strings.Join(rb.Status.Overrides.Release, ",")))
+}
+
 func reasonForReleaseCondition(err error) string {
 	switch err.(type) {
 	case shippererrors.NoRegionsSpecifiedError:
@@ -564,21 +587,17 @@ func reasonForReleaseCondition(err error) string {
 		return "BrokenChart"
 	case shippererrors.WrongChartDeploymentsError:
 		return "WrongChartDeployments"
+	case shippererrors.InvalidRolloutBlockOverrideError:
+		return "InvalidRolloutBlockOverride"
+	case shippererrors.RolloutBlockError:
+		return "RolloutBlock"
 	}
 
 	if shippererrors.IsKubeclientError(err) {
 		return "FailedAPICall"
 	}
 
+
 	return "unknown error! tell Shipper devs to classify it"
 }
 
-func (c *Controller) enqueueRolloutBlock(obj interface{}) {
-	_, ok := obj.(*shipper.RolloutBlock)
-	if !ok {
-		runtime.HandleError(fmt.Errorf("not a shipper.RolloutBlock: %#v", obj))
-		return
-	}
-
-	//c.releaseWorkqueue.Add(fmt.Sprintf("%s/%s", rb.Namespace, rb.Name))
-}
