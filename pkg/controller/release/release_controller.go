@@ -2,7 +2,6 @@ package release
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -65,7 +64,6 @@ type Controller struct {
 
 	releaseWorkqueue     workqueue.RateLimitingInterface
 	applicationWorkqueue workqueue.RateLimitingInterface
-	rbWorkqueue 		 workqueue.RateLimitingInterface
 }
 
 type releaseInfo struct {
@@ -132,10 +130,6 @@ func NewController(
 			workqueue.DefaultControllerRateLimiter(),
 			"release_controller_applications",
 		),
-		rbWorkqueue: workqueue.NewNamedRateLimitingQueue(
-			workqueue.DefaultControllerRateLimiter(),
-			"release_controller_rolloutblocks",
-		),
 	}
 
 	glog.Info("Setting up event handlers")
@@ -176,15 +170,6 @@ func NewController(
 			DeleteFunc: controller.enqueueTrafficTarget,
 		})
 
-	rolloutBlockInformer.Informer().AddEventHandler(
-		cache.ResourceEventHandlerFuncs{
-			//AddFunc: controller.enqueueRolloutBlock,
-			//UpdateFunc: func(oldObj, newObj interface{}) {
-			//	controller.enqueueRolloutBlock(newObj)
-			//},
-			DeleteFunc: controller.enqueueRolloutBlock,
-		})
-
 	return controller
 }
 
@@ -193,7 +178,6 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.releaseWorkqueue.ShutDown()
 	defer c.applicationWorkqueue.ShutDown()
-	defer c.rbWorkqueue.ShutDown()
 
 	glog.V(2).Info("Starting Release controller")
 	defer glog.V(2).Info("Shutting down Release controller")
@@ -215,7 +199,6 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.runReleaseWorker, time.Second, stopCh)
 		go wait.Until(c.runApplicationWorker, time.Second, stopCh)
-		go wait.Until(c.runRolloutblockWorker, time.Second, stopCh)
 	}
 
 	glog.V(4).Info("Started Release controller")
@@ -230,11 +213,6 @@ func (c *Controller) runReleaseWorker() {
 
 func (c *Controller) runApplicationWorker() {
 	for c.processNextAppWorkItem() {
-	}
-}
-
-func (c *Controller) runRolloutblockWorker() {
-	for c.processNextRolloutBlockWorkItem() {
 	}
 }
 
@@ -541,32 +519,6 @@ func (c *Controller) enqueueTrafficTarget(obj interface{}) {
 	}
 
 	c.releaseWorkqueue.Add(releaseKey)
-}
-
-func (c *Controller) enqueueRolloutBlock(obj interface{}) {
-	_, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
-	if err != nil {
-		runtime.HandleError(err)
-		return
-	}
-
-	rb, ok := obj.(*shipper.RolloutBlock)
-	if !ok {
-		runtime.HandleError(fmt.Errorf("not a shipper.RolloutBlock: %#v", obj))
-		return
-	}
-
-	key, err := cache.MetaNamespaceKeyFunc(obj)
-	if err != nil {
-		runtime.HandleError(err)
-		return
-	}
-
-	if len(rb.Status.Overrides.Release) == 0 {
-		return
-	}
-
-	c.rbWorkqueue.Add(fmt.Sprintf("%s*%s", key, strings.Join(rb.Status.Overrides.Release, ",")))
 }
 
 func reasonForReleaseCondition(err error) string {

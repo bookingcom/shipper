@@ -3,7 +3,6 @@ package application
 import (
 	"fmt"
 	"math"
-	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -54,7 +53,6 @@ type Controller struct {
 
 	rbLister 	listers.RolloutBlockLister
 	rbSynced 	cache.InformerSynced
-	rbWorkqueue	workqueue.RateLimitingInterface
 
 	recorder record.EventRecorder
 }
@@ -81,7 +79,6 @@ func NewController(
 
 		rbLister: rbInformer.Lister(),
 		rbSynced: rbInformer.Informer().HasSynced,
-		rbWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "application_controller_rolloutblocks"),
 
 		recorder: recorder,
 	}
@@ -109,21 +106,6 @@ func NewController(
 		DeleteFunc: c.enqueueRel,
 	})
 
-	rbInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		//AddFunc: c.enqueueRB,
-		//UpdateFunc: func(old, new interface{}) {
-		//	oldRB, oldOk := old.(*shipper.RolloutBlock)
-		//	newRB, newOk := new.(*shipper.RolloutBlock)
-		//	if oldOk && newOk && oldRB.ResourceVersion == newRB.ResourceVersion {
-		//		glog.V(4).Info("Received RolloutBlock Update")
-		//		return
-		//	}
-		//
-		//	c.enqueueRel(newRB)
-		//},
-		DeleteFunc: c.enqueueRB,
-	})
-
 	return c
 }
 
@@ -143,7 +125,6 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.applicationWorker, time.Second, stopCh)
-		go wait.Until(c.rolloutblockWorker, time.Second, stopCh)
 	}
 
 	glog.V(2).Info("Started Application controller")
@@ -153,11 +134,6 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 
 func (c *Controller) applicationWorker() {
 	for c.processNextWorkItem() {
-	}
-}
-
-func (c *Controller) rolloutblockWorker() {
-	for c.processNextRolloutBlockWorkItem() {
 	}
 }
 
@@ -209,32 +185,6 @@ func (c *Controller) processNextWorkItem() bool {
 	return true
 }
 
-func (c *Controller) enqueueRB(obj interface{}) {
-	_, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
-	if err != nil {
-		runtime.HandleError(err)
-		return
-	}
-
-	rb, ok := obj.(*shipper.RolloutBlock)
-	if !ok {
-		runtime.HandleError(fmt.Errorf("not a shipper.RolloutBlock: %#v", obj))
-		return
-	}
-
-	key, err := cache.MetaNamespaceKeyFunc(obj)
-	if err != nil {
-		runtime.HandleError(err)
-		return
-	}
-
-	if len(rb.Status.Overrides.Application) == 0 {
-		return
-	}
-
-
-	c.rbWorkqueue.Add(fmt.Sprintf("%s*%s", key, strings.Join(rb.Status.Overrides.Application, ",")))
-}
 
 func (c *Controller) enqueueRel(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
@@ -349,9 +299,7 @@ func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels 
 	// Required by GetContender() and GetIncumbent() below.
 	rels = releaseutil.SortByGenerationDescending(rels)
 
-
 	c.updateApplicationRolloutCondition(rbs, app)
-
 	abortingCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeAborting, corev1.ConditionFalse, "", "")
 	apputil.SetApplicationCondition(&app.Status, *abortingCond)
 	validHistoryCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeValidHistory, corev1.ConditionTrue, "", "")
@@ -413,14 +361,6 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		return err
 	}
 
-	var nsRolloutBlocks, globalRolloutBlocks []*shipper.RolloutBlock
-	if nsRolloutBlocks, err = c.rbLister.RolloutBlocks(app.Namespace).List(labels.Everything()); err != nil {
-		glog.Warning("error getting Namespace RolloutBlocks %s", err)
-	}
-	if globalRolloutBlocks, err = c.rbLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything()); err != nil {
-		glog.Warning("error getting Global RolloutBlocks %s", err)
-	}
-	rbs = append(nsRolloutBlocks, globalRolloutBlocks...)
 
 	// Required by subsequent calls to GetContender and GetIncumbent.
 	appReleases = releaseutil.SortByGenerationDescending(appReleases)
@@ -431,7 +371,16 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		c.cleanUpReleasesForApplication(app, appReleases)
 	}()
 
-	if c.shouldBlockRollout(app) {
+	// existing rollout blocks in the system
+	var nsRolloutBlocks, globalRolloutBlocks []*shipper.RolloutBlock
+	if nsRolloutBlocks, err = c.rbLister.RolloutBlocks(app.Namespace).List(labels.Everything()); err != nil {
+		glog.Warning("error getting Namespace RolloutBlocks %s", err)
+	}
+	if globalRolloutBlocks, err = c.rbLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything()); err != nil {
+		glog.Warning("error getting Global RolloutBlocks %s", err)
+	}
+	rbs = append(nsRolloutBlocks, globalRolloutBlocks...)
+	if c.shouldBlockRollout(app, nsRolloutBlocks, globalRolloutBlocks) {
 		return c.wrapUpApplicationConditions(app, appReleases, rbs)
 	}
 
