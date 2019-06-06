@@ -1,0 +1,209 @@
+= 999 Replace Helm charts with Kustomize for application packaging
+Julio Greff <julio.deoliveira@booking.com>
+:RFC-Status: Draft
+
+== Motivation
+
+Shipper currently uses link:https://helm.sh/[Helm] charts to package
+applications. Although it has been working fine so far, several things motivate
+us to look for an alternative way of packaging applications.
+
+First, link:https://sweetcode.io/a-first-look-at-the-helm-3-plan/[Helm 3], the
+upcoming version of Helm, will allow Lua scripting inside charts. We believe
+it's not appropriate to have a scripting engine running arbitrary code inside a
+server side component such as Shipper, as it would be relatively easy for a
+misbehaved chart to pin down Shipper workers, potentially denying service to
+other well behaved applications.
+
+Second, Helm generates Kubernetes objects by templating YAML files using Go
+templates. Generating well formed YAML files this way is very error prone, as
+one needs to pay attention to correctly balanced quotes, keeping track of
+indentation levels and others. Helm's choice of using Go templates also
+prevents us from instrospecting charts with languages other than Go.
+
+Lastly, Helm charts only allow configuration of values that the chart authors
+have thought of, and wrote templates for. If the need arises to change a value
+that's hardcoded in the chart, or add a completely new one that's not present,
+it's necessary to fork the chart, and add the changes there. We would prefer to
+allow users to apply arbitrary patches to objects instead, as it would reduce,
+or completely remove, the need to fork charts.
+
+link:https://kustomize.io/[Kustomize] brands itself as a Kubernetes native
+configuration management that does not rely on templates to customize
+application configuration. It uses plain YAML artifacts, allowing easier
+instrospection from any programming language. It also allows the application of
+arbitrary patches to any of the resources it manages, allowing more freedom to
+users of off-the-shelf configuration bundles to customize to their heart's
+content.
+
+As Kustomize seems to address the challenges with our current usage of Helm,
+this RFC aims to discuss how a potential implementation of Kustomize would work
+in Shipper.
+
+== Reference level explanation
+
+A common use case for us is to have a Shipper application referring to a
+centrally supported bundle of configuration, with sane defaults for basic
+infrastructure, and a placeholder for the application's Docker image.
+Additionally, applications should be able to enable or disable bigger chunks of
+configuration, such as which optional sidecars (out of either a collection of
+centrally supported sidecars, or completely bespoke ones) should be present.
+Today, that's supported by a Helm chart specified by `.spec.template.chart`,
+and tweaks to the configuration are injected as values through
+`.spec.template.values`, both in the Application object.
+
+Using Kustomize, the Application object would lose both `.spec.template.chart`
+and `.spec.template.values`, having those replaced by a single
+`.spec.template.kustomization`, as exemplified below.
+
+.application.yaml
+[source,yaml]
+----
+apiVersion: shipper.booking.com/v1alpha1
+kind: Application
+metadata:
+  name: bikerental
+spec:
+  template:
+    clusterRequirements:
+      regions:
+      - name: eu-nl
+      capabilities: []
+    kustomization:
+      name: https://example.com/juliogreff/bikerental # <1>
+      image:
+        name: juliogreff/bikerental
+        tag: deadcafe
+    strategy:
+      steps:
+      - name: full on
+        capacity:
+          incumbent: 0
+          contender: 100
+        traffic:
+          incumbent: 0
+          contender: 100
+----
+<1> This example does not take versioning into account. That can be easily
+addressed by pointing to an immutable URL, such as
+`https://raw.githubusercontent.com/juliogreff/bikerental/$GIT_REF/`, where
+`$GIT_REF` is a commit or tag name. This is not a final decision, as versioning
+of kustomizations is not a solved problem yet.
+
+Note the URL `.spec.template.kustomization` points to. That's the application's
+configuration bundle. As the `kustomize` CLI tool, Shipper will also look for a
+`kustomization.yaml` inside that path.
+
+.https://example.com/juliogreff/bikerental/kustomization.yaml
+[source,yaml]
+----
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+bases:
+  - https://example.com/core
+namePrefix: bikerental-
+commonLabels:
+  app: bikerental
+patchesStrategicMerge:
+  - https://example.com/sidecars/sidecar.yaml
+----
+
+.https://example.com/sidecars/sidecar.yaml
+[source,yaml]
+----
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app # <1>
+spec:
+  template:
+    spec:
+      containers:
+        - name: sidecar
+          image: sidecar
+----
+<1> There's a very important downside to be noted, in which sidecar patches
+must know the name of the deployment they're patching (minus any prefixes and
+suffixes), so proper conventions will be essential.
+
+.https://example.com/core/kustomization.yaml
+[source,yaml]
+----
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - service.yaml   # <1>
+  - configmap.yaml # <1>
+----
+
+.https://example.com/core/deployment.yaml
+[source,yaml]
+----
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: app
+        image: app
+        ports:
+          - containerPort: 80
+----
+<1> Kustomizations can include as many of any Kubernetes resources as they
+need. As those are not of consequence to this RFC, they are omitted for
+brevity.
+
+The kustomizations above cover the application level configuration. At release
+time, Shipper still needs to apply its own little bit of configuration with
+data from the Release object it just created. That kustomization would be the
+equivalent of the following YAML snippet. It injects references to the release
+hash through `nameSuffix` and `commonLabels`, adjusts the amount of replicas
+and points to the image defined by the application object, all much in the same
+way we currently do with Helm charts.
+
+.Kustomization applied by Shipper for every release
+[source,yaml]
+----
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+bases:
+  - https://example.com/juliogreff/bikerental/kustomization.yaml
+nameSuffix: -deadbeef
+commonLabels:
+  release: bikerental-deadbeef
+replicas:
+  - name: app
+    count: 12
+images:
+  - name: app
+    newName: juliogreff/bikerental
+    newTag: deadcafe
+----
+
+== Open questions
+
+* The migration path for Shipper to move from Helm charts to Kustomize is
+  entirely unclear. We'll probably need to have both ways of packaging
+  applications living side by side for a while, but the specifics still need
+  discussion.
+
+* Versioning and storage of kustomizations. We thought of referring to
+  kustomizations as URLs to GitHub/GitLab raw files, which is quite neat when
+  the ref we point to is a commit. It would be useful to be able to refer to
+  branches from the Application, but have that value resolve to an actual
+  commit.
+
+== Alternatives
+
+* Other packaging formats were investigated, such as CNAB, but they do not
+  provide any facilities for the installation of the application.
+
+* Instead of moving away from Helm entirely, we could still have charts as a
+  packaging format, and apply customizations as a last step, as described by
+  the Kustomize documentation:
+  https://github.com/kubernetes-sigs/kustomize/blob/master/examples/chart.md
