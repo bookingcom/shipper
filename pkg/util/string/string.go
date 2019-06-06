@@ -19,3 +19,65 @@ func Delete(strings []string, s string) []string {
 	}
 	return strings
 }
+
+// compare two string slices as set
+func Equal(s1, s2 []string) bool {
+	if len(s1) != len(s2) {
+		return false
+	}
+
+	m := make(map[string]bool)
+	for _, item := range s1 {
+		m[item] = true
+	}
+
+	for _, item := range s2 {
+		if _, ok := m[item]; !ok {
+			return false
+		}
+	}
+
+	m = make(map[string]bool)
+	for _, item := range s2 {
+		m[item] = true
+	}
+
+	for _, item := range s1 {
+		if _, ok := m[item]; !ok {
+			return false
+		}
+	}
+
+	return true
+}
+
+func Contains(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
+
+// Set difference: a - b
+func Difference(a []string, b []string) []string {
+	if len(b) == 0 || len(a) == 0 {
+		return a
+	}
+
+	var diff []string
+	m := make(map[string]bool)
+
+	for _, item := range b {
+		m[item] = true
+	}
+
+	for _, item := range a {
+		if _, ok := m[item]; !ok {
+			diff = append(diff, item)
+		}
+	}
+
+	return diff
+}

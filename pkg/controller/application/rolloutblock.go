@@ -27,6 +27,7 @@ func (c *Controller) shouldBlockRollout(app *shipper.Application, nsRBs, gbRBs [
 			// remove from annotation!
 			rbName := err.(shippererrors.InvalidRolloutBlockOverrideError).RolloutBlockName
 			c.removeRolloutBlockFromAnnotations(overrideRB, rbName, app)
+			c.updateApplicationRolloutCondition(append(nsRBs, gbRBs...), app)
 		default:
 			runtime.HandleError(fmt.Errorf("error overriding rollout block %s", err.Error()))
 		}

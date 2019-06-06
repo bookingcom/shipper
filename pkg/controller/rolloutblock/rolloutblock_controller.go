@@ -2,9 +2,11 @@ package rolloutblock
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -15,6 +17,7 @@ import (
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
+	stringUtil "github.com/bookingcom/shipper/pkg/util/string"
 )
 
 const (
@@ -46,11 +49,7 @@ type Controller struct {
 	rolloutBlockLister shipperlisters.RolloutBlockLister
 	rolloutBlockSynced cache.InformerSynced
 
-	releaseWorkqueue           workqueue.RateLimitingInterface // only for adding release
-	releaseDeleteWorkqueue     workqueue.RateLimitingInterface // only for deleting release
-	applicationWorkqueue       workqueue.RateLimitingInterface // only for adding application
-	applicationDeleteWorkqueue workqueue.RateLimitingInterface // only for deleting application
-	rolloutblockWorkqueue      workqueue.RateLimitingInterface
+	rolloutblockWorkqueue workqueue.RateLimitingInterface
 }
 
 // NewController returns a new RolloutBlock controller.
@@ -78,22 +77,6 @@ func NewController(
 		rolloutBlockLister: rolloutblockInformer.Lister(),
 		rolloutBlockSynced: rolloutblockInformer.Informer().HasSynced,
 
-		releaseWorkqueue: workqueue.NewNamedRateLimitingQueue(
-			workqueue.DefaultControllerRateLimiter(),
-			"rolloutblock_controller_releases",
-		),
-		releaseDeleteWorkqueue: workqueue.NewNamedRateLimitingQueue(
-			workqueue.DefaultControllerRateLimiter(),
-			"rolloutblock_controller_deleted_releases",
-		),
-		applicationWorkqueue: workqueue.NewNamedRateLimitingQueue(
-			workqueue.DefaultControllerRateLimiter(),
-			"rolloutblock_controller_applications",
-		),
-		applicationDeleteWorkqueue: workqueue.NewNamedRateLimitingQueue(
-			workqueue.DefaultControllerRateLimiter(),
-			"rolloutblock_controller_deleted_applications",
-		),
 		rolloutblockWorkqueue: workqueue.NewNamedRateLimitingQueue(
 			workqueue.DefaultControllerRateLimiter(),
 			"rolloutblock_controller_rolloutblocks",
@@ -104,35 +87,32 @@ func NewController(
 
 	releaseInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: 	controller.enqueueRelease,
+			AddFunc: controller.addRelease,
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueRelease(newObj)
+				controller.updateRelease(oldObj, newObj)
 			},
-			DeleteFunc: controller.enqueueDeletedRelease,
+			DeleteFunc: controller.deleteRelease,
 		})
 
 	applicationInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc:    controller.enqueueApplication,
+			AddFunc: controller.addApplication,
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueApplication(newObj)
+				controller.updateApplication(oldObj, newObj)
 			},
-			DeleteFunc: controller.enqueueDeletedApplication,
+			DeleteFunc: controller.deleteApplication,
 		})
 
-	//rolloutblockInformer.Informer().AddEventHandler(
-	//	cache.ResourceEventHandlerFuncs{
-	//		AddFunc: controller.enqueueRolloutBlock,
-	//		UpdateFunc: func(oldObj, newObj interface{}) {
-	//			controller.enqueueRolloutBlock(newObj)
-	//		},
-	//		DeleteFunc: controller.enqueueRolloutBlock,
-	//	})
+	rolloutblockInformer.Informer().AddEventHandler(
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: controller.addRolloutBlock,
+		})
 
 	return controller
 }
 
-func (c *Controller) enqueueRelease(obj interface{}) {
+func (c *Controller) addRelease(obj interface{}) {
+	glog.Info("HILLA IN ADD RELEASE")
 	rel, ok := obj.(*shipper.Release)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", obj))
@@ -145,33 +125,179 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 		return
 	}
 
-	c.releaseWorkqueue.Add(key)
-}
-
-func (c *Controller) enqueueDeletedRelease(obj interface{}) {
-	rel, ok := obj.(*shipper.Release)
-	if !ok {
-		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", obj))
-		return
-	}
-
-	key, err := cache.MetaNamespaceKeyFunc(obj)
+	app, err := c.getAppFromRelease(rel)
 	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
-	overrideRB, ok := rel.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
-	if !ok {
-		return
-	}
-	if len(overrideRB) < 2 {
-		return
-	}
 
-	c.releaseDeleteWorkqueue.Add(fmt.Sprintf("%s*%s", key, overrideRB))
+	overrideRB, ok := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
+	if !ok {
+		overrideRB = ""
+		return
+	}
+	glog.Infof("HILLA these are the RBs that the release %s is overriding: %s", key, overrideRB)
+	overrideRBs := strings.Split(overrideRB, ",")
+	for _, rbKey := range overrideRBs {
+		rolloutBlockUpdater := RolloutBlockUpdater{
+			rbKey,
+			OverridingRelease,
+			key,
+			false,
+		}
+		c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
+	}
 }
 
-func (c *Controller) enqueueApplication(obj interface{}) {
+func (c *Controller) updateRelease(oldObj, newObj interface{}) {
+	oldRel, ok := oldObj.(*shipper.Release)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", oldObj))
+		return
+	}
+
+	newRel, ok := oldObj.(*shipper.Release)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", newObj))
+		return
+	}
+
+	newOverride, newOk := newRel.Annotations[shipper.RolloutBlocksOverrideAnnotation]
+	oldOverride, oldOk := oldRel.Annotations[shipper.RolloutBlocksOverrideAnnotation]
+	if !oldOk {
+		oldOverride = ""
+	}
+	if !newOk {
+		newOverride = ""
+	}
+
+	relKey, err := cache.MetaNamespaceKeyFunc(newRel)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	newOverrides := strings.Split(newOverride, ",")
+	oldOverrides := strings.Split(oldOverride, ",")
+	glog.Infof("HILLA annotations before: %s", oldOverride)
+	glog.Infof("HILLA annotations after : %s", newOverride)
+	if stringUtil.Equal(newOverrides, oldOverrides) {
+		for _, rbKey := range newOverrides {
+			ns, name, err := cache.SplitMetaNamespaceKey(rbKey)
+			if err != nil {
+				runtime.HandleError(err)
+				continue
+			}
+			rb, err := c.rolloutBlockLister.RolloutBlocks(ns).Get(name)
+			if err != nil {
+				runtime.HandleError(err)
+				continue
+			}
+			if !stringUtil.Contains(rb.Status.Overrides.Release, relKey) {
+				rolloutBlockUpdater := RolloutBlockUpdater{
+					rbKey,
+					OverridingRelease,
+					relKey,
+					false,
+				}
+				c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
+			}
+		}
+	} else {
+		for _, rbKey := range newOverrides {
+			rolloutBlockUpdater := RolloutBlockUpdater{
+				rbKey,
+				OverridingRelease,
+				relKey,
+				false,
+			}
+			c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
+		}
+		removedRBs := stringUtil.Difference(oldOverrides, newOverrides)
+
+		glog.Infof("HILLA this is the difference! %s", removedRBs)
+		for _, rbKey := range removedRBs {
+			rolloutBlockUpdater := RolloutBlockUpdater{
+				rbKey,
+				OverridingRelease,
+				relKey,
+				true,
+			}
+			c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
+		}
+	}
+}
+
+func (c *Controller) deleteRelease(obj interface{}) {
+	release, ok := obj.(*shipper.Release)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.Application: %#v", obj))
+		return
+	}
+
+	key, err := cache.MetaNamespaceKeyFunc(release)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	overrideRB, ok := release.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
+	if !ok {
+		overrideRB = ""
+		return
+	}
+
+	overrideRBs := strings.Split(overrideRB, ",")
+	for _, rbKey := range overrideRBs {
+		rolloutBlockUpdater := RolloutBlockUpdater{
+			rbKey,
+			OverridingRelease,
+			key,
+			true,
+		}
+		c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
+	}
+}
+
+func (c *Controller) addApplication(obj interface{}) {
+	glog.Info("HILLA IN ADD APPLICATION")
+	app, ok := obj.(*shipper.Application)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.Application: %#v", obj))
+		glog.Infof("HILLA this is the error: not a shipper application %#v", obj)
+		return
+	}
+
+	key, err := cache.MetaNamespaceKeyFunc(app)
+	if err != nil {
+		runtime.HandleError(err)
+		glog.Infof("HILLA this is the error: %s", err.Error())
+		return
+	}
+
+	overrideRB, ok := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
+	if !ok {
+		overrideRB = ""
+		glog.Infof("HILLA this app %s does not have overrides!", key)
+		return
+	}
+
+	glog.Infof("HILLA trying to add app %q to queue, it overrides %s", key, overrideRB)
+	overrideRBs := strings.Split(overrideRB, ",")
+	for _, rbKey := range overrideRBs {
+		rolloutBlockUpdater := RolloutBlockUpdater{
+			rbKey,
+			OverridingApplication,
+			key,
+			false,
+		}
+
+		glog.Infof("HILLA this is the rolloutblock updater: %s", rolloutBlockUpdater)
+		c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
+	}
+}
+
+func (c *Controller) deleteApplication(obj interface{}) {
 	app, ok := obj.(*shipper.Application)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.Application: %#v", obj))
@@ -184,56 +310,127 @@ func (c *Controller) enqueueApplication(obj interface{}) {
 		return
 	}
 
-	c.applicationWorkqueue.Add(key)
-}
-
-func (c *Controller) enqueueDeletedApplication(obj interface{}) {
-	app, ok := obj.(*shipper.Application)
+	overrideRB, ok := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
 	if !ok {
-		runtime.HandleError(fmt.Errorf("not a shipper.Application: %#v", obj))
+		overrideRB = ""
 		return
 	}
 
-	key, err := cache.MetaNamespaceKeyFunc(obj)
+	overrideRBs := strings.Split(overrideRB, ",")
+	for _, rbKey := range overrideRBs {
+		rolloutBlockUpdater := RolloutBlockUpdater{
+			rbKey,
+			OverridingApplication,
+			key,
+			true,
+		}
+		c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
+	}
+}
+
+func (c *Controller) updateApplication(oldObj, newObj interface{}) {
+	oldApp, ok := oldObj.(*shipper.Application)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.Application: %#v", oldObj))
+		return
+	}
+
+	newApp, ok := oldObj.(*shipper.Application)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.Application: %#v", newObj))
+		return
+	}
+
+	newOverride, newOk := newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation]
+	oldOverride, oldOk := oldApp.Annotations[shipper.RolloutBlocksOverrideAnnotation]
+	if !oldOk {
+		oldOverride = ""
+	}
+	if !newOk {
+		newOverride = ""
+	}
+
+	appKey, err := cache.MetaNamespaceKeyFunc(newApp)
 	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
-	overrideRB, ok := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
-	if !ok {
-		return
-	}
-	if len(overrideRB) < 2 {
-		return
-	}
 
-	c.applicationDeleteWorkqueue.Add(fmt.Sprintf("%s*%s", key, overrideRB))
+	newOverrides := strings.Split(newOverride, ",")
+	oldOverrides := strings.Split(oldOverride, ",")
+	if stringUtil.Equal(newOverrides, oldOverrides) {
+		for _, rbKey := range newOverrides {
+			ns, name, err := cache.SplitMetaNamespaceKey(rbKey)
+			if err != nil {
+				runtime.HandleError(err)
+				continue
+			}
+			rb, err := c.rolloutBlockLister.RolloutBlocks(ns).Get(name)
+			if err != nil {
+				runtime.HandleError(err)
+				continue
+			}
+			if !stringUtil.Contains(rb.Status.Overrides.Application, appKey) {
+				rolloutBlockUpdater := RolloutBlockUpdater{
+					rbKey,
+					OverridingApplication,
+					appKey,
+					false,
+				}
+				c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
+			}
+		}
+	} else {
+		for _, rbKey := range newOverrides {
+			rolloutBlockUpdater := RolloutBlockUpdater{
+				rbKey,
+				OverridingApplication,
+				appKey,
+				false,
+			}
+			c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
+		}
+		removedRBs := stringUtil.Difference(oldOverrides, newOverrides)
+		glog.Infof("HILLA this is the difference! %s", removedRBs)
+		for _, rbKey := range removedRBs {
+			rolloutBlockUpdater := RolloutBlockUpdater{
+				rbKey,
+				OverridingApplication,
+				appKey,
+				true,
+			}
+			c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
+		}
+
+	}
 }
 
-func (c *Controller) enqueueRolloutBlock(obj interface{}) {
-	rolloutBlock, ok := obj.(*shipper.RolloutBlock)
+func (c *Controller) addRolloutBlock(obj interface{}) {
+	rb, ok := obj.(*shipper.RolloutBlock)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.RolloutBlock: %#v", obj))
 		return
 	}
 
-	key, err := cache.MetaNamespaceKeyFunc(rolloutBlock)
+	key, err := cache.MetaNamespaceKeyFunc(rb)
 	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
 
-	c.rolloutblockWorkqueue.Add(key)
+	rolloutBlockUpdater := RolloutBlockUpdater{
+		key,
+		NewRolloutBlockObject,
+		"",
+		true,
+	}
+	c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
 }
 
 // Run starts RolloutBlock controller workers and blocks until stopCh is
 // closed.
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
-	defer c.releaseWorkqueue.ShutDown()
-	defer c.releaseDeleteWorkqueue.ShutDown()
-	defer c.applicationWorkqueue.ShutDown()
-	defer c.applicationDeleteWorkqueue.ShutDown()
 	defer c.rolloutblockWorkqueue.ShutDown()
 
 	glog.V(2).Info("Starting RolloutBlock controller")
@@ -250,10 +447,6 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.runRolloutBlockWorker, time.Second, stopCh)
-		go wait.Until(c.runApplicationWorker, time.Second, stopCh)
-		go wait.Until(c.runDeletedApplicationWorker, time.Second, stopCh)
-		go wait.Until(c.runReleaseWorker, time.Second, stopCh)
-		go wait.Until(c.runDeletedReleaseWorker, time.Second, stopCh)
 	}
 
 	glog.V(4).Info("Started RolloutBlock controller")
@@ -266,32 +459,9 @@ func (c *Controller) runRolloutBlockWorker() {
 	}
 }
 
-func (c *Controller) runApplicationWorker() {
-	for c.processNextAppWorkItem() {
-	}
-}
-
-func (c *Controller) runDeletedApplicationWorker() {
-	for c.processNextDeletedAppWorkItem() {
-	}
-}
-
-func (c *Controller) runReleaseWorker() {
-	for c.processNextRelWorkItem() {
-	}
-}
-
-func (c *Controller) runDeletedReleaseWorker() {
-	for c.processNextDeletedRelWorkItem() {
-	}
-}
-
-// processNextRolloutBlockWorkItem pops an element from the head of the workqueue
-// and passes to the sync rolloutblock handler. It returns bool indicating if the
-// execution process should go on.
 func (c *Controller) processNextRolloutBlockWorkItem() bool {
-	// happens when DELETING a rolloutblock!
 	obj, shutdown := c.rolloutblockWorkqueue.Get()
+	glog.Infof("HILLA processing next")
 	if shutdown {
 		return false
 	}
@@ -299,125 +469,147 @@ func (c *Controller) processNextRolloutBlockWorkItem() bool {
 	defer c.rolloutblockWorkqueue.Done(obj)
 
 	var (
-		key string
-		ok  bool
+		key                 string
+		ok                  bool
+		rolloutBlockUpdater RolloutBlockUpdater
 	)
 
-	if key, ok = obj.(string); !ok {
+	if rolloutBlockUpdater, ok = obj.(RolloutBlockUpdater); !ok {
 		c.rolloutblockWorkqueue.Forget(obj)
 		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
 		return true
 	}
 
-	//shouldRetry := false
-	//err := c.syncRolloutBlock(key)
-	//
-	//if err != nil {
-	//	shouldRetry = shippererrors.ShouldRetry(err)
-	//	runtime.HandleError(fmt.Errorf("error syncing RolloutBlock %q (will retry: %t): %s", key, shouldRetry, err.Error()))
-	//}
-	//
-	//if shouldRetry {
-	//	if c.rolloutblockWorkqueue.NumRequeues(key) >= maxRetries {
-	//		// Drop the RolloutBlock's key out of the workqueue and thus reset its
-	//		// backoff. This limits the time a "broken" object can hog a worker.
-	//		glog.Warningf("RolloutBlock %q has been retried too many times, dropping from the queue", key)
-	//		c.rolloutblockWorkqueue.Forget(key)
-	//
-	//		return true
-	//	}
-	//
-	//	c.rolloutblockWorkqueue.AddRateLimited(key)
-	//
-	//	return true
-	//}
+	glog.Infof("HILLA pulled this rollout block updater: %s ", rolloutBlockUpdater)
 
-	glog.V(4).Infof("Successfully synced RolloutBlock %q", key)
-	c.rolloutblockWorkqueue.Forget(obj)
+	key = rolloutBlockUpdater.RolloutBlockKey
+	updaterType := rolloutBlockUpdater.UpdaterType
+	if updaterType == NewRolloutBlockObject {
+		c.syncNewRolloutBlockObject(key)
+		return true
+	}
 
+	overridingKey := rolloutBlockUpdater.OverridingObjectKey
+	if rolloutBlockUpdater.IsDeletedObject {
+		switch updaterType {
+		case OverridingRelease:
+			c.removeReleaseFromRolloutBlockStatus(overridingKey, key)
+		case OverridingApplication:
+			c.removeAppFromRolloutBlockStatus(overridingKey, key)
+		}
+	} else {
+		switch updaterType {
+		case OverridingRelease:
+			c.addReleaseToRolloutBlockStatus(overridingKey, key)
+		case OverridingApplication:
+			c.addApplicationToRolloutBlockStatus(overridingKey, key)
+		}
+	}
+
+	glog.Infof("HILLA finish processing this rollout block updater: %s ", rolloutBlockUpdater)
 	return true
 }
 
-//func (c *Controller) syncRolloutBlock(key string) error {
-//	ns, name, err := cache.SplitMetaNamespaceKey(key)
-//	if err != nil {
-//		return shippererrors.NewUnrecoverableError(err)
-//	}
-//
-//	rb, err := c.rolloutBlockLister.RolloutBlocks(ns).Get(name)
-//	if err != nil {
-//		if kerrors.IsNotFound(err) {
-//			glog.V(3).Infof("RolloutBlock %q has been deleted", key)
-//			return nil
-//		}
-//
-//		return shippererrors.NewKubeclientGetError(ns, name, err).
-//			WithShipperKind("RolloutBlock")
-//	}
-//
-//	rb = rb.DeepCopy()
-//
-//	if err = c.processRolloutBlock(rb); err != nil {
-//		if shippererrors.ShouldBroadcast(err) {
-//			c.recorder.Event(rb,
-//				corev1.EventTypeWarning,
-//				"FailedRolloutBlock",
-//				err.Error())
-//		}
-//		return err
-//	}
-//
-//	_, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(rb.Namespace).Update(rb)
-//	if err != nil {
-//		return shippererrors.NewKubeclientUpdateError(rb, err).
-//			WithShipperKind("RolloutBlock")
-//	}
-//
-//	return nil
-//}
+func (c *Controller) syncNewRolloutBlockObject(key string) {
+	ns, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
 
-// find all applications and releases to add to .status.overrides and to worker queue
-//func (c *Controller) processDeletedRolloutBlock(rbNamespace string, rbName string) error {
-//	var (
-//		releases     []*shipper.Release
-//		applications []*shipper.Application
-//
-//		err error
-//	)
-//
-//	if rbNamespace == shipper.ShipperNamespace {
-//		if releases, err = c.releaseLister.List(labels.Everything()); err != nil {
-//			return err
-//		}
-//
-//		if applications, err = c.applicationLister.List(labels.Everything()); err != nil {
-//			return err
-//		}
-//	} else {
-//		if releases, err = c.releaseLister.Releases(rbNamespace).List(labels.Everything()); err != nil {
-//			return err
-//		}
-//
-//		if applications, err = c.applicationLister.Applications(rbNamespace).List(labels.Everything()); err != nil {
-//			return err
-//		}
-//	}
-//
-//	// notify apps and rels controller??
-//	return nil // c.updateRolloutBlockStatus(applications, rolloutBlock, releases)
-//}
+	rb, err := c.rolloutBlockLister.RolloutBlocks(ns).Get(name)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+	rb.Status.Overrides.Application = []string{}
+	rb.Status.Overrides.Release = []string{}
+	_, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(ns).Update(rb)
+	if err != nil {
+		runtime.HandleError(err)
+	}
 
-//func (c *Controller) updateRolloutBlockStatus(
-//	applications []*shipper.Application,
-//	rolloutBlock *shipper.RolloutBlock,
-//	releases []*shipper.Release,
-//) error {
-//	for _, app := range applications {
-//		c.addApplicationToRolloutBlockStatus(app, rolloutBlock)
-//	}
-//	for _, release := range releases {
-//		c.addReleaseToRolloutBlockStatus(release, rolloutBlock)
-//	}
-//
-//	return nil
-//}
+	if ns == shipper.ShipperNamespace {
+		apps, err := c.applicationLister.List(labels.Everything())
+		if err == nil {
+			c.addMultipleApplicationsToRolloutBlocks(apps, key)
+		} else {
+			runtime.HandleError(err)
+		}
+
+		rels, err := c.releaseLister.List(labels.Everything())
+		if err == nil {
+			c.addMultipleReleasesToRolloutBlocks(rels, key)
+		} else {
+			runtime.HandleError(err)
+		}
+	} else {
+		apps, err := c.applicationLister.Applications(ns).List(labels.Everything())
+		if err == nil {
+			c.addMultipleApplicationsToRolloutBlocks(apps, key)
+		} else {
+			runtime.HandleError(err)
+		}
+
+		rels, err := c.releaseLister.Releases(ns).List(labels.Everything())
+		if err == nil {
+			c.addMultipleReleasesToRolloutBlocks(rels, key)
+		} else {
+			runtime.HandleError(err)
+		}
+	}
+}
+
+func (c *Controller) addMultipleReleasesToRolloutBlocks(releases []*shipper.Release, rolloutBlockKey string) {
+	for _, release := range releases {
+		if release.DeletionTimestamp != nil {
+			continue
+		}
+
+		relKey, err := cache.MetaNamespaceKeyFunc(release)
+		if err != nil {
+			runtime.HandleError(err)
+			continue
+		}
+
+		overrideRB, ok := release.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
+		if !ok {
+			continue
+		}
+
+		overrideRBs := strings.Split(overrideRB, ",")
+		for _, rbKey := range overrideRBs {
+			if rbKey == rolloutBlockKey {
+				c.addReleaseToRolloutBlockStatus(relKey, rbKey)
+				return
+			}
+		}
+	}
+}
+
+func (c *Controller) addMultipleApplicationsToRolloutBlocks(applications []*shipper.Application, rolloutBlockKey string) {
+	for _, app := range applications {
+		if app.DeletionTimestamp != nil {
+			continue
+		}
+
+		appKey, err := cache.MetaNamespaceKeyFunc(app)
+		if err != nil {
+			runtime.HandleError(err)
+			continue
+		}
+
+		overrideRB, ok := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
+		if !ok {
+			continue
+		}
+
+		overrideRBs := strings.Split(overrideRB, ",")
+		for _, rbKey := range overrideRBs {
+			if rbKey == rolloutBlockKey {
+				c.addApplicationToRolloutBlockStatus(appKey, rbKey)
+				return
+			}
+		}
+	}
+}
