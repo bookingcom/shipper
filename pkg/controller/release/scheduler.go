@@ -31,6 +31,7 @@ type Scheduler struct {
 	trafficTargetLister      listers.TrafficTargetLister
 	capacityTargetLister     listers.CapacityTargetLister
 	rolloutBlockLister 		 listers.RolloutBlockLister
+	applicationLister 		 listers.ApplicationLister
 
 	fetchChart shipperchart.FetchFunc
 	recorder   record.EventRecorder
@@ -43,6 +44,7 @@ func NewScheduler(
 	capacityTargetLister listers.CapacityTargetLister,
 	trafficTargetLister listers.TrafficTargetLister,
 	rolloutBlockLister listers.RolloutBlockLister,
+	applicationLister listers.ApplicationLister,
 	fetchChart shipperchart.FetchFunc,
 	recorder record.EventRecorder,
 ) *Scheduler {
@@ -54,6 +56,7 @@ func NewScheduler(
 		trafficTargetLister:      trafficTargetLister,
 		capacityTargetLister:     capacityTargetLister,
 		rolloutBlockLister:		  rolloutBlockLister,
+		applicationLister:		  applicationLister,
 
 		fetchChart: fetchChart,
 		recorder:   recorder,

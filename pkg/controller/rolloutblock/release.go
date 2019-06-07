@@ -3,7 +3,6 @@ package rolloutblock
 import (
 	"fmt"
 
-	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 
@@ -11,82 +10,64 @@ import (
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	stringUtil "github.com/bookingcom/shipper/pkg/util/string"
-	kerrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-func (c *Controller) addReleaseToRolloutBlockStatus(relKey string, rolloutblockKey string) {
-	ns, name, err := cache.SplitMetaNamespaceKey(rolloutblockKey)
+func (c *Controller) addReleaseToRolloutBlockStatus(relFullName string, rbFullName string) error {
+	ns, name, err := cache.SplitMetaNamespaceKey(rbFullName)
 	if err != nil {
-		glog.Infof("HILLA this is the error: %s", err.Error())
-		runtime.HandleError(err)
-		return
+		return err
 	}
 
 	rolloutBlock, err := c.rolloutBlockLister.RolloutBlocks(ns).Get(name)
 	if err != nil {
-		glog.Infof("HILLA this is the error: %s", err.Error())
-		runtime.HandleError(err)
-		return
+		return err
 	}
 
 	if rolloutBlock.DeletionTimestamp != nil {
-		runtime.HandleError(fmt.Errorf("HILLA RolloutBlock %s/%s has been deleted", rolloutBlock.Namespace, rolloutBlock.Name))
-		return
+		return fmt.Errorf("RolloutBlock %s/%s has been deleted", rolloutBlock.Namespace, rolloutBlock.Name)
 	}
-
-	glog.V(3).Infof("HILLA Release %s overrides RolloutBlock %s", relKey, rolloutBlock.Name)
+	
 	rolloutBlock.Status.Overrides.Release = stringUtil.AppendIfMissing(
 		rolloutBlock.Status.Overrides.Release,
-		relKey,
+		relFullName,
 	)
 	_, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(rolloutBlock.Namespace).Update(rolloutBlock)
 	if err != nil {
-		glog.Infof("HILLA this is the error: %s", err.Error())
-		runtime.HandleError(shippererrors.NewKubeclientUpdateError(rolloutBlock, err).
-			WithShipperKind("RolloutBlock"))
+		return shippererrors.NewKubeclientUpdateError(rolloutBlock, err).
+			WithShipperKind("RolloutBlock")
 	}
+
+	return nil
 }
 
-func (c *Controller) removeReleaseFromRolloutBlockStatus(relFullName string, rbFullName string)  {
+func (c *Controller) removeReleaseFromRolloutBlockStatus(relFullName string, rbFullName string) error {
 	ns, name, err := cache.SplitMetaNamespaceKey(rbFullName)
 	if err != nil {
-		runtime.HandleError(err)
-		glog.Infof("HILLA this is the error: %s", err.Error())
-		return
+		return err
 	}
 
-	rb, err := c.rolloutBlockLister.RolloutBlocks(ns).Get(name)
+	rolloutBlock, err := c.rolloutBlockLister.RolloutBlocks(ns).Get(name)
 	if err != nil {
-		if kerrors.IsNotFound(err) {
-			glog.V(3).Infof("HILLA RolloutBlock %q has been deleted", rbFullName)
-			return
-		}
-
-		glog.Infof("HILLA this is the error: %s", err.Error())
-		runtime.HandleError(err)
-		return
+		return err
 	}
 
-	rb = rb.DeepCopy()
-
-	if rb.Status.Overrides.Release == nil {
-		return
+	if rolloutBlock.Status.Overrides.Release == nil {
+		return nil
 	}
 
-	rb.Status.Overrides.Release = stringUtil.Delete(rb.Status.Overrides.Release, relFullName)
+	rolloutBlock.Status.Overrides.Release = stringUtil.Delete(rolloutBlock.Status.Overrides.Release, relFullName)
 
-	_, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(rb.Namespace).Update(rb)
+	_, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(rolloutBlock.Namespace).Update(rolloutBlock)
 	if err != nil {
-		glog.Infof("HILLA this is the error: %s", err.Error())
-		runtime.HandleError(err)
+		return shippererrors.NewKubeclientUpdateError(rolloutBlock, err).
+			WithShipperKind("RolloutBlock")
 	}
 
-	return
+	return nil
 }
 
 func (c *Controller) getAppFromRelease(rel *shipper.Release) (*shipper.Application, error) {
 	appName, err := releaseutil.ApplicationNameForRelease(rel)
-	glog.Infof("HILLA release %s has an application %s", rel.Name, appName)
 	if err != nil {
 		return nil, err
 	}

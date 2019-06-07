@@ -284,23 +284,6 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 			WithShipperKind("Release")
 	}
 
-	// transfer application rolloutblock override to release
-	app, err := c.applicationLister.Applications(rel.Namespace).Get(rel.Labels[shipper.AppLabel])
-	if err != nil {
-		if errors.IsNotFound(err) {
-			glog.V(3).Infof("Application for Release %q not found", key)
-			return nil
-		}
-
-		return shippererrors.NewKubeclientGetError(namespace, name, err).
-			WithShipperKind("Application")
-	}
-
-	overrideRB, ok := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
-	if ok {
-		rel.Annotations[shipper.RolloutBlocksOverrideAnnotation] = overrideRB
-	}
-
 	if releaseutil.HasEmptyEnvironment(rel) {
 		return nil
 	}
@@ -314,6 +297,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 		c.capacityTargetLister,
 		c.trafficTargetLister,
 		c.rolloutBlockLister,
+		c.applicationLister,
 		c.chartFetchFunc,
 		c.recorder,
 	)

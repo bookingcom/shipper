@@ -61,7 +61,7 @@ func Contains(slice []string, s string) bool {
 }
 
 // Set difference: a - b
-func Difference(a []string, b []string) []string {
+func SetDifference(a []string, b []string) []string {
 	if len(b) == 0 || len(a) == 0 {
 		return a
 	}

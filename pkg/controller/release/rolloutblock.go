@@ -2,7 +2,6 @@ package release
 
 import (
 	"fmt"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -10,8 +9,8 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	rolloutblockUtil "github.com/bookingcom/shipper/pkg/util/rolloutblock"
-	stringUtil "github.com/bookingcom/shipper/pkg/util/string"
 )
 
 func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, error, string) {
@@ -25,7 +24,17 @@ func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, error, strin
 		runtime.HandleError(fmt.Errorf("error syncing Application %q Because of global RolloutBlocks (will retry): %s", rel.Name, err))
 	}
 
-	overrideRB, ok := rel.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
+	appName, err := releaseutil.ApplicationNameForRelease(rel)
+	if err != nil {
+		return true, err, ""
+	}
+	app, err := s.applicationLister.Applications(rel.Namespace).Get(appName)
+	if err != nil {
+		return true, err, ""
+	}
+
+
+	overrideRB, ok := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
 	if !ok {
 		overrideRB = ""
 	}
@@ -34,9 +43,6 @@ func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, error, strin
 	if err != nil {
 		switch err.(type) {
 		case shippererrors.InvalidRolloutBlockOverrideError:
-			// remove from annotation!
-			rbName := err.(shippererrors.InvalidRolloutBlockOverrideError).RolloutBlockName
-			s.removeRolloutBlockFromAnnotations(overrideRB, rbName, rel)
 			err = nil
 		default:
 			s.recorder.Event(rel, corev1.EventTypeWarning, "Overriding RolloutBlock", err.Error())
@@ -50,14 +56,4 @@ func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, error, strin
 	}
 
 	return !overrideRolloutBlock, err, eventMessage
-}
-
-func (s *Scheduler) removeRolloutBlockFromAnnotations(overrideRB string, rbName string, release *shipper.Release) {
-	overrideRBs := strings.Split(overrideRB, ",")
-	overrideRBs = stringUtil.Delete(overrideRBs, rbName)
-	release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = strings.Join(overrideRBs, ",")
-	_, err := s.clientset.ShipperV1alpha1().Releases(release.Namespace).Update(release)
-	if err != nil {
-		runtime.HandleError(err)
-	}
 }
