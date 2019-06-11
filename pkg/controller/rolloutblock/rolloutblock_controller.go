@@ -161,28 +161,13 @@ func (c *Controller) deleteRelease(obj interface{}) {
 		return
 	}
 
-	app, err := c.getAppFromRelease(release)
-	if err != nil {
-		runtime.HandleError(err)
-		return
+	rolloutBlockUpdater := RolloutBlockUpdater{
+		"",
+		OverridingRelease,
+		key,
+		true,
 	}
-
-	overrideRB, ok := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
-	if !ok {
-		overrideRB = ""
-		return
-	}
-
-	overrideRBs := strings.Split(overrideRB, ",")
-	for _, rbKey := range overrideRBs {
-		rolloutBlockUpdater := RolloutBlockUpdater{
-			rbKey,
-			OverridingRelease,
-			key,
-			true,
-		}
-		c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
-	}
+	c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
 }
 
 func (c *Controller) addApplication(obj interface{}) {
@@ -362,6 +347,7 @@ func (c *Controller) addRolloutBlock(obj interface{}) {
 		"",
 		true,
 	}
+
 	c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
 }
 
@@ -454,12 +440,15 @@ func (c *Controller) syncRolloutBlock(rolloutBlockUpdater RolloutBlockUpdater) e
 
 	overridingKey := rolloutBlockUpdater.OverridingObjectKey
 	if len(key) == 0 || len(overridingKey) == 0 {
-		return nil
+		glog.Info("HILLA HILLA HILLA %s", rolloutBlockUpdater)
+		//return nil
 	}
 
 	var err error = nil
+	isDeletedObject := rolloutBlockUpdater.IsDeletedObject
 
-	if rolloutBlockUpdater.IsDeletedObject { //FIXME HILLA replace with proper switch
+
+	if isDeletedObject {
 		switch updaterType {
 		case OverridingRelease:
 			err = c.removeReleaseFromRolloutBlockStatus(overridingKey, key)
@@ -488,19 +477,13 @@ func (c *Controller) syncNewRolloutBlockObject(key string) error {
 	if err != nil {
 		return err
 	}
-	rolloutBlock.Status.Overrides.Application = []string{}
-	rolloutBlock.Status.Overrides.Release = []string{}
-	_, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(ns).Update(rolloutBlock)
-	if err != nil {
-		runtime.HandleError(err)
-	}
 
 	if ns == shipper.ShipperNamespace {
 		apps, err := c.applicationLister.List(labels.Everything())
 		if err != nil {
 			return err
 		}
-		if err = c.addMultipleApplicationsToRolloutBlocks(apps, key); err != nil {
+		if err = c.addMultipleApplicationsToRolloutBlocks(apps, key, rolloutBlock); err != nil {
 			return err
 		}
 
@@ -508,7 +491,7 @@ func (c *Controller) syncNewRolloutBlockObject(key string) error {
 		if err != nil {
 			return err
 		}
-		if err = c.addMultipleReleasesToRolloutBlocks(rels, key); err != nil {
+		if err = c.addMultipleReleasesToRolloutBlocks(rels, key, rolloutBlock); err != nil {
 			return err
 		}
 	} else {
@@ -516,7 +499,7 @@ func (c *Controller) syncNewRolloutBlockObject(key string) error {
 		if err != nil {
 			return err
 		}
-		if err = c.addMultipleApplicationsToRolloutBlocks(apps, key); err != nil {
+		if err = c.addMultipleApplicationsToRolloutBlocks(apps, key, rolloutBlock); err != nil {
 			return err
 		}
 
@@ -524,20 +507,16 @@ func (c *Controller) syncNewRolloutBlockObject(key string) error {
 		if err != nil {
 			return err
 		}
-		if err = c.addMultipleReleasesToRolloutBlocks(rels, key); err != nil {
+		if err = c.addMultipleReleasesToRolloutBlocks(rels, key, rolloutBlock); err != nil {
 			return err
 		}
 	}
 
-	_, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(ns).Update(rolloutBlock)
-	if err != nil {
-		return shippererrors.NewKubeclientUpdateError(rolloutBlock, err).
-			WithShipperKind("RolloutBlock")
-	}
 	return nil
 }
 
-func (c *Controller) addMultipleReleasesToRolloutBlocks(releases []*shipper.Release, rolloutBlockKey string) error {
+func (c *Controller) addMultipleReleasesToRolloutBlocks(releases []*shipper.Release, rolloutBlockKey string, rolloutBlock *shipper.RolloutBlock) error {
+	var relsString []string
 	for _, release := range releases {
 		if release.DeletionTimestamp != nil {
 			continue
@@ -549,7 +528,11 @@ func (c *Controller) addMultipleReleasesToRolloutBlocks(releases []*shipper.Rele
 			continue
 		}
 
-		overrideRB, ok := release.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
+		app, err := c.getAppFromRelease(release)
+		if err != nil {
+			return err
+		}
+		overrideRB, ok := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
 		if !ok {
 			continue
 		}
@@ -557,17 +540,27 @@ func (c *Controller) addMultipleReleasesToRolloutBlocks(releases []*shipper.Rele
 		overrideRBs := strings.Split(overrideRB, ",")
 		for _, rbKey := range overrideRBs {
 			if rbKey == rolloutBlockKey {
-				var err error = nil
-				err = c.addReleaseToRolloutBlockStatus(relKey, rbKey)
-				return err
+				relsString = append(relsString,relKey)
 			}
 		}
+	}
+
+	if len(relsString) == 0 {
+		return nil
+	}
+
+	rolloutBlock.Status.Overrides.Release = relsString
+	_, err := c.shipperClientset.ShipperV1alpha1().RolloutBlocks(rolloutBlock.Namespace).Update(rolloutBlock)
+	if err != nil {
+		return shippererrors.NewKubeclientUpdateError(rolloutBlock, err).
+			WithShipperKind("RolloutBlock")
 	}
 
 	return nil
 }
 
-func (c *Controller) addMultipleApplicationsToRolloutBlocks(applications []*shipper.Application, rolloutBlockKey string) error {
+func (c *Controller) addMultipleApplicationsToRolloutBlocks(applications []*shipper.Application, rolloutBlockKey string, rolloutBlock *shipper.RolloutBlock) error {
+	var appsString []string
 	for _, app := range applications {
 		if app.DeletionTimestamp != nil {
 			continue
@@ -587,11 +580,20 @@ func (c *Controller) addMultipleApplicationsToRolloutBlocks(applications []*ship
 		overrideRBs := strings.Split(overrideRB, ",")
 		for _, rbKey := range overrideRBs {
 			if rbKey == rolloutBlockKey {
-				var err error = nil
-				err = c.addApplicationToRolloutBlockStatus(appKey, rbKey)
-				return err
+				appsString = append(appsString, appKey)
 			}
 		}
+	}
+
+	if len(appsString) == 0 {
+		return nil
+	}
+
+	rolloutBlock.Status.Overrides.Application = appsString
+	_, err := c.shipperClientset.ShipperV1alpha1().RolloutBlocks(rolloutBlock.Namespace).Update(rolloutBlock)
+	if err != nil {
+		return shippererrors.NewKubeclientUpdateError(rolloutBlock, err).
+			WithShipperKind("RolloutBlock")
 	}
 
 	return nil

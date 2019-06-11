@@ -2,6 +2,7 @@ package rolloutblock
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/labels"
 
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
@@ -24,7 +25,7 @@ func (c *Controller) addReleaseToRolloutBlockStatus(relFullName string, rbFullNa
 	}
 
 	if rolloutBlock.DeletionTimestamp != nil {
-		return fmt.Errorf("RolloutBlock %s/%s has been deleted", rolloutBlock.Namespace, rolloutBlock.Name)
+		return fmt.Errorf("RolloutBlock %s has been deleted", rbFullName)
 	}
 	
 	rolloutBlock.Status.Overrides.Release = stringUtil.AppendIfMissing(
@@ -41,26 +42,31 @@ func (c *Controller) addReleaseToRolloutBlockStatus(relFullName string, rbFullNa
 }
 
 func (c *Controller) removeReleaseFromRolloutBlockStatus(relFullName string, rbFullName string) error {
-	ns, name, err := cache.SplitMetaNamespaceKey(rbFullName)
+	ns, _, err := cache.SplitMetaNamespaceKey(relFullName)
 	if err != nil {
 		return err
 	}
 
-	rolloutBlock, err := c.rolloutBlockLister.RolloutBlocks(ns).Get(name)
+	gbRB, err := c.rolloutBlockLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything())
 	if err != nil {
-		return err
+		runtime.HandleError(err)
 	}
-
-	if rolloutBlock.Status.Overrides.Release == nil {
-		return nil
-	}
-
-	rolloutBlock.Status.Overrides.Release = stringUtil.Delete(rolloutBlock.Status.Overrides.Release, relFullName)
-
-	_, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(rolloutBlock.Namespace).Update(rolloutBlock)
+	nsRB, err := c.rolloutBlockLister.RolloutBlocks(ns).List(labels.Everything())
 	if err != nil {
-		return shippererrors.NewKubeclientUpdateError(rolloutBlock, err).
-			WithShipperKind("RolloutBlock")
+		runtime.HandleError(err)
+	}
+	RB := append(nsRB, gbRB...)
+	for _, rolloutBlock := range RB {
+		if len(rolloutBlock.Status.Overrides.Release) == 0 {
+			continue
+		}
+
+		rolloutBlock.Status.Overrides.Release = stringUtil.Delete(rolloutBlock.Status.Overrides.Release, relFullName)
+		_, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(rolloutBlock.Namespace).Update(rolloutBlock)
+		if err != nil {
+			return shippererrors.NewKubeclientUpdateError(rolloutBlock, err).
+				WithShipperKind("RolloutBlock")
+		}
 	}
 
 	return nil
