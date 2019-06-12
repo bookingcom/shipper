@@ -58,6 +58,12 @@ var Release = &apiextensionv1beta1.CustomResourceDefinition{
 				Description: "The current achieved step for a release as defined in the rollout strategy.",
 				JSONPath:    ".status.achievedStep.name",
 			},
+			apiextensionv1beta1.CustomResourceColumnDefinition{
+				Name:        "Age",
+				Type:        "date",
+				Description: "The release's age.",
+				JSONPath:    ".metadata.creationTimestamp",
+			},
 		},
 	},
 }
