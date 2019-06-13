@@ -72,12 +72,23 @@ spec:
       capabilities: []
     kustomization:
       bases:
-        - https://example.com/core
+        - https://example.com/core # <1>
       namePrefix: bikerental-
       commonLabels:
         app: bikerental
+      patchesStrategicMergeInline: # <2>
+        - apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: app
+          spec:
+            containers:
+              name: app
+              env:
+                - name: BIKE_COLORS
+                  value: red,green,blue
       patchesStrategicMerge:
-        - https://example.com/sidecars/sidecar.yaml
+        - https://example.com/sidecars/sidecar.yaml # <1>
       images:
         - name: app
           newName: juliogreff/bikerental
@@ -92,10 +103,19 @@ spec:
           incumbent: 0
           contender: 100
 ----
+<1> As this RFC does not touch on kustomization versioning, we're using URLs
+that point to a mutable resource. In practice, it's probably a better idea to
+point to immutable resources.
+<2> `patchesStrategicMergeInline` is not currently supported by Kustomize. We
+intend to write a plugin to support that, and maybe suggest it upstream as
+well.
 
-Note the URL `.spec.template.kustomization` points to. That's the application's
-configuration bundle. As the `kustomize` CLI tool, Shipper will also look for a
-`kustomization.yaml` inside that path.
+The inline kustomization works like any `kustomization.yaml`, expect that it
+can't refer to any resources by a local path, as they won't make sense to
+Shipper when it evaluates the Kubernetes object. Also, we plan to introduce a
+`patchesStrategicMergeInline` and `patchesJson6902Inline`, to allow application
+developers to apply inline patches specific to their application instead of
+having to host them somewhere.
 
 .https://example.com/sidecars/sidecar.yaml
 [source,yaml]
