@@ -54,7 +54,8 @@ and tweaks to the configuration are injected as values through
 
 Using Kustomize, the Application object would lose both `.spec.template.chart`
 and `.spec.template.values`, having those replaced by a single
-`.spec.template.kustomization`, as exemplified below.
+`.spec.template.kustomization`, as exemplified below, containing an inline
+Kustomization object.
 
 .application.yaml
 [source,yaml]
@@ -70,10 +71,17 @@ spec:
       - name: eu-nl
       capabilities: []
     kustomization:
-      name: https://example.com/juliogreff/bikerental # <1>
-      image:
-        name: juliogreff/bikerental
-        tag: deadcafe
+      bases:
+        - https://example.com/core
+      namePrefix: bikerental-
+      commonLabels:
+        app: bikerental
+      patchesStrategicMerge:
+        - https://example.com/sidecars/sidecar.yaml
+      images:
+        - name: app
+          newName: juliogreff/bikerental
+          newTag: deadcafe
     strategy:
       steps:
       - name: full on
@@ -84,29 +92,10 @@ spec:
           incumbent: 0
           contender: 100
 ----
-<1> This example does not take versioning into account. That can be easily
-addressed by pointing to an immutable URL, such as
-`https://raw.githubusercontent.com/juliogreff/bikerental/$GIT_REF/`, where
-`$GIT_REF` is a commit or tag name. This is not a final decision, as versioning
-of kustomizations is not a solved problem yet.
 
 Note the URL `.spec.template.kustomization` points to. That's the application's
 configuration bundle. As the `kustomize` CLI tool, Shipper will also look for a
 `kustomization.yaml` inside that path.
-
-.https://example.com/juliogreff/bikerental/kustomization.yaml
-[source,yaml]
-----
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-bases:
-  - https://example.com/core
-namePrefix: bikerental-
-commonLabels:
-  app: bikerental
-patchesStrategicMerge:
-  - https://example.com/sidecars/sidecar.yaml
-----
 
 .https://example.com/sidecars/sidecar.yaml
 [source,yaml]
@@ -161,28 +150,34 @@ brevity.
 The kustomizations above cover the application level configuration. At release
 time, Shipper still needs to apply its own little bit of configuration with
 data from the Release object it just created. That kustomization would be the
-equivalent of the following YAML snippet. It injects references to the release
-hash through `nameSuffix` and `commonLabels`, adjusts the amount of replicas
-and points to the image defined by the application object, all much in the same
-way we currently do with Helm charts.
+equivalent of the following YAML snippet. It copies of the kustomization
+defined in the Application object, and injects references to the release hash
+through `nameSuffix` and `commonLabels` and adjusts the amount of replicas.
 
 .Kustomization applied by Shipper for every release
 [source,yaml]
 ----
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# From application.yaml
 bases:
-  - https://example.com/juliogreff/bikerental/kustomization.yaml
+  - https://example.com/core
+namePrefix: bikerental-
+commonLabels:
+  app: bikerental
+patchesStrategicMerge:
+  - https://example.com/sidecars/sidecar.yaml
+images:
+  - name: app
+    newName: juliogreff/bikerental
+    newTag: deadcafe
+# From shipper
 nameSuffix: -deadbeef
 commonLabels:
   release: bikerental-deadbeef
 replicas:
   - name: app
     count: 12
-images:
-  - name: app
-    newName: juliogreff/bikerental
-    newTag: deadcafe
 ----
 
 == Open questions
