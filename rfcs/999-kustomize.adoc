@@ -200,6 +200,37 @@ replicas:
     count: 12
 ----
 
+== Artifact registry and Versioning
+
+Kustomizations could be easily versioned by hosting them in a tool such as
+GitHub or GitLab, as they can be referred to by a specific commit hash, branch,
+or tag. GitHub and GitLab make this easy by exposing URLs like
+`https://raw.githubusercontent.com/$ORG/$REPO/$REF/$PATH`.
+
+While pointing to a commit or tag solves versioning for specific versions of a
+kustomization, pointing to a branch comes with issues if want to support
+link:https://github.com/bookingcom/shipper/issues/62[version ranges]. There is
+no generic or standard way of resolving an URL pointing to a branch to a
+specific commit. This makes it impossible for Shipper to reliably roll back to
+an older kustomization within the specified range, as the URL would always
+resolve to the newest version.
+
+Our proposed solution to this is to host kustomizations in an OCI registry as a
+new artifact type. link:https://helm.sh/blog/helm-3-preview-pt3/[Helm 3] is
+taking that same route, so there is precedent to show we're not completely off
+the mark.
+
+By using an OCI registry, we get artifact tagging for free, and we also have
+the ability to resolve a tag to an immutable reference to an artifact. In this
+way, version ranges move away from Shipper, and into the artifact versioning
+scheme, giving kustomization authors more freedom in how to tag and update
+their artifacts.
+
+The actual process of using an OCI registry for kustomizations is outside the
+scope of this RFC, as
+link:https://stevelasker.blog/2019/05/11/authoring-oci-registry-artifacts-quick-guide/[there
+is good documentation for that out there].
+
 == Migration Path
 
 It is unreasonable to expect production users to instantly migrate away from
@@ -222,14 +253,6 @@ longer be managed by Shipper until they're fixed.
 Since we do Semantic Versioning, and to avoid the need of a new major version
 release when we do remove support for Helm charts, Helm support should be
 dropped before Shipper turns 1.0.
-
-== Open questions
-
-* Versioning and storage of kustomizations. We thought of referring to
-  kustomizations as URLs to GitHub/GitLab raw files, which is quite neat when
-  the ref we point to is a commit. It would be useful to be able to refer to
-  branches from the Application, but have that value resolve to an actual
-  commit.
 
 == Alternatives
 
