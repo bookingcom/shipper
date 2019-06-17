@@ -200,12 +200,30 @@ replicas:
     count: 12
 ----
 
-== Open questions
+== Migration Path
 
-* The migration path for Shipper to move from Helm charts to Kustomize is
-  entirely unclear. We'll probably need to have both ways of packaging
-  applications living side by side for a while, but the specifics still need
-  discussion.
+It is unreasonable to expect production users to instantly migrate away from
+Helm charts into Kustomize, so we also need a reasonable migration path. That
+means we'll need to support both Helm charts and Kustomize for a few versions.
+
+Besides the amount of code necessary to keep two application packaging running
+side by side, we do not foresee any major risks, provided that some simple
+rules to only ever use one or the other are followed.
+
+For this migration, the Application object will keep both `chart` and `values`
+alongside `kustomize`.  Our validating webhook will then ensure that either
+`chart` and `values` are populated, or only `kustomize`. At some point, after a
+few Shipper versions, the validating webhook can start rejecting objects with
+`chart` and `values`, while Shipper itself will still support both setups for a
+few more versions. Ultimately, Shipper will stop supporting Helm charts
+entirely, and any remaining applications using it will be invalid, and will no
+longer be managed by Shipper until they're fixed.
+
+Since we do Semantic Versioning, and to avoid the need of a new major version
+release when we do remove support for Helm charts, Helm support should be
+dropped before Shipper turns 1.0.
+
+== Open questions
 
 * Versioning and storage of kustomizations. We thought of referring to
   kustomizations as URLs to GitHub/GitLab raw files, which is quite neat when
