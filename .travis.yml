@@ -14,15 +14,11 @@ env:
 
 before_install:
 - sudo snap install microk8s --classic --channel=1.11/stable
-- curl -Lo $GOPATH/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/v1.11.4/bin/linux/amd64/kubectl
+- sudo snap alias microk8s.kubectl kubectl
 - curl -L https://raw.githubusercontent.com/alecthomas/gometalinter/master/scripts/install.sh | bash -s -- -b $GOPATH/bin
-- chmod +x $GOPATH/bin/*
 - echo $PATH && ls -la $GOPATH/bin
 
 install: true
-
-before_script:
-- git clone --depth=1 https://github.com/kubernetes/kubernetes.git $GOPATH/src/k8s.io/kubernetes
 
 script:
 - ./ci/test.sh && ./ci/build.sh && ./ci/package.sh
