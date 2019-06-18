@@ -1,6 +1,6 @@
 #!/bin/bash -ex
 
-dep status -v
+go mod verify
 
 ./hack/verify-codegen.sh
 
