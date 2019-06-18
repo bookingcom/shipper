@@ -4,6 +4,8 @@ go mod verify
 
 ./hack/verify-codegen.sh
 
+PKGS="./pkg/... ./cmd/... ./test/..."
+
 gometalinter \
     --vendor \
     --exclude=^vendor\/ \
@@ -15,8 +17,8 @@ gometalinter \
     --enable=deadcode \
     --enable=goconst \
     --enable=staticcheck \
-    ./...
+    $PKGS
 
-go test -v $(go list ./... | grep -v /vendor/)
+go test -v $(go list $PKGS)
 
 ./ci/e2e.sh "$RESYNC_PERIOD"
