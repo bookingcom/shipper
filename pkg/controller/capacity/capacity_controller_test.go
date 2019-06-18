@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	kubeinformers "k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	kubetesting "k8s.io/client-go/testing"
@@ -705,6 +706,7 @@ func (f *fixture) ExpectDeploymentPatchWithReplicas(deployment *appsv1.Deploymen
 			schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"},
 			deployment.GetNamespace(),
 			deployment.GetName(),
+			types.StrategicMergePatchType,
 			[]byte(fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicas)),
 		)
 		f.targetClusterActions = append(f.targetClusterActions, patchAction)

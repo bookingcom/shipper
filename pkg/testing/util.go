@@ -116,6 +116,14 @@ func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
 	}
 }
 
+// PrettyPrintActions pretty-prints a slice of actions, useful for
+// creating a human-readable list for debugging.
+func PrettyPrintActions(actions []kubetesting.Action, t *testing.T) {
+	for _, action := range actions {
+		t.Logf("\n%s", prettyPrintAction(action))
+	}
+}
+
 // FilterActions, given a slice of observed actions, returns only those that
 // change state. Useful for reducing the number of actions needed to check in
 // tests.
