@@ -78,15 +78,14 @@ var apiResourceList = []*metav1.APIResourceList{
 func TestInstaller(t *testing.T) {
 	// First install.
 	ImplTestInstaller(t, nil, nil)
-	/*
-		// With existing remote service.
-		notOwnedService := loadService("no-owners")
-		ImplTestInstaller(t, nil, []runtime.Object{notOwnedService})
 
-		// With existing remote service.
-		ownedService := loadService("existing-owners")
-		ImplTestInstaller(t, nil, []runtime.Object{ownedService})
-	*/
+	// With existing remote service.
+	notOwnedService := loadService("no-owners")
+	ImplTestInstaller(t, nil, []runtime.Object{notOwnedService})
+
+	// With existing remote service.
+	ownedService := loadService("existing-owners")
+	ImplTestInstaller(t, nil, []runtime.Object{ownedService})
 }
 
 func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObjects []runtime.Object) {
@@ -107,10 +106,13 @@ func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObject
 
 	restConfig := &rest.Config{}
 
-	/*expectedActions := []kubetesting.Action{
+	expectedActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
-	}*/
+		shippertesting.NewDiscoveryAction("services"),
+		shippertesting.NewDiscoveryAction("deployments"),
+	}
+
 	expectedDynamicActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
@@ -122,15 +124,15 @@ func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObject
 		t.Fatal(err)
 	}
 
-	// shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeClient.Actions(), t)
 	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.fakeDynamicClient.Actions(), t)
 
-	/*
-	        filteredActions := filterActions(fakePair.fakeDynamicClient.Actions(), "create")
-	   	validateAction(t, filteredActions[0], "ConfigMap")
-	   	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
-	   	validateDeploymentCreateAction(t, validateAction(t, filteredActions[2], "Deployment"), map[string]string{"app": "reviews-api"})
-	*/
+	filteredActions := filterActions(fakePair.fakeClient.Actions(), "create")
+	filteredActions = append(filteredActions, filterActions(fakePair.fakeDynamicClient.Actions(), "create")...)
+
+	validateAction(t, filteredActions[0], "ConfigMap")
+	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
+	validateDeploymentCreateAction(t, validateAction(t, filteredActions[2], "Deployment"), map[string]string{"app": "reviews-api"})
 }
 
 func extractUnstructuredContent(scheme *runtime.Scheme, obj runtime.Object) (*unstructured.Unstructured, map[string]interface{}) {
@@ -359,22 +361,30 @@ func TestInstallerSingleServiceNoLB(t *testing.T) {
 
 	restConfig := &rest.Config{}
 
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+	expectedDynamicActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
 	}
 
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		shippertesting.NewDiscoveryAction("services"),
+		shippertesting.NewDiscoveryAction("deployments"),
+	}
+
 	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeDynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.fakeDynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeClient.Actions(), t)
 
-	filteredActions := filterActions(fakePair.fakeDynamicClient.Actions(), "create")
+	filteredActions := filterActions(fakePair.fakeClient.Actions(), "create")
+	filteredActions = append(filteredActions, filterActions(fakePair.fakeDynamicClient.Actions(), "create")...)
+
 	validateAction(t, filteredActions[0], "ConfigMap")
 	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
 	validateDeploymentCreateAction(t, validateAction(t, filteredActions[2], "Deployment"), map[string]string{"app": "reviews-api"})
@@ -400,22 +410,30 @@ func TestInstallerSingleServiceWithLB(t *testing.T) {
 
 	restConfig := &rest.Config{}
 
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+	expectedDynamicActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
 	}
 
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		shippertesting.NewDiscoveryAction("services"),
+		shippertesting.NewDiscoveryAction("deployments"),
+	}
+
 	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeDynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.fakeDynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeClient.Actions(), t)
 
-	filteredActions := filterActions(fakePair.fakeDynamicClient.Actions(), "create")
+	filteredActions := filterActions(fakePair.fakeClient.Actions(), "create")
+	filteredActions = append(filteredActions, filterActions(fakePair.fakeDynamicClient.Actions(), "create")...)
+
 	validateAction(t, filteredActions[0], "ConfigMap")
 	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
 	validateDeploymentCreateAction(t, validateAction(t, filteredActions[2], "Deployment"), map[string]string{"app": "reviews-api"})
@@ -472,9 +490,7 @@ func TestInstallerMultiServiceWithLB(t *testing.T) {
 
 	restConfig := &rest.Config{}
 
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+	expectedDynamicActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api-staging"),
@@ -483,13 +499,24 @@ func TestInstallerMultiServiceWithLB(t *testing.T) {
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
 	}
 
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		shippertesting.NewDiscoveryAction("services"),
+		shippertesting.NewDiscoveryAction("services"),
+		shippertesting.NewDiscoveryAction("deployments"),
+	}
+
 	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeDynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.fakeDynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeClient.Actions(), t)
 
-	filteredActions := filterActions(fakePair.fakeDynamicClient.Actions(), "create")
+	filteredActions := filterActions(fakePair.fakeClient.Actions(), "create")
+	filteredActions = append(filteredActions, filterActions(fakePair.fakeDynamicClient.Actions(), "create")...)
+
 	validateAction(t, filteredActions[0], "ConfigMap")
 	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
 	validateDeploymentCreateAction(t, validateAction(t, filteredActions[3], "Deployment"), map[string]string{"app": "reviews-api"})
@@ -539,9 +566,7 @@ func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
 
 	restConfig := &rest.Config{}
 
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.1.0-anchor"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+	expectedDynamicActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.1.0-nginx"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.1.0-nginx-staging"),
@@ -550,13 +575,23 @@ func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
 	}
 
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.1.0-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		shippertesting.NewDiscoveryAction("services"),
+		shippertesting.NewDiscoveryAction("services"),
+		shippertesting.NewDiscoveryAction("deployments"),
+	}
+
 	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeDynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.fakeDynamicClient.Actions(), t)
 
-	filteredActions := filterActions(fakePair.fakeDynamicClient.Actions(), "create")
+	filteredActions := filterActions(fakePair.fakeClient.Actions(), "create")
+	filteredActions = append(filteredActions, filterActions(fakePair.fakeDynamicClient.Actions(), "create")...)
 	validateAction(t, filteredActions[0], "ConfigMap")
 	validateServiceCreateAction(t, primarySvc, validateAction(t, filteredActions[1], "Service"))
 	validateServiceCreateAction(t, secondarySvc, validateAction(t, filteredActions[2], "Service"))

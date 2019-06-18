@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	runtimeutil "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -58,7 +59,7 @@ func TestSingleCluster(t *testing.T) {
 	pod := pods[0].(*corev1.Pod)
 	gvr := corev1.SchemeGroupVersion.WithResource("pods")
 	patchString := fmt.Sprintf(`[{"op":"replace","path":"/metadata/labels/%s","value":"%s"}]`, shipper.PodTrafficStatusLabel, shipper.Enabled)
-	cluster.Expect(kubetesting.NewPatchAction(gvr, shippertesting.TestNamespace, pod.Name, []byte(patchString)))
+	cluster.Expect(kubetesting.NewPatchAction(gvr, shippertesting.TestNamespace, pod.Name, types.JSONPatchType, []byte(patchString)))
 
 	f.expectTrafficTargetUpdate(updatedTT)
 	f.run()
