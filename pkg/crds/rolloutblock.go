@@ -23,7 +23,7 @@ var RolloutBlock = &apiextensionv1beta1.CustomResourceDefinition{
 			Singular:   "rolloutblock",
 			Kind:       "RolloutBlock",
 			ShortNames: []string{"rb"},
-			Categories: []string{"all, shipper"},
+			Categories: []string{"all", "shipper"},
 		},
 		Validation: &apiextensionv1beta1.CustomResourceValidation{
 			OpenAPIV3Schema: &apiextensionv1beta1.JSONSchemaProps{
