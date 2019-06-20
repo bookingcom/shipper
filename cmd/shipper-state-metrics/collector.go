@@ -2,6 +2,7 @@ package main
 
 import (
 	"strings"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
@@ -26,6 +27,13 @@ var (
 		fqn("releases"),
 		"Number of Release objects",
 		[]string{"namespace", "shipper_app", "cluster", "cond_type", "cond_status", "cond_reason"},
+		nil,
+	)
+
+	relDurationDesc = prometheus.NewDesc(
+		fqn("release_durations"),
+		"Duration of release objects",
+		[]string{"cond_type"},
 		nil,
 	)
 
@@ -132,6 +140,9 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 	key := func(ss ...string) string { return strings.Join(ss, "^") }
 	unkey := func(s string) []string { return strings.Split(s, "^") }
 
+	now := time.Now()
+	relAgesByCondition := make(map[string][]float64)
+
 	breakdown := make(map[string]float64)
 	for _, rel := range rels {
 		var appName string
@@ -156,12 +167,37 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 				breakdown[key(rel.Namespace, appName, cluster, string(cond.Type), string(cond.Status), reason)]++
 			}
 		}
+
+		if rel.Status.Strategy != nil {
+			for _, condition := range rel.Status.Strategy.Conditions {
+				if condition.Status == corev1.ConditionFalse {
+					continue
+				}
+				age := now.Sub(condition.LastTransitionTime.Time).Seconds()
+				relAgesByCondition[string(condition.Type)] = append(relAgesByCondition[string(condition.Type)], age)
+			}
+		}
+
 	}
 
 	glog.V(4).Infof("releases: %v", breakdown)
 
 	for k, v := range breakdown {
 		ch <- prometheus.MustNewConstMetric(relsDesc, prometheus.GaugeValue, v, unkey(k)...)
+	}
+
+	quantiles := []float64{0.5, 0.9, 0.99}
+
+	for condition, ages := range relAgesByCondition {
+		count := uint64(len(ages))
+		sum := Sum(ages)
+		summary, err := MakeSummary(ages, quantiles)
+		if err != nil {
+			glog.Warningf("collect Releases: %s", err)
+			return
+		}
+
+		ch <- prometheus.MustNewConstSummary(relDurationDesc, count, sum, summary, condition)
 	}
 }
 
