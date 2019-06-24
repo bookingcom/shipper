@@ -25,8 +25,9 @@ func ShouldOverrideRolloutBlock(overrideRB string, nsRBs []*shipper.RolloutBlock
 }
 
 // Set difference: existingRBs - overrideRBs
-// finding all RolloutBlocks that are not overridden
-// making sure all overrides are valid rolloutblock objects
+// Return all RolloutBlocks that are not overridden.
+// Return an InvalidRolloutBlockOverrideError if trying to override a
+// non-existing rolloutblock object
 func difference(existingRBs []*shipper.RolloutBlock, overrideRBs []string) ([]string, error) {
 	var diff []string
 	overrideRBdict := make(map[string]bool)

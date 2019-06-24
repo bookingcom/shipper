@@ -36,7 +36,8 @@ const (
 // It's main objective is to block application and releases rollout during
 // an outage.
 //
-// RolloutBlock Controller has 2 primary workqueues: releases and applications.
+// RolloutBlock Controller has one primary workqueues: a rolloutblock updater
+// object queue.
 type Controller struct {
 	shipperClientset clientset.Interface
 	recorder         record.EventRecorder
@@ -124,12 +125,6 @@ func (c *Controller) addRelease(obj interface{}) {
 		runtime.HandleError(err)
 		return
 	}
-
-	//app, err := c.getAppFromRelease(rel)
-	//if err != nil {
-	//	runtime.HandleError(err)
-	//	return
-	//}
 
 	overrideRB, ok := rel.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
 	if !ok {
@@ -396,6 +391,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 		stopCh,
 		c.applicationsSynced,
 		c.releasesSynced,
+		c.rolloutBlockSynced,
 	); !ok {
 		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
 		return

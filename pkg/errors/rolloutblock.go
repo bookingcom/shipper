@@ -8,7 +8,6 @@ type InvalidRolloutBlockOverrideError struct {
 	RolloutBlockName string
 }
 
-
 func (e InvalidRolloutBlockOverrideError) Error() string {
 	return fmt.Sprintf("rollout block with name %s does not exists",
 		e.RolloutBlockName)

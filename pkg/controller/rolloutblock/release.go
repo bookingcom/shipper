@@ -66,17 +66,3 @@ func (c *Controller) removeReleaseFromRolloutBlockStatus(relFullName string, rbF
 
 	return nil
 }
-
-//func (c *Controller) getAppFromRelease(rel *shipper.Release) (*shipper.Application, error) {
-//	appName, err := releaseutil.ApplicationNameForRelease(rel)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	app, err := c.applicationLister.Applications(rel.Namespace).Get(appName)
-//	if err != nil {
-//		runtime.HandleError(err)
-//		return nil, err
-//	}
-//	return app, nil
-//}

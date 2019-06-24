@@ -15,29 +15,10 @@ import (
 )
 
 func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, error, string) {
-	//appName, err := releaseutil.ApplicationNameForRelease(rel)
-	//if err != nil {
-	//	return true, err, ""
-	//}
-	//app, err := s.applicationLister.Applications(rel.Namespace).Get(appName)
-	//if err != nil {
-	//	return true, err, ""
-	//}
-
-	//appOverrideRB, ok := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
-	//if !ok {
-	//	appOverrideRB = ""
-	//}
 	relOverrideRB, ok := rel.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 	if !ok {
 		relOverrideRB = ""
 	}
-	//relOverrides := strings.Split(relOverrideRB, ",")
-	//for _, item := range strings.Split(appOverrideRB, ",") {
-	//	relOverrides = stringUtil.AppendIfMissing(relOverrides, item)
-	//}
-	//relOverrideRB = strings.Join(relOverrides, ",")
-	//rel.Annotations[shipper.RolloutBlocksOverrideAnnotation] = relOverrideRB
 
 	nsRBs, err := s.rolloutBlockLister.RolloutBlocks(rel.Namespace).List(labels.Everything())
 	if err != nil {

@@ -533,7 +533,5 @@ func reasonForReleaseCondition(err error) string {
 		return "FailedAPICall"
 	}
 
-
 	return "unknown error! tell Shipper devs to classify it"
 }
-

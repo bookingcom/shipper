@@ -185,7 +185,6 @@ func (c *Controller) processNextWorkItem() bool {
 	return true
 }
 
-
 func (c *Controller) enqueueRel(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
@@ -360,7 +359,6 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 	if appReleases, err = c.relLister.Releases(app.Namespace).ReleasesForApplication(app.Name); err != nil {
 		return err
 	}
-
 
 	// Required by subsequent calls to GetContender and GetIncumbent.
 	appReleases = releaseutil.SortByGenerationDescending(appReleases)

@@ -214,9 +214,9 @@ type AchievedStep struct {
 type ReleaseConditionType string
 
 const (
-	ReleaseConditionTypeScheduled 	 ReleaseConditionType = "Scheduled"
-	ReleaseConditionTypeInstalled 	 ReleaseConditionType = "Installed"
-	ReleaseConditionTypeComplete  	 ReleaseConditionType = "Complete"
+	ReleaseConditionTypeScheduled ReleaseConditionType = "Scheduled"
+	ReleaseConditionTypeInstalled ReleaseConditionType = "Installed"
+	ReleaseConditionTypeComplete  ReleaseConditionType = "Complete"
 )
 
 type ReleaseCondition struct {
@@ -539,17 +539,17 @@ type RolloutBlockStatus struct {
 
 type RolloutBlockOverrides struct {
 	Application []string `json:"application"`
-	Release		[]string `json:"release"`
+	Release     []string `json:"release"`
 }
 
 type RolloutBlockSpec struct {
-	Message string `json:"message"`
-	Author RolloutBlockAuthor `json:"author"`
+	Message string             `json:"message"`
+	Author  RolloutBlockAuthor `json:"author"`
 }
 
 type RolloutBlockAuthor struct {
-	Type              string `json:"type"`
-	Name              string `json:"name"`
+	Type string `json:"type"`
+	Name string `json:"name"`
 }
 
 func (ss *StrategyState) UnmarshalJSON(b []byte) error {

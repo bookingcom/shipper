@@ -51,15 +51,6 @@ func Equal(s1, s2 []string) bool {
 	return true
 }
 
-func Contains(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
-			return true
-		}
-	}
-	return false
-}
-
 // Set difference: a - b
 func SetDifference(a []string, b []string) []string {
 	if len(b) == 0 || len(a) == 0 {
