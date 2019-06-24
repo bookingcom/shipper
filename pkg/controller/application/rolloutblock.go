@@ -27,7 +27,7 @@ func (c *Controller) shouldBlockRollout(app *shipper.Application, nsRBs, gbRBs [
 			// remove from annotation!
 			rbName := err.(shippererrors.InvalidRolloutBlockOverrideError).RolloutBlockName
 			c.removeRolloutBlockFromAnnotations(overrideRB, rbName, app)
-			c.updateApplicationRolloutCondition(append(nsRBs, gbRBs...), app)
+			c.updateApplicationRolloutBlockCondition(append(nsRBs, gbRBs...), app)
 		default:
 			runtime.HandleError(fmt.Errorf("error overriding rollout block %s", err.Error()))
 		}
@@ -51,7 +51,7 @@ func (c *Controller) removeRolloutBlockFromAnnotations(overrideRB string, rbName
 	}
 }
 
-func (c *Controller) updateApplicationRolloutCondition(rbs []*shipper.RolloutBlock, app *shipper.Application) {
+func (c *Controller) updateApplicationRolloutBlockCondition(rbs []*shipper.RolloutBlock, app *shipper.Application) {
 	if len(rbs) > 0 {
 		var sb strings.Builder
 		for _, rb := range rbs {

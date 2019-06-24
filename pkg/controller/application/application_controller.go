@@ -299,7 +299,7 @@ func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels 
 	// Required by GetContender() and GetIncumbent() below.
 	rels = releaseutil.SortByGenerationDescending(rels)
 
-	c.updateApplicationRolloutCondition(rbs, app)
+	c.updateApplicationRolloutBlockCondition(rbs, app)
 	abortingCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeAborting, corev1.ConditionFalse, "", "")
 	apputil.SetApplicationCondition(&app.Status, *abortingCond)
 	validHistoryCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeValidHistory, corev1.ConditionTrue, "", "")
@@ -434,7 +434,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		apputil.SetApplicationCondition(&app.Status, *abortingCond)
 		rollingOutCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
 		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
-		c.updateApplicationRolloutCondition(rbs, app)
+		c.updateApplicationRolloutBlockCondition(rbs, app)
 		return nil
 	}
 
@@ -460,7 +460,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 			apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
 			rollingOutCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRollingOut, corev1.ConditionFalse, conditions.CreateReleaseFailed, err.Error())
 			apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
-			c.updateApplicationRolloutCondition(rbs, app)
+			c.updateApplicationRolloutBlockCondition(rbs, app)
 			return err
 		} else {
 			appReleases = append(appReleases, rel)

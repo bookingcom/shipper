@@ -57,6 +57,35 @@ var RolloutBlock = &apiextensionv1beta1.CustomResourceDefinition{
 				},
 			},
 		},
-
+		AdditionalPrinterColumns: []apiextensionv1beta1.CustomResourceColumnDefinition{
+			apiextensionv1beta1.CustomResourceColumnDefinition{
+				Name:        "Message",
+				Type:        "string",
+				Description: "The reason for this rollout block.",
+				JSONPath:    ".spec.message",
+				Priority: 	 0,
+			},
+			apiextensionv1beta1.CustomResourceColumnDefinition{
+				Name:        "Author",
+				Type:        "string",
+				Description: "The author of this Rollout Block object.",
+				JSONPath:    ".spec.author",
+				Priority: 	 1,
+			},
+			apiextensionv1beta1.CustomResourceColumnDefinition{
+				Name:        "Overriding Applications",
+				Type:        "string",
+				Description: "The list of applications that overrides this rollout block.",
+				JSONPath:    ".status.overrides.application",
+				Priority: 	 1,
+			},
+			apiextensionv1beta1.CustomResourceColumnDefinition{
+				Name:        "Overriding Releases",
+				Type:        "string",
+				Description: "The list of releases that overrides this rollout block.",
+				JSONPath:    ".status.overrides.release",
+				Priority: 	 1,
+			},
+		},
 	},
 }

@@ -18,8 +18,8 @@ func (e InvalidRolloutBlockOverrideError) ShouldRetry() bool {
 	return true
 }
 
-func NewInvalidRolloutBlockOverrideError(invalidRBname string) InvalidRolloutBlockOverrideError {
-	return InvalidRolloutBlockOverrideError{invalidRBname}
+func NewInvalidRolloutBlockOverrideError(invalidRolloutBlockName string) InvalidRolloutBlockOverrideError {
+	return InvalidRolloutBlockOverrideError{invalidRolloutBlockName}
 }
 
 type RolloutBlockError string
@@ -32,7 +32,7 @@ func (e RolloutBlockError) ShouldRetry() bool {
 	return true
 }
 
-func NewRolloutBlockError(invalidRBname string) RolloutBlockError {
+func NewRolloutBlockError(invalidRolloutBlockName string) RolloutBlockError {
 	return RolloutBlockError(fmt.Sprintf("rollout block(s) with name(s) %s exist",
-		invalidRBname))
+		invalidRolloutBlockName))
 }

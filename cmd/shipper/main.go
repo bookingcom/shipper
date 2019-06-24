@@ -552,7 +552,12 @@ func startWebhook(cfg *cfg) (bool, error) {
 		return false, nil
 	}
 
-	c := webhook.NewWebhook(cfg.webhookBindAddr, cfg.webhookBindPort, cfg.webhookKeyPath, cfg.webhookCertPath)
+	c := webhook.NewWebhook(
+		cfg.webhookBindAddr,
+		cfg.webhookBindPort,
+		cfg.webhookKeyPath,
+		cfg.webhookCertPath,
+		buildShipperClient(cfg.restCfg, rolloutblock.AgentName, cfg.restTimeout))
 
 	cfg.wg.Add(1)
 	go func() {

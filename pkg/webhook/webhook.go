@@ -7,18 +7,25 @@ import (
 	"io/ioutil"
 	"mime"
 	"net/http"
+	"regexp"
+	"strings"
 
 	"github.com/golang/glog"
-
-	admission_v1beta1 "k8s.io/api/admission/v1beta1"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	rolloutblockUtil "github.com/bookingcom/shipper/pkg/util/rolloutblock"
+	admission_v1beta1 "k8s.io/api/admission/v1beta1"
+	kubeclient "k8s.io/api/admission/v1beta1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type Webhook struct {
+	shipperClientset clientset.Interface
 	bindAddr string
 	bindPort string
 
@@ -32,8 +39,9 @@ var (
 	deserializer  = codecs.UniversalDeserializer()
 )
 
-func NewWebhook(bindAddr, bindPort, tlsPrivateKeyFile, tlsCertFile string) *Webhook {
+func NewWebhook(bindAddr, bindPort, tlsPrivateKeyFile, tlsCertFile string, shipperClientset clientset.Interface) *Webhook {
 	return &Webhook{
+		shipperClientset:  shipperClientset,
 		bindAddr:          bindAddr,
 		bindPort:          bindPort,
 		tlsPrivateKeyFile: tlsPrivateKeyFile,
@@ -146,9 +154,15 @@ func (c *Webhook) validateHandlerFunc(review *admission_v1beta1.AdmissionReview)
 	case "Application":
 		var application shipper.Application
 		err = json.Unmarshal(request.Object.Raw, &application)
+		if err == nil {
+			err = c.validateApplication(request, application)
+		}
 	case "Release":
 		var release shipper.Release
 		err = json.Unmarshal(request.Object.Raw, &release)
+		if err == nil {
+			err = c.validateRelease(request, release)
+		}
 	case "Cluster":
 		var cluster shipper.Cluster
 		err = json.Unmarshal(request.Object.Raw, &cluster)
@@ -166,6 +180,10 @@ func (c *Webhook) validateHandlerFunc(review *admission_v1beta1.AdmissionReview)
 		err = json.Unmarshal(request.Object.Raw, &rolloutBlock)
 	}
 
+	if request.Operation == kubeclient.Delete {
+		err = nil
+	}
+
 	if err != nil {
 		return &admission_v1beta1.AdmissionResponse{
 			Result: &meta_v1.Status{
@@ -177,4 +195,108 @@ func (c *Webhook) validateHandlerFunc(review *admission_v1beta1.AdmissionReview)
 	return &admission_v1beta1.AdmissionResponse{
 		Allowed: true,
 	}
+}
+
+func (c *Webhook) validateRelease(request *admission_v1beta1.AdmissionRequest, release shipper.Release) error {
+	var err error
+	if request.Operation == kubeclient.Create {
+		err = c.shouldBlockRelease(release)
+	} else if request.Operation == kubeclient.Update {
+		overrideRB, ok := release.Annotations[shipper.RolloutBlocksOverrideAnnotation]
+		if ok {
+			err = c.validateOverrideRolloutBlockAnnotation(overrideRB)
+		}
+	}
+	return err
+}
+
+func (c *Webhook) validateApplication(request *admission_v1beta1.AdmissionRequest, application shipper.Application) error {
+	var err error
+	if request.Operation == kubeclient.Create {
+		err = c.shouldBlockApplication(application)
+	} else if request.Operation == kubeclient.Update {
+		overrideRB, ok := application.Annotations[shipper.RolloutBlocksOverrideAnnotation]
+		if ok {
+			err = c.validateOverrideRolloutBlockAnnotation(overrideRB)
+		}
+	}
+	return err
+}
+
+func (c *Webhook) shouldBlockApplication(app shipper.Application) error {
+	ns := app.Namespace
+	overrideRB, ok := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
+	if !ok {
+		overrideRB = ""
+	}
+
+	return c.shouldBlockRollout(ns, overrideRB)
+}
+
+func (c *Webhook) shouldBlockRelease(release shipper.Release) error {
+	ns := release.Namespace
+	overrideRB, ok := release.Annotations[shipper.RolloutBlocksOverrideAnnotation]
+	if !ok {
+		overrideRB = ""
+	}
+
+	return c.shouldBlockRollout(ns, overrideRB)
+}
+
+func (c *Webhook) shouldBlockRollout(namespace string, overrideRB string) error {
+	var (
+		err          error
+		nsRBs, gbRBs []*shipper.RolloutBlock
+	)
+
+	nsRBs, gbRBs = c.existingRolloutBlocks(namespace)
+
+	if err = c.validateOverrideRolloutBlockAnnotation(overrideRB); err != nil {
+		return err
+	}
+
+	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverrideRolloutBlock(overrideRB, nsRBs, gbRBs)
+	if err != nil {
+		return err
+	}
+
+	if overrideRolloutBlock {
+		return nil
+	}
+
+	return shippererrors.NewRolloutBlockError(eventMessage)
+}
+
+func (c *Webhook) existingRolloutBlocks(namespace string) ([]*shipper.RolloutBlock, []*shipper.RolloutBlock) {
+	var nsRBs, gbRBs []*shipper.RolloutBlock
+	if nsRBList, err := c.shipperClientset.ShipperV1alpha1().RolloutBlocks(namespace).List(metav1.ListOptions{}); err == nil {
+		for _, item := range nsRBList.Items {
+			nsRBs = append(nsRBs, &item)
+		}
+	}
+	if gbRBList, err := c.shipperClientset.ShipperV1alpha1().RolloutBlocks(shipper.ShipperNamespace).List(metav1.ListOptions{}); err == nil {
+		for _, item := range gbRBList.Items {
+			gbRBs = append(gbRBs, &item)
+		}
+	}
+	return nsRBs, gbRBs
+}
+
+func (c *Webhook) validateOverrideRolloutBlockAnnotation(overrideRB string) error {
+	if len(overrideRB) == 0 {
+		return nil
+	}
+
+	re, err := regexp.Compile("^[a-zA-Z0-9/-]+/[a-zA-Z0-9/-]+$")
+	if err != nil {
+		return err
+	}
+
+	for _, item := range strings.Split(overrideRB, ",") {
+		if !re.MatchString(item) {
+			return shippererrors.NewInvalidRolloutBlockOverrideError(item)
+		}
+	}
+
+	return nil
 }

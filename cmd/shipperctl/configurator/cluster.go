@@ -407,6 +407,7 @@ func (c *Cluster) FetchKubernetesCABundle() ([]byte, error) {
 }
 
 func (c *Cluster) CreateValidatingWebhookConfiguration(caBundle []byte, namespace string) error {
+	shipperValidatingWebhookServicePath := "/validate"
 	validatingWebhookConfiguration := &admissionregistrationv1beta1.ValidatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: shipperValidatingWebhookName,
@@ -419,6 +420,7 @@ func (c *Cluster) CreateValidatingWebhookConfiguration(caBundle []byte, namespac
 					Service: &admissionregistrationv1beta1.ServiceReference{
 						Name:      shipperValidatingWebhookServiceName,
 						Namespace: namespace,
+						Path:      &shipperValidatingWebhookServicePath,
 					},
 				},
 				Rules: []admissionregistrationv1beta1.RuleWithOperations{

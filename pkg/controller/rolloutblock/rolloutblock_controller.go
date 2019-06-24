@@ -358,47 +358,6 @@ func (c *Controller) updateApplication(oldObj, newObj interface{}) {
 		}
 		c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
 	}
-
-	//appReleases, err := c.releaseLister.Releases(newApp.Namespace).ReleasesForApplication(newApp.Name)
-	//if err != nil {
-	//	runtime.HandleError(err)
-	//	return
-	//}
-	//
-	//appReleases = releaseutil.SortByGenerationDescending(appReleases)
-	//rel, err := apputil.GetContender(newApp.Name, appReleases)
-	//if err != nil {
-	//	runtime.HandleError(err)
-	//	return
-	//}
-	//
-	//relKey, err := cache.MetaNamespaceKeyFunc(rel)
-	//if err != nil {
-	//	runtime.HandleError(err)
-	//	return
-	//}
-	//
-	//// add all new release overrides to RBs status
-	//for _, rbKey := range newOverrides {
-	//	rolloutBlockUpdater := RolloutBlockUpdater{
-	//		rbKey,
-	//		OverridingRelease,
-	//		relKey,
-	//		false,
-	//	}
-	//	c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
-	//}
-	//
-	//// remove deleted release overrides from RBs status
-	//for _, rbKey := range removedRBs {
-	//	rolloutBlockUpdater := RolloutBlockUpdater{
-	//		rbKey,
-	//		OverridingRelease,
-	//		relKey,
-	//		true,
-	//	}
-	//	c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
-	//}
 }
 
 func (c *Controller) addRolloutBlock(obj interface{}) {
