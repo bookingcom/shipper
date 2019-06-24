@@ -66,10 +66,17 @@ var RolloutBlock = &apiextensionv1beta1.CustomResourceDefinition{
 				Priority: 	 0,
 			},
 			apiextensionv1beta1.CustomResourceColumnDefinition{
-				Name:        "Author",
+				Name:        "Author Type",
 				Type:        "string",
-				Description: "The author of this Rollout Block object.",
-				JSONPath:    ".spec.author",
+				Description: "The author type of this Rollout Block object.",
+				JSONPath:    ".spec.author.type",
+				Priority: 	 1,
+			},
+			apiextensionv1beta1.CustomResourceColumnDefinition{
+				Name:        "Author Name",
+				Type:        "string",
+				Description: "The author name of this Rollout Block object.",
+				JSONPath:    ".spec.author.name",
 				Priority: 	 1,
 			},
 			apiextensionv1beta1.CustomResourceColumnDefinition{

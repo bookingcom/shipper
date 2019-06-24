@@ -32,8 +32,8 @@ const (
 	maxRetries = 11
 )
 
-// Controller is a Kubernetes controller that creates a rolloutblock object.
-// It's main objective is to block application and releases rollout during
+// Controller is a Kubernetes controller that updates rolloutblock objects.
+// The RolloutBlock objects' main objective is to block application and releases rollout during
 // an outage.
 //
 // RolloutBlock Controller has one primary workqueues: a rolloutblock updater

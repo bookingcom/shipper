@@ -297,7 +297,6 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 		c.capacityTargetLister,
 		c.trafficTargetLister,
 		c.rolloutBlockLister,
-		c.applicationLister,
 		c.chartFetchFunc,
 		c.recorder,
 	)

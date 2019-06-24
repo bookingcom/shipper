@@ -11,6 +11,9 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
+
+	admission_v1beta1 "k8s.io/api/admission/v1beta1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 
@@ -18,10 +21,7 @@ import (
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	rolloutblockUtil "github.com/bookingcom/shipper/pkg/util/rolloutblock"
-	admission_v1beta1 "k8s.io/api/admission/v1beta1"
 	kubeclient "k8s.io/api/admission/v1beta1"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type Webhook struct {
@@ -204,7 +204,7 @@ func (c *Webhook) validateRelease(request *admission_v1beta1.AdmissionRequest, r
 	} else if request.Operation == kubeclient.Update {
 		overrideRB, ok := release.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 		if ok {
-			err = c.validateOverrideRolloutBlockAnnotation(overrideRB)
+			err = c.validateOverrideRolloutBlockAnnotation(overrideRB, release.Namespace)
 		}
 	}
 	return err
@@ -217,7 +217,7 @@ func (c *Webhook) validateApplication(request *admission_v1beta1.AdmissionReques
 	} else if request.Operation == kubeclient.Update {
 		overrideRB, ok := application.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 		if ok {
-			err = c.validateOverrideRolloutBlockAnnotation(overrideRB)
+			err = c.validateOverrideRolloutBlockAnnotation(overrideRB, application.Namespace)
 		}
 	}
 	return err
@@ -251,7 +251,7 @@ func (c *Webhook) shouldBlockRollout(namespace string, overrideRB string) error 
 
 	nsRBs, gbRBs = c.existingRolloutBlocks(namespace)
 
-	if err = c.validateOverrideRolloutBlockAnnotation(overrideRB); err != nil {
+	if err = c.validateOverrideRolloutBlockAnnotation(overrideRB, namespace); err != nil {
 		return err
 	}
 
@@ -269,12 +269,12 @@ func (c *Webhook) shouldBlockRollout(namespace string, overrideRB string) error 
 
 func (c *Webhook) existingRolloutBlocks(namespace string) ([]*shipper.RolloutBlock, []*shipper.RolloutBlock) {
 	var nsRBs, gbRBs []*shipper.RolloutBlock
-	if nsRBList, err := c.shipperClientset.ShipperV1alpha1().RolloutBlocks(namespace).List(metav1.ListOptions{}); err == nil {
+	if nsRBList, err := c.shipperClientset.ShipperV1alpha1().RolloutBlocks(namespace).List(meta_v1.ListOptions{}); err == nil {
 		for _, item := range nsRBList.Items {
 			nsRBs = append(nsRBs, &item)
 		}
 	}
-	if gbRBList, err := c.shipperClientset.ShipperV1alpha1().RolloutBlocks(shipper.ShipperNamespace).List(metav1.ListOptions{}); err == nil {
+	if gbRBList, err := c.shipperClientset.ShipperV1alpha1().RolloutBlocks(shipper.ShipperNamespace).List(meta_v1.ListOptions{}); err == nil {
 		for _, item := range gbRBList.Items {
 			gbRBs = append(gbRBs, &item)
 		}
@@ -282,7 +282,7 @@ func (c *Webhook) existingRolloutBlocks(namespace string) ([]*shipper.RolloutBlo
 	return nsRBs, gbRBs
 }
 
-func (c *Webhook) validateOverrideRolloutBlockAnnotation(overrideRB string) error {
+func (c *Webhook) validateOverrideRolloutBlockAnnotation(overrideRB string, namespace string) error {
 	if len(overrideRB) == 0 {
 		return nil
 	}
@@ -292,11 +292,16 @@ func (c *Webhook) validateOverrideRolloutBlockAnnotation(overrideRB string) erro
 		return err
 	}
 
-	for _, item := range strings.Split(overrideRB, ",") {
+	overrideRbs := strings.Split(overrideRB, ",")
+	for _, item := range overrideRbs {
 		if !re.MatchString(item) {
 			return shippererrors.NewInvalidRolloutBlockOverrideError(item)
 		}
 	}
 
-	return nil
+	nsRBs, gbRBs := c.existingRolloutBlocks(namespace)
+	rbs := append(nsRBs, gbRBs...)
+	_, err = rolloutblockUtil.difference(rbs, overrideRbs)
+
+	return err
 }
