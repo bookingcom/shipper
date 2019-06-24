@@ -171,6 +171,7 @@ func newScheduler(
 	installationTargetLister := informerFactory.Shipper().V1alpha1().InstallationTargets().Lister()
 	capacityTargetLister := informerFactory.Shipper().V1alpha1().CapacityTargets().Lister()
 	trafficTargetLister := informerFactory.Shipper().V1alpha1().TrafficTargets().Lister()
+	rolloutblockLister := informerFactory.Shipper().V1alpha1().RolloutBlocks().Lister()
 
 	c := NewScheduler(
 		clientset,
@@ -178,6 +179,7 @@ func newScheduler(
 		installationTargetLister,
 		capacityTargetLister,
 		trafficTargetLister,
+		rolloutblockLister,
 		shipperchart.FetchRemote(),
 		record.NewFakeRecorder(42))
 
