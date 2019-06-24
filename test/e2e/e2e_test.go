@@ -953,23 +953,32 @@ func buildApplicationClient(cluster *shipper.Cluster) kubernetes.Interface {
 		Host: cluster.Spec.APIMaster,
 	}
 
-	// The cluster secret controller does not include the CA in the secret: you end
-	// up using the system CA trust store. However, it's much handier for
-	// integration testing to be able to create a secret that is independent of the
-	// underlying system trust store.
-	if ca, ok := secret.Data["tls.ca"]; ok {
+	_, tokenOK := secret.Data["token"]
+	if tokenOK {
+		ca := secret.Data["ca.crt"]
 		config.CAData = ca
-	}
 
-	config.CertData = secret.Data["tls.crt"]
-	config.KeyData = secret.Data["tls.key"]
+		token := secret.Data["token"]
+		config.BearerToken = string(token)
+	} else {
+		// The cluster secret controller does not include the CA in the secret: you end
+		// up using the system CA trust store. However, it's much handier for
+		// integration testing to be able to create a secret that is independent of the
+		// underlying system trust store.
+		if ca, ok := secret.Data["tls.ca"]; ok {
+			config.CAData = ca
+		}
 
-	if encodedInsecureSkipTlsVerify, ok := secret.Annotations[shipper.SecretClusterSkipTlsVerifyAnnotation]; ok {
-		if insecureSkipTlsVerify, err := strconv.ParseBool(encodedInsecureSkipTlsVerify); err == nil {
-			glog.Infof("found %q annotation with value %q", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
-			config.Insecure = insecureSkipTlsVerify
-		} else {
-			glog.Infof("found %q annotation with value %q, failed to decode a bool from it, ignoring it", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
+		config.CertData = secret.Data["tls.crt"]
+		config.KeyData = secret.Data["tls.key"]
+
+		if encodedInsecureSkipTlsVerify, ok := secret.Annotations[shipper.SecretClusterSkipTlsVerifyAnnotation]; ok {
+			if insecureSkipTlsVerify, err := strconv.ParseBool(encodedInsecureSkipTlsVerify); err == nil {
+				glog.Infof("found %q annotation with value %q", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
+				config.Insecure = insecureSkipTlsVerify
+			} else {
+				glog.Infof("found %q annotation with value %q, failed to decode a bool from it, ignoring it", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
+			}
 		}
 	}
 
