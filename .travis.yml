@@ -10,7 +10,7 @@ env:
 - RESYNC_PERIOD=30s GOFLAGS=-mod=vendor
 
 before_install:
-- sudo snap install microk8s --classic --channel=1.11/stable
+- sudo snap install microk8s --classic --channel=1.14/stable
 - sudo snap alias microk8s.kubectl kubectl
 - mkdir ~/.kube
 - microk8s.config > ~/.kube/config
