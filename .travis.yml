@@ -15,8 +15,7 @@ before_install:
 - mkdir ~/.kube
 - microk8s.config > ~/.kube/config
 
-- curl -L https://raw.githubusercontent.com/alecthomas/gometalinter/master/scripts/install.sh | bash -s -- -b $GOPATH/bin
-- echo $PATH && ls -la $GOPATH/bin
+- curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sh -s -- -b $(go env GOPATH)/bin v1.17.1
 
 - microk8s.status --wait-ready
 - microk8s.enable registry

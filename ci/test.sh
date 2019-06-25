@@ -6,19 +6,8 @@ go mod verify
 
 PKGS="./pkg/... ./cmd/... ./test/..."
 
-gometalinter \
-    --vendor \
-    --exclude=^vendor\/ \
-    --skip=pkg/apis/shipper/v1alpha1 \
-    --skip=pkg/client \
-    --disable-all \
-    --enable=vet \
-    --enable=ineffassign \
-    --enable=deadcode \
-    --enable=goconst \
-    --enable=staticcheck \
-    $PKGS
+golangci-lint run --config .golangci.yml $PKGS
 
-go test -v $(go list $PKGS)
+go test -v $PKGS
 
 ./ci/e2e.sh "$RESYNC_PERIOD"
