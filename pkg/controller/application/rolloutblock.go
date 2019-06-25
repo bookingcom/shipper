@@ -22,14 +22,14 @@ func (c *Controller) shouldBlockRollout(app *shipper.Application, nsRBs, gbRBs [
 
 	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverrideRolloutBlock(overrideRB, nsRBs, gbRBs)
 	if err != nil {
-		switch err.(type) {
+		switch errT := err.(type) {
 		case shippererrors.InvalidRolloutBlockOverrideError:
 			// remove from annotation!
 			rbName := err.(shippererrors.InvalidRolloutBlockOverrideError).RolloutBlockName
 			c.removeRolloutBlockFromAnnotations(overrideRB, rbName, app)
 			c.updateApplicationRolloutBlockCondition(append(nsRBs, gbRBs...), app)
 		default:
-			runtime.HandleError(fmt.Errorf("error overriding rollout block %s", err.Error()))
+			runtime.HandleError(fmt.Errorf("error of type %T overriding rollout block %s", errT, err.Error()))
 		}
 	}
 

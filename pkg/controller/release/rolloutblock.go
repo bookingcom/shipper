@@ -32,7 +32,7 @@ func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, string, erro
 
 	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverrideRolloutBlock(relOverrideRB, nsRBs, gbRBs)
 	if err != nil {
-		switch err.(type) {
+		switch errT := err.(type) {
 		case shippererrors.InvalidRolloutBlockOverrideError:
 			// remove from annotation!
 			rbName := err.(shippererrors.InvalidRolloutBlockOverrideError).RolloutBlockName
@@ -40,7 +40,7 @@ func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, string, erro
 			err = nil
 		default:
 			s.recorder.Event(rel, corev1.EventTypeWarning, "Overriding RolloutBlock", err.Error())
-			runtime.HandleError(fmt.Errorf("error overriding rollout block %s", err.Error()))
+			runtime.HandleError(fmt.Errorf("error of type %T overriding rollout block %s", errT, err.Error()))
 			return true, "", err
 		}
 	}

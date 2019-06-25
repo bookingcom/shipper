@@ -372,10 +372,10 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 	// existing rollout blocks in the system
 	var nsRolloutBlocks, globalRolloutBlocks []*shipper.RolloutBlock
 	if nsRolloutBlocks, err = c.rbLister.RolloutBlocks(app.Namespace).List(labels.Everything()); err != nil {
-		glog.Warning("error getting Namespace RolloutBlocks %s", err)
+		glog.Warningf("error getting Namespace RolloutBlocks %s", err.Error())
 	}
 	if globalRolloutBlocks, err = c.rbLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything()); err != nil {
-		glog.Warning("error getting Global RolloutBlocks %s", err)
+		glog.Warningf("error getting Global RolloutBlocks %s", err.Error())
 	}
 	rbs = append(nsRolloutBlocks, globalRolloutBlocks...)
 	if c.shouldBlockRollout(app, nsRolloutBlocks, globalRolloutBlocks) {
