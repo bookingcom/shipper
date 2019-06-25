@@ -104,7 +104,7 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 	glog.Infof("Processing release %q", metaKey)
 	defer glog.Infof("Finished processing %q", metaKey)
 
-	shouldBlockRollout, err, rbs := s.shouldBlockRollout(rel)
+	shouldBlockRollout, rbs, err := s.shouldBlockRollout(rel)
 	if err != nil {
 		condition := releaseutil.NewReleaseCondition(
 			shipper.ReleaseConditionTypeComplete,

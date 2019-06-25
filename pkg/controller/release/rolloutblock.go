@@ -14,7 +14,7 @@ import (
 	stringUtil "github.com/bookingcom/shipper/pkg/util/string"
 )
 
-func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, error, string) {
+func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, string, error) {
 	relOverrideRB, ok := rel.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 	if !ok {
 		relOverrideRB = ""
@@ -41,7 +41,7 @@ func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, error, strin
 		default:
 			s.recorder.Event(rel, corev1.EventTypeWarning, "Overriding RolloutBlock", err.Error())
 			runtime.HandleError(fmt.Errorf("error overriding rollout block %s", err.Error()))
-			return true, err, ""
+			return true, "", err
 		}
 	}
 
@@ -49,7 +49,7 @@ func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, error, strin
 		s.recorder.Event(rel, corev1.EventTypeNormal, "Override RolloutBlock", relOverrideRB)
 	}
 
-	return !overrideRolloutBlock, err, eventMessage
+	return !overrideRolloutBlock, eventMessage, err
 }
 
 func (s *Scheduler) removeRolloutBlockFromAnnotations(overrideRB string, rbName string, release *shipper.Release) {
