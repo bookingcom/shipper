@@ -193,36 +193,27 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 	targetNamespace := ct.Namespace
 	selector := labels.Set(ct.Labels).AsSelector()
 	clusterErrors := shippererrors.NewMultiError()
+	newClusterStatuses := make([]shipper.ClusterCapacityStatus, 0, len(ct.Spec.Clusters))
+
+	// This algorithm assumes cluster names are unique
+	curClusterStatuses := make(map[string]shipper.ClusterCapacityStatus)
+	for _, clusterStatus := range ct.Status.Clusters {
+		curClusterStatuses[clusterStatus.Name] = clusterStatus
+	}
 
 	for _, clusterSpec := range ct.Spec.Clusters {
-		// clusterStatus will be modified by functions called in this loop as a side
-		// effect.
-		var clusterStatus *shipper.ClusterCapacityStatus
-		var targetDeployment *appsv1.Deployment
-
-		if ct.Status.Clusters == nil {
-			ct.Status.Clusters = []shipper.ClusterCapacityStatus{}
-		}
-
-		for i, cs := range ct.Status.Clusters {
-			if cs.Name == clusterSpec.Name {
-				clusterStatus = &ct.Status.Clusters[i]
-				clusterStatus.Reports = []shipper.ClusterCapacityReport{}
-				ct.Status.Clusters = append(ct.Status.Clusters[:i], ct.Status.Clusters[i+1:]...)
-				break
-			}
-		}
-
-		if clusterStatus == nil {
-			clusterStatus = &shipper.ClusterCapacityStatus{
+		if _, ok := curClusterStatuses[clusterSpec.Name]; !ok {
+			curClusterStatuses[clusterSpec.Name] = shipper.ClusterCapacityStatus{
 				Name:    clusterSpec.Name,
 				Reports: []shipper.ClusterCapacityReport{},
 			}
 		}
 
+		clusterStatus := curClusterStatuses[clusterSpec.Name]
+
 		// all the below functions add conditions to the clusterStatus as they do
 		// their business, hence we're passing them a pointer.
-		targetDeployment, err := c.findTargetDeploymentForClusterSpec(clusterSpec, targetNamespace, selector, clusterStatus)
+		targetDeployment, err := c.findTargetDeploymentForClusterSpec(clusterSpec, targetNamespace, selector, &clusterStatus)
 		if err != nil {
 			clusterErrors.Append(err)
 			continue
@@ -234,7 +225,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 
 		// Patch the deployment if it doesn't match the cluster spec.
 		if targetDeployment.Spec.Replicas == nil || replicaCount != *targetDeployment.Spec.Replicas {
-			_, err = c.patchDeploymentWithReplicaCount(targetDeployment, clusterSpec.Name, replicaCount, clusterStatus)
+			_, err = c.patchDeploymentWithReplicaCount(targetDeployment, clusterSpec.Name, replicaCount, &clusterStatus)
 			if err != nil {
 				clusterErrors.Append(err)
 			}
@@ -243,14 +234,14 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		clusterStatus.AvailableReplicas = targetDeployment.Status.AvailableReplicas
 		clusterStatus.AchievedPercent = c.calculatePercentageFromAmount(clusterSpec.TotalReplicaCount, clusterStatus.AvailableReplicas)
 
-		report, err := c.getReport(targetDeployment, clusterStatus)
+		report, err := c.getReport(targetDeployment, &clusterStatus)
 		if err != nil {
 			clusterErrors.Append(err)
 		} else {
-			clusterStatus.Reports = append(clusterStatus.Reports, *report)
+			clusterStatus.Reports = []shipper.ClusterCapacityReport{*report}
 		}
 
-		sadPods, clusterOk, err := c.getSadPods(targetDeployment, clusterStatus)
+		sadPods, clusterOk, err := c.getSadPods(targetDeployment, &clusterStatus)
 		if err != nil {
 			clusterErrors.Append(err)
 		} else {
@@ -271,7 +262,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 				"")
 		}
 
-		ct.Status.Clusters = append(ct.Status.Clusters, *clusterStatus)
+		newClusterStatuses = append(newClusterStatuses, clusterStatus)
 	}
 
 	if clusterErrors.Any() {
@@ -286,7 +277,9 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		}
 	}
 
-	sort.Sort(byClusterName(ct.Status.Clusters))
+	sort.Sort(byClusterName(newClusterStatuses))
+
+	ct.Status.Clusters = newClusterStatuses
 
 	_, err = c.shipperclientset.ShipperV1alpha1().CapacityTargets(namespace).Update(ct)
 	if err != nil {
