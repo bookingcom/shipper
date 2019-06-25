@@ -206,26 +206,12 @@ func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployme
 }
 
 func (c Controller) getFalsePodCondition(pod *corev1.Pod) (*corev1.PodCondition, bool) {
-	var sadCondition *corev1.PodCondition
-
 	// The loop below finds a condition with the `status` set to "false", which
-	// means there is something wrong with the pod. The reason the loop is not
-	// returning as it finds the first condition with the status of "false" is that
-	// we're testing the assumption that there is only one condition with the
-	// status of "false" at a time. That's why there is a log there for now.
+	// means there is something wrong with the pod.
 	for _, condition := range pod.Status.Conditions {
 		if condition.Status == corev1.ConditionFalse {
-			if sadCondition == nil {
-				c := condition
-				sadCondition = &c
-			} else {
-				glog.Errorf("Found 2 pod conditions with the status set to `false`. The first has a type of %s, and the second has a type of %s.", sadCondition.Type, condition.Type)
-			}
+			return &condition, true
 		}
-	}
-
-	if sadCondition != nil {
-		return sadCondition, true
 	}
 
 	return nil, false
