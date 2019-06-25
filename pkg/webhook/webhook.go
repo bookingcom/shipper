@@ -301,7 +301,7 @@ func (c *Webhook) validateOverrideRolloutBlockAnnotation(overrideRB string, name
 
 	nsRBs, gbRBs := c.existingRolloutBlocks(namespace)
 	rbs := append(nsRBs, gbRBs...)
-	_, err = rolloutblockUtil.difference(rbs, overrideRbs)
+	_, err = rolloutblockUtil.Difference(rbs, overrideRbs)
 
 	return err
 }

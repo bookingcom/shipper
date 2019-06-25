@@ -19,7 +19,7 @@ func ShouldOverrideRolloutBlock(overrideRB string, nsRBs []*shipper.RolloutBlock
 	}
 	RBs := append(nsRBs, gbRBs...)
 
-	nonOverriddenRBs, err := difference(RBs, overrideRBs)
+	nonOverriddenRBs, err := Difference(RBs, overrideRBs)
 
 	return len(nonOverriddenRBs) == 0, strings.Join(nonOverriddenRBs, ", "), err
 }
@@ -28,7 +28,7 @@ func ShouldOverrideRolloutBlock(overrideRB string, nsRBs []*shipper.RolloutBlock
 // Return all RolloutBlocks that are not overridden.
 // Return an InvalidRolloutBlockOverrideError if trying to override a
 // non-existing rolloutblock object
-func difference(existingRBs []*shipper.RolloutBlock, overrideRBs []string) ([]string, error) {
+func Difference(existingRBs []*shipper.RolloutBlock, overrideRBs []string) ([]string, error) {
 	var diff []string
 	overrideRBdict := make(map[string]bool)
 	existingRBdict := make(map[string]bool)
