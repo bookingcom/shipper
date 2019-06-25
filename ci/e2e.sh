@@ -22,7 +22,7 @@ sed s=\<IMAGE\>=localhost:32000/bookingcom/shipper:latest= kubernetes/shipper.de
 SHIPPER_POD=$(kubectl get pod -n shipper-system -l app=shipper \
 	-o jsonpath='{.items[0].metadata.name}')
 kubectl wait -n shipper-system --for=condition=ready pod/$SHIPPER_POD
-kubectl -n shipper-system logs $SHIPPER_POD &
+kubectl -n shipper-system logs -f $SHIPPER_POD &
 
 TESTCHARTS=http://$(kubectl get pod -l app=helm -o jsonpath='{.items[0].status.podIP}'):8879
 
