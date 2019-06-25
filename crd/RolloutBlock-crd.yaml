@@ -22,28 +22,28 @@ spec:
     kind: RolloutBlock
     # shortNames allow shorter string to match your resource on the CLI
     shortNames:
-      - rb
+    - rb
     categories:
-      - all
-      - shipper
-    validation:
-      openAPIV3Schema:
-        properties:
-          spec:
-            type: object
-            required:
-              - message
-              - author
-            properties:
-              message:
-                type: string
-              author:
-                type: object
-                required:
-                  - type
-                  - name
-                  properties:
-                    type:
-                      type: string
-                    name:
-                      type: string
+    - all
+    - shipper
+  validation:
+    openAPIV3Schema:
+      properties:
+        spec:
+          type: object
+          required:
+            - message
+            - author
+          properties:
+            message:
+              type: string
+            author:
+              type: object
+              required:
+              - type
+              - name
+              properties:
+                type:
+                  type: string
+                name:
+                  type: string

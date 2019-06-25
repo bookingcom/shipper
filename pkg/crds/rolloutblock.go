@@ -31,7 +31,8 @@ var RolloutBlock = &apiextensionv1beta1.CustomResourceDefinition{
 					"spec": apiextensionv1beta1.JSONSchemaProps{
 						Type: "object",
 						Required: []string{
-							"message", "author",
+							"message",
+							"author",
 						},
 						Properties: map[string]apiextensionv1beta1.JSONSchemaProps{
 							"message": apiextensionv1beta1.JSONSchemaProps{
