@@ -12,8 +12,14 @@ env:
 before_install:
 - sudo snap install microk8s --classic --channel=1.11/stable
 - sudo snap alias microk8s.kubectl kubectl
+- mkdir ~/.kube
+- microk8s.config > ~/.kube/config
+
 - curl -L https://raw.githubusercontent.com/alecthomas/gometalinter/master/scripts/install.sh | bash -s -- -b $GOPATH/bin
 - echo $PATH && ls -la $GOPATH/bin
+
+- microk8s.status --wait-ready
+- microk8s.enable registry
 
 install: true
 
