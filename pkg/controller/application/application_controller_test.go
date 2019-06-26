@@ -79,6 +79,10 @@ func TestCreateFirstRelease(t *testing.T) {
 			Message: fmt.Sprintf(InitialReleaseMessageFormat, expectedRelName),
 		},
 		{
+			Type:	shipper.ApplicationConditionTypeRolloutBlock,
+			Status: corev1.ConditionFalse,
+		},
+		{
 			Type:   shipper.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
@@ -93,6 +97,7 @@ func TestCreateFirstRelease(t *testing.T) {
 	expectedRelease.Labels[shipper.ReleaseEnvironmentHashLabel] = envHash
 	expectedRelease.Annotations[shipper.ReleaseTemplateIterationAnnotation] = "0"
 	expectedRelease.Annotations[shipper.ReleaseGenerationAnnotation] = "0"
+	expectedRelease.Annotations[shipper.RolloutBlocksOverrideAnnotation] = ""
 
 	f.expectReleaseCreate(expectedRelease)
 	f.expectApplicationUpdate(expectedApp)
@@ -154,6 +159,10 @@ func TestStatusStableState(t *testing.T) {
 			Type:    shipper.ApplicationConditionTypeRollingOut,
 			Status:  corev1.ConditionFalse,
 			Message: fmt.Sprintf(ReleaseActiveMessageFormat, expectedRelNameB),
+		},
+		{
+			Type:	shipper.ApplicationConditionTypeRolloutBlock,
+			Status: corev1.ConditionFalse,
 		},
 		{
 			Type:   shipper.ApplicationConditionTypeValidHistory,
@@ -225,6 +234,10 @@ func TestRevisionHistoryLimit(t *testing.T) {
 			Message: fmt.Sprintf(ReleaseActiveMessageFormat, releaseBaz.Name),
 		},
 		{
+			Type:	shipper.ApplicationConditionTypeRolloutBlock,
+			Status: corev1.ConditionFalse,
+		},
+		{
 			Type:   shipper.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
@@ -288,6 +301,7 @@ func TestCreateThirdRelease(t *testing.T) {
 
 	expectedContenderRel := newRelease(expectedContenderRelName, app)
 	expectedContenderRel.Labels[shipper.ReleaseEnvironmentHashLabel] = contenderEnvHash
+	expectedContenderRel.Annotations[shipper.RolloutBlocksOverrideAnnotation] = ""
 	releaseutil.SetIteration(expectedContenderRel, 0)
 	releaseutil.SetGeneration(expectedContenderRel, 2)
 
@@ -312,6 +326,10 @@ func TestCreateThirdRelease(t *testing.T) {
 			Type:    shipper.ApplicationConditionTypeRollingOut,
 			Status:  corev1.ConditionTrue,
 			Message: fmt.Sprintf(TransitioningMessageFormat, incumbentRelName, expectedContenderRelName),
+		},
+		{
+			Type:	shipper.ApplicationConditionTypeRolloutBlock,
+			Status: corev1.ConditionFalse,
 		},
 		{
 			Type:   shipper.ApplicationConditionTypeValidHistory,
@@ -367,6 +385,7 @@ func TestCreateSecondRelease(t *testing.T) {
 	contenderRelName := fmt.Sprintf("%s-%s-0", testAppName, contenderEnvHash)
 
 	contenderRel := newRelease(contenderRelName, app)
+	contenderRel.Annotations[shipper.RolloutBlocksOverrideAnnotation] = ""
 	contenderRel.Labels[shipper.ReleaseEnvironmentHashLabel] = contenderEnvHash
 	releaseutil.SetIteration(contenderRel, 0)
 	releaseutil.SetGeneration(contenderRel, 1)
@@ -391,6 +410,10 @@ func TestCreateSecondRelease(t *testing.T) {
 			Type:    shipper.ApplicationConditionTypeRollingOut,
 			Status:  corev1.ConditionTrue,
 			Message: fmt.Sprintf(TransitioningMessageFormat, incumbentRelName, contenderRelName),
+		},
+		{
+			Type:	shipper.ApplicationConditionTypeRolloutBlock,
+			Status: corev1.ConditionFalse,
 		},
 		{
 			Type:   shipper.ApplicationConditionTypeValidHistory,
@@ -466,6 +489,10 @@ func TestAbort(t *testing.T) {
 			Type:   shipper.ApplicationConditionTypeRollingOut,
 			Status: corev1.ConditionTrue,
 		},
+		{
+			Type:	shipper.ApplicationConditionTypeRolloutBlock,
+			Status: corev1.ConditionFalse,
+		},
 	}
 
 	f.expectApplicationUpdate(expectedApp)
@@ -532,6 +559,10 @@ func TestStateRollingOut(t *testing.T) {
 			Message: fmt.Sprintf(TransitioningMessageFormat, incumbent.Name, contender.Name),
 		},
 		{
+			Type:	shipper.ApplicationConditionTypeRolloutBlock,
+			Status: corev1.ConditionFalse,
+		},
+		{
 			Type:   shipper.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
@@ -580,6 +611,10 @@ func TestDeletingAbortedReleases(t *testing.T) {
 			Type:    shipper.ApplicationConditionTypeRollingOut,
 			Status:  corev1.ConditionFalse,
 			Message: fmt.Sprintf(ReleaseActiveMessageFormat, releaseBar.Name),
+		},
+		{
+			Type:	shipper.ApplicationConditionTypeRolloutBlock,
+			Status: corev1.ConditionFalse,
 		},
 		{
 			Type:   shipper.ApplicationConditionTypeValidHistory,

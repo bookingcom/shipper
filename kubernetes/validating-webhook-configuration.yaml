@@ -27,4 +27,5 @@ webhooks:
     - capacitytargets
     - traffictargets
     - clusters
+    - rolloutblocks
   failurePolicy: "Fail"

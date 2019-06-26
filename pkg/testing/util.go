@@ -134,6 +134,7 @@ func FilterActions(actions []kubetesting.Action) []kubetesting.Action {
 				"deployments",
 				"services",
 				"pods",
+				"rolloutblocks",
 			} {
 				if action.Matches(v, r) {
 					return true
