@@ -47,7 +47,7 @@ func MakeSummary(input []float64, quantiles []float64) (map[float64]float64, err
 	summary := make(map[float64]float64)
 
 	for _, p := range quantiles {
-		percentile, err := Percentile(input, p)
+		percentile, err := Percentile(input, p*100)
 		summary[p] = percentile
 		if err != nil {
 			return nil, err
