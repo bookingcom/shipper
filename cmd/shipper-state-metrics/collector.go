@@ -170,9 +170,10 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 
 		if rel.Status.Strategy != nil {
 			for _, condition := range rel.Status.Strategy.Conditions {
-				if condition.Status == corev1.ConditionFalse {
+				if condition.Status != corev1.ConditionFalse {
 					continue
 				}
+
 				age := now.Sub(condition.LastTransitionTime.Time).Seconds()
 				relAgesByCondition[string(condition.Type)] = append(relAgesByCondition[string(condition.Type)], age)
 			}
