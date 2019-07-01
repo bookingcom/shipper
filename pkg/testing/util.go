@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/ghodss/yaml"
+	"github.com/google/go-cmp/cmp"
 	"github.com/pmezard/go-difflib/difflib"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/diff"
 	kubetesting "k8s.io/client-go/testing"
 )
 
@@ -167,7 +167,7 @@ func FilterActions(actions []kubetesting.Action) []kubetesting.Action {
 
 func CheckEvents(expectedOrderedEvents []string, receivedEvents []string, t *testing.T) {
 	if !reflect.DeepEqual(expectedOrderedEvents, receivedEvents) {
-		t.Errorf("Events don't match expectation:\n\n%s", diff.ObjectGoPrintDiff(expectedOrderedEvents, receivedEvents))
+		t.Errorf("Events don't match expectation:\n\n%s", cmp.Diff(expectedOrderedEvents, receivedEvents))
 	}
 }
 

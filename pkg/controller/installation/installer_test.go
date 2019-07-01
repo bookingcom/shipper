@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,7 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/diff"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
@@ -201,17 +201,13 @@ func validateServiceCreateAction(t *testing.T, existingService *corev1.Service, 
 	sMetadata := expectedUnstructuredServiceContent["metadata"].(map[string]interface{})
 
 	if !reflect.DeepEqual(uMetadata, sMetadata) {
-		t.Fatalf("%s",
-			diff.ObjectGoPrintDiff(uMetadata, sMetadata),
-		)
+		t.Fatalf("metadata mismatch in Service (-want +got): %s", cmp.Diff(sMetadata, uMetadata))
 	}
 
 	uSpec := unstructuredContent["spec"].(map[string]interface{})
 	sSpec := expectedUnstructuredServiceContent["spec"].(map[string]interface{})
 	if !reflect.DeepEqual(uSpec, sSpec) {
-		t.Fatalf("%s",
-			diff.ObjectGoPrintDiff(uSpec, sSpec),
-		)
+		t.Fatalf("spec mismatch in Service (-want +got): %s", cmp.Diff(sSpec, uSpec))
 	}
 }
 

@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/diff"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
@@ -240,7 +240,7 @@ func TestContenderStateWaitingForCapacity(t *testing.T) {
 	if !reflect.DeepEqual(releaseStrategyState, expected) {
 		t.Fatalf(
 			"Strategy states are different\nDiff:\n %s",
-			diff.ObjectGoPrintDiff(releaseStrategyState, expected))
+			cmp.Diff(releaseStrategyState, expected))
 	}
 }
 
@@ -287,7 +287,7 @@ func TestContenderStateWaitingForTraffic(t *testing.T) {
 	if !reflect.DeepEqual(releaseStrategyState, expected) {
 		t.Fatalf(
 			"Strategy states are different\nDiff:\n %s",
-			diff.ObjectGoPrintDiff(releaseStrategyState, expected))
+			cmp.Diff(releaseStrategyState, expected))
 	}
 }
 
@@ -333,7 +333,7 @@ func TestIncumbentStateWaitingForTraffic(t *testing.T) {
 	if !reflect.DeepEqual(releaseStrategyState, expected) {
 		t.Fatalf(
 			"Strategy states are different\nDiff:\n %s",
-			diff.ObjectGoPrintDiff(releaseStrategyState, expected))
+			cmp.Diff(releaseStrategyState, expected))
 	}
 }
 
@@ -379,7 +379,7 @@ func TestIncumbentStateWaitingForCapacity(t *testing.T) {
 	if !reflect.DeepEqual(releaseStrategyState, expected) {
 		t.Fatalf(
 			"Strategy states are different\nDiff:\n %s",
-			diff.ObjectGoPrintDiff(releaseStrategyState, expected))
+			cmp.Diff(releaseStrategyState, expected))
 	}
 }
 
@@ -424,7 +424,7 @@ func TestStateWaitingForCommand(t *testing.T) {
 	if !reflect.DeepEqual(releaseStrategyState, expected) {
 		t.Fatalf(
 			"Strategy states are different\nDiff:\n %s",
-			diff.ObjectGoPrintDiff(releaseStrategyState, expected))
+			cmp.Diff(releaseStrategyState, expected))
 	}
 }
 
@@ -450,7 +450,7 @@ func TestContenderAchievedInstallationCondition(t *testing.T) {
 	if !reflect.DeepEqual(expected, got) {
 		t.Fatalf(
 			"ReleaseStrategyConditions are different\nDiff:\n %s",
-			diff.ObjectGoPrintDiff(expected, got))
+			cmp.Diff(expected, got))
 	}
 }
 
@@ -498,7 +498,7 @@ func TestContenderAchievedTrafficCondition(t *testing.T) {
 	if !reflect.DeepEqual(expected, got) {
 		t.Fatalf(
 			"ReleaseStrategyConditions are different\nDiff:\n %s",
-			diff.ObjectGoPrintDiff(expected, got))
+			cmp.Diff(expected, got))
 	}
 }
 
@@ -536,7 +536,7 @@ func TestContenderAchievedCapacityCondition(t *testing.T) {
 	if !reflect.DeepEqual(expected, got) {
 		t.Fatalf(
 			"ReleaseStrategyConditions are different\nDiff:\n %s",
-			diff.ObjectGoPrintDiff(expected, got))
+			cmp.Diff(expected, got))
 	}
 }
 
@@ -594,7 +594,7 @@ func TestIncumbentAchievedTrafficCondition(t *testing.T) {
 	if !reflect.DeepEqual(expected, got) {
 		t.Fatalf(
 			"ReleaseStrategyConditions are different\nDiff:\n %s",
-			diff.ObjectGoPrintDiff(expected, got))
+			cmp.Diff(expected, got))
 	}
 }
 
@@ -662,7 +662,7 @@ func TestIncumbentAchievedCapacityCondition(t *testing.T) {
 	if !reflect.DeepEqual(expected, got) {
 		t.Fatalf(
 			"ReleaseStrategyConditions are different\nDiff:\n %s",
-			diff.ObjectGoPrintDiff(expected, got))
+			cmp.Diff(expected, got))
 	}
 }
 
