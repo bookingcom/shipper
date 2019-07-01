@@ -178,15 +178,6 @@ func prettyPrintAction(a kubetesting.Action) string {
 
 	template := fmt.Sprintf("Verb: %s\nGVK: %s\nNamespace: %s\n--------\n%%s", verb, gvk.String(), ns)
 
-	// You might be tempted to use a type switch on 'action' here instead of
-	// strings. That's less good for the following reasons:
-	//
-	// 1) UpdateAction and CreateAction have the same interface, so the first
-	// one will always match the switch. Ditto 'GetAction' and 'DeleteAction'.
-	// This is surprising if you want to treat them differently.
-	//
-	// 2) You can't explicitly signal that they're the same in the switch case
-	// because Go does not allow 'fallthrough' in type switches.
 	switch action := a.(type) {
 
 	case kubetesting.CreateActionImpl:

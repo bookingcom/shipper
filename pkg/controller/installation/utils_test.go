@@ -179,7 +179,6 @@ func initializeClients(apiResourceList []*v1.APIResourceList, shipperObjects []r
 
 	fakeDynamicClientBuilder := func(kind *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipper.Cluster) dynamic.Interface {
 		if fdc, ok := clientsPerCluster[cluster.Name]; ok {
-			// fdc.fakeDynamicClient.Schema = kind.GroupVersion()
 			return fdc.fakeDynamicClient
 		}
 		panic(fmt.Sprintf(`couldn't find client for %q`, cluster.Name))
