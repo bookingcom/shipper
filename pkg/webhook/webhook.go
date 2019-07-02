@@ -255,7 +255,7 @@ func (c *Webhook) shouldBlockRollout(namespace string, overrideRB string) error 
 		return err
 	}
 
-	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverrideRolloutBlock(overrideRB, RBs)
+	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverride(overrideRB, RBs)
 	if err != nil {
 		return err
 	}
@@ -300,7 +300,7 @@ func (c *Webhook) validateOverrideRolloutBlockAnnotation(overrideRB string, name
 	}
 
 	rbs := c.existingRolloutBlocks(namespace)
-	_, err = rolloutblockUtil.Difference(rbs, overrideRbs)
+	_, err = rolloutblockUtil.Diff(rbs, overrideRbs)
 
 	return err
 }

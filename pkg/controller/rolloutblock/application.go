@@ -69,7 +69,7 @@ func (c *Controller) addApplicationToRolloutBlockStatus(appKey string, rolloutbl
 }
 
 func (c *Controller) addApplicationsToRolloutBlocks(rolloutBlockKey string, rolloutBlock *shipper.RolloutBlock, applications ...*shipper.Application) error {
-	var appsStrings []string
+	var appsKeys []string
 	for _, app := range applications {
 		if app.DeletionTimestamp != nil {
 			continue
@@ -89,16 +89,12 @@ func (c *Controller) addApplicationsToRolloutBlocks(rolloutBlockKey string, roll
 		overrideRBs := strings.Split(overrideRB, ",")
 		for _, rbKey := range overrideRBs {
 			if rbKey == rolloutBlockKey {
-				appsStrings = append(appsStrings, appKey)
+				appsKeys = append(appsKeys, appKey)
 			}
 		}
 	}
 
-	if len(appsStrings) == 0 {
-		appsStrings = []string{}
-	}
-
-	rolloutBlock.Status.Overrides.Application = appsStrings
+	rolloutBlock.Status.Overrides.Application = appsKeys
 	_, err := c.shipperClientset.ShipperV1alpha1().RolloutBlocks(rolloutBlock.Namespace).Update(rolloutBlock)
 	if err != nil {
 		return shippererrors.NewKubeclientUpdateError(rolloutBlock, err).

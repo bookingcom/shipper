@@ -31,8 +31,8 @@ func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, string, erro
 		runtime.HandleError(fmt.Errorf("failed to list rollout block objects: %s", err))
 	}
 
-	RBs := append(nsRBs, gbRBs...)
-	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverrideRolloutBlock(relOverrideRB, RBs)
+	rbs := append(nsRBs, gbRBs...)
+	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverride(relOverrideRB, rbs)
 	if err != nil {
 		switch errT := err.(type) {
 		case shippererrors.InvalidRolloutBlockOverrideError:

@@ -70,7 +70,7 @@ func (c *Controller) addReleaseToRolloutBlockStatus(relFullName string, rbFullNa
 }
 
 func (c *Controller) addReleasesToRolloutBlocks(rolloutBlockKey string, rolloutBlock *shipper.RolloutBlock, releases ...*shipper.Release) error {
-	var relsStrings []string
+	var relsKeys []string
 	for _, release := range releases {
 		if release.DeletionTimestamp != nil {
 			continue
@@ -90,16 +90,12 @@ func (c *Controller) addReleasesToRolloutBlocks(rolloutBlockKey string, rolloutB
 		overrideRBs := strings.Split(overrideRB, ",")
 		for _, rbKey := range overrideRBs {
 			if rbKey == rolloutBlockKey {
-				relsStrings = append(relsStrings, relKey)
+				relsKeys = append(relsKeys, relKey)
 			}
 		}
 	}
 
-	if len(relsStrings) == 0 {
-		relsStrings = []string{}
-	}
-
-	rolloutBlock.Status.Overrides.Release = relsStrings
+	rolloutBlock.Status.Overrides.Release = relsKeys
 	_, err := c.shipperClientset.ShipperV1alpha1().RolloutBlocks(rolloutBlock.Namespace).Update(rolloutBlock)
 	if err != nil {
 		return shippererrors.NewKubeclientUpdateError(rolloutBlock, err).

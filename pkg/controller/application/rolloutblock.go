@@ -21,8 +21,8 @@ func (c *Controller) shouldBlockRollout(app *shipper.Application, nsRBs, gbRBs [
 		overrideRB = ""
 	}
 
-	RBs := append(nsRBs, gbRBs...)
-	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverrideRolloutBlock(overrideRB, RBs)
+	rbs := append(nsRBs, gbRBs...)
+	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverride(overrideRB, rbs)
 	if err != nil {
 		switch errT := err.(type) {
 		case shippererrors.InvalidRolloutBlockOverrideError:
