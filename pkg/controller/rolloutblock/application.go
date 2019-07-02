@@ -53,7 +53,7 @@ func (c *Controller) addApplicationToRolloutBlockStatus(appKey string, rolloutbl
 		return fmt.Errorf("RolloutBlock %s/%s has been deleted", rolloutBlock.Namespace, rolloutBlock.Name)
 	}
 
-	glog.V(3).Infof("Application %s overrides RolloutBlock %s", appKey, rolloutBlock.Name)
+	glog.V(8).Infof("Application %s overrides RolloutBlock %s", appKey, rolloutBlock.Name)
 	rolloutBlock.Status.Overrides.Application = stringUtil.AppendIfMissing(
 		rolloutBlock.Status.Overrides.Application,
 		appKey,

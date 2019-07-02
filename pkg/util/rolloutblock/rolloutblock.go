@@ -2,6 +2,7 @@ package rolloutblock
 
 import (
 	"github.com/golang/glog"
+	"sort"
 	"strings"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -20,6 +21,9 @@ func ShouldOverrideRolloutBlock(overrideRB string, nsRBs []*shipper.RolloutBlock
 	RBs := append(nsRBs, gbRBs...)
 
 	nonOverriddenRBs, err := Difference(RBs, overrideRBs)
+	sort.Slice(nonOverriddenRBs, func(i, j int) bool {
+		return nonOverriddenRBs[i] < nonOverriddenRBs[j]
+	})
 
 	return len(nonOverriddenRBs) == 0, strings.Join(nonOverriddenRBs, ", "), err
 }

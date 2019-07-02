@@ -2,6 +2,7 @@ package release
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -55,6 +56,9 @@ func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, string, erro
 func (s *Scheduler) removeRolloutBlockFromAnnotations(overrideRB string, rbName string, release *shipper.Release) {
 	overrideRBs := strings.Split(overrideRB, ",")
 	overrideRBs = stringUtil.Delete(overrideRBs, rbName)
+	sort.Slice(overrideRBs, func(i, j int) bool {
+		return overrideRBs[i] < overrideRBs[j]
+	})
 	release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = strings.Join(overrideRBs, ",")
 	_, err := s.clientset.ShipperV1alpha1().Releases(release.Namespace).Update(release)
 	if err != nil {

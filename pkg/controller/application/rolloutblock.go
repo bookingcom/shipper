@@ -3,6 +3,7 @@ package application
 import (
 	"fmt"
 	"strings"
+	"sort"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -44,6 +45,9 @@ func (c *Controller) shouldBlockRollout(app *shipper.Application, nsRBs, gbRBs [
 func (c *Controller) removeRolloutBlockFromAnnotations(overrideRB string, rbName string, app *shipper.Application) {
 	overrideRBs := strings.Split(overrideRB, ",")
 	overrideRBs = stringUtil.Delete(overrideRBs, rbName)
+	sort.Slice(overrideRBs, func(i, j int) bool {
+		return overrideRBs[i] < overrideRBs[j]
+	})
 	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = strings.Join(overrideRBs, ",")
 	_, err := c.shipperClientset.ShipperV1alpha1().Applications(app.Namespace).Update(app)
 	if err != nil {
@@ -57,6 +61,9 @@ func (c *Controller) updateApplicationRolloutBlockCondition(rbs []*shipper.Rollo
 		for _, rb := range rbs {
 			activeRolloutBlocks = append(activeRolloutBlocks, rb.Name)
 		}
+		sort.Slice(activeRolloutBlocks, func(i, j int) bool {
+			return activeRolloutBlocks[i] < activeRolloutBlocks[j]
+		})
 		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionTrue, strings.Join(activeRolloutBlocks, ","), "")
 		apputil.SetApplicationCondition(&app.Status, *rolloutBlockCond)
 	} else {

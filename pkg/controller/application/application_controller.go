@@ -349,7 +349,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 
 	var (
 		appReleases     []*shipper.Release
-		rbs		        []*shipper.RolloutBlock
+		rbs             []*shipper.RolloutBlock
 		contender       *shipper.Release
 		err             error
 		generation      int
