@@ -506,38 +506,31 @@ func (c *Controller) syncNewRolloutBlockObject(key string) error {
 		return err
 	}
 
-	if ns == shipper.GlobalRolloutBlockNamespace {
-		apps, err := c.applicationLister.List(labels.Everything())
-		if err != nil {
-			return err
-		}
-		if err = c.addApplicationsToRolloutBlocks(key, rolloutBlock, apps...); err != nil {
-			return err
-		}
+	var appListerFunc func(selector labels.Selector) (ret []*shipper.Application, err error)
+	var relListerFunc func(selector labels.Selector) (ret []*shipper.Release, err error)
+	switch ns {
+	case shipper.ShipperNamespace:
+		appListerFunc = c.applicationLister.List
+		relListerFunc = c.releaseLister.List
+	default:
+		appListerFunc = c.applicationLister.Applications(ns).List
+		relListerFunc = c.releaseLister.Releases(ns).List
+	}
 
-		rels, err := c.releaseLister.List(labels.Everything())
-		if err != nil {
-			return err
-		}
-		if err = c.addReleasesToRolloutBlocks(key, rolloutBlock, rels...); err != nil {
-			return err
-		}
-	} else {
-		apps, err := c.applicationLister.Applications(ns).List(labels.Everything())
-		if err != nil {
-			return err
-		}
-		if err = c.addApplicationsToRolloutBlocks(key, rolloutBlock, apps...); err != nil {
-			return err
-		}
+	apps, err := appListerFunc(labels.Everything())
+	if err != nil {
+		return err
+	}
+	if err = c.addApplicationsToRolloutBlocks(key, rolloutBlock, apps...); err != nil {
+		return err
+	}
 
-		rels, err := c.releaseLister.Releases(ns).List(labels.Everything())
-		if err != nil {
-			return err
-		}
-		if err = c.addReleasesToRolloutBlocks(key, rolloutBlock, rels...); err != nil {
-			return err
-		}
+	rels, err := relListerFunc(labels.Everything())
+	if err != nil {
+		return err
+	}
+	if err = c.addReleasesToRolloutBlocks(key, rolloutBlock, rels...); err != nil {
+		return err
 	}
 
 	return nil
