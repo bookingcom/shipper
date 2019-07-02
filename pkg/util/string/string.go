@@ -11,7 +11,7 @@ func AppendIfMissing(strings []string, s string) []string {
 	return strings
 }
 
-func Delete(strings []string, s string) []string {
+func Grep(strings []string, s string) []string {
 	for i, item := range strings {
 		if item == s {
 			return append(strings[:i], strings[i+1:]...)

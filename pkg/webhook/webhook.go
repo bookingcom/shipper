@@ -246,16 +246,16 @@ func (c *Webhook) shouldBlockRelease(release shipper.Release) error {
 func (c *Webhook) shouldBlockRollout(namespace string, overrideRB string) error {
 	var (
 		err          error
-		nsRBs, gbRBs []*shipper.RolloutBlock
+		RBs []*shipper.RolloutBlock
 	)
 
-	nsRBs, gbRBs = c.existingRolloutBlocks(namespace)
+	RBs = c.existingRolloutBlocks(namespace)
 
 	if err = c.validateOverrideRolloutBlockAnnotation(overrideRB, namespace); err != nil {
 		return err
 	}
 
-	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverrideRolloutBlock(overrideRB, nsRBs, gbRBs)
+	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverrideRolloutBlock(overrideRB, RBs)
 	if err != nil {
 		return err
 	}
@@ -267,7 +267,7 @@ func (c *Webhook) shouldBlockRollout(namespace string, overrideRB string) error 
 	return shippererrors.NewRolloutBlockError(eventMessage)
 }
 
-func (c *Webhook) existingRolloutBlocks(namespace string) ([]*shipper.RolloutBlock, []*shipper.RolloutBlock) {
+func (c *Webhook) existingRolloutBlocks(namespace string) []*shipper.RolloutBlock {
 	var nsRBs, gbRBs []*shipper.RolloutBlock
 	if nsRBList, err := c.shipperClientset.ShipperV1alpha1().RolloutBlocks(namespace).List(meta_v1.ListOptions{}); err == nil {
 		for _, item := range nsRBList.Items {
@@ -279,7 +279,7 @@ func (c *Webhook) existingRolloutBlocks(namespace string) ([]*shipper.RolloutBlo
 			gbRBs = append(gbRBs, &item)
 		}
 	}
-	return nsRBs, gbRBs
+	return append(nsRBs, gbRBs...)
 }
 
 func (c *Webhook) validateOverrideRolloutBlockAnnotation(overrideRB string, namespace string) error {
@@ -299,8 +299,7 @@ func (c *Webhook) validateOverrideRolloutBlockAnnotation(overrideRB string, name
 		}
 	}
 
-	nsRBs, gbRBs := c.existingRolloutBlocks(namespace)
-	rbs := append(nsRBs, gbRBs...)
+	rbs := c.existingRolloutBlocks(namespace)
 	_, err = rolloutblockUtil.Difference(rbs, overrideRbs)
 
 	return err

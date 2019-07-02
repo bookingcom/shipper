@@ -62,7 +62,7 @@ func NewController(
 ) *Controller {
 	applicationInformer := informerFactory.Shipper().V1alpha1().Applications()
 	releaseInformer := informerFactory.Shipper().V1alpha1().Releases()
-	rolloutblockInformer := informerFactory.Shipper().V1alpha1().RolloutBlocks()
+	rolloutBlockInformer := informerFactory.Shipper().V1alpha1().RolloutBlocks()
 
 	glog.Info("Building a RolloutBlock controller")
 
@@ -76,8 +76,8 @@ func NewController(
 		releaseLister:  releaseInformer.Lister(),
 		releasesSynced: releaseInformer.Informer().HasSynced,
 
-		rolloutBlockLister: rolloutblockInformer.Lister(),
-		rolloutBlockSynced: rolloutblockInformer.Informer().HasSynced,
+		rolloutBlockLister: rolloutBlockInformer.Lister(),
+		rolloutBlockSynced: rolloutBlockInformer.Informer().HasSynced,
 
 		rolloutblockWorkqueue: workqueue.NewNamedRateLimitingQueue(
 			workqueue.DefaultControllerRateLimiter(),
@@ -89,31 +89,31 @@ func NewController(
 
 	releaseInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.addRelease,
+			AddFunc: controller.onAddRelease,
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.updateRelease(oldObj, newObj)
+				controller.onUpdateRelease(oldObj, newObj)
 			},
-			DeleteFunc: controller.deleteRelease,
+			DeleteFunc: controller.onDeleteRelease,
 		})
 
 	applicationInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.addApplication,
+			AddFunc: controller.onAddApplication,
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.updateApplication(oldObj, newObj)
+				controller.onUpdateApplication(oldObj, newObj)
 			},
-			DeleteFunc: controller.deleteApplication,
+			DeleteFunc: controller.onDeleteApplication,
 		})
 
-	rolloutblockInformer.Informer().AddEventHandler(
+	rolloutBlockInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.addRolloutBlock,
+			AddFunc: controller.onAddRolloutBlock,
 		})
 
 	return controller
 }
 
-func (c *Controller) addRelease(obj interface{}) {
+func (c *Controller) onAddRelease(obj interface{}) {
 	rel, ok := obj.(*shipper.Release)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", obj))
@@ -144,7 +144,7 @@ func (c *Controller) addRelease(obj interface{}) {
 	}
 }
 
-func (c *Controller) deleteRelease(obj interface{}) {
+func (c *Controller) onDeleteRelease(obj interface{}) {
 	release, ok := obj.(*shipper.Release)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.Application: %#v", obj))
@@ -175,7 +175,7 @@ func (c *Controller) deleteRelease(obj interface{}) {
 	}
 }
 
-func (c *Controller) updateRelease(oldObj, newObj interface{}) {
+func (c *Controller) onUpdateRelease(oldObj, newObj interface{}) {
 	oldRel, ok := oldObj.(*shipper.Release)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", oldObj))
@@ -197,11 +197,12 @@ func (c *Controller) updateRelease(oldObj, newObj interface{}) {
 		newOverride = ""
 	}
 
-	newOverrides := strings.Split(newOverride, ",")
-	oldOverrides := strings.Split(oldOverride, ",")
-	if stringUtil.Equal(newOverrides, oldOverrides) {
+	if newOverride == oldOverride {
 		return
 	}
+
+	newOverrides := strings.Split(newOverride, ",")
+	oldOverrides := strings.Split(oldOverride, ",")
 
 	relKey, err := cache.MetaNamespaceKeyFunc(newRel)
 	if err != nil {
@@ -234,7 +235,7 @@ func (c *Controller) updateRelease(oldObj, newObj interface{}) {
 
 }
 
-func (c *Controller) addApplication(obj interface{}) {
+func (c *Controller) onAddApplication(obj interface{}) {
 	app, ok := obj.(*shipper.Application)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.Application: %#v", obj))
@@ -266,7 +267,7 @@ func (c *Controller) addApplication(obj interface{}) {
 	}
 }
 
-func (c *Controller) deleteApplication(obj interface{}) {
+func (c *Controller) onDeleteApplication(obj interface{}) {
 	app, ok := obj.(*shipper.Application)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.Application: %#v", obj))
@@ -297,7 +298,7 @@ func (c *Controller) deleteApplication(obj interface{}) {
 	}
 }
 
-func (c *Controller) updateApplication(oldObj, newObj interface{}) {
+func (c *Controller) onUpdateApplication(oldObj, newObj interface{}) {
 	oldApp, ok := oldObj.(*shipper.Application)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.Application: %#v", oldObj))
@@ -319,11 +320,11 @@ func (c *Controller) updateApplication(oldObj, newObj interface{}) {
 		newOverride = ""
 	}
 
-	newOverrides := strings.Split(newOverride, ",")
-	oldOverrides := strings.Split(oldOverride, ",")
-	if stringUtil.Equal(newOverrides, oldOverrides) {
+	if newOverride == oldOverride {
 		return
 	}
+	newOverrides := strings.Split(newOverride, ",")
+	oldOverrides := strings.Split(oldOverride, ",")
 
 	appKey, err := cache.MetaNamespaceKeyFunc(newApp)
 	if err != nil {
@@ -355,7 +356,7 @@ func (c *Controller) updateApplication(oldObj, newObj interface{}) {
 	}
 }
 
-func (c *Controller) addRolloutBlock(obj interface{}) {
+func (c *Controller) onAddRolloutBlock(obj interface{}) {
 	rb, ok := obj.(*shipper.RolloutBlock)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.RolloutBlock: %#v", obj))
@@ -424,11 +425,12 @@ func (c *Controller) processNextRolloutBlockWorkItem() bool {
 		rolloutBlockUpdater RolloutBlockUpdater
 	)
 
-	if rolloutBlockUpdater, ok = obj.(RolloutBlockUpdater); !ok {
+	if _, ok = obj.(RolloutBlockUpdater); !ok {
 		c.rolloutblockWorkqueue.Forget(obj)
 		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
 		return true
 	}
+	rolloutBlockUpdater = obj.(RolloutBlockUpdater)
 
 	shouldRetry := false
 	err := c.syncRolloutBlock(rolloutBlockUpdater)
@@ -471,7 +473,7 @@ func (c *Controller) syncRolloutBlock(rolloutBlockUpdater RolloutBlockUpdater) e
 		return nil
 	}
 
-	var err error = nil
+	var err error
 	isDeletedObject := rolloutBlockUpdater.IsDeletedObject
 
 	if isDeletedObject {
@@ -509,7 +511,7 @@ func (c *Controller) syncNewRolloutBlockObject(key string) error {
 		if err != nil {
 			return err
 		}
-		if err = c.addMultipleApplicationsToRolloutBlocks(apps, key, rolloutBlock); err != nil {
+		if err = c.addApplicationsToRolloutBlocks(key, rolloutBlock, apps...); err != nil {
 			return err
 		}
 
@@ -517,7 +519,7 @@ func (c *Controller) syncNewRolloutBlockObject(key string) error {
 		if err != nil {
 			return err
 		}
-		if err = c.addMultipleReleasesToRolloutBlocks(rels, key, rolloutBlock); err != nil {
+		if err = c.addReleasesToRolloutBlocks(key, rolloutBlock, rels...); err != nil {
 			return err
 		}
 	} else {
@@ -525,7 +527,7 @@ func (c *Controller) syncNewRolloutBlockObject(key string) error {
 		if err != nil {
 			return err
 		}
-		if err = c.addMultipleApplicationsToRolloutBlocks(apps, key, rolloutBlock); err != nil {
+		if err = c.addApplicationsToRolloutBlocks(key, rolloutBlock, apps...); err != nil {
 			return err
 		}
 
@@ -533,7 +535,7 @@ func (c *Controller) syncNewRolloutBlockObject(key string) error {
 		if err != nil {
 			return err
 		}
-		if err = c.addMultipleReleasesToRolloutBlocks(rels, key, rolloutBlock); err != nil {
+		if err = c.addReleasesToRolloutBlocks(key, rolloutBlock, rels...); err != nil {
 			return err
 		}
 	}
@@ -541,82 +543,4 @@ func (c *Controller) syncNewRolloutBlockObject(key string) error {
 	return nil
 }
 
-func (c *Controller) addMultipleReleasesToRolloutBlocks(releases []*shipper.Release, rolloutBlockKey string, rolloutBlock *shipper.RolloutBlock) error {
-	var relsStrings []string
-	for _, release := range releases {
-		if release.DeletionTimestamp != nil {
-			continue
-		}
 
-		relKey, err := cache.MetaNamespaceKeyFunc(release)
-		if err != nil {
-			runtime.HandleError(err)
-			continue
-		}
-
-		overrideRB, ok := release.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
-		if !ok {
-			continue
-		}
-
-		overrideRBs := strings.Split(overrideRB, ",")
-		for _, rbKey := range overrideRBs {
-			if rbKey == rolloutBlockKey {
-				relsStrings = append(relsStrings, relKey)
-			}
-		}
-	}
-
-	if len(relsStrings) == 0 {
-		relsStrings = []string{}
-	}
-
-	rolloutBlock.Status.Overrides.Release = relsStrings
-	_, err := c.shipperClientset.ShipperV1alpha1().RolloutBlocks(rolloutBlock.Namespace).Update(rolloutBlock)
-	if err != nil {
-		return shippererrors.NewKubeclientUpdateError(rolloutBlock, err).
-			WithShipperKind("RolloutBlock")
-	}
-
-	return nil
-}
-
-func (c *Controller) addMultipleApplicationsToRolloutBlocks(applications []*shipper.Application, rolloutBlockKey string, rolloutBlock *shipper.RolloutBlock) error {
-	var appsStrings []string
-	for _, app := range applications {
-		if app.DeletionTimestamp != nil {
-			continue
-		}
-
-		appKey, err := cache.MetaNamespaceKeyFunc(app)
-		if err != nil {
-			runtime.HandleError(err)
-			continue
-		}
-
-		overrideRB, ok := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
-		if !ok {
-			continue
-		}
-
-		overrideRBs := strings.Split(overrideRB, ",")
-		for _, rbKey := range overrideRBs {
-			if rbKey == rolloutBlockKey {
-				appsStrings = append(appsStrings, appKey)
-			}
-		}
-	}
-
-	if len(appsStrings) == 0 {
-		appsStrings = []string{}
-	}
-
-	rolloutBlock.Status.Overrides.Application = appsStrings
-	_, err := c.shipperClientset.ShipperV1alpha1().RolloutBlocks(rolloutBlock.Namespace).Update(rolloutBlock)
-	if err != nil {
-		return shippererrors.NewKubeclientUpdateError(rolloutBlock, err).
-			WithShipperKind("RolloutBlock")
-	}
-
-	return nil
-}

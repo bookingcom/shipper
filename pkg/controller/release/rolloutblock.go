@@ -23,22 +23,22 @@ func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, string, erro
 
 	nsRBs, err := s.rolloutBlockLister.RolloutBlocks(rel.Namespace).List(labels.Everything())
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing Release %q Because of namespace RolloutBlocks (will retry): %s", rel.Name, err))
+		runtime.HandleError(fmt.Errorf("failed to list rollout block objects: %s", err))
 	}
 
 	gbRBs, err := s.rolloutBlockLister.RolloutBlocks(shipper.GlobalRolloutBlockNamespace).List(labels.Everything())
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("error syncing Release %q Because of global RolloutBlocks (will retry): %s", rel.Name, err))
+		runtime.HandleError(fmt.Errorf("failed to list rollout block objects: %s", err))
 	}
 
-	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverrideRolloutBlock(relOverrideRB, nsRBs, gbRBs)
+	RBs := append(nsRBs, gbRBs...)
+	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverrideRolloutBlock(relOverrideRB, RBs)
 	if err != nil {
 		switch errT := err.(type) {
 		case shippererrors.InvalidRolloutBlockOverrideError:
 			// remove from annotation!
 			rbName := err.(shippererrors.InvalidRolloutBlockOverrideError).RolloutBlockName
 			s.removeRolloutBlockFromAnnotations(relOverrideRB, rbName, rel)
-			err = nil
 		default:
 			s.recorder.Event(rel, corev1.EventTypeWarning, "Overriding RolloutBlock", err.Error())
 			runtime.HandleError(fmt.Errorf("error of type %T overriding rollout block %s", errT, err.Error()))
@@ -50,12 +50,12 @@ func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, string, erro
 		s.recorder.Event(rel, corev1.EventTypeNormal, "Override RolloutBlock", relOverrideRB)
 	}
 
-	return !overrideRolloutBlock, eventMessage, err
+	return !overrideRolloutBlock, eventMessage, nil
 }
 
 func (s *Scheduler) removeRolloutBlockFromAnnotations(overrideRB string, rbName string, release *shipper.Release) {
 	overrideRBs := strings.Split(overrideRB, ",")
-	overrideRBs = stringUtil.Delete(overrideRBs, rbName)
+	overrideRBs = stringUtil.Grep(overrideRBs, rbName)
 	sort.Slice(overrideRBs, func(i, j int) bool {
 		return overrideRBs[i] < overrideRBs[j]
 	})

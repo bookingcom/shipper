@@ -21,7 +21,8 @@ func (c *Controller) shouldBlockRollout(app *shipper.Application, nsRBs, gbRBs [
 		overrideRB = ""
 	}
 
-	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverrideRolloutBlock(overrideRB, nsRBs, gbRBs)
+	RBs := append(nsRBs, gbRBs...)
+	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverrideRolloutBlock(overrideRB, RBs)
 	if err != nil {
 		switch errT := err.(type) {
 		case shippererrors.InvalidRolloutBlockOverrideError:
@@ -44,7 +45,7 @@ func (c *Controller) shouldBlockRollout(app *shipper.Application, nsRBs, gbRBs [
 
 func (c *Controller) removeRolloutBlockFromAnnotations(overrideRB string, rbName string, app *shipper.Application) {
 	overrideRBs := strings.Split(overrideRB, ",")
-	overrideRBs = stringUtil.Delete(overrideRBs, rbName)
+	overrideRBs = stringUtil.Grep(overrideRBs, rbName)
 	sort.Slice(overrideRBs, func(i, j int) bool {
 		return overrideRBs[i] < overrideRBs[j]
 	})

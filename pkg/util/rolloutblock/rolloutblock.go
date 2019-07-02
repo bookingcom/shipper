@@ -13,12 +13,11 @@ import (
 // existing rollout blocks, a string representing the existing rollout blocks
 // that are not overridden, and an error if the application is trying to override
 // a non-existing rolloutblock
-func ShouldOverrideRolloutBlock(overrideRB string, nsRBs []*shipper.RolloutBlock, gbRBs []*shipper.RolloutBlock) (bool, string, error) {
+func ShouldOverrideRolloutBlock(overrideRB string, RBs []*shipper.RolloutBlock) (bool, string, error) {
 	overrideRBs := strings.Split(overrideRB, ",")
 	if len(overrideRB) == 0 {
 		overrideRBs = []string{}
 	}
-	RBs := append(nsRBs, gbRBs...)
 
 	nonOverriddenRBs, err := Difference(RBs, overrideRBs)
 	sort.Slice(nonOverriddenRBs, func(i, j int) bool {

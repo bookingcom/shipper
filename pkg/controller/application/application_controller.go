@@ -3,6 +3,8 @@ package application
 import (
 	"fmt"
 	"math"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -241,6 +243,14 @@ func (c *Controller) syncApplication(key string) error {
 	if app.Annotations == nil {
 		app.Annotations = map[string]string{}
 	}
+	overrideRB, ok := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
+	if ok {
+		overrideRBs := strings.Split(overrideRB, ",")
+		sort.Slice(overrideRBs, func(i, j int) bool {
+			return overrideRBs[i] < overrideRBs[j]
+		})
+		app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = strings.Join(overrideRBs, ",")
+	}
 
 	if app.Spec.RevisionHistoryLimit == nil {
 		var i int32 = DefaultRevisionHistoryLimit
@@ -372,10 +382,10 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 	// existing rollout blocks in the system
 	var nsRolloutBlocks, globalRolloutBlocks []*shipper.RolloutBlock
 	if nsRolloutBlocks, err = c.rbLister.RolloutBlocks(app.Namespace).List(labels.Everything()); err != nil {
-		glog.Warningf("error getting Namespace RolloutBlocks %s", err.Error())
+		glog.Warningf("failed to list Namespace RolloutBlocks %s", err.Error())
 	}
 	if globalRolloutBlocks, err = c.rbLister.RolloutBlocks(shipper.GlobalRolloutBlockNamespace).List(labels.Everything()); err != nil {
-		glog.Warningf("error getting Global RolloutBlocks %s", err.Error())
+		glog.Warningf("failed to list Global RolloutBlocks %s", err.Error())
 	}
 	rbs = append(nsRolloutBlocks, globalRolloutBlocks...)
 	if c.shouldBlockRollout(app, nsRolloutBlocks, globalRolloutBlocks) {
