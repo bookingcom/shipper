@@ -64,6 +64,13 @@ var (
 		[]string{"name", "schedulable", "has_secret"},
 		nil,
 	)
+
+	rolloutblocksDesc = prometheus.NewDesc(
+		fqn("rolloutblocks"),
+		"Number of RolloutBlock objects",
+		[]string{"namespace"},
+		nil,
+	)
 )
 
 var everything = labels.Everything()
@@ -75,6 +82,7 @@ type ShipperStateMetrics struct {
 	ctsLister      shipperlisters.CapacityTargetLister
 	ttsLister      shipperlisters.TrafficTargetLister
 	clustersLister shipperlisters.ClusterLister
+	rbLister	   shipperlisters.RolloutBlockLister
 
 	nssLister     kubelisters.NamespaceLister
 	secretsLister kubelisters.SecretLister
@@ -89,6 +97,7 @@ func (ssm ShipperStateMetrics) Collect(ch chan<- prometheus.Metric) {
 	ssm.collectCapacityTargets(ch)
 	ssm.collectTrafficTargets(ch)
 	ssm.collectClusters(ch)
+	ssm.collectRolloutBlocks(ch)
 }
 
 func (ssm ShipperStateMetrics) Describe(ch chan<- *prometheus.Desc) {
@@ -98,6 +107,7 @@ func (ssm ShipperStateMetrics) Describe(ch chan<- *prometheus.Desc) {
 	ch <- ctsDesc
 	ch <- ttsDesc
 	ch <- clustersDesc
+	ch <- rolloutblocksDesc
 }
 
 func (ssm ShipperStateMetrics) collectApplications(ch chan<- prometheus.Metric) {
@@ -312,6 +322,36 @@ func (ssm ShipperStateMetrics) collectClusters(ch chan<- prometheus.Metric) {
 		}
 
 		ch <- prometheus.MustNewConstMetric(clustersDesc, prometheus.GaugeValue, 1.0, cluster.Name, schedulable, hasSecret)
+	}
+}
+
+func (ssm ShipperStateMetrics) collectRolloutBlocks(ch chan<- prometheus.Metric) {
+	nss, err := getNamespaces(ssm.nssLister)
+	if err != nil {
+		glog.Warningf("collect Namespaces: %s", err)
+		return
+	}
+
+	rolloutBlocks, err := ssm.rbLister.List(everything)
+	if err != nil {
+		glog.Warningf("collect RolloutBlocks: %s", err)
+		return
+	}
+
+	rbsPerNamespace := make(map[string]float64)
+	for _, rolloutBlock := range rolloutBlocks {
+		rbsPerNamespace[rolloutBlock.Namespace]++
+	}
+
+	glog.V(4).Infof("RolloutBlocks: %v", rbsPerNamespace)
+
+	for _, ns := range nss {
+		n, ok := rbsPerNamespace[ns.Name]
+		if !ok {
+			n = 0
+		}
+
+		ch <- prometheus.MustNewConstMetric(rolloutblocksDesc, prometheus.GaugeValue, n, ns.Name)
 	}
 }
 

@@ -53,11 +53,11 @@ func (c *Controller) removeRolloutBlockFromAnnotations(overrideRB string, rbName
 
 func (c *Controller) updateApplicationRolloutBlockCondition(rbs []*shipper.RolloutBlock, app *shipper.Application) {
 	if len(rbs) > 0 {
-		var sb strings.Builder
+		var activeRolloutBlocks []string
 		for _, rb := range rbs {
-			sb.WriteString(rb.Name + " ")
+			activeRolloutBlocks = append(activeRolloutBlocks, rb.Name)
 		}
-		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionTrue, sb.String(), "")
+		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionTrue, strings.Join(activeRolloutBlocks, ","), "")
 		apputil.SetApplicationCondition(&app.Status, *rolloutBlockCond)
 	} else {
 		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionFalse, "", "")
