@@ -287,10 +287,7 @@ func (c *Webhook) validateOverrideRolloutBlockAnnotation(overrideRB string, name
 		return nil
 	}
 
-	re, err := regexp.Compile("^[a-zA-Z0-9/-]+/[a-zA-Z0-9/-]+$")
-	if err != nil {
-		return err
-	}
+	re := regexp.MustCompile("^[a-zA-Z0-9/-]+/[a-zA-Z0-9/-]+$")
 
 	overrideRbs := strings.Split(overrideRB, ",")
 	for _, item := range overrideRbs {
@@ -300,7 +297,7 @@ func (c *Webhook) validateOverrideRolloutBlockAnnotation(overrideRB string, name
 	}
 
 	rbs := c.existingRolloutBlocks(namespace)
-	_, err = rolloutblockUtil.Diff(rbs, overrideRbs)
+	_, err := rolloutblockUtil.Diff(rbs, overrideRbs)
 
 	return err
 }
