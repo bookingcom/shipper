@@ -25,7 +25,7 @@ func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, string, erro
 		runtime.HandleError(fmt.Errorf("error syncing Release %q Because of namespace RolloutBlocks (will retry): %s", rel.Name, err))
 	}
 
-	gbRBs, err := s.rolloutBlockLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything())
+	gbRBs, err := s.rolloutBlockLister.RolloutBlocks(shipper.GlobalRolloutBlockNamespace).List(labels.Everything())
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("error syncing Release %q Because of global RolloutBlocks (will retry): %s", rel.Name, err))
 	}

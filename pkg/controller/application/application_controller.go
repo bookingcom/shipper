@@ -374,7 +374,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 	if nsRolloutBlocks, err = c.rbLister.RolloutBlocks(app.Namespace).List(labels.Everything()); err != nil {
 		glog.Warningf("error getting Namespace RolloutBlocks %s", err.Error())
 	}
-	if globalRolloutBlocks, err = c.rbLister.RolloutBlocks(shipper.ShipperNamespace).List(labels.Everything()); err != nil {
+	if globalRolloutBlocks, err = c.rbLister.RolloutBlocks(shipper.GlobalRolloutBlockNamespace).List(labels.Everything()); err != nil {
 		glog.Warningf("error getting Global RolloutBlocks %s", err.Error())
 	}
 	rbs = append(nsRolloutBlocks, globalRolloutBlocks...)

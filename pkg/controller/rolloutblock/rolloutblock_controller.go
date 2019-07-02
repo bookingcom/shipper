@@ -504,7 +504,7 @@ func (c *Controller) syncNewRolloutBlockObject(key string) error {
 		return err
 	}
 
-	if ns == shipper.ShipperNamespace {
+	if ns == shipper.GlobalRolloutBlockNamespace {
 		apps, err := c.applicationLister.List(labels.Everything())
 		if err != nil {
 			return err

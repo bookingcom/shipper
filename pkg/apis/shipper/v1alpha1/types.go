@@ -8,7 +8,8 @@ import (
 )
 
 const (
-	ShipperNamespace = "shipper-system"
+	ShipperNamespace            = "shipper-system"
+	GlobalRolloutBlockNamespace = "global-rollout-blocks"
 
 	PhaseLabel = "phase"
 
@@ -515,7 +516,7 @@ const (
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // A RolloutBlock defines the a state where rollouts are blocked, locally or globally.
-// This is used by the ApplicationController to unable rollouts.
+// This is used by the ApplicationController to disable rollouts.
 type RolloutBlock struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

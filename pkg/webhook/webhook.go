@@ -274,7 +274,7 @@ func (c *Webhook) existingRolloutBlocks(namespace string) ([]*shipper.RolloutBlo
 			nsRBs = append(nsRBs, &item)
 		}
 	}
-	if gbRBList, err := c.shipperClientset.ShipperV1alpha1().RolloutBlocks(shipper.ShipperNamespace).List(meta_v1.ListOptions{}); err == nil {
+	if gbRBList, err := c.shipperClientset.ShipperV1alpha1().RolloutBlocks(shipper.GlobalRolloutBlockNamespace).List(meta_v1.ListOptions{}); err == nil {
 		for _, item := range gbRBList.Items {
 			gbRBs = append(gbRBs, &item)
 		}
