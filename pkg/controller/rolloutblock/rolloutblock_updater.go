@@ -1,28 +1,19 @@
 package rolloutblock
 
-import "fmt"
+type UpdaterType uint8
 
 const (
-	OverridingApplication = "OverridingApplication"
-	OverridingRelease     = "OverridingRelease"
-	NewRolloutBlockObject = "NewRolloutBlockObject"
+	UndefinedUpdater UpdaterType = iota
+	DeletedApplicationUpdater
+	AddedApplicationUpdater
+	DeletedReleaseUpdater
+	AddedReleaseUpdater
+	NewRolloutBlockUpdater
 )
 
 // A helper struct for updating a rolloutblock status with overriding objects.
 type RolloutBlockUpdater struct {
-	RolloutBlockKey     string // the RolloutBlock object being overridden
-	UpdaterType         string // the object type that overrides
-	OverridingObjectKey string // the object key that overrides
-	IsDeletedObject     bool   // true if the overriding object is being deleted
-}
-
-func (r RolloutBlockUpdater) String() string {
-	return fmt.Sprintf(
-		"UpdaterType: %s, RolloutBlockKey: %s, OverridingObjectKey: %s, IsDeletedObject? %t",
-		r.UpdaterType,
-		r.RolloutBlockKey,
-		r.OverridingObjectKey,
-		r.IsDeletedObject,
-		)
-
+	RolloutBlockKey     string      // the RolloutBlock object being overridden
+	ObjectType          UpdaterType // the object type that overrides
+	OverridingObjectKey string      // the object key that overrides
 }

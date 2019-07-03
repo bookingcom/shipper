@@ -136,9 +136,8 @@ func (c *Controller) onAddRelease(obj interface{}) {
 	for _, rbKey := range overrideRBs {
 		rolloutBlockUpdater := RolloutBlockUpdater{
 			rbKey,
-			OverridingRelease,
+			AddedReleaseUpdater,
 			key,
-			false,
 		}
 		c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
 	}
@@ -167,9 +166,8 @@ func (c *Controller) onDeleteRelease(obj interface{}) {
 	for _, rbKey := range overrideRBs {
 		rolloutBlockUpdater := RolloutBlockUpdater{
 			rbKey,
-			OverridingRelease,
+			DeletedReleaseUpdater,
 			key,
-			true,
 		}
 		c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
 	}
@@ -214,9 +212,8 @@ func (c *Controller) onUpdateRelease(oldObj, newObj interface{}) {
 	for _, rbKey := range newOverrides {
 		rolloutBlockUpdater := RolloutBlockUpdater{
 			rbKey,
-			OverridingRelease,
+			AddedReleaseUpdater,
 			relKey,
-			false,
 		}
 		c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
 	}
@@ -226,9 +223,8 @@ func (c *Controller) onUpdateRelease(oldObj, newObj interface{}) {
 	for _, rbKey := range removedRBs {
 		rolloutBlockUpdater := RolloutBlockUpdater{
 			rbKey,
-			OverridingRelease,
+			DeletedReleaseUpdater,
 			relKey,
-			true,
 		}
 		c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
 	}
@@ -258,9 +254,8 @@ func (c *Controller) onAddApplication(obj interface{}) {
 	for _, rbKey := range overrideRBs {
 		rolloutBlockUpdater := RolloutBlockUpdater{
 			rbKey,
-			OverridingApplication,
+			AddedApplicationUpdater,
 			key,
-			false,
 		}
 
 		c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
@@ -290,9 +285,8 @@ func (c *Controller) onDeleteApplication(obj interface{}) {
 	for _, rbKey := range overrideRBs {
 		rolloutBlockUpdater := RolloutBlockUpdater{
 			rbKey,
-			OverridingApplication,
+			DeletedApplicationUpdater,
 			key,
-			true,
 		}
 		c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
 	}
@@ -336,9 +330,8 @@ func (c *Controller) onUpdateApplication(oldObj, newObj interface{}) {
 	for _, rbKey := range newOverrides {
 		rolloutBlockUpdater := RolloutBlockUpdater{
 			rbKey,
-			OverridingApplication,
+			AddedApplicationUpdater,
 			appKey,
-			false,
 		}
 		c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
 	}
@@ -348,9 +341,8 @@ func (c *Controller) onUpdateApplication(oldObj, newObj interface{}) {
 	for _, rbKey := range removedRBs {
 		rolloutBlockUpdater := RolloutBlockUpdater{
 			rbKey,
-			OverridingApplication,
+			DeletedApplicationUpdater,
 			appKey,
-			true,
 		}
 		c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
 	}
@@ -371,9 +363,8 @@ func (c *Controller) onAddRolloutBlock(obj interface{}) {
 
 	rolloutBlockUpdater := RolloutBlockUpdater{
 		key,
-		NewRolloutBlockObject,
+		NewRolloutBlockUpdater,
 		"",
-		true,
 	}
 
 	c.rolloutblockWorkqueue.Add(rolloutBlockUpdater)
@@ -463,8 +454,7 @@ func (c *Controller) processNextRolloutBlockWorkItem() bool {
 
 func (c *Controller) syncRolloutBlock(rolloutBlockUpdater RolloutBlockUpdater) error {
 	key := rolloutBlockUpdater.RolloutBlockKey
-	updaterType := rolloutBlockUpdater.UpdaterType
-	if updaterType == NewRolloutBlockObject {
+	if rolloutBlockUpdater.ObjectType == NewRolloutBlockUpdater {
 		return c.syncNewRolloutBlockObject(key)
 	}
 
@@ -474,22 +464,15 @@ func (c *Controller) syncRolloutBlock(rolloutBlockUpdater RolloutBlockUpdater) e
 	}
 
 	var err error
-	isDeletedObject := rolloutBlockUpdater.IsDeletedObject
-
-	if isDeletedObject {
-		switch updaterType {
-		case OverridingRelease:
-			err = c.removeReleaseFromRolloutBlockStatus(overridingKey, key)
-		case OverridingApplication:
-			err = c.removeAppFromRolloutBlockStatus(overridingKey, key)
-		}
-	} else {
-		switch updaterType {
-		case OverridingRelease:
-			err = c.addReleaseToRolloutBlockStatus(overridingKey, key)
-		case OverridingApplication:
-			err = c.addApplicationToRolloutBlockStatus(overridingKey, key)
-		}
+	switch rolloutBlockUpdater.ObjectType {
+	case AddedApplicationUpdater:
+		err = c.addApplicationToRolloutBlockStatus(overridingKey, key)
+	case AddedReleaseUpdater:
+		err = c.addReleaseToRolloutBlockStatus(overridingKey, key)
+	case DeletedApplicationUpdater:
+		err = c.removeAppFromRolloutBlockStatus(overridingKey, key)
+	case DeletedReleaseUpdater:
+		err = c.removeReleaseFromRolloutBlockStatus(overridingKey, key)
 	}
 
 	return err
