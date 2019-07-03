@@ -13,10 +13,13 @@ const (
 
 type Override map[string]struct{}
 
-func NewOverride(statement string) Override { // HILLA instead of strings.Split
+func NewOverride(statement string) Override {
 	override := make(Override)
 	statements := strings.Split(statement, StatementSeparator)
 	for _, s := range statements {
+		if len(s) == 0 {
+			continue
+		}
 		override[s] = struct{}{}
 	}
 
@@ -24,7 +27,7 @@ func NewOverride(statement string) Override { // HILLA instead of strings.Split
 }
 
 func NewOverrideFromRolloutBlocks(rbs []*shipper.RolloutBlock) Override {
-	o := NewOverride("")
+	o := make(Override)
 	for _, item := range rbs {
 		rbFullName := item.Namespace + "/" + item.Name
 		o.Add(rbFullName)
@@ -32,7 +35,7 @@ func NewOverrideFromRolloutBlocks(rbs []*shipper.RolloutBlock) Override {
 	return o
 }
 
-func (o Override) String() string { // HILLA instead of strings.Join
+func (o Override) String() string {
 	statements := make([]string, 0, len(o))
 	for s := range o {
 		statements = append(statements, s)
@@ -50,7 +53,7 @@ func (o Override) Keys() []string {
 	return keys
 }
 
-func (o Override) Delete(rm string) { // HILLA instead of stringUtil.Grep
+func (o Override) Delete(rm string) {
 	delete(o, rm)
 }
 
@@ -58,7 +61,7 @@ func (o Override) Add(statement string) {
 	o[statement] = struct{}{}
 }
 
-func (o Override) Diff(o2 Override) Override { // HILLA instead of stringUtil.SetDifference
+func (o Override) Diff(o2 Override) Override {
 	res := make(Override)
 	for s := range o {
 		if _, ok := o2[s]; !ok {

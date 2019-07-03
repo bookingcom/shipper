@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"mime"
 	"net/http"
+	"reflect"
 	"regexp"
 
 	"github.com/golang/glog"
@@ -161,7 +162,6 @@ func (c *Webhook) validateHandlerFunc(review *admission_v1beta1.AdmissionReview)
 		err = json.Unmarshal(request.Object.Raw, &release)
 		if err == nil {
 			err = c.validateRelease(request, release)
-			// crezte the error in here if sh0ukd not block rolluot
 		}
 	case "Cluster":
 		var cluster shipper.Cluster
@@ -211,6 +211,26 @@ func (c *Webhook) validateRelease(request *admission_v1beta1.AdmissionRequest, r
 
 	if request.Operation == kubeclient.Create {
 		err = c.processRolloutBlocks(release.Namespace, overrideRBs)
+	}
+
+	if request.Operation == kubeclient.Update {
+		var oldRelease shipper.Release
+		err = json.Unmarshal(request.Object.Raw, &oldRelease)
+		if err != nil {
+			return nil
+		}
+		newOverrides := rolloutBlockOverride.NewOverride(release.Annotations[shipper.RolloutBlocksOverrideAnnotation])
+		oldOverrides := rolloutBlockOverride.NewOverride(oldRelease.Annotations[shipper.RolloutBlocksOverrideAnnotation])
+		subtractedOverrides := oldOverrides.Diff(newOverrides)
+		if len(subtractedOverrides) == 0 {
+			// no overrides were removed from annotation. validating release:
+			err = c.processRolloutBlocks(release.Namespace, overrideRBs)
+		} else {
+			// rolloutblock override were changed, making sure spec was not changed
+			if !reflect.DeepEqual(release, oldRelease) {
+				err = fmt.Errorf("releases Spec was changed %v", release)
+			}
+		}
 	}
 
 	return err
