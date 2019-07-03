@@ -104,20 +104,10 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 	glog.Infof("Processing release %q", metaKey)
 	defer glog.Infof("Finished processing %q", metaKey)
 
-	shouldBlockRollout, rbs, err := s.shouldBlockRollout(rel)
-	if err != nil {
-		condition := releaseutil.NewReleaseCondition(
-			shipper.ReleaseConditionTypeComplete,
-			corev1.ConditionFalse,
-			"Invalid RolloutBlock Override",
-			err.Error(),
-		)
-		releaseutil.SetReleaseCondition(&rel.Status, *condition)
-		return nil, err
+	shouldBlockRollout, nonOverriddenRBsStatement := s.processRolloutBlocks(rel)
+	if shouldBlockRollout {
+		return nil, shippererrors.NewRolloutBlockError(nonOverriddenRBsStatement)
 	}
-	 if shouldBlockRollout {
-	 	return nil, shippererrors.NewRolloutBlockError(rbs)
-	 }
 
 	if !releaseHasClusters(rel) {
 		return nil, shippererrors.NewUnrecoverableError(fmt.Errorf("release %q clusters have not been chosen yet", metaKey))

@@ -384,7 +384,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		glog.Warningf("failed to list Global RolloutBlocks %s", err.Error())
 	}
 	rbs = append(nsRolloutBlocks, globalRolloutBlocks...)
-	if c.shouldBlockRollout(app, nsRolloutBlocks, globalRolloutBlocks) {
+	if c.processRolloutBlocks(app, nsRolloutBlocks, globalRolloutBlocks) {
 		return c.wrapUpApplicationConditions(app, appReleases, rbs)
 	}
 

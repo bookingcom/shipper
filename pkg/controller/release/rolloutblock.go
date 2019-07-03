@@ -7,15 +7,15 @@ import (
 	"k8s.io/apimachinery/pkg/util/runtime"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	rolloutBlockOverride "github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
-func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, string, error) {
+func (s *Scheduler) processRolloutBlocks(rel *shipper.Release) (shouldBlockRollout bool, nonOverriddenRBsStatement string) {
 	relOverrideRB, ok := rel.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 	if !ok {
 		relOverrideRB = ""
 	}
+	relOverrideRBs := rolloutBlockOverride.NewOverride(relOverrideRB)
 
 	nsRBs, err := s.rolloutBlockLister.RolloutBlocks(rel.Namespace).List(labels.Everything())
 	if err != nil {
@@ -27,30 +27,29 @@ func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, string, erro
 		runtime.HandleError(fmt.Errorf("failed to list rollout block objects: %s", err))
 	}
 
-	rbs := append(nsRBs, gbRBs...)
-	overrideRolloutBlock, eventMessage, err := rolloutBlockOverride.ShouldOverride(relOverrideRB, rbs)
-	if err != nil {
-		switch errT := err.(type) {
-		case shippererrors.InvalidRolloutBlockOverrideError:
-			// remove from annotation!
-			rbName := err.(shippererrors.InvalidRolloutBlockOverrideError).RolloutBlockName
-			s.removeRolloutBlockFromAnnotations(relOverrideRB, rbName, rel)
-		default:
-			s.recorder.Event(rel, corev1.EventTypeWarning, "Overriding RolloutBlock", err.Error())
-			runtime.HandleError(fmt.Errorf("error of type %T overriding rollout block %s", errT, err.Error()))
-			return true, "", err
+	existingRBs := rolloutBlockOverride.NewOverrideFromRolloutBlocks(append(nsRBs, gbRBs...))
+	nonExistingRbs := relOverrideRBs.Diff(existingRBs)
+	if len(nonExistingRbs) > 0 {
+		for o := range nonExistingRbs {
+			s.removeRolloutBlockFromAnnotations(relOverrideRBs, o, rel)
 		}
+		s.recorder.Event(rel, corev1.EventTypeWarning, "Non Existing RolloutBlock", nonExistingRbs.String())
 	}
 
-	if overrideRolloutBlock && len(relOverrideRB) > 0 {
-		s.recorder.Event(rel, corev1.EventTypeNormal, "Override RolloutBlock", relOverrideRB)
+	nonOverriddenRBs := existingRBs.Diff(relOverrideRBs)
+	shouldBlockRollout = len(nonOverriddenRBs) != 0
+	nonOverriddenRBsStatement = nonOverriddenRBs.String()
+
+	if shouldBlockRollout {
+		s.recorder.Event(rel, corev1.EventTypeNormal, "RolloutBlock", nonOverriddenRBsStatement)
+	} else if len(relOverrideRB) > 0 {
+		s.recorder.Event(rel, corev1.EventTypeNormal, "Overriding RolloutBlock", relOverrideRB)
 	}
 
-	return !overrideRolloutBlock, eventMessage, nil
+	return
 }
 
-func (s *Scheduler) removeRolloutBlockFromAnnotations(overrideRB string, rbName string, release *shipper.Release) {
-	overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
+func (s *Scheduler) removeRolloutBlockFromAnnotations(overrideRBs rolloutBlockOverride.Override, rbName string, release *shipper.Release) {
 	overrideRBs.Delete(rbName)
 	release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = overrideRBs.String()
 	_, err := s.clientset.ShipperV1alpha1().Releases(release.Namespace).Update(release)
