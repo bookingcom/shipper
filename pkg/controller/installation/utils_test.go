@@ -7,7 +7,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -155,8 +155,8 @@ func populateFakeDiscovery(discovery discovery.DiscoveryInterface, apiResourceLi
 
 type objectsPerClusterMap map[string][]runtime.Object
 type fakePair struct {
-	fakeClient        kubernetes.Interface
-	fakeDynamicClient *fakedynamic.FakeClient
+	fakeClient        *kubefake.Clientset
+	fakeDynamicClient *fakedynamic.FakeDynamicClient
 }
 type clientsPerClusterMap map[string]fakePair
 
@@ -173,15 +173,12 @@ func initializeClients(apiResourceList []*v1.APIResourceList, shipperObjects []r
 	for clusterName, objs := range kubeObjectsPerCluster {
 		fakeClient := kubefake.NewSimpleClientset(objs...)
 		populateFakeDiscovery(fakeClient.Discovery(), apiResourceList)
-		fakeDynamicClient := &fakedynamic.FakeClient{
-			Fake: &fakeClient.Fake,
-		}
+		fakeDynamicClient := fakedynamic.NewSimpleDynamicClient(scheme.Scheme, objs...)
 		clientsPerCluster[clusterName] = fakePair{fakeClient: fakeClient, fakeDynamicClient: fakeDynamicClient}
 	}
 
 	fakeDynamicClientBuilder := func(kind *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipper.Cluster) dynamic.Interface {
 		if fdc, ok := clientsPerCluster[cluster.Name]; ok {
-			fdc.fakeDynamicClient.GroupVersion = kind.GroupVersion()
 			return fdc.fakeDynamicClient
 		}
 		panic(fmt.Sprintf(`couldn't find client for %q`, cluster.Name))

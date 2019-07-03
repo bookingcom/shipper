@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 
 	"k8s.io/apimachinery/pkg/util/wait"
 	fakediscovery "k8s.io/client-go/discovery/fake"
@@ -740,7 +741,7 @@ func (f *fixture) expectReleaseWaitingForCommand(rel *shipper.Release, step int3
 	}
 
 	patch, _ := json.Marshal(newStatus)
-	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), patch)
+	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), types.StrategicMergePatchType, patch)
 	f.actions = append(f.actions, action)
 
 	relKey := fmt.Sprintf("%s/%s", rel.GetNamespace(), rel.GetName())
@@ -937,7 +938,7 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipp
 		},
 	}
 	patch, _ := json.Marshal(newSpec)
-	action := kubetesting.NewPatchAction(gvr, ct.GetNamespace(), ct.GetName(), patch)
+	action := kubetesting.NewPatchAction(gvr, ct.GetNamespace(), ct.GetName(), types.StrategicMergePatchType, patch)
 	f.actions = append(f.actions, action)
 
 	step := r.Spec.TargetStep
@@ -1003,6 +1004,7 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipp
 		shipper.SchemeGroupVersion.WithResource("releases"),
 		r.GetNamespace(),
 		r.GetName(),
+		types.StrategicMergePatchType,
 		patch)
 	f.actions = append(f.actions, action)
 
@@ -1019,7 +1021,7 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipper.TrafficTarget, r *shipper
 		},
 	}
 	patch, _ := json.Marshal(newSpec)
-	action := kubetesting.NewPatchAction(gvr, tt.GetNamespace(), tt.GetName(), patch)
+	action := kubetesting.NewPatchAction(gvr, tt.GetNamespace(), tt.GetName(), types.StrategicMergePatchType, patch)
 	f.actions = append(f.actions, action)
 
 	step := r.Spec.TargetStep
@@ -1085,6 +1087,7 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipper.TrafficTarget, r *shipper
 		shipper.SchemeGroupVersion.WithResource("releases"),
 		r.GetNamespace(),
 		r.GetName(),
+		types.StrategicMergePatchType,
 		patch)
 	f.actions = append(f.actions, action)
 
@@ -1144,7 +1147,7 @@ func (f *fixture) expectReleaseReleased(rel *shipper.Release, targetStep int32) 
 	}
 
 	patch, _ := json.Marshal(newStatus)
-	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), patch)
+	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), types.StrategicMergePatchType, patch)
 
 	f.actions = append(f.actions, action)
 
@@ -1197,7 +1200,7 @@ func (f *fixture) expectInstallationNotReady(rel *shipper.Release, achievedStepI
 	}
 
 	patch, _ := json.Marshal(newStatus)
-	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), patch)
+	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), types.StrategicMergePatchType, patch)
 
 	f.actions = append(f.actions, action)
 
@@ -1297,7 +1300,7 @@ func (f *fixture) expectCapacityNotReady(rel *shipper.Release, targetStep, achie
 	}
 
 	patch, _ := json.Marshal(newStatus)
-	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), patch)
+	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), types.StrategicMergePatchType, patch)
 
 	f.actions = append(f.actions, action)
 
@@ -1396,7 +1399,7 @@ func (f *fixture) expectTrafficNotReady(rel *shipper.Release, targetStep, achiev
 	}
 
 	patch, _ := json.Marshal(newStatus)
-	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), patch)
+	action := kubetesting.NewPatchAction(gvr, rel.GetNamespace(), rel.GetName(), types.StrategicMergePatchType, patch)
 
 	f.actions = append(f.actions, action)
 
