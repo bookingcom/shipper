@@ -13,6 +13,8 @@ spec:
     metadata:
       labels:
         app: shipper
+      annotations:
+        prometheus.io/scrape_port: '8889'
     spec:
       containers:
       - name: shipper
