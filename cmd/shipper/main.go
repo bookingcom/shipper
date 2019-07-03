@@ -28,7 +28,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	"github.com/bookingcom/shipper/pkg/chart"
+	"github.com/bookingcom/shipper/pkg/chart/repo"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
@@ -98,8 +98,10 @@ type cfg struct {
 
 	recorder func(string) record.EventRecorder
 
-	store          *clusterclientstore.Store
-	chartFetchFunc chart.FetchFunc
+	store *clusterclientstore.Store
+
+	chartVersionResolver repo.ChartVersionResolver
+	chartFetcher         repo.ChartFetcher
 
 	certPath, keyPath string
 	ns                string
@@ -191,6 +193,11 @@ func main() {
 	glog.V(1).Infof("Chart cache stored at %q", *chartCacheDir)
 	glog.V(1).Infof("REST client timeout is %s", *restTimeout)
 
+	repoCatalog := repo.NewCatalog(
+		repo.DefaultFileCacheFactory(*chartCacheDir),
+		repo.DefaultRemoteFetcher,
+	)
+
 	cfg := &cfg{
 		enabledControllers: enabledControllers,
 		restCfg:            baseRestCfg,
@@ -202,8 +209,10 @@ func main() {
 
 		recorder: recorder,
 
-		store:          store,
-		chartFetchFunc: chart.FetchRemoteWithCache(*chartCacheDir, chart.DefaultCacheLimit),
+		store: store,
+
+		chartVersionResolver: repo.ResolveChartVersionFunc(repoCatalog),
+		chartFetcher:         repo.FetchChartFunc(repoCatalog),
 
 		certPath: *certPath,
 		keyPath:  *keyPath,
@@ -382,6 +391,7 @@ func startApplicationController(cfg *cfg) (bool, error) {
 	c := application.NewController(
 		buildShipperClient(cfg.restCfg, application.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
+		cfg.chartVersionResolver,
 		cfg.recorder(application.AgentName),
 	)
 
@@ -428,7 +438,7 @@ func startReleaseController(cfg *cfg) (bool, error) {
 	c := release.NewController(
 		buildShipperClient(cfg.restCfg, release.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
-		cfg.chartFetchFunc,
+		cfg.chartFetcher,
 		cfg.recorder(release.AgentName),
 	)
 
@@ -467,7 +477,7 @@ func startInstallationController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		cfg.store,
 		dynamicClientBuilderFunc,
-		cfg.chartFetchFunc,
+		cfg.chartFetcher,
 		cfg.recorder(installation.AgentName),
 	)
 

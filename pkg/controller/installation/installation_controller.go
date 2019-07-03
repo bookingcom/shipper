@@ -15,9 +15,10 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/helm/pkg/proto/hapi/chart"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	shipperchart "github.com/bookingcom/shipper/pkg/chart"
+	shipperrepo "github.com/bookingcom/shipper/pkg/chart/repo"
 	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
@@ -26,6 +27,8 @@ import (
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
+
+type ChartFetcher func(i *Installer, name, version string) (*chart.Chart, error)
 
 const (
 	AgentName = "installation-controller"
@@ -54,8 +57,10 @@ type Controller struct {
 	releaseLister             shipperlisters.ReleaseLister
 	releaseSynced             cache.InformerSynced
 	dynamicClientBuilderFunc  DynamicClientBuilderFunc
-	chartFetchFunc            shipperchart.FetchFunc
-	recorder                  record.EventRecorder
+
+	chartFetcher shipperrepo.ChartFetcher
+
+	recorder record.EventRecorder
 }
 
 // NewController returns a new Installation controller.
@@ -64,7 +69,7 @@ func NewController(
 	shipperInformerFactory shipperinformers.SharedInformerFactory,
 	store clusterclientstore.ClientProvider,
 	dynamicClientBuilderFunc DynamicClientBuilderFunc,
-	chartFetchFunc shipperchart.FetchFunc,
+	chartFetcher shipperrepo.ChartFetcher,
 	recorder record.EventRecorder,
 ) *Controller {
 
@@ -86,7 +91,7 @@ func NewController(
 		installationTargetsSynced: installationTargetInformer.Informer().HasSynced,
 		dynamicClientBuilderFunc:  dynamicClientBuilderFunc,
 		workqueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "installation_controller_installationtargets"),
-		chartFetchFunc:            chartFetchFunc,
+		chartFetcher:              chartFetcher,
 		recorder:                  recorder,
 	}
 
@@ -233,7 +238,7 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 		return nil
 	}
 
-	installer := NewInstaller(c.chartFetchFunc, release, it)
+	installer := NewInstaller(c.chartFetcher, release, it)
 
 	// Build .status over based on the current .spec.clusters.
 	newClusterStatuses := make([]*shipper.ClusterInstallationStatus, 0, len(it.Spec.Clusters))

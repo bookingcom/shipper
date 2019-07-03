@@ -1,6 +1,10 @@
 package installation
 
 import (
+	"bytes"
+	"fmt"
+	"io/ioutil"
+	"path"
 	"reflect"
 	"regexp"
 	"testing"
@@ -16,12 +20,31 @@ import (
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
+	"k8s.io/helm/pkg/chartutil"
+	"k8s.io/helm/pkg/proto/hapi/chart"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/controller/janitor"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
+
+var localFetchChart = func(chartspec *shipper.Chart) (*chart.Chart, error) {
+	re := regexp.MustCompile(`[^a-zA-Z0-9]+`)
+	pathurl := re.ReplaceAllString(chartspec.RepoURL, "_")
+	data, err := ioutil.ReadFile(
+		path.Join(
+			"testdata",
+			"chart-cache",
+			pathurl,
+			fmt.Sprintf("%s-%s.tgz", chartspec.Name, chartspec.Version),
+		))
+	if err != nil {
+		return nil, err
+	}
+	buf := bytes.NewBuffer(data)
+	return chartutil.LoadArchive(buf)
+}
 
 // apiResourceList contains a list of APIResources containing some of v1 and
 // extensions/v1beta1 resources from Kubernetes, since fake clients by default
@@ -90,8 +113,8 @@ func TestInstaller(t *testing.T) {
 
 func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObjects []runtime.Object) {
 	cluster := buildCluster("minikube-a")
-	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
-	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
+	release := buildRelease(repoUrl, "test-namespace", "release", "0.0.1", "0", "deadbeef", "reviews-api")
+	it := buildInstallationTarget(release, "test-namespace", "reviews-api", []string{cluster.Name})
 	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
 	if err != nil {
 		panic(err)
@@ -107,16 +130,16 @@ func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObject
 	restConfig := &rest.Config{}
 
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "reviews-api-anchor"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
 		shippertesting.NewDiscoveryAction("services"),
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
 
 	expectedDynamicActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "test-namespace-reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
 	}
 
@@ -251,7 +274,7 @@ func TestInstallerBrokenChartTarball(t *testing.T) {
 	cluster := buildCluster("minikube-a")
 
 	// there is a reviews-api-invalid-tarball.tgz in testdata which contains invalid deployment and service templates
-	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+	release := buildRelease(repoUrl, "reviews-api", "0.0.1", "0.0.1", "0", "deadbeef", "reviews-api")
 	release.Spec.Environment.Chart.Version = "invalid-tarball"
 
 	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
@@ -273,7 +296,7 @@ func TestInstallerChartTarballBrokenService(t *testing.T) {
 	cluster := buildCluster("minikube-a")
 
 	// there is a reviews-api-invalid-tarball.tgz in testdata which contains invalid deployment and service templates
-	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+	release := buildRelease(repoUrl, "reviews-api", "0.0.1", "0.0.1", "0", "deadbeef", "reviews-api")
 	release.Spec.Environment.Chart.Version = "0.0.1-broken-service"
 
 	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
@@ -296,7 +319,7 @@ func TestInstallerChartTarballInvalidDeploymentName(t *testing.T) {
 	cluster := buildCluster("minikube-a")
 
 	// there is a reviews-api-invalid-tarball.tgz in testdata which contains invalid deployment and service templates
-	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+	release := buildRelease(repoUrl, "reviews-api", "0.0.1", "0.0.1", "0", "deadbeef", "reviews-api")
 	release.Spec.Environment.Chart.Version = "invalid-deployment-name"
 
 	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
@@ -325,7 +348,7 @@ func TestInstallerBrokenChartContents(t *testing.T) {
 
 	// There is a reviews-api-invalid-k8s-objects.tgz in testdata which contains
 	// invalid deployment and service templates.
-	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+	release := buildRelease(repoUrl, "reviews-api", "0.0.1", "0.0.1", "0", "deadbeef", "reviews-api")
 	release.Spec.Environment.Chart.Version = "invalid-k8s-objects"
 
 	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
@@ -343,10 +366,11 @@ func TestInstallerBrokenChartContents(t *testing.T) {
 
 func TestInstallerSingleServiceNoLB(t *testing.T) {
 	cluster := buildCluster("minikube-a")
-	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+
+	release := buildRelease(repoUrl, "test-namespace", "release", "0.0.1", "0", "deadbeef", "reviews-api")
 	release.Spec.Environment.Chart.Version = "single-service-no-lb"
 
-	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
+	it := buildInstallationTarget(release, "test-namespace", "reviews-api", []string{cluster.Name})
 	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
 	if err != nil {
 		panic(err)
@@ -392,10 +416,11 @@ func TestInstallerSingleServiceNoLB(t *testing.T) {
 
 func TestInstallerSingleServiceWithLB(t *testing.T) {
 	cluster := buildCluster("minikube-a")
-	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+
+	release := buildRelease(repoUrl, "test-namespace", "release", "0.0.1", "0", "deadbeef", "reviews-api")
 	release.Spec.Environment.Chart.Version = "single-service-with-lb"
 
-	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
+	it := buildInstallationTarget(release, "test-namespace", "reviews-api", []string{cluster.Name})
 	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
 	if err != nil {
 		panic(err)
@@ -441,10 +466,11 @@ func TestInstallerSingleServiceWithLB(t *testing.T) {
 
 func TestInstallerMultiServiceNoLB(t *testing.T) {
 	cluster := buildCluster("minikube-a")
-	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+
+	release := buildRelease(repoUrl, "test-namespace", "release", "0.0.1", "0", "deadbeef", "reviews-api")
 	release.Spec.Environment.Chart.Version = "multi-service-no-lb"
 
-	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
+	it := buildInstallationTarget(release, "test-namespace", "reviews-api", []string{cluster.Name})
 	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
 	if err != nil {
 		panic(err)
@@ -472,10 +498,11 @@ func TestInstallerMultiServiceNoLB(t *testing.T) {
 
 func TestInstallerMultiServiceWithLB(t *testing.T) {
 	cluster := buildCluster("minikube-a")
-	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
+
+	release := buildRelease(repoUrl, "test-namespace", "release", "0.0.1", "0", "deadbeef", "reviews-api")
 	release.Spec.Environment.Chart.Version = "multi-service-with-lb"
 
-	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
+	it := buildInstallationTarget(release, "test-namespace", "reviews-api", []string{cluster.Name})
 	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
 	if err != nil {
 		panic(err)
@@ -524,6 +551,7 @@ func TestInstallerMultiServiceWithLB(t *testing.T) {
 
 func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
 	cluster := buildCluster("minikube-a")
+
 	release := &shipper.Release{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "nginx",
@@ -542,7 +570,7 @@ func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
 				Chart: shipper.Chart{
 					Name:    "nginx",
 					Version: "0.1.0",
-					RepoURL: "localhost",
+					RepoURL: repoUrl,
 				},
 			},
 		},
@@ -600,9 +628,10 @@ func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
 
 func TestInstallerServiceWithReleaseNoWorkaround(t *testing.T) {
 	cluster := buildCluster("minikube-a")
-	release := buildRelease("0.0.1", "reviews-api", "0", "deadbeef", "reviews-api")
 
-	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
+	release := buildRelease(repoUrl, "test-namespace", "release", "0.0.1", "0", "deadbeef", "reviews-api")
+
+	it := buildInstallationTarget(release, "test-namespace", "reviews-api", []string{cluster.Name})
 
 	// Disabling the helm workaround
 	delete(it.ObjectMeta.Labels, shipper.HelmWorkaroundLabel)

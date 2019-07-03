@@ -21,6 +21,7 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
+	shipperrepo "github.com/bookingcom/shipper/pkg/chart/repo"
 	"github.com/bookingcom/shipper/pkg/controller/janitor"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
@@ -30,7 +31,7 @@ type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *res
 // Installer is an object that knows how to install Helm charts directly into
 // Kubernetes clusters.
 type Installer struct {
-	fetchChart shipperchart.FetchFunc
+	chartFetcher shipperrepo.ChartFetcher
 
 	Release            *shipper.Release
 	InstallationTarget *shipper.InstallationTarget
@@ -38,12 +39,13 @@ type Installer struct {
 }
 
 // NewInstaller returns a new Installer.
-func NewInstaller(chartFetchFunc shipperchart.FetchFunc,
+func NewInstaller(
+	chartFetcher shipperrepo.ChartFetcher,
 	release *shipper.Release,
 	it *shipper.InstallationTarget,
 ) *Installer {
 	return &Installer{
-		fetchChart:         chartFetchFunc,
+		chartFetcher:       chartFetcher,
 		Release:            release,
 		InstallationTarget: it,
 		Scheme:             kubescheme.Scheme,
@@ -54,9 +56,9 @@ func NewInstaller(chartFetchFunc shipperchart.FetchFunc,
 // cluster, or an error.
 func (i *Installer) renderManifests(_ *shipper.Cluster) ([]string, error) {
 	rel := i.Release
-	chart, err := i.fetchChart(rel.Spec.Environment.Chart)
+	chart, err := i.chartFetcher(&rel.Spec.Environment.Chart)
 	if err != nil {
-		return nil, shippererrors.NewRenderManifestError(err)
+		return nil, err
 	}
 
 	rendered, err := shipperchart.Render(
@@ -545,7 +547,6 @@ func (i *Installer) installRelease(
 	restConfig *rest.Config,
 	dynamicClientBuilder DynamicClientBuilderFunc,
 ) error {
-
 	renderedManifests, err := i.renderManifests(cluster)
 	if err != nil {
 		return err

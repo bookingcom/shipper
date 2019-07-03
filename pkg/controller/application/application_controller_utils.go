@@ -50,6 +50,13 @@ func (c *Controller) createReleaseForApplication(app *shipper.Application, relea
 		newRelease.Labels[k] = v
 	}
 
+	// application may contain semver range, need to convert it into a specific version
+	cv, err := c.versionResolver(&newRelease.Spec.Environment.Chart)
+	if err != nil {
+		return nil, err
+	}
+	newRelease.Spec.Environment.Chart.Version = cv.Version
+
 	glog.V(4).Infof("Release %q labels: %v", controller.MetaKey(app), newRelease.Labels)
 	glog.V(4).Infof("Release %q annotations: %v", controller.MetaKey(app), newRelease.Annotations)
 
@@ -58,6 +65,7 @@ func (c *Controller) createReleaseForApplication(app *shipper.Application, relea
 		return nil, shippererrors.NewKubeclientCreateError(newRelease, err).
 			WithShipperKind("Release")
 	}
+
 	return rel, nil
 }
 
