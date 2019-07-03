@@ -458,7 +458,7 @@ func startInstallationController(cfg *cfg) (bool, error) {
 			config.Timeout = *cfg.restTimeout
 		}
 
-		dynamicClient, newClientErr := dynamic.NewClient(config)
+		dynamicClient, newClientErr := dynamic.NewForConfig(config)
 		if newClientErr != nil {
 			glog.Fatal(newClientErr)
 		}

@@ -92,27 +92,38 @@ func (i *Installer) buildResourceClient(
 	// kind of object we have at hand.
 	var resource *metav1.APIResource
 	gv := gvk.GroupVersion()
-	if resources, err := client.Discovery().ServerResourcesForGroupVersion(gv.String()); err != nil {
+	resources, err := client.Discovery().ServerResourcesForGroupVersion(gv.String())
+	if err != nil {
 		return nil, shippererrors.NewKubeclientDiscoverError(gvk.GroupVersion(), err)
-	} else {
-		for _, e := range resources.APIResources {
-			if e.Kind == gvk.Kind {
-				resource = &e
-				break
-			}
-		}
+	}
 
-		if resource == nil {
-			err := fmt.Errorf("resource %s not found", gvk.Kind)
-			return nil, shippererrors.NewUnrecoverableError(err)
+	for _, e := range resources.APIResources {
+		if e.Kind == gvk.Kind {
+			resource = &e
+			break
 		}
+	}
+
+	if resource == nil {
+		err := fmt.Errorf("kind %s not found on the Kubernetes cluster", gvk.Kind)
+		return nil, shippererrors.NewUnrecoverableError(err)
 	}
 
 	// If it gets to this point, it means we have a resource, so we can create a
 	// client for it scoping to the application's namespace. The namespace can be
 	// ignored if creating, for example, objects that aren't bound to a namespace.
-	resourceClient := dynamicClient.Resource(resource, i.Release.Namespace)
-	return resourceClient, nil
+	gvr := schema.GroupVersionResource{
+		Group:    gvk.Group,
+		Version:  gvk.Version,
+		Resource: resource.Name,
+	}
+
+	resourceClient := dynamicClient.Resource(gvr)
+	if resource.Namespaced {
+		return resourceClient.Namespace(i.Release.Namespace), nil
+	} else {
+		return resourceClient, nil
+	}
 }
 
 func (i *Installer) patchDeployment(
@@ -462,7 +473,7 @@ func (i *Installer) installManifests(
 		// If have an error here, it means it is NotFound, so proceed to
 		// create the object on the application cluster.
 		if err != nil {
-			_, err = resourceClient.Create(unstrObj)
+			_, err = resourceClient.Create(unstrObj, metav1.CreateOptions{})
 			if err != nil {
 				return shippererrors.
 					NewKubeclientCreateError(unstrObj, err).
@@ -507,13 +518,17 @@ func (i *Installer) installManifests(
 		case *corev1.Service:
 			// Copy over clusterIP from existing object's .spec to the
 			// rendered one.
-			if clusterIP, ok := unstructured.NestedString(existingUnstructuredObj, "spec", "clusterIP"); ok {
+			if clusterIP, ok, err := unstructured.NestedString(existingUnstructuredObj, "spec", "clusterIP"); ok {
+				if err != nil {
+					return err
+				}
+
 				unstructured.SetNestedField(newUnstructuredObj, clusterIP, "spec", "clusterIP")
 			}
 		}
 		unstructured.SetNestedField(existingUnstructuredObj, newUnstructuredObj["spec"], "spec")
 		existingObj.SetUnstructuredContent(existingUnstructuredObj)
-		if _, clientErr := resourceClient.Update(existingObj); clientErr != nil {
+		if _, clientErr := resourceClient.Update(existingObj, metav1.UpdateOptions{}); clientErr != nil {
 			return shippererrors.
 				NewKubeclientUpdateError(unstrObj, err).
 				WithKind(gvk)

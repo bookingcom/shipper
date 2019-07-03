@@ -86,15 +86,21 @@ func TestInstallOneCluster(t *testing.T) {
 	// executed against the dynamic client that is returned by the
 	// fakeDynamicClientBuilder function passed to the controller, which mimics a
 	// connection to a Target Cluster.
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+	expectedDynamicActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
 	}
-	shippertesting.ShallowCheckActions(expectedActions, clusterPair.fakeDynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, clusterPair.fakeDynamicClient.Actions(), t)
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		shippertesting.NewDiscoveryAction("services"),
+		shippertesting.NewDiscoveryAction("deployments"),
+	}
+	shippertesting.ShallowCheckActions(expectedActions, clusterPair.fakeClient.Actions(), t)
 
 	// We are interested only in "update" actions here.
 	var filteredActions []kubetesting.Action
@@ -168,17 +174,23 @@ func TestInstallMultipleClusters(t *testing.T) {
 	// executed against the dynamic client that is returned by the
 	// fakeDynamicClientBuilder function passed to the controller, which mimics a
 	// connection to a Target Cluster.
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+	expectedDynamicActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
 	}
 
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		shippertesting.NewDiscoveryAction("services"),
+		shippertesting.NewDiscoveryAction("deployments"),
+	}
+
 	for _, fakePair := range clientsPerCluster {
-		shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeDynamicClient.Actions(), t)
+		shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.fakeDynamicClient.Actions(), t)
+		shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeClient.Actions(), t)
 	}
 
 	// We are interested only in "update" actions here.

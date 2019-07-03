@@ -412,8 +412,8 @@ func (c *Cluster) CreateValidatingWebhookConfiguration(caBundle []byte, namespac
 		ObjectMeta: metav1.ObjectMeta{
 			Name: shipperValidatingWebhookName,
 		},
-		Webhooks: []admissionregistrationv1beta1.Webhook{
-			admissionregistrationv1beta1.Webhook{
+		Webhooks: []admissionregistrationv1beta1.ValidatingWebhook{
+			admissionregistrationv1beta1.ValidatingWebhook{
 				Name: shipperValidatingWebhookName,
 				ClientConfig: admissionregistrationv1beta1.WebhookClientConfig{
 					CABundle: caBundle,

@@ -8,6 +8,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	"github.com/pmezard/go-difflib/difflib"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/diff"
 	kubetesting "k8s.io/client-go/testing"
 )
@@ -116,6 +117,14 @@ func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
 	}
 }
 
+// PrettyPrintActions pretty-prints a slice of actions, useful for
+// creating a human-readable list for debugging.
+func PrettyPrintActions(actions []kubetesting.Action, t *testing.T) {
+	for _, action := range actions {
+		t.Logf("\n%s", prettyPrintAction(action))
+	}
+}
+
 // FilterActions, given a slice of observed actions, returns only those that
 // change state. Useful for reducing the number of actions needed to check in
 // tests.
@@ -163,56 +172,58 @@ func CheckEvents(expectedOrderedEvents []string, receivedEvents []string, t *tes
 	}
 }
 
-func prettyPrintAction(action kubetesting.Action) string {
-	verb := action.GetVerb()
-	gvk := action.GetResource()
-	ns := action.GetNamespace()
+func prettyPrintAction(a kubetesting.Action) string {
+	verb := a.GetVerb()
+	gvk := a.GetResource()
+	ns := a.GetNamespace()
 
 	template := fmt.Sprintf("Verb: %s\nGVK: %s\nNamespace: %s\n--------\n%%s", verb, gvk.String(), ns)
 
-	// You might be tempted to use a type switch on 'action' here instead of
-	// strings. That's less good for the following reasons:
-	//
-	// 1) UpdateAction and CreateAction have the same interface, so the first
-	// one will always match the switch. Ditto 'GetAction' and 'DeleteAction'.
-	// This is surprising if you want to treat them differently.
-	//
-	// 2) You can't explicitly signal that they're the same in the switch case
-	// because Go does not allow 'fallthrough' in type switches.
-	switch verb {
+	switch action := a.(type) {
 
-	case "create":
-		createAction := action.(kubetesting.CreateAction)
-		obj, err := yaml.Marshal(createAction.GetObject())
+	case kubetesting.CreateActionImpl:
+		obj, err := yaml.Marshal(action.GetObject())
 		if err != nil {
-			panic(fmt.Sprintf("could not marshal %+v: %q", createAction.GetObject(), err))
+			panic(fmt.Sprintf("could not marshal %+v: %q", action.GetObject(), err))
 		}
 
 		return fmt.Sprintf(template, string(obj))
 
-	case "update":
-		updateAction := action.(kubetesting.UpdateAction)
-		obj, err := yaml.Marshal(updateAction.GetObject())
+	case kubetesting.UpdateActionImpl:
+		obj, err := yaml.Marshal(action.GetObject())
 		if err != nil {
-			panic(fmt.Sprintf("could not marshal %+v: %q", updateAction.GetObject(), err))
+			panic(fmt.Sprintf("could not marshal %+v: %q", action.GetObject(), err))
 		}
 
 		return fmt.Sprintf(template, string(obj))
 
-	case "patch":
-		patchAction := action.(kubetesting.PatchAction)
-		return fmt.Sprintf(template, string(patchAction.GetPatch()))
+	case kubetesting.PatchActionImpl:
+		return fmt.Sprintf(template, string(action.GetPatch()))
 
-	case "get":
-		getAction := action.(kubetesting.GetAction)
-		message := fmt.Sprintf("(no object body: GET %s)", getAction.GetName())
+	case kubetesting.GetActionImpl:
+		message := fmt.Sprintf("(no object body: GET %s)", action.GetName())
 		return fmt.Sprintf(template, message)
 
-	case "delete":
-		deleteAction := action.(kubetesting.DeleteAction)
-		message := fmt.Sprintf("(no object body: DELETE %s)", deleteAction.GetName())
+	case kubetesting.DeleteActionImpl:
+		message := fmt.Sprintf("(no object body: DELETE %s)", action.GetName())
+		return fmt.Sprintf(template, message)
+
+	case kubetesting.ActionImpl:
+		message := fmt.Sprintf("(no object body: %s %s)", action.GetVerb(), action.GetResource())
 		return fmt.Sprintf(template, message)
 	}
 
-	panic(fmt.Sprintf("unknown action! patch printAction to support %+v", action))
+	panic(fmt.Sprintf("unknown action! patch printAction to support %T %+v", a, a))
+}
+
+func NewDiscoveryAction(_ string) kubetesting.ActionImpl {
+	// FakeDiscovery has a very odd way of generating fake actions for
+	// discovery. We try to paper over that as best we can. The ignored
+	// parameter is trying to be future proof in case FakeDiscovery ever
+	// decides to fix its nasty ways and actually report the resource we're
+	// trying to discover.
+	return kubetesting.ActionImpl{
+		Verb:     "get",
+		Resource: schema.GroupVersionResource{Resource: "resource"},
+	}
 }
