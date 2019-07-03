@@ -162,6 +162,7 @@ func (c *Webhook) validateHandlerFunc(review *admission_v1beta1.AdmissionReview)
 		err = json.Unmarshal(request.Object.Raw, &release)
 		if err == nil {
 			err = c.validateRelease(request, release)
+			// crezte the error in here if sh0ukd not block rolluot
 		}
 	case "Cluster":
 		var cluster shipper.Cluster
@@ -297,6 +298,7 @@ func (c *Webhook) validateOverrideRolloutBlockAnnotation(overrideRB string, name
 	}
 
 	rbs := c.existingRolloutBlocks(namespace)
+
 	_, err := rolloutblockUtil.Diff(rbs, overrideRbs)
 
 	return err

@@ -2,17 +2,13 @@ package application
 
 import (
 	"fmt"
-	"strings"
-	"sort"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
-	rolloutblockUtil "github.com/bookingcom/shipper/pkg/util/rolloutblock"
-	stringUtil "github.com/bookingcom/shipper/pkg/util/string"
+	rolloutBlockOverride "github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
 func (c *Controller) shouldBlockRollout(app *shipper.Application, nsRBs, gbRBs []*shipper.RolloutBlock) bool {
@@ -22,7 +18,7 @@ func (c *Controller) shouldBlockRollout(app *shipper.Application, nsRBs, gbRBs [
 	}
 
 	rbs := append(nsRBs, gbRBs...)
-	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverride(overrideRB, rbs)
+	overrideRolloutBlock, eventMessage, err := rolloutBlockOverride.ShouldOverride(overrideRB, rbs)
 	if err != nil {
 		switch errT := err.(type) {
 		case shippererrors.InvalidRolloutBlockOverrideError:
@@ -44,12 +40,10 @@ func (c *Controller) shouldBlockRollout(app *shipper.Application, nsRBs, gbRBs [
 }
 
 func (c *Controller) removeRolloutBlockFromAnnotations(overrideRB string, rbName string, app *shipper.Application) {
-	overrideRBs := strings.Split(overrideRB, ",")
-	overrideRBs = stringUtil.Grep(overrideRBs, rbName)
-	sort.Slice(overrideRBs, func(i, j int) bool {
-		return overrideRBs[i] < overrideRBs[j]
-	})
-	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = strings.Join(overrideRBs, ",")
+	overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
+	overrideRBs.Delete(rbName)
+
+	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = overrideRBs.String()
 	_, err := c.shipperClientset.ShipperV1alpha1().Applications(app.Namespace).Update(app)
 	if err != nil {
 		runtime.HandleError(err)
@@ -58,14 +52,8 @@ func (c *Controller) removeRolloutBlockFromAnnotations(overrideRB string, rbName
 
 func (c *Controller) updateApplicationRolloutBlockCondition(rbs []*shipper.RolloutBlock, app *shipper.Application) {
 	if len(rbs) > 0 {
-		var activeRolloutBlocks []string
-		for _, rb := range rbs {
-			activeRolloutBlocks = append(activeRolloutBlocks, rb.Name)
-		}
-		sort.Slice(activeRolloutBlocks, func(i, j int) bool {
-			return activeRolloutBlocks[i] < activeRolloutBlocks[j]
-		})
-		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionTrue, strings.Join(activeRolloutBlocks, ","), "")
+		activeRolloutBlocks := rolloutBlockOverride.NewOverrideFromRolloutBlocks(rbs)
+		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionTrue, activeRolloutBlocks.String(), "")
 		apputil.SetApplicationCondition(&app.Status, *rolloutBlockCond)
 	} else {
 		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionFalse, "", "")

@@ -2,14 +2,13 @@ package rolloutblock
 
 import (
 	"fmt"
-	"strings"
 
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
-	stringUtil "github.com/bookingcom/shipper/pkg/util/string"
+	rolloutBlockOverride "github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
 func (c *Controller) removeReleaseFromRolloutBlockStatus(relFullName string, rbFullName string) error {
@@ -27,11 +26,13 @@ func (c *Controller) removeReleaseFromRolloutBlockStatus(relFullName string, rbF
 		return fmt.Errorf("RolloutBlock %s/%s has been deleted", rolloutBlock.Namespace, rolloutBlock.Name)
 	}
 
-	if rolloutBlock.Status.Overrides.Release == nil {
+	if rolloutBlock.Status.Overrides.Release == "" {
 		return nil
 	}
 
-	rolloutBlock.Status.Overrides.Release = stringUtil.Grep(rolloutBlock.Status.Overrides.Release, relFullName)
+	overridingRels := rolloutBlockOverride.NewOverride(rolloutBlock.Status.Overrides.Release)
+	overridingRels.Delete(relFullName)
+	rolloutBlock.Status.Overrides.Release = overridingRels.String()
 	_, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(rolloutBlock.Namespace).Update(rolloutBlock)
 	if err != nil {
 		return shippererrors.NewKubeclientUpdateError(rolloutBlock, err).
@@ -70,7 +71,7 @@ func (c *Controller) addReleaseToRolloutBlockStatus(relFullName string, rbFullNa
 }
 
 func (c *Controller) addReleasesToRolloutBlocks(rolloutBlockKey string, rolloutBlock *shipper.RolloutBlock, releases ...*shipper.Release) error {
-	var relsKeys []string
+	relsKeys := rolloutBlockOverride.NewOverride("")
 	for _, release := range releases {
 		if release.DeletionTimestamp != nil {
 			continue
@@ -87,15 +88,15 @@ func (c *Controller) addReleasesToRolloutBlocks(rolloutBlockKey string, rolloutB
 			continue
 		}
 
-		overrideRBs := strings.Split(overrideRB, ",")
-		for _, rbKey := range overrideRBs {
+		overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
+		for rbKey := range overrideRBs {
 			if rbKey == rolloutBlockKey {
-				relsKeys = append(relsKeys, relKey)
+				relsKeys.Add(relKey)
 			}
 		}
 	}
 
-	rolloutBlock.Status.Overrides.Release = relsKeys
+	rolloutBlock.Status.Overrides.Release = relsKeys.String()
 	_, err := c.shipperClientset.ShipperV1alpha1().RolloutBlocks(rolloutBlock.Namespace).Update(rolloutBlock)
 	if err != nil {
 		return shippererrors.NewKubeclientUpdateError(rolloutBlock, err).

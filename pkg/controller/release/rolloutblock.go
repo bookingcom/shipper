@@ -2,17 +2,13 @@ package release
 
 import (
 	"fmt"
-	"sort"
-	"strings"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
-	rolloutblockUtil "github.com/bookingcom/shipper/pkg/util/rolloutblock"
-	stringUtil "github.com/bookingcom/shipper/pkg/util/string"
+	rolloutBlockOverride "github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
 func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, string, error) {
@@ -32,7 +28,7 @@ func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, string, erro
 	}
 
 	rbs := append(nsRBs, gbRBs...)
-	overrideRolloutBlock, eventMessage, err := rolloutblockUtil.ShouldOverride(relOverrideRB, rbs)
+	overrideRolloutBlock, eventMessage, err := rolloutBlockOverride.ShouldOverride(relOverrideRB, rbs)
 	if err != nil {
 		switch errT := err.(type) {
 		case shippererrors.InvalidRolloutBlockOverrideError:
@@ -54,12 +50,9 @@ func (s *Scheduler) shouldBlockRollout(rel *shipper.Release) (bool, string, erro
 }
 
 func (s *Scheduler) removeRolloutBlockFromAnnotations(overrideRB string, rbName string, release *shipper.Release) {
-	overrideRBs := strings.Split(overrideRB, ",")
-	overrideRBs = stringUtil.Grep(overrideRBs, rbName)
-	sort.Slice(overrideRBs, func(i, j int) bool {
-		return overrideRBs[i] < overrideRBs[j]
-	})
-	release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = strings.Join(overrideRBs, ",")
+	overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
+	overrideRBs.Delete(rbName)
+	release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = overrideRBs.String()
 	_, err := s.clientset.ShipperV1alpha1().Releases(release.Namespace).Update(release)
 	if err != nil {
 		runtime.HandleError(err)

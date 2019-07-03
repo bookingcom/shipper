@@ -1,5 +1,6 @@
 package string
 
+// TODO HILLA became override.delete
 func Grep(strings []string, s string) []string {
 	for i, item := range strings {
 		if item == s {
@@ -10,6 +11,7 @@ func Grep(strings []string, s string) []string {
 }
 
 // Set difference: a - b
+// TODO HILLA became override.diff
 func SetDifference(a []string, b []string) []string {
 	if len(b) == 0 || len(a) == 0 {
 		return a

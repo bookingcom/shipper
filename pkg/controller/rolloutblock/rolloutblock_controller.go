@@ -2,7 +2,6 @@ package rolloutblock
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -18,7 +17,7 @@ import (
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
-	stringUtil "github.com/bookingcom/shipper/pkg/util/string"
+	rolloutBlockOverride "github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
 const (
@@ -132,8 +131,8 @@ func (c *Controller) onAddRelease(obj interface{}) {
 		return
 	}
 
-	overrideRBs := strings.Split(overrideRB, ",")
-	for _, rbKey := range overrideRBs {
+	overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
+	for rbKey := range overrideRBs {
 		rolloutBlockUpdater := RolloutBlockUpdater{
 			rbKey,
 			AddedReleaseUpdater,
@@ -162,8 +161,8 @@ func (c *Controller) onDeleteRelease(obj interface{}) {
 		return
 	}
 
-	overrideRBs := strings.Split(overrideRB, ",")
-	for _, rbKey := range overrideRBs {
+	overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
+	for rbKey := range overrideRBs {
 		rolloutBlockUpdater := RolloutBlockUpdater{
 			rbKey,
 			DeletedReleaseUpdater,
@@ -199,8 +198,8 @@ func (c *Controller) onUpdateRelease(oldObj, newObj interface{}) {
 		return
 	}
 
-	newOverrides := strings.Split(newOverride, ",")
-	oldOverrides := strings.Split(oldOverride, ",")
+	newOverrides := rolloutBlockOverride.NewOverride(newOverride)
+	oldOverrides := rolloutBlockOverride.NewOverride(oldOverride)
 
 	relKey, err := cache.MetaNamespaceKeyFunc(newRel)
 	if err != nil {
@@ -209,7 +208,7 @@ func (c *Controller) onUpdateRelease(oldObj, newObj interface{}) {
 	}
 
 	// add all new release overrides to RBs status
-	for _, rbKey := range newOverrides {
+	for rbKey := range newOverrides {
 		rolloutBlockUpdater := RolloutBlockUpdater{
 			rbKey,
 			AddedReleaseUpdater,
@@ -219,8 +218,8 @@ func (c *Controller) onUpdateRelease(oldObj, newObj interface{}) {
 	}
 
 	// remove deleted release overrides from RBs status
-	removedRBs := stringUtil.SetDifference(oldOverrides, newOverrides)
-	for _, rbKey := range removedRBs {
+	removedRBs := oldOverrides.Diff(newOverrides)
+	for rbKey := range removedRBs {
 		rolloutBlockUpdater := RolloutBlockUpdater{
 			rbKey,
 			DeletedReleaseUpdater,
@@ -250,8 +249,8 @@ func (c *Controller) onAddApplication(obj interface{}) {
 		return
 	}
 
-	overrideRBs := strings.Split(overrideRB, ",")
-	for _, rbKey := range overrideRBs {
+	overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
+	for rbKey := range overrideRBs {
 		rolloutBlockUpdater := RolloutBlockUpdater{
 			rbKey,
 			AddedApplicationUpdater,
@@ -281,8 +280,8 @@ func (c *Controller) onDeleteApplication(obj interface{}) {
 		return
 	}
 
-	overrideRBs := strings.Split(overrideRB, ",")
-	for _, rbKey := range overrideRBs {
+	overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
+	for rbKey := range overrideRBs {
 		rolloutBlockUpdater := RolloutBlockUpdater{
 			rbKey,
 			DeletedApplicationUpdater,
@@ -317,8 +316,8 @@ func (c *Controller) onUpdateApplication(oldObj, newObj interface{}) {
 	if newOverride == oldOverride {
 		return
 	}
-	newOverrides := strings.Split(newOverride, ",")
-	oldOverrides := strings.Split(oldOverride, ",")
+	newOverrides := rolloutBlockOverride.NewOverride(newOverride)
+	oldOverrides := rolloutBlockOverride.NewOverride(oldOverride)
 
 	appKey, err := cache.MetaNamespaceKeyFunc(newApp)
 	if err != nil {
@@ -327,7 +326,7 @@ func (c *Controller) onUpdateApplication(oldObj, newObj interface{}) {
 	}
 
 	// add all new app overrides to RBs status
-	for _, rbKey := range newOverrides {
+	for rbKey := range newOverrides {
 		rolloutBlockUpdater := RolloutBlockUpdater{
 			rbKey,
 			AddedApplicationUpdater,
@@ -337,8 +336,8 @@ func (c *Controller) onUpdateApplication(oldObj, newObj interface{}) {
 	}
 
 	// remove deleted app overrides from RBs status
-	removedRBs := stringUtil.SetDifference(oldOverrides, newOverrides)
-	for _, rbKey := range removedRBs {
+	removedRBs := oldOverrides.Diff(newOverrides)
+	for rbKey := range removedRBs {
 		rolloutBlockUpdater := RolloutBlockUpdater{
 			rbKey,
 			DeletedApplicationUpdater,

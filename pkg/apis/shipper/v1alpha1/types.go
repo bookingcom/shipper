@@ -539,8 +539,8 @@ type RolloutBlockStatus struct {
 }
 
 type RolloutBlockOverrides struct {
-	Application []string `json:"application"`
-	Release     []string `json:"release"`
+	Application string `json:"application"`
+	Release     string `json:"release"`
 }
 
 type RolloutBlockSpec struct {

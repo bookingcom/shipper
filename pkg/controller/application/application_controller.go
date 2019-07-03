@@ -3,8 +3,6 @@ package application
 import (
 	"fmt"
 	"math"
-	"sort"
-	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -26,6 +24,7 @@ import (
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
+	rolloutBlockOverride "github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
 const (
@@ -245,11 +244,8 @@ func (c *Controller) syncApplication(key string) error {
 	}
 	overrideRB, ok := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 	if ok {
-		overrideRBs := strings.Split(overrideRB, ",")
-		sort.Slice(overrideRBs, func(i, j int) bool {
-			return overrideRBs[i] < overrideRBs[j]
-		})
-		app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = strings.Join(overrideRBs, ",")
+		overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
+		app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = overrideRBs.String()
 	}
 
 	if app.Spec.RevisionHistoryLimit == nil {
