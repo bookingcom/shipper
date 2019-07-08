@@ -104,6 +104,9 @@ func (c Controller) NewDeploymentResourceEventHandler(clusterName string) cache.
 			return ok
 		},
 		Handler: cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				c.enqueueDeployment(obj, clusterName)
+			},
 			UpdateFunc: func(old, new interface{}) {
 				c.enqueueDeployment(new, clusterName)
 			},
