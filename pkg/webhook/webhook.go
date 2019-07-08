@@ -180,10 +180,6 @@ func (c *Webhook) validateHandlerFunc(review *admission_v1beta1.AdmissionReview)
 		err = json.Unmarshal(request.Object.Raw, &rolloutBlock)
 	}
 
-	if request.Operation == kubeclient.Delete {
-		err = nil
-	}
-
 	if err != nil {
 		return &admission_v1beta1.AdmissionResponse{
 			Result: &meta_v1.Status{

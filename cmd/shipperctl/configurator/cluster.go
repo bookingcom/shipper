@@ -426,7 +426,8 @@ func (c *Cluster) CreateValidatingWebhookConfiguration(caBundle []byte, namespac
 				Rules: []admissionregistrationv1beta1.RuleWithOperations{
 					admissionregistrationv1beta1.RuleWithOperations{
 						Operations: []admissionregistrationv1beta1.OperationType{
-							admissionregistrationv1beta1.OperationAll,
+							admissionregistrationv1beta1.Create,
+							admissionregistrationv1beta1.Update,
 						},
 						Rule: admissionregistrationv1beta1.Rule{
 							APIGroups:   []string{shipper.SchemeGroupVersion.Group},
