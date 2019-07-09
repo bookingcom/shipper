@@ -1,15 +1,16 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: release-reviews-api
+  name: reviews-api-reviews-api
   labels:
     app: reviews-api
     chart: reviews-api-0.0.1
-    release: release
+    release: reviews-api
     heritage: Tiller
     shipper-lb: production
     shipper-app: reviews-api
-    shipper-release: release
+    shipper-owned-by: reviews-api
+    enable-helm-release-workaround: "true"
 spec:
   type: ClusterIP
   ports:

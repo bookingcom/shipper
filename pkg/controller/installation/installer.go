@@ -33,7 +33,6 @@ type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *res
 type Installer struct {
 	chartFetcher shipperrepo.ChartFetcher
 
-	Release            *shipper.Release
 	InstallationTarget *shipper.InstallationTarget
 	Scheme             *runtime.Scheme
 }
@@ -41,31 +40,29 @@ type Installer struct {
 // NewInstaller returns a new Installer.
 func NewInstaller(
 	chartFetcher shipperrepo.ChartFetcher,
-	release *shipper.Release,
 	it *shipper.InstallationTarget,
 ) *Installer {
 	return &Installer{
 		chartFetcher:       chartFetcher,
-		Release:            release,
 		InstallationTarget: it,
 		Scheme:             kubescheme.Scheme,
 	}
 }
 
-// renderManifests returns a list of rendered manifests for the given release and
-// cluster, or an error.
+// renderManifests returns a list of rendered manifests for the given
+// InstallationTarget and cluster, or an error.
 func (i *Installer) renderManifests(_ *shipper.Cluster) ([]string, error) {
-	rel := i.Release
-	chart, err := i.chartFetcher(&rel.Spec.Environment.Chart)
+	it := i.InstallationTarget
+	chart, err := i.chartFetcher(it.Spec.Chart)
 	if err != nil {
 		return nil, err
 	}
 
 	rendered, err := shipperchart.Render(
 		chart,
-		rel.GetName(),
-		rel.GetNamespace(),
-		rel.Spec.Environment.Values,
+		it.GetName(),
+		it.GetNamespace(),
+		it.Spec.Values,
 	)
 
 	if err != nil {
@@ -122,7 +119,7 @@ func (i *Installer) buildResourceClient(
 
 	resourceClient := dynamicClient.Resource(gvr)
 	if resource.Namespaced {
-		return resourceClient.Namespace(i.Release.Namespace), nil
+		return resourceClient.Namespace(i.InstallationTarget.Namespace), nil
 	} else {
 		return resourceClient, nil
 	}
@@ -225,7 +222,7 @@ func (i *Installer) modifyServiceSelector(
 			// In order to make it work the shipper way, we remove the
 			// label and proceed normally. With one little twist: the user
 			// has to ask shipper to do it explicitly.
-			if relName == i.Release.Name {
+			if relName == i.InstallationTarget.Name {
 				delete(s.Spec.Selector, shipper.HelmReleaseLabel)
 			}
 		} else if !ok || v == shipper.False {
@@ -295,15 +292,17 @@ func (i *Installer) installManifests(
 	manifests []string,
 ) error {
 
+	it := i.InstallationTarget
+
 	var configMap *corev1.ConfigMap
 	var createdConfigMap *corev1.ConfigMap
 	var existingConfigMap *corev1.ConfigMap
 	var err error
 
-	if configMap, err = janitor.CreateConfigMapAnchor(i.InstallationTarget); err != nil {
+	if configMap, err = janitor.CreateConfigMapAnchor(it); err != nil {
 		return err
-	} else if existingConfigMap, err = client.CoreV1().ConfigMaps(i.Release.Namespace).Get(configMap.Name, metav1.GetOptions{}); err != nil && !errors.IsNotFound(err) {
-		return shippererrors.NewKubeclientGetError(i.Release.Name, configMap.Name, err).
+	} else if existingConfigMap, err = client.CoreV1().ConfigMaps(it.Namespace).Get(configMap.Name, metav1.GetOptions{}); err != nil && !errors.IsNotFound(err) {
+		return shippererrors.NewKubeclientGetError(it.Name, configMap.Name, err).
 			WithCoreV1Kind("ConfigMap")
 	} else if err != nil { // errors.IsNotFound(err) == true
 		if createdConfigMap, err = client.CoreV1().ConfigMaps(configMap.Namespace).Create(configMap); err != nil {
@@ -349,14 +348,14 @@ func (i *Installer) installManifests(
 		}
 
 		// We need the Deployment in the chart to have a unique name,
-		// meaning that two different Releases need to generate two
-		// different Deployments. Otherwise, we try to overwrite a
-		// previous Deployment, and that fails with a "field is
-		// immutable" error.
+		// meaning that different installations need to generate
+		// Deployments with different names, otherwise, we try to
+		// overwrite a previous Deployment, and that fails with a
+		// "field is immutable" error.
 		if deployment, ok := decodedObj.(*appsv1.Deployment); ok {
 			deploymentName := deployment.ObjectMeta.Name
-			releaseName := i.Release.ObjectMeta.Name
-			if !strings.Contains(deploymentName, releaseName) {
+			expectedName := it.GetName()
+			if !strings.Contains(deploymentName, expectedName) {
 				return shippererrors.NewInvalidChartError(
 					fmt.Sprintf("Deployment %q has invalid name."+
 						" The name of the Deployment should be"+
@@ -385,10 +384,14 @@ func (i *Installer) installManifests(
 			}
 		}
 
+		labels := mergeLabels(it.Labels, map[string]string{
+			shipper.InstallationTargetOwnerLabel: it.Name,
+		})
+
 		preparedObjects = append(preparedObjects, struct {
 			decoded runtime.Object
 			labels  map[string]string
-		}{decoded: decodedObj, labels: i.Release.Labels})
+		}{decoded: decodedObj, labels: labels})
 	}
 
 	// If we have observed only 1 Service object and it was not marked
@@ -484,19 +487,26 @@ func (i *Installer) installManifests(
 			continue
 		}
 
-		// We inject a Namespace object in the objects to be installed for a
-		// particular Release; we don't want to continue if the Namespace already
-		// exists.
+		// We inject a Namespace object in the objects to be installed
+		// for a particular InstallationTarget; we don't want to
+		// continue if the Namespace already exists.
 		if gvk := existingObj.GroupVersionKind(); gvk.Kind == "Namespace" {
 			continue
 		}
 
-		// If the existing object was stamped with the driving release,
-		// continue to the next manifest.
-		if releaseLabelValue, ok := existingObj.GetLabels()[shipper.ReleaseLabel]; ok && releaseLabelValue == i.Release.Name {
+		owner, ok := existingObj.GetLabels()[shipper.InstallationTargetOwnerLabel]
+		if !ok {
+			return shippererrors.NewMissingInstallationTargetOwnerLabelError(existingObj)
+		}
+
+		// If the existing object is owned by the installation target,
+		// it doesn't need any installation, and we don't want to
+		// updated because reasons.
+		//
+		// If it's owned by a different installation target, it'll be
+		// overwritten only if it.Spec.CanOverride == true.
+		if owner == it.Name || !it.Spec.CanOverride {
 			continue
-		} else if !ok {
-			return shippererrors.NewIncompleteReleaseError(`Release "%s/%s" misses the required label %q`, existingObj.GetNamespace(), existingObj.GetName(), shipper.ReleaseLabel)
 		}
 
 		ownerReferenceFound := false
@@ -512,6 +522,7 @@ func (i *Installer) installManifests(
 			})
 			existingObj.SetOwnerReferences(ownerReferences)
 		}
+
 		existingObj.SetLabels(unstrObj.GetLabels())
 		existingObj.SetAnnotations(unstrObj.GetAnnotations())
 		existingUnstructuredObj := existingObj.UnstructuredContent()
@@ -540,8 +551,8 @@ func (i *Installer) installManifests(
 	return nil
 }
 
-// installRelease attempts to install the given release on the given cluster.
-func (i *Installer) installRelease(
+// install attempts to install an InstallationTarget on the given cluster.
+func (i *Installer) install(
 	cluster *shipper.Cluster,
 	client kubernetes.Interface,
 	restConfig *rest.Config,

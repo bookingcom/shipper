@@ -796,6 +796,16 @@ func (in *InstallationTargetSpec) DeepCopyInto(out *InstallationTargetSpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.Chart != nil {
+		in, out := &in.Chart, &out.Chart
+		*out = new(Chart)
+		**out = **in
+	}
+	if in.Values != nil {
+		in, out := &in.Values, &out.Values
+		x := (*in).DeepCopy()
+		*out = &x
+	}
 	return
 }
 

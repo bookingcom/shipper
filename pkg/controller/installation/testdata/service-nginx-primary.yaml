@@ -5,12 +5,12 @@ metadata:
   labels:
     shipper-lb: production
     shipper-app: nginx
-    shipper-release: nginx
+    shipper-owned-by: nginx
     app.kubernetes.io/managed-by: Tiller
     app.kubernetes.io/name: nginx
     app.kubernetes.io/instance: nginx
     helm.sh/chart: nginx-0.1.0
-    
+    enable-helm-release-workaround: "true"
 spec:
   type: ClusterIP
   ports:

@@ -788,7 +788,10 @@ func buildExpectedActions(release *shipper.Release, clusters []*shipper.Cluster)
 			},
 		},
 		Spec: shipper.InstallationTargetSpec{
-			Clusters: clusterNames,
+			Clusters:    clusterNames,
+			CanOverride: true,
+			Chart:       release.Spec.Environment.Chart.DeepCopy(),
+			Values:      release.Spec.Environment.Values,
 		},
 	}
 

@@ -32,6 +32,7 @@ var InstallationTarget = &apiextensionv1beta1.CustomResourceDefinition{
 						Type: "object",
 						Required: []string{
 							"clusters",
+							"canOverride",
 						},
 						Properties: map[string]apiextensionv1beta1.JSONSchemaProps{
 							"clusters": apiextensionv1beta1.JSONSchemaProps{
@@ -41,6 +42,20 @@ var InstallationTarget = &apiextensionv1beta1.CustomResourceDefinition{
 										Type: "string",
 									},
 								},
+							},
+							"canOverride": apiextensionv1beta1.JSONSchemaProps{
+								Type: "boolean",
+							},
+							"chart": apiextensionv1beta1.JSONSchemaProps{
+								Type: "object",
+								Properties: map[string]apiextensionv1beta1.JSONSchemaProps{
+									"name":    apiextensionv1beta1.JSONSchemaProps{Type: "string"},
+									"version": apiextensionv1beta1.JSONSchemaProps{Type: "string"},
+									"repoUrl": apiextensionv1beta1.JSONSchemaProps{Type: "string"},
+								},
+							},
+							"values": apiextensionv1beta1.JSONSchemaProps{
+								Type: "object",
 							},
 						},
 					},

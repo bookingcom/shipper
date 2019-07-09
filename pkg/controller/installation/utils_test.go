@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -27,7 +28,6 @@ import (
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
-	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
 // FakeClientProvider implements clusterclientstore.ClientProvider.
@@ -68,68 +68,17 @@ func loadService(variant string) *corev1.Service {
 	return service
 }
 
-func buildApplication(appName, ns string) *shipper.Application {
-	return &shipper.Application{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      appName,
-			Namespace: ns,
-		},
-		Status: shipper.ApplicationStatus{
-			History: []string{"0.0.1"},
-		},
-		Spec: shipper.ApplicationSpec{
-			Template: shipper.ReleaseEnvironment{
-				ClusterRequirements: shipper.ClusterRequirements{
-					Regions: []shipper.RegionRequirement{{Name: shippertesting.TestRegion}},
-				},
-				Chart: shipper.Chart{
-					Name:    "nginx",
-					Version: "0.1.0",
-					RepoURL: "https://chartmuseum.local/charts",
-				},
-				Values: &shipper.ChartValues{
-					"replicaCount": "10",
-				},
-				Strategy: &shipper.RolloutStrategy{
-					Steps: []shipper.RolloutStrategyStep{
-						{
-							Name: "staging",
-							Capacity: shipper.RolloutStrategyStepValue{
-								Contender: 1,
-								Incumbent: 100,
-							},
-							Traffic: shipper.RolloutStrategyStepValue{
-								Contender: 0,
-								Incumbent: 100,
-							},
-						},
-						{
-							Name: "50/50",
-							Capacity: shipper.RolloutStrategyStepValue{
-								Contender: 50,
-								Incumbent: 50,
-							},
-							Traffic: shipper.RolloutStrategyStepValue{
-								Contender: 50,
-								Incumbent: 50,
-							},
-						},
-						{
-							Name: "full on",
-							Capacity: shipper.RolloutStrategyStepValue{
-								Contender: 100,
-								Incumbent: 0,
-							},
-							Traffic: shipper.RolloutStrategyStepValue{
-								Contender: 100,
-								Incumbent: 0,
-							},
-						},
-					},
-				},
-			},
-		},
+func loadDeployment(variant string) *appsv1.Deployment {
+	deployment := &appsv1.Deployment{}
+	deploymentYamlPath := filepath.Join("testdata", fmt.Sprintf("deployment-%s.yaml", variant))
+
+	if deploymentRaw, err := ioutil.ReadFile(deploymentYamlPath); err != nil {
+		panic(err)
+	} else if _, _, err = scheme.Codecs.UniversalDeserializer().Decode(deploymentRaw, nil, deployment); err != nil {
+		panic(err)
 	}
+
+	return deployment
 }
 
 // buildCluster returns a cluster.
@@ -221,61 +170,48 @@ func newController(
 	return c
 }
 
-func newInstaller(release *shipper.Release, it *shipper.InstallationTarget) *Installer {
-	return NewInstaller(localFetchChart, release, it)
+func newInstaller(it *shipper.InstallationTarget) *Installer {
+	return NewInstaller(localFetchChart, it)
 }
 
-func buildRelease(repoURL, namespace, relName, version, generation, uid, appName string) *shipper.Release {
-	return &shipper.Release{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      relName,
-			Namespace: namespace,
-			UID:       types.UID(uid),
-			Labels: map[string]string{
-				shipper.AppLabel:     appName,
-				shipper.ReleaseLabel: relName,
-			},
-			Annotations: map[string]string{
-				shipper.ReleaseGenerationAnnotation: generation,
-			},
-		},
-		Spec: shipper.ReleaseSpec{
-			Environment: shipper.ReleaseEnvironment{
-				Chart: shipper.Chart{
-					Name:    appName,
-					Version: version,
-					RepoURL: repoURL,
-				},
-			},
-		},
-	}
-}
-
-func buildInstallationTargetWithOwner(ownerName, ownerUID, namespace, appName string, clusters []string) *shipper.InstallationTarget {
+func buildInstallationTarget(namespace, appName string, clusters []string, chart *shipper.Chart) *shipper.InstallationTarget {
 	return &shipper.InstallationTarget{
 		ObjectMeta: v1.ObjectMeta{
-			Name:      ownerName,
+			Name:      appName,
 			Namespace: namespace,
-			OwnerReferences: []v1.OwnerReference{
-				{
-					APIVersion: shipper.SchemeGroupVersion.String(),
-					Kind:       "Release",
-					Name:       ownerName,
-					UID:        types.UID(ownerUID),
-				},
-			},
 			Labels: map[string]string{
 				shipper.AppLabel:            appName,
-				shipper.ReleaseLabel:        ownerName,
 				shipper.HelmWorkaroundLabel: shipper.True,
 			},
 		},
 		Spec: shipper.InstallationTargetSpec{
-			Clusters: clusters,
+			Clusters:    clusters,
+			Chart:       chart,
+			Values:      nil,
+			CanOverride: true,
 		},
 	}
 }
 
-func buildInstallationTarget(owner *shipper.Release, namespace, appName string, clusters []string) *shipper.InstallationTarget {
-	return buildInstallationTargetWithOwner(owner.Name, string(owner.UID), namespace, appName, clusters)
+func buildChart(appName, version, repoUrl string) shipper.Chart {
+	return shipper.Chart{
+		Name:    appName,
+		Version: version,
+		RepoURL: repoUrl,
+	}
+}
+
+func buildRelease(namespace, name string, chart shipper.Chart) *shipper.Release {
+	return &shipper.Release{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			UID:       types.UID("foobar"),
+		},
+		Spec: shipper.ReleaseSpec{
+			Environment: shipper.ReleaseEnvironment{
+				Chart: chart,
+			},
+		},
+	}
 }

@@ -32,8 +32,26 @@ spec:
           type: object
           required:
           - clusters
+          - canOverride
           properties:
             clusters:
               type: array
               items:
                 type: string
+            canOverride:
+              type: boolean
+            chart:
+              type: object
+              required:
+              - name
+              - version
+              - repoUrl
+              properties:
+                name:
+                  type: string
+                version:
+                  type: string
+                repoUrl:
+                  type: string
+            values:
+              type: object

@@ -8,7 +8,8 @@ metadata:
     app.kubernetes.io/instance: nginx
     helm.sh/chart: nginx-0.1.0
     shipper-app: nginx
-    shipper-release: nginx
+    shipper-owned-by: nginx
+    enable-helm-release-workaround: "true"
 spec:
   type: ClusterIP
   ports:

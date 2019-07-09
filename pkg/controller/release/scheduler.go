@@ -272,6 +272,11 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 					createOwnerRefFromRelease(rel),
 				},
 			},
+			Spec: shipper.InstallationTargetSpec{
+				Chart:       rel.Spec.Environment.Chart.DeepCopy(),
+				Values:      rel.Spec.Environment.Values,
+				CanOverride: true,
+			},
 		}
 		setInstallationTargetClusters(it, clusters)
 

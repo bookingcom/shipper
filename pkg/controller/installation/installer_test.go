@@ -16,7 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
@@ -113,13 +112,15 @@ func TestInstaller(t *testing.T) {
 
 func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObjects []runtime.Object) {
 	cluster := buildCluster("minikube-a")
-	release := buildRelease(repoUrl, "test-namespace", "release", "0.0.1", "0", "deadbeef", "reviews-api")
-	it := buildInstallationTarget(release, "test-namespace", "reviews-api", []string{cluster.Name})
+	appName := "reviews-api"
+	testNs := "test-namespace"
+	chart := buildChart(appName, "0.0.1", repoUrl)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
 	if err != nil {
 		panic(err)
 	}
-	installer := newInstaller(release, it)
+	installer := newInstaller(it)
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
@@ -130,20 +131,20 @@ func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObject
 	restConfig := &rest.Config{}
 
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "reviews-api-anchor"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "reviews-api-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, nil),
 		shippertesting.NewDiscoveryAction("services"),
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
 
 	expectedDynamicActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "test-namespace-reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, "test-namespace-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, nil),
 	}
 
-	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
@@ -191,8 +192,8 @@ func validateServiceCreateAction(t *testing.T, existingService *corev1.Service, 
 	// First we test the data that is expected to be in the created service
 	// object, since we delete keys on the underlying unstructured object
 	// later on, when comparing spec and metadata.
-	if _, ok := unstructuredObj.GetLabels()[shipper.ReleaseLabel]; !ok {
-		t.Fatalf("could not find %q in Deployment .metadata.labels", shipper.ReleaseLabel)
+	if _, ok := unstructuredObj.GetLabels()[shipper.InstallationTargetOwnerLabel]; !ok {
+		t.Fatalf("could not find %q in Service .metadata.labels", shipper.InstallationTargetOwnerLabel)
 	}
 
 	_, expectedUnstructuredServiceContent := extractUnstructuredContent(scheme, existingService)
@@ -219,21 +220,13 @@ func validateDeploymentCreateAction(t *testing.T, obj runtime.Object, validateLa
 	if err != nil {
 		panic(err)
 	}
-	if _, ok := u.GetLabels()[shipper.ReleaseLabel]; !ok {
-		t.Fatalf("could not find %q in Deployment .metadata.labels", shipper.ReleaseLabel)
+	if _, ok := u.GetLabels()[shipper.InstallationTargetOwnerLabel]; !ok {
+		t.Fatalf("could not find %q in Deployment .metadata.labels", shipper.InstallationTargetOwnerLabel)
 	}
 
 	deployment := &appsv1.Deployment{}
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, deployment); err != nil {
 		t.Fatalf("could not decode deployment from unstructured: %s", err)
-	}
-
-	if _, ok := deployment.Spec.Selector.MatchLabels[shipper.ReleaseLabel]; !ok {
-		t.Fatal("deployment .spec.selector.matchLabels doesn't contain shipperV1.ReleaseLabel")
-	}
-
-	if _, ok := deployment.Spec.Template.Labels[shipper.ReleaseLabel]; !ok {
-		t.Fatal("deployment .spec.template.labels doesn't contain shipperV1.ReleaseLabel")
 	}
 
 	// If provided, we ensure the labels from the list present in the
@@ -268,20 +261,22 @@ func filterActions(actions []kubetesting.Action, verb string) []kubetesting.Acti
 // release contains an invalid serialized chart.
 func TestInstallerBrokenChartTarball(t *testing.T) {
 	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "reviews-api"
 
-	// there is a reviews-api-invalid-tarball.tgz in testdata which contains invalid deployment and service templates
-	release := buildRelease(repoUrl, "reviews-api", "0.0.1", "0.0.1", "0", "deadbeef", "reviews-api")
-	release.Spec.Environment.Chart.Version = "invalid-tarball"
+	// there is a reviews-api-invalid-tarball.tgz in testdata which
+	// contains a broken tarball
+	chart := buildChart(appName, "invalid-tarball", repoUrl)
 
-	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
-	installer := newInstaller(release, it)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	installer := newInstaller(it)
 
 	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: []runtime.Object{}})
 
 	fakePair := clientsPerCluster[cluster.Name]
 
 	restConfig := &rest.Config{}
-	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
+	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
 		t.Fatal("installRelease should fail, invalid tarball")
 	}
 }
@@ -290,20 +285,22 @@ func TestInstallerBrokenChartTarball(t *testing.T) {
 // release contains an invalid serialized chart.
 func TestInstallerChartTarballBrokenService(t *testing.T) {
 	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "reviews-api"
 
-	// there is a reviews-api-invalid-tarball.tgz in testdata which contains invalid deployment and service templates
-	release := buildRelease(repoUrl, "reviews-api", "0.0.1", "0.0.1", "0", "deadbeef", "reviews-api")
-	release.Spec.Environment.Chart.Version = "0.0.1-broken-service"
+	// there is a reviews-api-0.0.1-broken-service.tgz in testdata which
+	// contains invalid deployment and service templates
+	chart := buildChart(appName, "0.0.1-broken-service", repoUrl)
 
-	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
-	installer := newInstaller(release, it)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	installer := newInstaller(it)
 
 	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: []runtime.Object{}})
 
 	fakePair := clientsPerCluster[cluster.Name]
 
 	restConfig := &rest.Config{}
-	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
+	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
 		t.Fatal("installRelease should fail, invalid tarball")
 	}
 }
@@ -313,13 +310,15 @@ func TestInstallerChartTarballBrokenService(t *testing.T) {
 // name templated with the release's name.
 func TestInstallerChartTarballInvalidDeploymentName(t *testing.T) {
 	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "reviews-api"
 
-	// there is a reviews-api-invalid-tarball.tgz in testdata which contains invalid deployment and service templates
-	release := buildRelease(repoUrl, "reviews-api", "0.0.1", "0.0.1", "0", "deadbeef", "reviews-api")
-	release.Spec.Environment.Chart.Version = "invalid-deployment-name"
+	// there is a reviews-api-invalid-deployment-name.tgz in testdata which
+	// contains invalid deployment and service templates
+	chart := buildChart(appName, "invalid-deployment-name", repoUrl)
 
-	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
-	installer := newInstaller(release, it)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	installer := newInstaller(it)
 
 	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: []runtime.Object{}})
 
@@ -327,7 +326,7 @@ func TestInstallerChartTarballInvalidDeploymentName(t *testing.T) {
 
 	restConfig := &rest.Config{}
 
-	err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder)
+	err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder)
 	if err == nil {
 		t.Fatal("installRelease should fail, invalid deployment name")
 	}
@@ -341,37 +340,39 @@ func TestInstallerChartTarballInvalidDeploymentName(t *testing.T) {
 // release contains a valid chart tarball with invalid K8s object templates.
 func TestInstallerBrokenChartContents(t *testing.T) {
 	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "reviews-api"
 
 	// There is a reviews-api-invalid-k8s-objects.tgz in testdata which contains
 	// invalid deployment and service templates.
-	release := buildRelease(repoUrl, "reviews-api", "0.0.1", "0.0.1", "0", "deadbeef", "reviews-api")
-	release.Spec.Environment.Chart.Version = "invalid-k8s-objects"
+	chart := buildChart(appName, "invalid-k8s-objects", repoUrl)
 
-	it := buildInstallationTarget(release, "reviews-api", "reviews-api", []string{cluster.Name})
-	installer := newInstaller(release, it)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	installer := newInstaller(it)
 
 	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
 
 	fakePair := clientsPerCluster[cluster.Name]
 
 	restConfig := &rest.Config{}
-	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
+	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
 		t.Fatal("installRelease should fail, invalid k8s objects")
 	}
 }
 
 func TestInstallerSingleServiceNoLB(t *testing.T) {
 	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "reviews-api"
 
-	release := buildRelease(repoUrl, "test-namespace", "release", "0.0.1", "0", "deadbeef", "reviews-api")
-	release.Spec.Environment.Chart.Version = "single-service-no-lb"
+	chart := buildChart(appName, "single-service-no-lb", repoUrl)
 
-	it := buildInstallationTarget(release, "test-namespace", "reviews-api", []string{cluster.Name})
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
 	if err != nil {
 		panic(err)
 	}
-	installer := newInstaller(release, it)
+	installer := newInstaller(it)
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
@@ -382,20 +383,20 @@ func TestInstallerSingleServiceNoLB(t *testing.T) {
 	restConfig := &rest.Config{}
 
 	expectedDynamicActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, nil),
 	}
 
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, nil),
 		shippertesting.NewDiscoveryAction("services"),
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
 
-	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
@@ -412,16 +413,17 @@ func TestInstallerSingleServiceNoLB(t *testing.T) {
 
 func TestInstallerSingleServiceWithLB(t *testing.T) {
 	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "reviews-api"
 
-	release := buildRelease(repoUrl, "test-namespace", "release", "0.0.1", "0", "deadbeef", "reviews-api")
-	release.Spec.Environment.Chart.Version = "single-service-with-lb"
+	chart := buildChart(appName, "single-service-with-lb", repoUrl)
 
-	it := buildInstallationTarget(release, "test-namespace", "reviews-api", []string{cluster.Name})
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
 	if err != nil {
 		panic(err)
 	}
-	installer := newInstaller(release, it)
+	installer := newInstaller(it)
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
@@ -432,20 +434,20 @@ func TestInstallerSingleServiceWithLB(t *testing.T) {
 	restConfig := &rest.Config{}
 
 	expectedDynamicActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, nil),
 	}
 
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, nil),
 		shippertesting.NewDiscoveryAction("services"),
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
 
-	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
@@ -462,16 +464,17 @@ func TestInstallerSingleServiceWithLB(t *testing.T) {
 
 func TestInstallerMultiServiceNoLB(t *testing.T) {
 	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "reviews-api"
 
-	release := buildRelease(repoUrl, "test-namespace", "release", "0.0.1", "0", "deadbeef", "reviews-api")
-	release.Spec.Environment.Chart.Version = "multi-service-no-lb"
+	chart := buildChart(appName, "multi-service-no-lb", repoUrl)
 
-	it := buildInstallationTarget(release, "test-namespace", "reviews-api", []string{cluster.Name})
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
 	if err != nil {
 		panic(err)
 	}
-	installer := newInstaller(release, it)
+	installer := newInstaller(it)
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
@@ -481,7 +484,7 @@ func TestInstallerMultiServiceNoLB(t *testing.T) {
 
 	restConfig := &rest.Config{}
 
-	err = installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder)
+	err = installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder)
 	if err == nil {
 		t.Fatal("Expected an error, none raised")
 	}
@@ -494,16 +497,17 @@ func TestInstallerMultiServiceNoLB(t *testing.T) {
 
 func TestInstallerMultiServiceWithLB(t *testing.T) {
 	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "reviews-api"
 
-	release := buildRelease(repoUrl, "test-namespace", "release", "0.0.1", "0", "deadbeef", "reviews-api")
-	release.Spec.Environment.Chart.Version = "multi-service-with-lb"
+	chart := buildChart(appName, "multi-service-with-lb", repoUrl)
 
-	it := buildInstallationTarget(release, "test-namespace", "reviews-api", []string{cluster.Name})
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
 	if err != nil {
 		panic(err)
 	}
-	installer := newInstaller(release, it)
+	installer := newInstaller(it)
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
@@ -514,23 +518,23 @@ func TestInstallerMultiServiceWithLB(t *testing.T) {
 	restConfig := &rest.Config{}
 
 	expectedDynamicActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api-staging"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.0.1-reviews-api-staging"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, nil),
 	}
 
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, nil),
 		shippertesting.NewDiscoveryAction("services"),
 		shippertesting.NewDiscoveryAction("services"),
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
 
-	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
@@ -547,38 +551,18 @@ func TestInstallerMultiServiceWithLB(t *testing.T) {
 
 func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
 	cluster := buildCluster("minikube-a")
+	appName := "nginx"
+	testNs := "nginx"
 
-	release := &shipper.Release{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "nginx",
-			Namespace: "nginx",
-			UID:       types.UID("deadbeef"),
-			Labels: map[string]string{
-				shipper.AppLabel:     "nginx",
-				shipper.ReleaseLabel: "nginx",
-			},
-			Annotations: map[string]string{
-				shipper.ReleaseGenerationAnnotation: "0",
-			},
-		},
-		Spec: shipper.ReleaseSpec{
-			Environment: shipper.ReleaseEnvironment{
-				Chart: shipper.Chart{
-					Name:    "nginx",
-					Version: "0.1.0",
-					RepoURL: repoUrl,
-				},
-			},
-		},
-	}
+	chart := buildChart(appName, "0.1.0", repoUrl)
 
-	it := buildInstallationTarget(release, "nginx", "nginx", []string{cluster.Name})
+	it := buildInstallationTarget("nginx", "nginx", []string{cluster.Name}, &chart)
 
 	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
 	if err != nil {
 		panic(err)
 	}
-	installer := newInstaller(release, it)
+	installer := newInstaller(it)
 	primarySvc := loadService("nginx-primary")
 	secondarySvc := loadService("nginx-secondary")
 	primarySvc.SetOwnerReferences(append(primarySvc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
@@ -591,23 +575,23 @@ func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
 	restConfig := &rest.Config{}
 
 	expectedDynamicActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.1.0-nginx"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.1.0-nginx-staging"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.1.0-nginx"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.1.0-nginx"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.1.0-nginx-staging"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, "0.1.0-nginx"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, nil),
 	}
 
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.1.0-anchor"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "0.1.0-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, nil),
 		shippertesting.NewDiscoveryAction("services"),
 		shippertesting.NewDiscoveryAction("services"),
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
 
-	if err := installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
@@ -624,10 +608,11 @@ func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
 
 func TestInstallerServiceWithReleaseNoWorkaround(t *testing.T) {
 	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "reviews-api"
 
-	release := buildRelease(repoUrl, "test-namespace", "release", "0.0.1", "0", "deadbeef", "reviews-api")
-
-	it := buildInstallationTarget(release, "test-namespace", "reviews-api", []string{cluster.Name})
+	chart := buildChart(appName, "0.0.1", repoUrl)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 
 	// Disabling the helm workaround
 	delete(it.ObjectMeta.Labels, shipper.HelmWorkaroundLabel)
@@ -637,7 +622,7 @@ func TestInstallerServiceWithReleaseNoWorkaround(t *testing.T) {
 		panic(err)
 	}
 
-	installer := newInstaller(release, it)
+	installer := newInstaller(it)
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
@@ -647,7 +632,7 @@ func TestInstallerServiceWithReleaseNoWorkaround(t *testing.T) {
 
 	restConfig := &rest.Config{}
 
-	err = installer.installRelease(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder)
+	err = installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder)
 	if err == nil {
 		t.Fatal("Expected error, none raised")
 	}
@@ -656,4 +641,55 @@ func TestInstallerServiceWithReleaseNoWorkaround(t *testing.T) {
 	} else if !matched {
 		t.Fatalf("Unexpected error: %s", err)
 	}
+}
+
+// TestInstallerNoOverride verifies that an InstallationTarget with disabled
+// overrides does not try to update existing resources that it does not own.
+func TestInstallerNoOverride(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "reviews-api"
+	ownerLabel := "some-other-installation-target"
+
+	chart := buildChart(appName, "0.0.1", repoUrl)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	it.Spec.CanOverride = false
+
+	svc := loadService("baseline")
+	svc.ObjectMeta.Namespace = testNs
+	svc.ObjectMeta.SetLabels(map[string]string{
+		shipper.InstallationTargetOwnerLabel: ownerLabel})
+
+	deployment := loadDeployment("baseline")
+	deployment.ObjectMeta.Namespace = testNs
+	deployment.ObjectMeta.SetLabels(map[string]string{
+		shipper.InstallationTargetOwnerLabel: ownerLabel})
+
+	kubeObjects := []runtime.Object{svc, deployment}
+
+	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(
+		apiResourceList, nil,
+		objectsPerClusterMap{cluster.Name: kubeObjects})
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "reviews-api-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, nil),
+		shippertesting.NewDiscoveryAction("services"),
+		shippertesting.NewDiscoveryAction("deployments"),
+	}
+
+	expectedDynamicActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.0.1-reviews-api"),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, "test-namespace-reviews-api"),
+	}
+
+	installer := newInstaller(it)
+	fakePair := clientsPerCluster[cluster.Name]
+	restConfig := &rest.Config{}
+	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+		t.Fatal(err)
+	}
+
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.fakeDynamicClient.Actions(), t)
 }

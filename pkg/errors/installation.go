@@ -1,6 +1,12 @@
 package errors
 
-import "fmt"
+import (
+	"fmt"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+)
 
 type DecodeManifestError struct {
 	err error
@@ -44,25 +50,23 @@ func IsConvertUnstructuredError(err error) bool {
 	return ok
 }
 
-type IncompleteReleaseError struct {
-	err error
+type MissingInstallationTargetOwnerLabelError struct {
+	obj *unstructured.Unstructured
 }
 
-func (e IncompleteReleaseError) Error() string {
-	return e.err.Error()
+func NewMissingInstallationTargetOwnerLabelError(obj *unstructured.Unstructured) MissingInstallationTargetOwnerLabelError {
+	return MissingInstallationTargetOwnerLabelError{
+		obj: obj,
+	}
 }
 
-func (e IncompleteReleaseError) ShouldRetry() bool {
+func (e MissingInstallationTargetOwnerLabelError) Error() string {
+	return fmt.Sprintf(
+		`Object "%s/%s" is missing required label %q as it was not created by any InstallationTarget. Shipper doesn't know how to deal with this`,
+		e.obj.GetNamespace(), e.obj.GetName(),
+		shipper.InstallationTargetOwnerLabel)
+}
+
+func (e MissingInstallationTargetOwnerLabelError) ShouldRetry() bool {
 	return false
 }
-
-func NewIncompleteReleaseError(format string, args ...interface{}) IncompleteReleaseError {
-	return IncompleteReleaseError{fmt.Errorf(format, args...)}
-}
-
-func IsIncompleteReleaseError(err error) bool {
-	_, ok := err.(IncompleteReleaseError)
-	return ok
-}
-
-// Incomplete release should not retry

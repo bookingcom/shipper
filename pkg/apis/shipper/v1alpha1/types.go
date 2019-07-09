@@ -12,10 +12,11 @@ const (
 
 	PhaseLabel = "phase"
 
-	ReleaseLabel                = "shipper-release"
-	AppLabel                    = "shipper-app"
-	ReleaseEnvironmentHashLabel = "shipper-release-hash"
-	PodTrafficStatusLabel       = "shipper-traffic-status"
+	ReleaseLabel                 = "shipper-release"
+	AppLabel                     = "shipper-app"
+	ReleaseEnvironmentHashLabel  = "shipper-release-hash"
+	PodTrafficStatusLabel        = "shipper-traffic-status"
+	InstallationTargetOwnerLabel = "shipper-owned-by"
 
 	ReleaseRecordWaitingForObject = "WaitingForObject"
 	ReleaseRecordObjectCreated    = "ReleaseCreated"
@@ -309,7 +310,11 @@ type ClusterInstallationCondition struct {
 }
 
 type InstallationTargetSpec struct {
-	Clusters []string `json:"clusters"`
+	Clusters    []string `json:"clusters"`
+	CanOverride bool     `json:"canOverride"`
+	// XXX these are nullable because of migration
+	Chart  *Chart       `json:"chart"`
+	Values *ChartValues `json:"values,omitempty"`
 }
 
 // +genclient

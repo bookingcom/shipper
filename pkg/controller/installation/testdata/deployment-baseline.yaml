@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: reviews-api
+    chart: reviews-api-0.0.1
+    enable-helm-release-workaround: "true"
+    heritage: Tiller
+    release: reviews-api
+    shipper-app: reviews-api
+  name: reviews-api-reviews-api
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      enable-helm-release-workaround: "true"
+      shipper-app: reviews-api
