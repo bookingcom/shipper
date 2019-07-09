@@ -248,13 +248,12 @@ k8s.io/apimachinery/pkg/labels
 k8s.io/apimachinery/pkg/util/validation
 k8s.io/apimachinery/pkg/util/intstr
 k8s.io/apimachinery/pkg/runtime
+k8s.io/apimachinery/pkg/util/wait
 k8s.io/apimachinery/pkg/runtime/serializer
 k8s.io/apimachinery/pkg/util/runtime
 k8s.io/apimachinery/pkg/watch
 k8s.io/apimachinery/pkg/types
-k8s.io/apimachinery/pkg/util/wait
 k8s.io/apimachinery/pkg/apis/meta/v1/unstructured
-k8s.io/apimachinery/pkg/util/diff
 k8s.io/apimachinery/pkg/api/resource
 k8s.io/apimachinery/pkg/util/validation/field
 k8s.io/apimachinery/pkg/conversion
@@ -276,6 +275,7 @@ k8s.io/apimachinery/pkg/version
 k8s.io/apimachinery/pkg/runtime/serializer/protobuf
 k8s.io/apimachinery/pkg/runtime/serializer/recognizer
 k8s.io/apimachinery/pkg/util/cache
+k8s.io/apimachinery/pkg/util/diff
 k8s.io/apimachinery/third_party/forked/golang/reflect
 k8s.io/apimachinery/pkg/util/framer
 k8s.io/apimachinery/pkg/util/yaml
