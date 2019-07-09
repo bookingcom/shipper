@@ -13,6 +13,7 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 var (
@@ -178,7 +179,12 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 			}
 		}
 
-		if rel.Status.Strategy != nil {
+		// We're only interested in incomplete releases, as this metric
+		// is intended to for measuring how long each release takes to
+		// roll out, waiting for installation, capacity and traffic.
+		// Sometimes, previously completed releases lose capacity and
+		// don't recover, and we're not interested in those.
+		if !releaseutil.ReleaseComplete(rel) && rel.Status.Strategy != nil {
 			for _, condition := range rel.Status.Strategy.Conditions {
 				if condition.Status != corev1.ConditionFalse {
 					continue
