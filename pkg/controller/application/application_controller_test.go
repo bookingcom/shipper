@@ -3,6 +3,7 @@ package application
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,13 +18,16 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
+	rolloutBlockOverride "github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
 const (
 	testAppName = "test-app"
+	testRolloutBlockName = "test-rollout-block"
 )
 
 func init() {
@@ -100,6 +104,214 @@ func TestCreateFirstRelease(t *testing.T) {
 	expectedRelease.Annotations[shipper.RolloutBlocksOverrideAnnotation] = ""
 
 	f.expectReleaseCreate(expectedRelease)
+	f.expectApplicationUpdate(expectedApp)
+	f.run()
+}
+
+func TestCreateFirstReleaseWithRolloutBlockOverride(t *testing.T) {
+	f := newFixture(t)
+	rolloutblock := newRolloutBlock(testRolloutBlockName)
+	f.objects = append(f.objects, rolloutblock)
+	app := newApplication(testAppName)
+	app.Spec.Template.Chart.RepoURL = "127.0.0.1"
+	rolloutBlockFullName := fmt.Sprintf("%s/%s", shippertesting.TestNamespace, testRolloutBlockName)
+	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = rolloutBlockFullName
+
+	envHash := hashReleaseEnvironment(app.Spec.Template)
+	expectedRelName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
+
+	f.objects = append(f.objects, app)
+	expectedApp := app.DeepCopy()
+	expectedApp.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "0"
+	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
+		{
+			Type:   shipper.ApplicationConditionTypeAborting,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeReleaseSynced,
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:    shipper.ApplicationConditionTypeRollingOut,
+			Status:  corev1.ConditionTrue,
+			Message: fmt.Sprintf(InitialReleaseMessageFormat, expectedRelName),
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeRolloutBlock,
+			Status: corev1.ConditionTrue,
+			Reason: rolloutBlockFullName,
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeValidHistory,
+			Status: corev1.ConditionTrue,
+		},
+	}
+	expectedApp.Status.History = []string{expectedRelName}
+
+	// We do not expect entries in the history or 'RollingOut: true' in the state
+	// because the testing client does not update listers after Create actions.
+
+	expectedRelease := newRelease(expectedRelName, app)
+	expectedRelease.Spec.Environment.Chart.RepoURL = "127.0.0.1"
+	expectedRelease.Labels[shipper.ReleaseEnvironmentHashLabel] = envHash
+	expectedRelease.Annotations[shipper.ReleaseTemplateIterationAnnotation] = "0"
+	expectedRelease.Annotations[shipper.ReleaseGenerationAnnotation] = "0"
+	expectedRelease.Annotations[shipper.RolloutBlocksOverrideAnnotation] = rolloutBlockFullName
+
+	f.expectReleaseCreate(expectedRelease)
+	f.expectApplicationUpdate(expectedApp)
+	f.run()
+}
+
+func TestCreateFirstReleaseWithTwoRolloutBlockOverride(t *testing.T) {
+	f := newFixture(t)
+	rolloutblock := newRolloutBlock(testRolloutBlockName)
+	secondRolloutblock := newRolloutBlock(testRolloutBlockName + "2")
+	f.objects = append(f.objects, rolloutblock, secondRolloutblock)
+	app := newApplication(testAppName)
+	app.Spec.Template.Chart.RepoURL = "127.0.0.1"
+	rolloutBlockKey := fmt.Sprintf("%s/%s", shippertesting.TestNamespace, testRolloutBlockName)
+	secondRolloutBlockKey := fmt.Sprintf("%s/%s", shippertesting.TestNamespace, secondRolloutblock.Name)
+	overrides := rolloutBlockOverride.NewOverride(strings.Join([]string{rolloutBlockKey, secondRolloutBlockKey}, ","))
+	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = overrides.String()
+
+	envHash := hashReleaseEnvironment(app.Spec.Template)
+	expectedRelName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
+
+	f.objects = append(f.objects, app)
+	expectedApp := app.DeepCopy()
+	expectedApp.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "0"
+	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
+		{
+			Type:   shipper.ApplicationConditionTypeAborting,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeReleaseSynced,
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:    shipper.ApplicationConditionTypeRollingOut,
+			Status:  corev1.ConditionTrue,
+			Message: fmt.Sprintf(InitialReleaseMessageFormat, expectedRelName),
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeRolloutBlock,
+			Status: corev1.ConditionTrue,
+			Reason: overrides.String(),
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeValidHistory,
+			Status: corev1.ConditionTrue,
+		},
+	}
+	expectedApp.Status.History = []string{expectedRelName}
+
+	// We do not expect entries in the history or 'RollingOut: true' in the state
+	// because the testing client does not update listers after Create actions.
+
+	expectedRelease := newRelease(expectedRelName, app)
+	expectedRelease.Spec.Environment.Chart.RepoURL = "127.0.0.1"
+	expectedRelease.Labels[shipper.ReleaseEnvironmentHashLabel] = envHash
+	expectedRelease.Annotations[shipper.ReleaseTemplateIterationAnnotation] = "0"
+	expectedRelease.Annotations[shipper.ReleaseGenerationAnnotation] = "0"
+	expectedRelease.Annotations[shipper.RolloutBlocksOverrideAnnotation] = overrides.String()
+
+	f.expectReleaseCreate(expectedRelease)
+	f.expectApplicationUpdate(expectedApp)
+	f.run()
+}
+
+func TestCreateFirstReleaseWithNonExistingRolloutBlockOverride(t *testing.T) {
+	f := newFixture(t)
+	app := newApplication(testAppName)
+	app.Spec.Template.Chart.RepoURL = "127.0.0.1"
+	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", shippertesting.TestNamespace, "test-non-existing-rolloutblock")
+
+	envHash := hashReleaseEnvironment(app.Spec.Template)
+	expectedRelName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
+
+	f.objects = append(f.objects, app)
+	expectedApp := app.DeepCopy()
+	expectedApp.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "0"
+	expectedApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = ""
+
+	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
+		{
+			Type:   shipper.ApplicationConditionTypeAborting,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeReleaseSynced,
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:    shipper.ApplicationConditionTypeRollingOut,
+			Status:  corev1.ConditionTrue,
+			Message: fmt.Sprintf(InitialReleaseMessageFormat, expectedRelName),
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeRolloutBlock,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeValidHistory,
+			Status: corev1.ConditionTrue,
+		},
+	}
+	expectedApp.Status.History = []string{expectedRelName}
+
+	// We do not expect entries in the history or 'RollingOut: true' in the state
+	// because the testing client does not update listers after Create actions.
+
+	expectedRelease := newRelease(expectedRelName, app)
+	expectedRelease.Spec.Environment.Chart.RepoURL = "127.0.0.1"
+	expectedRelease.Labels[shipper.ReleaseEnvironmentHashLabel] = envHash
+	expectedRelease.Annotations[shipper.ReleaseTemplateIterationAnnotation] = "0"
+	expectedRelease.Annotations[shipper.ReleaseGenerationAnnotation] = "0"
+	expectedRelease.Annotations[shipper.RolloutBlocksOverrideAnnotation] = ""
+
+	f.expectReleaseCreate(expectedRelease)
+	f.expectApplicationUpdate(expectedApp)
+	f.run()
+}
+
+func TestBlockApplication(t *testing.T) {
+	f := newFixture(t)
+
+	rolloutblock := newRolloutBlock(testRolloutBlockName)
+	f.objects = append(f.objects, rolloutblock)
+	app := newApplication(testAppName)
+	app.Spec.Template.Chart.RepoURL = "127.0.0.1"
+
+	f.objects = append(f.objects, app)
+	expectedApp := app.DeepCopy()
+	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
+		{
+			Type:   shipper.ApplicationConditionTypeAborting,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeReleaseSynced,
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:    shipper.ApplicationConditionTypeRollingOut,
+			Status:  corev1.ConditionUnknown,
+			Message: shippererrors.NewContenderNotFoundError(testAppName).Error(),
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeRolloutBlock,
+			Reason: fmt.Sprintf("%s/%s", rolloutblock.Namespace, rolloutblock.Name),
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeValidHistory,
+			Status: corev1.ConditionTrue,
+		},
+	}
+
 	f.expectApplicationUpdate(expectedApp)
 	f.run()
 }
@@ -690,6 +902,22 @@ func newApplication(name string) *shipper.Application {
 				ClusterRequirements: shipper.ClusterRequirements{},
 				Values:              &shipper.ChartValues{},
 				Strategy:            &vanguard,
+			},
+		},
+	}
+}
+
+func newRolloutBlock(name string) *shipper.RolloutBlock {
+	return &shipper.RolloutBlock{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: shippertesting.TestNamespace,
+		},
+		Spec: shipper.RolloutBlockSpec{
+			Message: "Simple test rollout block",
+			Author: shipper.RolloutBlockAuthor{
+				Type: "user",
+				Name: "testUser",
 			},
 		},
 	}
