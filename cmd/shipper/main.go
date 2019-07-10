@@ -26,6 +26,7 @@ import (
 	kuberestmetrics "k8s.io/client-go/tools/metrics"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/chart"
@@ -118,6 +119,20 @@ type cfg struct {
 
 func main() {
 	flag.Parse()
+
+	// As we use runtime.HandlerError a lot, and it uses klog instead of
+	// glog, we need to sync glog flags into klog, because klog doesn't do
+	// anything in init(), as it's the main reason of its fork from glog.
+	// NOTE(jgreff): this is also probably a good opportunity to discuss
+	// whether we should move shipper to klog entirely.
+	klogFlags := flag.NewFlagSet("klog", flag.ExitOnError)
+	klog.InitFlags(klogFlags)
+	flag.CommandLine.VisitAll(func(f1 *flag.Flag) {
+		f2 := klogFlags.Lookup(f1.Name)
+		if f2 != nil {
+			_ = f2.Value.Set(f1.Value.String())
+		}
+	})
 
 	baseRestCfg, err := clientcmd.BuildConfigFromFlags(*masterURL, *kubeconfig)
 	if err != nil {
