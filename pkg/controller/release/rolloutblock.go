@@ -10,7 +10,7 @@ import (
 	rolloutBlockOverride "github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
-func (s *Scheduler) processRolloutBlocks(rel *shipper.Release) (shouldBlockRollout bool, nonOverriddenRBsStatement string) {
+func (s *Scheduler) processRolloutBlocks(rel *shipper.Release) (bool, string) {
 	relOverrideRB, ok := rel.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 	if !ok {
 		relOverrideRB = ""
@@ -37,23 +37,19 @@ func (s *Scheduler) processRolloutBlocks(rel *shipper.Release) (shouldBlockRollo
 	}
 
 	nonOverriddenRBs := existingRBs.Diff(relOverrideRBs)
-	shouldBlockRollout = len(nonOverriddenRBs) != 0
-	nonOverriddenRBsStatement = nonOverriddenRBs.String()
+	shouldBlockRollout := len(nonOverriddenRBs) != 0
+	nonOverriddenRBsStatement := nonOverriddenRBs.String()
 
 	if shouldBlockRollout {
-		s.recorder.Event(rel, corev1.EventTypeNormal, "RolloutBlock", nonOverriddenRBsStatement)
+		s.recorder.Event(rel, corev1.EventTypeWarning, "RolloutBlock", nonOverriddenRBsStatement)
 	} else if len(relOverrideRB) > 0 {
 		s.recorder.Event(rel, corev1.EventTypeNormal, "Overriding RolloutBlock", relOverrideRB)
 	}
 
-	return
+	return shouldBlockRollout, nonOverriddenRBsStatement
 }
 
 func (s *Scheduler) removeRolloutBlockFromAnnotations(overrideRBs rolloutBlockOverride.Override, rbName string, release *shipper.Release) {
 	overrideRBs.Delete(rbName)
 	release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = overrideRBs.String()
-	_, err := s.clientset.ShipperV1alpha1().Releases(release.Namespace).Update(release)
-	if err != nil {
-		runtime.HandleError(err)
-	}
 }

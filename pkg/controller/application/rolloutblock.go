@@ -1,12 +1,10 @@
 package application
 
 import (
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/runtime"
-
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	rolloutBlockOverride "github.com/bookingcom/shipper/pkg/util/rolloutblock"
+	corev1 "k8s.io/api/core/v1"
 )
 
 func (c *Controller) processRolloutBlocks(app *shipper.Application, nsRBs, gbRBs []*shipper.RolloutBlock) bool {
@@ -40,10 +38,6 @@ func (c *Controller) removeRolloutBlockFromAnnotations(overrideRBs rolloutBlockO
 	overrideRBs.Delete(rbName)
 
 	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = overrideRBs.String()
-	_, err := c.shipperClientset.ShipperV1alpha1().Applications(app.Namespace).Update(app)
-	if err != nil {
-		runtime.HandleError(err)
-	}
 }
 
 func (c *Controller) updateApplicationRolloutBlockCondition(rbs []*shipper.RolloutBlock, app *shipper.Application) {

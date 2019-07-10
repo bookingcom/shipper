@@ -30,7 +30,7 @@ func SetReleaseCondition(status *shipper.ReleaseStatus, condition shipper.Releas
 	if currentCond != nil && currentCond.Status == condition.Status && currentCond.Reason == condition.Reason {
 		return
 	}
-	if currentCond != nil && currentCond.Status == condition.Status {
+	if currentCond != nil && currentCond.Status != condition.Status {
 		condition.LastTransitionTime = currentCond.LastTransitionTime
 	}
 	newConditions := filterOutCondition(status.Conditions, condition.Type)

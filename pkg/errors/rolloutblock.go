@@ -14,7 +14,11 @@ func (e InvalidRolloutBlockOverrideError) Error() string {
 }
 
 func (e InvalidRolloutBlockOverrideError) ShouldRetry() bool {
-	return true
+	return false
+}
+
+func (e InvalidRolloutBlockOverrideError) ShouldBroadcast() bool {
+	return false
 }
 
 func NewInvalidRolloutBlockOverrideError(invalidRolloutBlockName string) InvalidRolloutBlockOverrideError {
@@ -28,7 +32,11 @@ func (e RolloutBlockError) Error() string {
 }
 
 func (e RolloutBlockError) ShouldRetry() bool {
-	return true
+	return false
+}
+
+func (e RolloutBlockError) ShouldBroadcast() bool {
+	return false
 }
 
 func NewRolloutBlockError(invalidRolloutBlockName string) RolloutBlockError {
