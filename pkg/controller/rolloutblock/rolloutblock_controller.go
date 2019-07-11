@@ -491,7 +491,7 @@ func (c *Controller) syncNewRolloutBlockObject(key string) error {
 	var appListerFunc func(selector labels.Selector) (ret []*shipper.Application, err error)
 	var relListerFunc func(selector labels.Selector) (ret []*shipper.Release, err error)
 	switch ns {
-	case shipper.ShipperNamespace:
+	case shipper.GlobalRolloutBlockNamespace:
 		appListerFunc = c.applicationLister.List
 		relListerFunc = c.releaseLister.List
 	default:

@@ -377,7 +377,7 @@ func getNamespaces(lister kubelisters.NamespaceLister) ([]*corev1.Namespace, err
 		return nil, err
 	}
 
-	nsBlacklist := []string{"kube-system", "kube-public", "kube-dns", shipper.ShipperNamespace}
+	nsBlacklist := []string{"kube-system", "kube-public", "kube-dns", shipper.ShipperNamespace, shipper.GlobalRolloutBlockNamespace}
 
 	filtered := make([]*corev1.Namespace, 0, len(nss))
 NS:
