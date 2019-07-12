@@ -208,40 +208,40 @@ func (c *Controller) processNextRolloutBlockWorkItem() bool {
 	defer c.rolloutblockWorkqueue.Done(obj)
 
 	var (
-		ok                  bool
-		rolloutBlockUpdater string
+		ok  bool
+		key string
 	)
 
-	if rolloutBlockUpdater, ok = obj.(string); !ok {
+	if key, ok = obj.(string); !ok {
 		c.rolloutblockWorkqueue.Forget(obj)
 		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
 		return true
 	}
 
 	shouldRetry := false
-	err := c.syncRolloutBlock(rolloutBlockUpdater)
+	err := c.syncRolloutBlock(key)
 
 	if err != nil {
 		shouldRetry = shippererrors.ShouldRetry(err)
-		runtime.HandleError(fmt.Errorf("error syncing RolloutBlock %q (will retry: %t): %s", rolloutBlockUpdater, shouldRetry, err.Error()))
+		runtime.HandleError(fmt.Errorf("error syncing RolloutBlock %q (will retry: %t): %s", key, shouldRetry, err.Error()))
 	}
 
 	if shouldRetry {
-		if c.rolloutblockWorkqueue.NumRequeues(rolloutBlockUpdater) >= maxRetries {
+		if c.rolloutblockWorkqueue.NumRequeues(key) >= maxRetries {
 			// Drop this update out of the workqueue and thus reset its
 			// backoff. This limits the time a "broken" object can hog a worker.
-			glog.Warningf("Update %q for RolloutBlock has been retried too many times, dropping from the queue", rolloutBlockUpdater)
-			c.rolloutblockWorkqueue.Forget(rolloutBlockUpdater)
+			glog.Warningf("Update %q for RolloutBlock has been retried too many times, dropping from the queue", key)
+			c.rolloutblockWorkqueue.Forget(key)
 
 			return true
 		}
 
-		c.rolloutblockWorkqueue.AddRateLimited(rolloutBlockUpdater)
+		c.rolloutblockWorkqueue.AddRateLimited(key)
 
 		return true
 	}
 
-	glog.V(4).Infof("Successfully synced RolloutBlock Updater %q", rolloutBlockUpdater)
+	glog.V(4).Infof("Successfully synced RolloutBlock Updater %q", key)
 	c.rolloutblockWorkqueue.Forget(obj)
 
 	return true
