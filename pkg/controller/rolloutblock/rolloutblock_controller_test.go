@@ -53,6 +53,7 @@ func (f *fixture) run() {
 	shippertesting.CheckActions(f.actions, actual, f.t)
 }
 
+// Tests for Namespace RolloutBlocks
 func TestNewRolloutBlockWithoutOverrides(t *testing.T) {
 	f := newFixture(t)
 
@@ -177,6 +178,145 @@ func TestRemoveReleaseFromRolloutBlockStatus(t *testing.T) {
 
 	app := newApplication(testAppName)
 	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", shippertesting.TestNamespace, testRolloutBlockName)
+	rel := newRelease(testReleaseName, app)
+
+	f.objects = append(f.objects, app, rel)
+
+	rel.Annotations[shipper.RolloutBlocksOverrideAnnotation] = ""
+
+	expectedRolloutBlock := rolloutblock.DeepCopy()
+	expectedRolloutBlock.Status.Overrides.Application = fmt.Sprintf("%s/%s", shippertesting.TestNamespace, testAppName)
+	expectedRolloutBlock.Status.Overrides.Release = ""
+
+	f.expectRolloutBlockUpdate(expectedRolloutBlock)
+	f.run()
+}
+
+// Tests for Global RolloutBlocks
+func TestNewGlobalRolloutBlockWithoutOverrides(t *testing.T) {
+	f := newFixture(t)
+
+	app := newApplication(testAppName)
+	rel := newRelease(testReleaseName, app)
+
+	rolloutblock := newRolloutBlock(testRolloutBlockName, shipper.GlobalRolloutBlockNamespace)
+	f.objects = append(f.objects, rolloutblock, app, rel)
+
+	expectedRolloutBlock := rolloutblock.DeepCopy()
+	expectedRolloutBlock.Status.Overrides.Application = ""
+	expectedRolloutBlock.Status.Overrides.Release = ""
+
+	f.expectRolloutBlockUpdate(expectedRolloutBlock)
+	f.run()
+}
+
+func TestNewGlobalRolloutBlockWithOverrides(t *testing.T) {
+	f := newFixture(t)
+
+	app := newApplication(testAppName)
+	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", shipper.GlobalRolloutBlockNamespace, testRolloutBlockName)
+	rel := newRelease(testReleaseName, app)
+	f.objects = append(f.objects, app, rel)
+
+	rolloutBlock := newRolloutBlock(testRolloutBlockName, shipper.GlobalRolloutBlockNamespace)
+	f.objects = append(f.objects, rolloutBlock)
+
+	expectedRolloutBlock := rolloutBlock.DeepCopy()
+	expectedRolloutBlock.Status.Overrides.Application = fmt.Sprintf("%s/%s", shippertesting.TestNamespace, testAppName)
+	expectedRolloutBlock.Status.Overrides.Release = fmt.Sprintf("%s/%s", shippertesting.TestNamespace, testReleaseName)
+
+	f.expectRolloutBlockUpdate(expectedRolloutBlock)
+	f.run()
+}
+
+func TestAddApplicationToGlobalRolloutBlockStatus(t *testing.T) {
+	f := newFixture(t)
+
+	rolloutblock := newRolloutBlock(testRolloutBlockName, shipper.GlobalRolloutBlockNamespace)
+	f.objects = append(f.objects, rolloutblock)
+
+	app := newApplication(testAppName)
+	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", shipper.GlobalRolloutBlockNamespace, testRolloutBlockName)
+
+	f.objects = append(f.objects, app)
+
+	expectedRolloutBlock := rolloutblock.DeepCopy()
+	expectedRolloutBlock.Status.Overrides.Application = fmt.Sprintf("%s/%s", shippertesting.TestNamespace, testAppName)
+	expectedRolloutBlock.Status.Overrides.Release = ""
+
+	f.expectRolloutBlockUpdate(expectedRolloutBlock)
+	f.run()
+}
+
+func TestAddApplicationAndReleaseToGlobalRolloutBlockStatus(t *testing.T) {
+	f := newFixture(t)
+
+	rolloutblock := newRolloutBlock(testRolloutBlockName, shipper.GlobalRolloutBlockNamespace)
+	f.objects = append(f.objects, rolloutblock)
+
+	app := newApplication(testAppName)
+	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", shipper.GlobalRolloutBlockNamespace, testRolloutBlockName)
+	rel := newRelease(testReleaseName, app)
+
+	f.objects = append(f.objects, app, rel)
+
+	expectedRolloutBlock := rolloutblock.DeepCopy()
+	expectedRolloutBlock.Status.Overrides.Application = fmt.Sprintf("%s/%s", shippertesting.TestNamespace, testAppName)
+	expectedRolloutBlock.Status.Overrides.Release = fmt.Sprintf("%s/%s", shippertesting.TestNamespace, testReleaseName)
+
+	f.expectRolloutBlockUpdate(expectedRolloutBlock)
+	f.run()
+}
+
+func TestAddReleaseToGlobalRolloutBlockStatus(t *testing.T) {
+	f := newFixture(t)
+
+	rolloutblock := newRolloutBlock(testRolloutBlockName, shipper.GlobalRolloutBlockNamespace)
+	f.objects = append(f.objects, rolloutblock)
+
+	app := newApplication(testAppName)
+	rel := newRelease(testReleaseName, app)
+	rel.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", shipper.GlobalRolloutBlockNamespace, testRolloutBlockName)
+
+	f.objects = append(f.objects, app, rel)
+
+	expectedRolloutBlock := rolloutblock.DeepCopy()
+	expectedRolloutBlock.Status.Overrides.Application = ""
+	expectedRolloutBlock.Status.Overrides.Release = fmt.Sprintf("%s/%s", shippertesting.TestNamespace, testReleaseName)
+
+	f.expectRolloutBlockUpdate(expectedRolloutBlock)
+	f.run()
+}
+
+func TestRemoveAppFromGlobalRolloutBlockStatus(t *testing.T) {
+	f := newFixture(t)
+
+	rolloutblock := newRolloutBlock(testRolloutBlockName, shipper.GlobalRolloutBlockNamespace)
+	f.objects = append(f.objects, rolloutblock)
+
+	app := newApplication(testAppName)
+	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", shipper.GlobalRolloutBlockNamespace, testRolloutBlockName)
+
+	f.objects = append(f.objects, app)
+
+	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = ""
+
+	expectedRolloutBlock := rolloutblock.DeepCopy()
+	expectedRolloutBlock.Status.Overrides.Application = ""
+	expectedRolloutBlock.Status.Overrides.Release = ""
+
+	f.expectRolloutBlockUpdate(expectedRolloutBlock)
+	f.run()
+}
+
+func TestRemoveReleaseFromGlobalRolloutBlockStatus(t *testing.T) {
+	f := newFixture(t)
+
+	rolloutblock := newRolloutBlock(testRolloutBlockName, shipper.GlobalRolloutBlockNamespace)
+	f.objects = append(f.objects, rolloutblock)
+
+	app := newApplication(testAppName)
+	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", shipper.GlobalRolloutBlockNamespace, testRolloutBlockName)
 	rel := newRelease(testReleaseName, app)
 
 	f.objects = append(f.objects, app, rel)
