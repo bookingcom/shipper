@@ -1729,7 +1729,7 @@ func TestContenderCapacityShouldIncreaseWithRolloutBlockOverride(t *testing.T) {
 	incumbentName, contenderName := "test-incumbent", "test-contender"
 	app := buildApplication(namespace, "test-app")
 	rolloutBlock := newRolloutBlock(testRolloutBlockName, namespace)
-	rolloutblockKey := fmt.Sprintf("%s/%s", namespace, testRolloutBlockName)
+	rolloutBlockKey := fmt.Sprintf("%s/%s", namespace, testRolloutBlockName)
 	cluster := buildCluster("minikube")
 
 	for _, i := range []int32{1, 3, 10} {
@@ -1737,9 +1737,9 @@ func TestContenderCapacityShouldIncreaseWithRolloutBlockOverride(t *testing.T) {
 
 		totalReplicaCount := i
 		contender := f.buildContender(namespace, contenderName, totalReplicaCount)
-		contender.release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = rolloutblockKey
+		contender.release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = rolloutBlockKey
 		incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
-		incumbent.release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = rolloutblockKey
+		incumbent.release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = rolloutBlockKey
 
 		contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
 		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
@@ -1762,69 +1762,69 @@ func TestContenderCapacityShouldIncreaseWithRolloutBlockOverride(t *testing.T) {
 		ct := contender.capacityTarget.DeepCopy()
 		r := contender.release.DeepCopy()
 		f.expectCapacityStatusPatch(ct, r, 50, uint(totalReplicaCount), Contender)
-		overrideEvent := fmt.Sprintf("%s Overriding RolloutBlock %s", corev1.EventTypeNormal, rolloutblockKey)
+		overrideEvent := fmt.Sprintf("%s Overriding RolloutBlock %s", corev1.EventTypeNormal, rolloutBlockKey)
 		f.expectedEvents = append(f.expectedEvents, overrideEvent, overrideEvent) // one for contender, one for incumbent
 		f.run()
 	}
 }
 
-//func TestContenderCapacityShouldNotIncreaseWithRolloutBlock(t *testing.T) {
-//    namespace := "test-namespace"
-//    contenderName := "test-contender-bimbambom"
-//    app := buildApplication(namespace, "test-app")
-//    rolloutBlock := newRolloutBlock(testRolloutBlockName, namespace)
-//    rolloutblockKey := fmt.Sprintf("%s/%s", namespace, testRolloutBlockName)
-//    cluster := buildCluster("minikube")
-//
-//    for _, i := range []int32{1} {
-//            f := newFixture(t, app.DeepCopy(), cluster.DeepCopy(), rolloutBlock.DeepCopy())
-//
-//            totalReplicaCount := i
-//            contender := f.buildContender(namespace, contenderName, totalReplicaCount)
-//            contender.release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = ""
-//
-//            contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
-//            cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
-//            releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
-//
-//            contender.release.Spec.TargetStep = 1
-//
-//            f.addObjects(
-//                    contender.release.DeepCopy(),
-//                    contender.installationTarget.DeepCopy(),
-//                    contender.capacityTarget.DeepCopy(),
-//                    contender.trafficTarget.DeepCopy(),
-//            )
-//
-//            expectedContender := contender.release.DeepCopy()
-//            scheduledCondition := releaseutil.GetReleaseCondition(expectedContender.Status, shipper.ReleaseConditionTypeScheduled)
-//            rolloutBlockMessage := fmt.Sprintf("rollout block(s) with name(s) %s exist", rolloutblockKey)
-//            if scheduledCondition != nil {
-//                    scheduledCondition.Status = corev1.ConditionFalse
-//                    scheduledCondition.Reason = "RolloutBlock"
-//                    scheduledCondition.Message = rolloutBlockMessage
-//            } else {
-//                    scheduledCondition = releaseutil.NewReleaseCondition(
-//                            shipper.ReleaseConditionTypeScheduled,
-//                            corev1.ConditionFalse,
-//                            "RolloutBlock",
-//                            rolloutBlockMessage)
-//
-//            }
-//
-//            releaseutil.SetReleaseCondition(&expectedContender.Status, *scheduledCondition)
-//
-//            action := kubetesting.NewUpdateAction(
-//                    shipper.SchemeGroupVersion.WithResource("releases"),
-//                    namespace,
-//                    expectedContender)
-//            f.actions = append(f.actions, action)
-//
-//            rolloutblockExistsEvent := fmt.Sprintf("%s RolloutBlock %s", corev1.EventTypeWarning, rolloutblockKey)
-//            f.expectedEvents = append(f.expectedEvents, rolloutblockExistsEvent)
-//            f.run()
-//    }
-//}
+func TestContenderCapacityShouldNotIncreaseWithRolloutBlock(t *testing.T) {
+   namespace := "test-namespace"
+   contenderName := "test-contender-bimbambom"
+   app := buildApplication(namespace, "test-app")
+   rolloutBlock := newRolloutBlock(testRolloutBlockName, namespace)
+   rolloutBlockKey := fmt.Sprintf("%s/%s", namespace, testRolloutBlockName)
+   cluster := buildCluster("minikube")
+
+   for _, i := range []int32{1, 3, 10} {
+           f := newFixture(t, app.DeepCopy(), cluster.DeepCopy(), rolloutBlock.DeepCopy())
+
+           totalReplicaCount := i
+           contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+           contender.release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = ""
+
+           contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+           cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+           releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+           contender.release.Spec.TargetStep = 1
+
+           f.addObjects(
+                   contender.release.DeepCopy(),
+                   contender.installationTarget.DeepCopy(),
+                   contender.capacityTarget.DeepCopy(),
+                   contender.trafficTarget.DeepCopy(),
+           )
+
+           expectedContender := contender.release.DeepCopy()
+           scheduledCondition := releaseutil.GetReleaseCondition(expectedContender.Status, shipper.ReleaseConditionTypeScheduled)
+           rolloutBlockMessage := fmt.Sprintf("rollout block(s) with name(s) %s exist", rolloutBlockKey)
+           if scheduledCondition != nil {
+                   scheduledCondition.Status = corev1.ConditionFalse
+                   scheduledCondition.Reason = "RolloutBlock"
+                   scheduledCondition.Message = rolloutBlockMessage
+           } else {
+                   scheduledCondition = releaseutil.NewReleaseCondition(
+                           shipper.ReleaseConditionTypeScheduled,
+                           corev1.ConditionFalse,
+                           "RolloutBlock",
+                           rolloutBlockMessage)
+
+           }
+
+           releaseutil.SetReleaseCondition(&expectedContender.Status, *scheduledCondition)
+
+           action := kubetesting.NewUpdateAction(
+                   shipper.SchemeGroupVersion.WithResource("releases"),
+                   namespace,
+                   expectedContender)
+           f.actions = append(f.actions, action)
+
+           rolloutBlockExistsEvent := fmt.Sprintf("%s RolloutBlock %s", corev1.EventTypeWarning, rolloutBlockKey)
+           f.expectedEvents = append(f.expectedEvents, rolloutBlockExistsEvent)
+           f.run()
+   }
+}
 
 func TestContenderTrafficShouldIncrease(t *testing.T) {
 	namespace := "test-namespace"
@@ -1872,7 +1872,7 @@ func TestContenderTrafficShouldIncreaseWitRolloutBlockOverride(t *testing.T) {
 	incumbentName, contenderName := "test-incumbent", "test-contender"
 	app := buildApplication(namespace, "test-app")
 	rolloutBlock := newRolloutBlock(testRolloutBlockName, namespace)
-	rolloutblockKey := fmt.Sprintf("%s/%s", namespace, testRolloutBlockName)
+	rolloutBlockKey := fmt.Sprintf("%s/%s", namespace, testRolloutBlockName)
 	cluster := buildCluster("minikube")
 
 	for _, totalReplicaCount := range []int32{1, 3, 10} {
@@ -1882,8 +1882,8 @@ func TestContenderTrafficShouldIncreaseWitRolloutBlockOverride(t *testing.T) {
 		incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
 
 		contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
-		contender.release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = rolloutblockKey
-		incumbent.release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = rolloutblockKey
+		contender.release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = rolloutBlockKey
+		incumbent.release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = rolloutBlockKey
 		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 		releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
 
@@ -1908,70 +1908,70 @@ func TestContenderTrafficShouldIncreaseWitRolloutBlockOverride(t *testing.T) {
 		tt := contender.trafficTarget.DeepCopy()
 		r := contender.release.DeepCopy()
 		f.expectTrafficStatusPatch(tt, r, 50, Contender)
-		overrideEvent := fmt.Sprintf("%s Overriding RolloutBlock %s", corev1.EventTypeNormal, rolloutblockKey)
+		overrideEvent := fmt.Sprintf("%s Overriding RolloutBlock %s", corev1.EventTypeNormal, rolloutBlockKey)
 		f.expectedEvents = append(f.expectedEvents, overrideEvent, overrideEvent) // one for contender, one for incumbent
 		f.run()
 	}
 }
 
-//func TestContenderTrafficShouldNotIncreaseWithRolloutBlock(t *testing.T) {
-//    namespace := "test-namespace"
-//    app := buildApplication(namespace, "test-app")
-//    rolloutBlock := newRolloutBlock(testRolloutBlockName, namespace)
-//    rolloutblockKey := fmt.Sprintf("%s/%s", namespace, testRolloutBlockName)
-//    cluster := buildCluster("minikube")
-//
-//    for _, totalReplicaCount := range []int32{1, 3, 10} {
-//            f := newFixture(t, app.DeepCopy(), cluster.DeepCopy(), rolloutBlock.DeepCopy())
-//
-//            contender := f.buildContender(namespace, contenderName, totalReplicaCount)
-//
-//            contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
-//            cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
-//            releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
-//
-//            contender.release.Spec.TargetStep = 1
-//            contender.capacityTarget.Spec.Clusters[0].Percent = 50
-//            contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
-//            contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
-//            contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
-//
-//            f.addObjects(
-//                    contender.release.DeepCopy(),
-//                    contender.installationTarget.DeepCopy(),
-//                    contender.capacityTarget.DeepCopy(),
-//                    contender.trafficTarget.DeepCopy(),
-//            )
-//
-//            expectedContender := contender.release.DeepCopy()
-//            scheduledCondition := releaseutil.GetReleaseCondition(expectedContender.Status, shipper.ReleaseConditionTypeScheduled)
-//            rolloutBlockMessage := fmt.Sprintf("rollout block(s) with name(s) %s exist", rolloutblockKey)
-//            if scheduledCondition != nil {
-//                    scheduledCondition.Status = corev1.ConditionFalse
-//                    scheduledCondition.Reason = "RolloutBlock"
-//                    scheduledCondition.Message = rolloutBlockMessage
-//            } else {
-//                    scheduledCondition = releaseutil.NewReleaseCondition(
-//                            shipper.ReleaseConditionTypeScheduled,
-//                            corev1.ConditionFalse,
-//                            "RolloutBlock",
-//                            rolloutBlockMessage)
-//
-//            }
-//
-//            releaseutil.SetReleaseCondition(&expectedContender.Status, *scheduledCondition)
-//
-//            action := kubetesting.NewUpdateAction(
-//                    shipper.SchemeGroupVersion.WithResource("releases"),
-//                    namespace,
-//                    expectedContender)
-//            f.actions = append(f.actions, action)
-//
-//            overrideEvent := fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage)
-//            f.expectedEvents = append(f.expectedEvents, overrideEvent)
-//            f.run()
-//    }
-//}
+func TestContenderTrafficShouldNotIncreaseWithRolloutBlock(t *testing.T) {
+	namespace := "test-namespace"
+	app := buildApplication(namespace, "test-app")
+	rolloutBlock := newRolloutBlock(testRolloutBlockName, namespace)
+	rolloutBlockKey := fmt.Sprintf("%s/%s", namespace, testRolloutBlockName)
+	cluster := buildCluster("minikube")
+
+	for _, totalReplicaCount := range []int32{1, 3, 10} {
+		f := newFixture(t, app.DeepCopy(), cluster.DeepCopy(), rolloutBlock.DeepCopy())
+
+		contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+
+		contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+		releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+		contender.release.Spec.TargetStep = 1
+		contender.capacityTarget.Spec.Clusters[0].Percent = 50
+		contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+
+		f.addObjects(
+			contender.release.DeepCopy(),
+			contender.installationTarget.DeepCopy(),
+			contender.capacityTarget.DeepCopy(),
+			contender.trafficTarget.DeepCopy(),
+		)
+
+		expectedContender := contender.release.DeepCopy()
+		scheduledCondition := releaseutil.GetReleaseCondition(expectedContender.Status, shipper.ReleaseConditionTypeScheduled)
+		rolloutBlockMessage := fmt.Sprintf("rollout block(s) with name(s) %s exist", rolloutBlockKey)
+		if scheduledCondition != nil {
+			scheduledCondition.Status = corev1.ConditionFalse
+			scheduledCondition.Reason = "RolloutBlock"
+			scheduledCondition.Message = rolloutBlockMessage
+		} else {
+			scheduledCondition = releaseutil.NewReleaseCondition(
+				shipper.ReleaseConditionTypeScheduled,
+				corev1.ConditionFalse,
+				"RolloutBlock",
+				rolloutBlockMessage)
+
+		}
+
+		releaseutil.SetReleaseCondition(&expectedContender.Status, *scheduledCondition)
+
+		action := kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			namespace,
+			expectedContender)
+		f.actions = append(f.actions, action)
+
+		rolloutBlockExistsEvent := fmt.Sprintf("%s RolloutBlock %s", corev1.EventTypeWarning, rolloutBlockKey)
+		f.expectedEvents = append(f.expectedEvents, rolloutBlockExistsEvent)
+		f.run()
+	}
+}
 
 func TestIncumbentTrafficShouldDecrease(t *testing.T) {
 	namespace := "test-namespace"

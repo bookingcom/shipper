@@ -138,7 +138,7 @@ func NewController(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: controller.enqueueRelease,
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueRelease(newObj)
+				controller.enqueueReleaseRateLimited(newObj)
 			},
 			DeleteFunc: controller.enqueueAppFromRelease,
 		})
@@ -438,6 +438,22 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 	}
 
 	c.releaseWorkqueue.Add(key)
+}
+
+func (c *Controller) enqueueReleaseRateLimited(obj interface{}) {
+	rel, ok := obj.(*shipper.Release)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", obj))
+		return
+	}
+
+	key, err := cache.MetaNamespaceKeyFunc(rel)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	c.releaseWorkqueue.AddRateLimited(key)
 }
 
 func (c *Controller) enqueueAppFromRelease(obj interface{}) {
