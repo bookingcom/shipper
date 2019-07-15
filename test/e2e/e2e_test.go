@@ -218,6 +218,54 @@ func TestNewAppAllInWithRolloutBlockOverride(t *testing.T) {
 	}
 }
 
+func TestBlockNewAppWithRolloutBlock(t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+	t.Parallel()
+
+	targetReplicas := 4
+	ns, err := setupNamespace(t.Name())
+	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(ns.GetName())
+	}()
+
+	newRolloutBlock := newRolloutBlock(rolloutBlockName, ns.GetName())
+	_, err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Create(newRolloutBlock)
+	if err != nil {
+		t.Fatalf("could not create rollout block %q: %q", rolloutBlockName, err)
+	}
+
+	newApp := newApplication(ns.GetName(), appName, &allIn)
+	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Chart.Name = "test-nginx"
+	newApp.Spec.Template.Chart.Version = "0.0.1"
+
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
+	if err != nil {
+		t.Fatalf("could not create application %q: %q", appName, err)
+	}
+
+	t.Logf("waiting for a new release for new application %q", appName)
+	//rel := f.waitForRelease(appName, 0)
+	//relName := rel.GetName()
+	//t.Logf("waiting for release %q to complete", relName)
+	//f.waitForComplete(rel.GetName())
+	//t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
+	f.checkPods(appName, 0)
+	err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Delete(newApp.GetName(), &metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("could not DELETE application %q: %q", appName, err)
+	}
+}
+
 func TestRolloutAllIn(t *testing.T) {
 	if !*runEndToEnd {
 		t.Skip("skipping end-to-end tests: --e2e is false")
