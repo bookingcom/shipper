@@ -2,7 +2,7 @@
 import sphinx_rtd_theme
 
 project = u'shipper'
-copyright = u'2018, Booking.com'
+copyright = u'2019, Booking.com'
 
 source_suffix = '.rst'
 
