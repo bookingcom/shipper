@@ -44,22 +44,6 @@ func IsConvertUnstructuredError(err error) bool {
 	return ok
 }
 
-type RenderManifestError struct {
-	err error
-}
-
-func (e RenderManifestError) Error() string {
-	return e.err.Error()
-}
-
-func (e RenderManifestError) ShouldRetry() bool {
-	return false
-}
-
-func NewRenderManifestError(err error) RenderManifestError {
-	return RenderManifestError{err}
-}
-
 type IncompleteReleaseError struct {
 	err error
 }
