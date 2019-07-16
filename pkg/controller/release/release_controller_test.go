@@ -21,7 +21,6 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	"github.com/bookingcom/shipper/pkg/chart"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/conditions"
@@ -246,7 +245,7 @@ func (f *fixture) newController() *Controller {
 	return NewController(
 		f.clientset,
 		f.informerFactory,
-		chart.FetchRemote(),
+		localFetchChart,
 		f.recorder,
 	)
 }
@@ -363,7 +362,6 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 				Chart: shipper.Chart{
 					Name:    "simple",
 					Version: "0.0.1",
-					RepoURL: chartRepoURL,
 				},
 				ClusterRequirements: shipper.ClusterRequirements{
 					Regions: []shipper.RegionRequirement{{Name: shippertesting.TestRegion}},
@@ -554,7 +552,6 @@ func (f *fixture) buildContender(namespace string, relName string, replicaCount 
 				Chart: shipper.Chart{
 					Name:    "simple",
 					Version: "0.0.1",
-					RepoURL: chartRepoURL,
 				},
 				ClusterRequirements: shipper.ClusterRequirements{
 					Regions: []shipper.RegionRequirement{{Name: shippertesting.TestRegion}},

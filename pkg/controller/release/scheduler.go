@@ -16,6 +16,7 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
+	shipperrepo "github.com/bookingcom/shipper/pkg/chart/repo"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/controller"
@@ -32,8 +33,9 @@ type Scheduler struct {
 	capacityTargetLister     listers.CapacityTargetLister
 	rolloutBlockLister 		 listers.RolloutBlockLister
 
-	fetchChart shipperchart.FetchFunc
-	recorder   record.EventRecorder
+	chartFetcher shipperrepo.ChartFetcher
+
+	recorder record.EventRecorder
 }
 
 func NewScheduler(
@@ -43,7 +45,7 @@ func NewScheduler(
 	capacityTargetLister listers.CapacityTargetLister,
 	trafficTargetLister listers.TrafficTargetLister,
 	rolloutBlockLister listers.RolloutBlockLister,
-	fetchChart shipperchart.FetchFunc,
+	chartFetcher shipperrepo.ChartFetcher,
 	recorder record.EventRecorder,
 ) *Scheduler {
 	return &Scheduler{
@@ -55,8 +57,9 @@ func NewScheduler(
 		capacityTargetLister:     capacityTargetLister,
 		rolloutBlockLister:		  rolloutBlockLister,
 
-		fetchChart: fetchChart,
-		recorder:   recorder,
+		chartFetcher: chartFetcher,
+
+		recorder: recorder,
 	}
 }
 
@@ -609,14 +612,9 @@ func setReleaseClusters(rel *shipper.Release, clusters []*shipper.Cluster) {
 }
 
 func (s *Scheduler) fetchChartAndExtractReplicaCount(rel *shipper.Release) (int32, error) {
-	chart, err := s.fetchChart(rel.Spec.Environment.Chart)
+	chart, err := s.chartFetcher(&rel.Spec.Environment.Chart)
 	if err != nil {
-		return 0, shippererrors.NewChartFetchFailureError(
-			rel.Spec.Environment.Chart.Name,
-			rel.Spec.Environment.Chart.Version,
-			rel.Spec.Environment.Chart.RepoURL,
-			err,
-		)
+		return 0, err
 	}
 
 	replicas, err := extractReplicasFromChartForRel(chart, rel)
@@ -638,10 +636,8 @@ func extractReplicasFromChartForRel(chart *helmchart.Chart, rel *shipper.Release
 	applicationName := owners[0].Name
 	rendered, err := shipperchart.Render(chart, applicationName, rel.Namespace, rel.Spec.Environment.Values)
 	if err != nil {
-		return 0, shippererrors.NewBrokenChartError(
-			rel.Spec.Environment.Chart.Name,
-			rel.Spec.Environment.Chart.Version,
-			rel.Spec.Environment.Chart.RepoURL,
+		return 0, shippererrors.NewBrokenChartSpecError(
+			&rel.Spec.Environment.Chart,
 			err,
 		)
 	}
@@ -649,9 +645,7 @@ func extractReplicasFromChartForRel(chart *helmchart.Chart, rel *shipper.Release
 	deployments := shipperchart.GetDeployments(rendered)
 	if len(deployments) != 1 {
 		return 0, shippererrors.NewWrongChartDeploymentsError(
-			rel.Spec.Environment.Chart.Name,
-			rel.Spec.Environment.Chart.Version,
-			rel.Spec.Environment.Chart.RepoURL,
+			&rel.Spec.Environment.Chart,
 			len(deployments),
 		)
 	}

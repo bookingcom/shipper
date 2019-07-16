@@ -17,6 +17,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shipperrepo "github.com/bookingcom/shipper/pkg/chart/repo"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
@@ -55,6 +56,8 @@ type Controller struct {
 	rbLister 	listers.RolloutBlockLister
 	rbSynced 	cache.InformerSynced
 
+	versionResolver shipperrepo.ChartVersionResolver
+
 	recorder record.EventRecorder
 }
 
@@ -62,6 +65,7 @@ type Controller struct {
 func NewController(
 	shipperClientset clientset.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
+	versionResolver shipperrepo.ChartVersionResolver,
 	recorder record.EventRecorder,
 ) *Controller {
 	appInformer := shipperInformerFactory.Shipper().V1alpha1().Applications()
@@ -81,7 +85,8 @@ func NewController(
 		rbLister: rbInformer.Lister(),
 		rbSynced: rbInformer.Informer().HasSynced,
 
-		recorder: recorder,
+		versionResolver: versionResolver,
+		recorder:        recorder,
 	}
 
 	appInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{

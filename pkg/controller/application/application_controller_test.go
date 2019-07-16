@@ -2,7 +2,6 @@ package application
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/helm/pkg/repo/repotest"
+	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
+	"k8s.io/helm/pkg/repo"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
@@ -34,10 +34,18 @@ func init() {
 	apputil.ConditionsShouldDiscardTimestamps = true
 }
 
+var localResolveChartVersion = func(chartspec *shipper.Chart) (*repo.ChartVersion, error) {
+	return &repo.ChartVersion{
+		Metadata: &helmchart.Metadata{
+			Name:    chartspec.Name,
+			Version: chartspec.Version,
+		},
+	}, nil
+}
+
 // Private method, but other tests make use of it.
 
 func TestHashReleaseEnv(t *testing.T) {
-
 	app := newApplication(testAppName)
 	rel := newRelease("test-release", app)
 
@@ -60,7 +68,6 @@ func TestHashReleaseEnv(t *testing.T) {
 func TestCreateFirstRelease(t *testing.T) {
 	f := newFixture(t)
 	app := newApplication(testAppName)
-	app.Spec.Template.Chart.RepoURL = "127.0.0.1"
 
 	envHash := hashReleaseEnvironment(app.Spec.Template)
 	expectedRelName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
@@ -97,7 +104,6 @@ func TestCreateFirstRelease(t *testing.T) {
 	// because the testing client does not update listers after Create actions.
 
 	expectedRelease := newRelease(expectedRelName, app)
-	expectedRelease.Spec.Environment.Chart.RepoURL = "127.0.0.1"
 	expectedRelease.Labels[shipper.ReleaseEnvironmentHashLabel] = envHash
 	expectedRelease.Annotations[shipper.ReleaseTemplateIterationAnnotation] = "0"
 	expectedRelease.Annotations[shipper.ReleaseGenerationAnnotation] = "0"
@@ -461,19 +467,9 @@ func TestRevisionHistoryLimit(t *testing.T) {
 }
 
 func TestCreateThirdRelease(t *testing.T) {
-	srv, hh, err := repotest.NewTempServer("testdata/*.tgz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		os.RemoveAll(hh.String())
-		srv.Stop()
-	}()
-
 	f := newFixture(t)
 	app := newApplication(testAppName)
 	apputil.SetHighestObservedGeneration(app, 1)
-	app.Spec.Template.Chart.RepoURL = srv.URL()
 
 	incumbentEnvHash := hashReleaseEnvironment(app.Spec.Template)
 
@@ -482,7 +478,6 @@ func TestCreateThirdRelease(t *testing.T) {
 	releaseutil.SetIteration(firstRel, 0)
 	releaseutil.SetGeneration(firstRel, 0)
 	releaseutil.SetReleaseCondition(&firstRel.Status, *releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
-	firstRel.Spec.Environment.Chart.RepoURL = srv.URL()
 	firstRel.Spec.TargetStep = 2
 	firstRel.Status.AchievedStep = &shipper.AchievedStep{
 		Step: 2,
@@ -494,8 +489,6 @@ func TestCreateThirdRelease(t *testing.T) {
 	releaseutil.SetIteration(incumbentRel, 1)
 	releaseutil.SetGeneration(incumbentRel, 1)
 	releaseutil.SetReleaseCondition(&incumbentRel.Status, *releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
-	incumbentRel.Spec.Environment.Chart.RepoURL = srv.URL()
-	incumbentRel.Spec.TargetStep = 2
 	incumbentRel.Status.AchievedStep = &shipper.AchievedStep{
 		Step: 2,
 		Name: incumbentRel.Spec.Environment.Strategy.Steps[2].Name,
@@ -557,19 +550,9 @@ func TestCreateThirdRelease(t *testing.T) {
 // An app with 1 existing release should create a new one when its template has
 // changed.
 func TestCreateSecondRelease(t *testing.T) {
-	srv, hh, err := repotest.NewTempServer("testdata/*.tgz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		os.RemoveAll(hh.String())
-		srv.Stop()
-	}()
-
 	f := newFixture(t)
 	app := newApplication(testAppName)
 	apputil.SetHighestObservedGeneration(app, 0)
-	app.Spec.Template.Chart.RepoURL = srv.URL()
 	f.objects = append(f.objects, app)
 
 	incumbentEnvHash := hashReleaseEnvironment(app.Spec.Template)
@@ -579,7 +562,6 @@ func TestCreateSecondRelease(t *testing.T) {
 	releaseutil.SetGeneration(incumbentRel, 0)
 	releaseutil.SetIteration(incumbentRel, 0)
 	releaseutil.SetReleaseCondition(&incumbentRel.Status, *releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
-	incumbentRel.Spec.Environment.Chart.RepoURL = srv.URL()
 	incumbentRel.Spec.TargetStep = 2
 	incumbentRel.Status.AchievedStep = &shipper.AchievedStep{
 		Step: 2,
@@ -641,18 +623,8 @@ func TestCreateSecondRelease(t *testing.T) {
 // An app's template should be rolled back to the previous release if the
 // previous-highest was deleted.
 func TestAbort(t *testing.T) {
-	srv, hh, err := repotest.NewTempServer("testdata/*.tgz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		os.RemoveAll(hh.String())
-		srv.Stop()
-	}()
-
 	f := newFixture(t)
 	app := newApplication(testAppName)
-	app.Spec.Template.Chart.RepoURL = srv.URL()
 	// Highest observed is higher than any known release. We have an older release
 	// (gen 0) with a different cluster selector. We expect app template to be
 	// reverted.
@@ -667,7 +639,6 @@ func TestAbort(t *testing.T) {
 	relName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
 
 	release := newRelease(relName, app)
-	release.Spec.Environment.Chart.RepoURL = srv.URL()
 	release.Annotations[shipper.ReleaseGenerationAnnotation] = "0"
 	release.Spec.TargetStep = 2
 	release.Status.AchievedStep = &shipper.AchievedStep{
@@ -712,21 +683,11 @@ func TestAbort(t *testing.T) {
 }
 
 func TestStateRollingOut(t *testing.T) {
-	srv, hh, err := repotest.NewTempServer("testdata/*.tgz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		os.RemoveAll(hh.String())
-		srv.Stop()
-	}()
-
 	f := newFixture(t)
 
 	// App with two Releases: one installed and running, and one being rolled out.
 
 	app := newApplication(testAppName)
-	app.Spec.Template.Chart.RepoURL = srv.URL()
 	app.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "1"
 
 	envHash := hashReleaseEnvironment(app.Spec.Template)
@@ -897,7 +858,6 @@ func newApplication(name string) *shipper.Application {
 				Chart: shipper.Chart{
 					Name:    "simple",
 					Version: "0.0.1",
-					RepoURL: "http://127.0.0.1:8879/charts",
 				},
 				ClusterRequirements: shipper.ClusterRequirements{},
 				Values:              &shipper.ChartValues{},
@@ -940,7 +900,7 @@ func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerF
 	const noResyncPeriod time.Duration = 0
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(f.client, noResyncPeriod)
 
-	c := NewController(f.client, shipperInformerFactory, record.NewFakeRecorder(42))
+	c := NewController(f.client, shipperInformerFactory, localResolveChartVersion, record.NewFakeRecorder(42))
 
 	return c, shipperInformerFactory
 }
