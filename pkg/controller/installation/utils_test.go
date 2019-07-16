@@ -23,15 +23,12 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	"github.com/bookingcom/shipper/pkg/chart"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
-
-var chartFetchFunc = chart.FetchRemoteWithCache("testdata/chart-cache", chart.DefaultCacheLimit)
 
 // FakeClientProvider implements clusterclientstore.ClientProvider.
 type FakeClientProvider struct {
@@ -201,7 +198,11 @@ func newController(
 	fakeRecorder record.EventRecorder,
 ) *Controller {
 	c := NewController(
-		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, chartFetchFunc,
+		shipperclientset,
+		shipperInformerFactory,
+		fakeClientProvider,
+		fakeDynamicClientBuilder,
+		localFetchChart,
 		fakeRecorder,
 	)
 
@@ -221,18 +222,18 @@ func newController(
 }
 
 func newInstaller(release *shipper.Release, it *shipper.InstallationTarget) *Installer {
-	return NewInstaller(chartFetchFunc, release, it)
+	return NewInstaller(localFetchChart, release, it)
 }
 
-func buildRelease(name, namespace, generation, uid, appName string) *shipper.Release {
+func buildRelease(repoURL, namespace, relName, version, generation, uid, appName string) *shipper.Release {
 	return &shipper.Release{
 		ObjectMeta: v1.ObjectMeta{
-			Name:      name,
+			Name:      relName,
 			Namespace: namespace,
 			UID:       types.UID(uid),
 			Labels: map[string]string{
 				shipper.AppLabel:     appName,
-				shipper.ReleaseLabel: name,
+				shipper.ReleaseLabel: relName,
 			},
 			Annotations: map[string]string{
 				shipper.ReleaseGenerationAnnotation: generation,
@@ -241,9 +242,9 @@ func buildRelease(name, namespace, generation, uid, appName string) *shipper.Rel
 		Spec: shipper.ReleaseSpec{
 			Environment: shipper.ReleaseEnvironment{
 				Chart: shipper.Chart{
-					Name:    "reviews-api",
-					Version: "0.0.1",
-					RepoURL: "localhost",
+					Name:    appName,
+					Version: version,
+					RepoURL: repoURL,
 				},
 			},
 		},

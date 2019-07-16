@@ -16,7 +16,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	"github.com/bookingcom/shipper/pkg/chart"
+	shipperrepo "github.com/bookingcom/shipper/pkg/chart/repo"
 	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
@@ -37,9 +37,7 @@ const (
 //
 // Release Controller has 2 primary workqueues: releases and applications.
 type Controller struct {
-	clientset      shipperclient.Interface
-	chartFetchFunc chart.FetchFunc
-	recorder       record.EventRecorder
+	clientset shipperclient.Interface
 
 	applicationLister  shipperlisters.ApplicationLister
 	applicationsSynced cache.InformerSynced
@@ -64,6 +62,10 @@ type Controller struct {
 
 	releaseWorkqueue     workqueue.RateLimitingInterface
 	applicationWorkqueue workqueue.RateLimitingInterface
+
+	chartFetcher shipperrepo.ChartFetcher
+
+	recorder record.EventRecorder
 }
 
 type releaseInfo struct {
@@ -82,7 +84,7 @@ type ReleaseStrategyStateTransition struct {
 func NewController(
 	clientset shipperclient.Interface,
 	informerFactory shipperinformers.SharedInformerFactory,
-	chartFetchFunc chart.FetchFunc,
+	chartFetcher shipperrepo.ChartFetcher,
 	recorder record.EventRecorder,
 ) *Controller {
 
@@ -97,9 +99,7 @@ func NewController(
 	glog.Info("Building a release controller")
 
 	controller := &Controller{
-		clientset:      clientset,
-		chartFetchFunc: chartFetchFunc,
-		recorder:       recorder,
+		clientset: clientset,
 
 		applicationLister:  applicationInformer.Lister(),
 		applicationsSynced: applicationInformer.Informer().HasSynced,
@@ -130,6 +130,10 @@ func NewController(
 			workqueue.DefaultControllerRateLimiter(),
 			"release_controller_applications",
 		),
+
+		chartFetcher: chartFetcher,
+
+		recorder: recorder,
 	}
 
 	glog.Info("Setting up event handlers")
@@ -297,7 +301,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 		c.capacityTargetLister,
 		c.trafficTargetLister,
 		c.rolloutBlockLister,
-		c.chartFetchFunc,
+		c.chartFetcher,
 		c.recorder,
 	)
 
@@ -518,8 +522,8 @@ func reasonForReleaseCondition(err error) string {
 
 	case shippererrors.ChartFetchFailureError:
 		return "ChartFetchFailure"
-	case shippererrors.BrokenChartError:
-		return "BrokenChart"
+	case shippererrors.BrokenChartSpecError:
+		return "BrokenChartSpec"
 	case shippererrors.WrongChartDeploymentsError:
 		return "WrongChartDeployments"
 	case shippererrors.InvalidRolloutBlockOverrideError:
