@@ -217,6 +217,11 @@ func TestNewAppAllInWithRolloutBlockOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not DELETE application %q: %q", appName, err)
 	}
+
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(newRolloutBlock.GetName(), &metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
+	}
 }
 
 func TestBlockNewAppWithRolloutBlock(t *testing.T) {
@@ -252,6 +257,10 @@ func TestBlockNewAppWithRolloutBlock(t *testing.T) {
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
 		t.Logf("could not create application %q: %q", appName, err)
+		err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(newRolloutBlock.GetName(), &metav1.DeleteOptions{})
+		if err != nil {
+			t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
+		}
 		return
 	}
 
@@ -259,6 +268,11 @@ func TestBlockNewAppWithRolloutBlock(t *testing.T) {
 	err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Delete(newApp.GetName(), &metav1.DeleteOptions{})
 	if err != nil {
 		t.Fatalf("could not DELETE application %q: %q", appName, err)
+	}
+
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(newRolloutBlock.GetName(), &metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
 	}
 }
 
@@ -301,6 +315,11 @@ func TestBlockNewAppProgressWithRolloutBlock(t *testing.T) {
 	err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Delete(newApp.GetName(), &metav1.DeleteOptions{})
 	if err != nil {
 		t.Fatalf("could not DELETE application %q: %q", appName, err)
+	}
+
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(newRolloutBlock.GetName(), &metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
 	}
 }
 
@@ -424,6 +443,11 @@ func TestRolloutAllInWithRolloutBlockOverride(t *testing.T) {
 	f.waitForComplete(contender.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", contender.GetName(), targetReplicas)
 	f.checkPods(contender.GetName(), targetReplicas)
+
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(newRolloutBlock.GetName(), &metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
+	}
 }
 
 func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
@@ -530,6 +554,11 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int, t *t
 		expectedCapacity := int(replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas)))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
 		f.checkPods(relName, expectedCapacity)
+	}
+
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(newRolloutBlock.GetName(), &metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
 	}
 }
 
@@ -754,6 +783,11 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 
 	t.Logf("checking that release %q still has %d pods (strategy step %d aka %q)", relName, expectedCapacity, 1, step.Name)
 	f.checkPods(relName, int(expectedCapacity))
+
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(newRolloutBlock.GetName(), &metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
+	}
 }
 
 func TestRolloutMovingStrategyBackwards(t *testing.T) {
@@ -930,6 +964,10 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 	f.checkPods(contenderName, int(expectedContenderCapacity))
 	f.checkPods(incumbentName, int(expectedIncumbentCapacity))
 
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(newRolloutBlock.GetName(), &metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
+	}
 }
 
 // TestNewApplicationAbort emulates a brand new application rollout.
