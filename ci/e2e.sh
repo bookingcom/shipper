@@ -5,6 +5,7 @@ set -e
 mkdir ~/.kube
 microk8s.config > ~/.kube/config
 kubectl create ns shipper-system
+kubectl create ns global-rollout-blocks
 perl hack/install-crds.pl
 go run cmd/create-cluster-secret/main.go --api-server http://127.0.0.1:8080
 
