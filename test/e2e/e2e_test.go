@@ -1141,6 +1141,80 @@ func TestNewRolloutBlockAddOverrides(t *testing.T) {
 
 	targetReplicas := 1
 	ns, err := setupNamespace(t.Name())
+	namespace := ns.GetName()
+	f := newFixture(namespace, t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", namespace, err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(namespace)
+	}()
+
+	newRolloutBlock := newRolloutBlock(rolloutBlockName, namespace)
+	_, err = shipperClient.ShipperV1alpha1().RolloutBlocks(namespace).Create(newRolloutBlock)
+	if err != nil {
+		t.Fatalf("could not create rollout block %q: %q", rolloutBlockName, err)
+	}
+
+	rb, err := shipperClient.ShipperV1alpha1().RolloutBlocks(namespace).Get(rolloutBlockName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("could not refetch rollout block: %q", err)
+	}
+
+	if len(rb.Status.Overrides.Application) > 0 || len(rb.Status.Overrides.Release) > 0 {
+		t.Fatalf("rollout block has unexpected overrides: %v", rb)
+	}
+
+	newApp := newApplication(namespace, appName, &allIn)
+	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", newRolloutBlock.GetNamespace(), newRolloutBlock.GetName())
+	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Chart.Name = "test-nginx"
+	newApp.Spec.Template.Chart.Version = "0.0.1"
+
+	_, err = shipperClient.ShipperV1alpha1().Applications(namespace).Create(newApp)
+	if err != nil {
+		t.Fatalf("could not create application %q: %q", appName, err)
+	}
+
+	t.Logf("waiting for a new release for new application %q", appName)
+	rel := f.waitForRelease(appName, 0)
+	relName := rel.GetName()
+	t.Logf("waiting for release %q to complete", relName)
+	f.waitForComplete(rel.GetName())
+	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
+	f.checkPods(relName, targetReplicas)
+
+
+	t.Logf("waiting for rollout block %q/%q status to be updated ", namespace, rolloutBlockName)
+	f.waitForStatus(
+		rolloutBlockName,
+		namespace,
+		fmt.Sprintf("%s/%s", newApp.GetNamespace(), newApp.GetName()),
+		fmt.Sprintf("%s/%s", newApp.GetNamespace(), relName),
+		)
+
+	err = shipperClient.ShipperV1alpha1().Applications(namespace).Delete(newApp.GetName(), &metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("could not DELETE application %q: %q", appName, err)
+	}
+
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(namespace).Delete(rb.GetName(), &metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
+	}
+}
+
+func TestNewGlobalRolloutBlockAddOverrides(t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+	t.Parallel()
+
+	targetReplicas := 1
+	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
 		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
@@ -1152,13 +1226,13 @@ func TestNewRolloutBlockAddOverrides(t *testing.T) {
 		teardownNamespace(ns.GetName())
 	}()
 
-	newRolloutBlock := newRolloutBlock(rolloutBlockName, ns.GetName())
-	_, err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Create(newRolloutBlock)
+	newRolloutBlock := newRolloutBlock(rolloutBlockName, shipper.GlobalRolloutBlockNamespace)
+	_, err = shipperClient.ShipperV1alpha1().RolloutBlocks(shipper.GlobalRolloutBlockNamespace).Create(newRolloutBlock)
 	if err != nil {
 		t.Fatalf("could not create rollout block %q: %q", rolloutBlockName, err)
 	}
 
-	rb, err := shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Get(rolloutBlockName, metav1.GetOptions{})
+	rb, err := shipperClient.ShipperV1alpha1().RolloutBlocks(shipper.GlobalRolloutBlockNamespace).Get(rolloutBlockName, metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("could not refetch rollout block: %q", err)
 	}
@@ -1187,19 +1261,20 @@ func TestNewRolloutBlockAddOverrides(t *testing.T) {
 	f.checkPods(relName, targetReplicas)
 
 
-	t.Logf("waiting for rollout block status %q to be updated ", rolloutBlockName)
+	t.Logf("waiting for rollout block %q/%q status to be updated ", rb.GetNamespace(), rolloutBlockName)
 	f.waitForStatus(
 		rolloutBlockName,
+		rb.GetNamespace(),
 		fmt.Sprintf("%s/%s", newApp.GetNamespace(), newApp.GetName()),
 		fmt.Sprintf("%s/%s", newApp.GetNamespace(), relName),
-		)
+	)
 
 	err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Delete(newApp.GetName(), &metav1.DeleteOptions{})
 	if err != nil {
 		t.Fatalf("could not DELETE application %q: %q", appName, err)
 	}
 
-	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(rb.GetName(), &metav1.DeleteOptions{})
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(rb.GetNamespace()).Delete(rb.GetName(), &metav1.DeleteOptions{})
 	if err != nil {
 		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -1259,9 +1334,10 @@ func TestNewRolloutBlockRemoveRelease(t *testing.T) {
 	f.checkPods(relName, targetReplicas)
 
 
-	t.Logf("waiting for rollout block status %q to be updated ", rolloutBlockName)
+	t.Logf("waiting for rollout block %q/%q status to be updated ", rb.GetNamespace(), rolloutBlockName)
 	f.waitForStatus(
 		rolloutBlockName,
+		ns.GetName(),
 		fmt.Sprintf("%s/%s", app.GetNamespace(), app.GetName()),
 		fmt.Sprintf("%s/%s", rel.GetNamespace(), rel.GetName()),
 	)
@@ -1281,6 +1357,7 @@ func TestNewRolloutBlockRemoveRelease(t *testing.T) {
 	t.Logf("waiting for rollout block status %q to be updated ", rolloutBlockName)
 	f.waitForStatus(
 		rolloutBlockName,
+		ns.GetName(),
 		fmt.Sprintf("%s/%s", app.GetNamespace(), app.GetName()),
 		"",
 	)
@@ -1291,6 +1368,101 @@ func TestNewRolloutBlockRemoveRelease(t *testing.T) {
 	}
 
 	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(rb.GetName(), &metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
+	}
+}
+
+func TestNewGlobalRolloutBlockRemoveRelease(t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+	t.Parallel()
+
+	targetReplicas := 1
+	ns, err := setupNamespace(t.Name())
+	testNamespace := ns.GetName()
+	f := newFixture(testNamespace, t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", testNamespace, err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(testNamespace)
+	}()
+
+	globalNamespace := shipper.GlobalRolloutBlockNamespace
+	newRolloutBlock := newRolloutBlock(rolloutBlockName, globalNamespace)
+	_, err = shipperClient.ShipperV1alpha1().RolloutBlocks(globalNamespace).Create(newRolloutBlock)
+	if err != nil {
+		t.Fatalf("could not create rollout block %q: %q", rolloutBlockName, err)
+	}
+
+	rb, err := shipperClient.ShipperV1alpha1().RolloutBlocks(globalNamespace).Get(rolloutBlockName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("could not refetch rollout block: %q", err)
+	}
+
+	if len(rb.Status.Overrides.Application) > 0 || len(rb.Status.Overrides.Release) > 0 {
+		t.Fatalf("rollout block has unexpected overrides: %v", rb)
+	}
+
+	app := newApplication(testNamespace, appName, &allIn)
+	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", newRolloutBlock.GetNamespace(), newRolloutBlock.GetName())
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Chart.Name = "test-nginx"
+	app.Spec.Template.Chart.Version = "0.0.1"
+
+	_, err = shipperClient.ShipperV1alpha1().Applications(testNamespace).Create(app)
+	if err != nil {
+		t.Fatalf("could not create application %q: %q", appName, err)
+	}
+
+	t.Logf("waiting for a new release for new application %q", appName)
+	rel := f.waitForRelease(appName, 0)
+	relName := rel.GetName()
+	t.Logf("waiting for release %q to complete", relName)
+	f.waitForComplete(rel.GetName())
+	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
+	f.checkPods(relName, targetReplicas)
+
+
+	t.Logf("waiting for rollout block %q/%q status to be updated ", rb.GetNamespace(), rolloutBlockName)
+	f.waitForStatus(
+		rolloutBlockName,
+		globalNamespace,
+		fmt.Sprintf("%s/%s", app.GetNamespace(), app.GetName()),
+		fmt.Sprintf("%s/%s", rel.GetNamespace(), rel.GetName()),
+	)
+
+	// refetch so that the update has a fresh version to work with
+	rel, err = shipperClient.ShipperV1alpha1().Releases(testNamespace).Get(rel.GetName(), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("could not refetch release: %q", err)
+	}
+
+	rel.Annotations[shipper.RolloutBlocksOverrideAnnotation] = ""
+	_, err = shipperClient.ShipperV1alpha1().Releases(testNamespace).Update(rel)
+	if err != nil {
+		t.Fatalf("could not update release %q: %q", relName, err)
+	}
+
+	t.Logf("waiting for rollout block %q/%q status to be updated ", rb.GetNamespace(), rolloutBlockName)
+	f.waitForStatus(
+		rolloutBlockName,
+		globalNamespace,
+		fmt.Sprintf("%s/%s", app.GetNamespace(), app.GetName()),
+		"",
+	)
+
+	err = shipperClient.ShipperV1alpha1().Applications(testNamespace).Delete(app.GetName(), &metav1.DeleteOptions{})
+	if err != nil {
+		t.Fatalf("could not DELETE application %q: %q", appName, err)
+	}
+
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(rb.GetNamespace()).Delete(rb.GetName(), &metav1.DeleteOptions{})
 	if err != nil {
 		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -1475,11 +1647,11 @@ func (f *fixture) waitForComplete(releaseName string) {
 	f.t.Logf("waiting for completion of %q took %s", releaseName, time.Since(start))
 }
 
-func (f *fixture) waitForStatus(rbName string, apps string, rels string) {
+func (f *fixture) waitForStatus(rbName string, rbNamespace string, apps string, rels string) {
 	start := time.Now()
 	var state string
 	err := poll(globalTimeout, func() (bool, error) {
-		rb, err := shipperClient.ShipperV1alpha1().RolloutBlocks(f.namespace).Get(rolloutBlockName, metav1.GetOptions{})
+		rb, err := shipperClient.ShipperV1alpha1().RolloutBlocks(rbNamespace).Get(rolloutBlockName, metav1.GetOptions{})
 		if err != nil {
 			f.t.Fatalf("could not create rollout block %q: %q", rbName, err)
 		}
@@ -1519,7 +1691,7 @@ func (f *fixture) waitForStatus(rbName string, apps string, rels string) {
 		f.t.Fatalf("error waiting for rollout block status to be updated: %q", err)
 	}
 
-	f.t.Logf("waiting for rollout block %q status took %s", rbName, time.Since(start))
+	f.t.Logf("waiting for rollout block %q/%q status took %s", rbNamespace, rbName, time.Since(start))
 }
 
 func poll(timeout time.Duration, waitCondition func() (bool, error)) error {
