@@ -953,9 +953,6 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 	t.Logf("release %q should stay in waitingForCommand for targetStep %d", contenderName, 0)
 	f.waitForReleaseStrategyState("command", contenderName, 0)
 
-	//expectedContenderCapacity = replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
-	//expectedIncumbentCapacity = replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
-
 	t.Logf(
 		"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step %d -- %d/%d)",
 		incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, i, step.Capacity.Incumbent, step.Capacity.Contender,
