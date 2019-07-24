@@ -1,0 +1,5 @@
+managementClusters:
+- name: microk8s
+applicationClusters:
+- name: microk8s
+  region: local
