@@ -325,6 +325,7 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 			Conditions: []shipper.ReleaseCondition{
 				{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
 				{Type: shipper.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
+				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 			},
 		},
 		Spec: shipper.ReleaseSpec{
