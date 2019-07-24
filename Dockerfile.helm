@@ -2,4 +2,4 @@ FROM alpine/helm:2.13.1
 
 ADD test/e2e/testdata /charts
 
-ENTRYPOINT ["helm", "serve", "--repo-path", "/charts", "--address", "0.0.0.0:8879"]
+ENTRYPOINT helm serve --repo-path /charts --address $POD_IP:8879
