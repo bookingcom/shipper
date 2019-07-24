@@ -280,6 +280,8 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 			WithShipperKind("Release")
 	}
 
+	rel = rel.DeepCopy()
+
 	if releaseutil.HasEmptyEnvironment(rel) {
 		return nil
 	}
@@ -298,26 +300,21 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 
 	// This is a 2-round handler: the 1st round schedules the release on a
 	// set of clusters, and the 2nd round creates associated objects and
-	// finalizes release scheduling process.
+	// finalizes release scheduling process. This approach comes for a
+	// reason: we are eliminating a replication lag problem. While running
+	// the system in production, we observed some cases where a few
+	// sequentual updates on the same object experienced apiserver
+	// rejections due to the passed object outdate state. This happened due
+	// to the synchronisation/replication lag in etcd. This approach helps
+	// to eliminate this as a notification will be delivered once all
+	// parties are in sync.
 	if !releaseHasClusters(rel) {
-		if _, err := scheduler.ChooseClusters(rel.DeepCopy(), false); err != nil {
-			return shippererrors.NewRecoverableError(fmt.Errorf("failed to choose clusters for release %q (will retry): %s", key, err))
-		}
-
-		// If all went fine, we return here and let informers pick up
-		// the change and reschedule this release for the 2nd round
-		// naturally. This approach comes for a reason: we are
-		// eliminating a replication lag problem. While running the
-		// system in production, we observed some cases where a few
-		// sequentual updates on the same object experienced apiserver
-		// rejections due to the passed object outdate state. This
-		// happened due to the synchronisation/replication lag in etcd.
-		// This approach helps to eliminate this as a notification will
-		// be delivered once all parties are in sync.
-		return nil
+		_, err = scheduler.ChooseClusters(rel, false)
+	} else {
+		_, err = scheduler.ScheduleRelease(rel)
 	}
 
-	if _, err = scheduler.ScheduleRelease(rel.DeepCopy()); err != nil {
+	if err != nil {
 		if shippererrors.ShouldBroadcast(err) {
 			c.recorder.Eventf(
 				rel,
@@ -336,8 +333,8 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 		)
 		releaseutil.SetReleaseCondition(&rel.Status, *condition)
 
-		if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); err != nil {
-			return shippererrors.NewKubeclientUpdateError(rel, err)
+		if _, updateErr := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); updateErr != nil {
+			return shippererrors.NewKubeclientUpdateError(rel, updateErr)
 		}
 
 		return err
