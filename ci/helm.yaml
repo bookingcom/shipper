@@ -15,5 +15,9 @@ spec:
       containers:
         - name: app
           image: localhost:32000/bookingcom/shipper-helm:latest
-          args: ["serve", ""]
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
 
