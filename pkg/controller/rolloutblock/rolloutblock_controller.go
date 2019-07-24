@@ -119,12 +119,7 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 		return
 	}
 
-	overrideRB, ok := rel.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
-	if !ok {
-		overrideRB = ""
-		return
-	}
-
+	overrideRB, _ := rel.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
 	overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
 	for rbKey := range overrideRBs {
 		c.rolloutblockWorkqueue.Add(rbKey)
@@ -138,12 +133,7 @@ func (c *Controller) enqueueApplication(obj interface{}) {
 		return
 	}
 
-	overrideRB, ok := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
-	if !ok {
-		overrideRB = ""
-		return
-	}
-
+	overrideRB, _ := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
 	overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
 	for rbKey := range overrideRBs {
 		c.rolloutblockWorkqueue.Add(rbKey)
