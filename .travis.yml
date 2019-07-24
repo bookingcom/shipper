@@ -1,24 +1,41 @@
 language: go
 go:
-- "1.12"
+- "1.12.x"
 
 sudo: required
-
 dist: xenial
-
 services:
 - docker
-
 env:
 - RESYNC_PERIOD=30s GOFLAGS=-mod=vendor
 
 before_install:
-- sudo snap install microk8s --classic --channel=1.11/stable
+- sudo snap install microk8s --classic --channel=1.14/stable
 - sudo snap alias microk8s.kubectl kubectl
-- curl -L https://raw.githubusercontent.com/alecthomas/gometalinter/master/scripts/install.sh | bash -s -- -b $GOPATH/bin
-- echo $PATH && ls -la $GOPATH/bin
+- mkdir ~/.kube
+- microk8s.config > ~/.kube/config
+
+- curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sh -s -- -b $(go env GOPATH)/bin v1.17.1
+
+- microk8s.status --wait-ready
+- microk8s.enable registry
 
 install: true
 
 script:
-- ./ci/test.sh && ./ci/build.sh && ./ci/package.sh
+- "./ci/test.sh && ./ci/build.sh && ./ci/package.sh"
+
+after_success:
+- "./ci/build-release-files.sh"
+deploy:
+  provider: releases
+  api_key:
+    secure: pKwYDEsLMyFr1zwiKvxiS2qIn2dy+q/aCxzFHId0gIx/835yadoKarUtNOLJg6rNj536040MmLR9XSSfKMaZbRVPol6sER8pgglPOwKdmJ4T9asKnjKkkO4tkDJDmDWkTJJ/Gu8P0Hp0v7eyKvcyipvmTs9wXuPXdAR7S9oZANQhZ0yRkULgZc18LdsXuVVZW/J06JmIdtqdYLNq2WS/S8p7xwBBbLGKAjg2q6DsNgwetAY1Os+v+Wp4qJgmC2U+mmOrFJXQoSOtk1EkEHQNTdGRvATev4uG8Rl8f4rXa6W1Vt+n8p4KHbp7KkQXPODORzSJopAWqslFOXOdJMKhfyjsJtzoKQ7eO7dI3d1VEXrvniFjzeMjIxGDgSzKnK/dVUSs5i6ELpwVXAI/AvJz53Vo93C0BjWyzRppQcgidgWIR/8997hrQkOxichvKCScWTdO06W+m4xFuayRBN1sq5hVxCpZkrOCMJggrszqNQtg/M0eEoZW8NzLbbxzCYsDrwnf2xrPksbbb/c6Y1y6uT+tbyZWxiJPkN3fMKWWNyw/qkSdOXXybo1+70QY+GQiO2dxvbh6jRW2XizU9B3PGjd7MnnI7FuQtoNZotsPqgAiZw7QlFtaJ3zl95lBFLxqzaYHJcFY6bQiNB6pAjvldYHVQQqTwLU5w525qW9DTzY=
+  file_glob: true
+  file:
+    - "release-files/*.tgz"
+    - "release-files/sha256sums.txt"
+    - "release-files/kubernetes-deployment.yaml"
+  skip_cleanup: true
+  on:
+    tags: true

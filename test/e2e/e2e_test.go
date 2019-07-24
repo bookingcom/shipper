@@ -20,7 +20,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/helm/pkg/repo/repotest"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
@@ -41,7 +40,7 @@ var (
 		"The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.",
 	)
 	runEndToEnd    = flag.Bool("e2e", false, "Set this flag to enable E2E tests against the local minikube")
-	testCharts     = flag.String("testcharts", "testdata/*.tgz", "Glob expression (escape the *!) pointing to the charts for the test")
+	testCharts     = flag.String("testcharts", "", "The address of the Helm repository holding the test charts")
 	inspectFailed  = flag.Bool("inspectfailed", false, "Set this flag to skip deleting the namespaces for failed tests. Useful for debugging.")
 	kubeconfig     = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
 	appClusterName = flag.String("appcluster", "minikube", "The application cluster that E2E tests will check to determine success/failure")
@@ -112,18 +111,9 @@ func TestMain(m *testing.M) {
 		purgeTestNamespaces()
 	}
 
-	srv, hh, err := repotest.NewTempServer(*testCharts)
-	if err != nil {
-		glog.Fatalf("failed to start helm repo server: %v", err)
-	}
-
-	chartRepo = srv.URL()
-	glog.Infof("serving test charts on %q", chartRepo)
+	chartRepo = *testCharts
 
 	exitCode := m.Run()
-
-	os.RemoveAll(hh.String())
-	srv.Stop()
 
 	os.Exit(exitCode)
 }
@@ -1804,23 +1794,32 @@ func buildApplicationClient(cluster *shipper.Cluster) kubernetes.Interface {
 		Host: cluster.Spec.APIMaster,
 	}
 
-	// The cluster secret controller does not include the CA in the secret: you end
-	// up using the system CA trust store. However, it's much handier for
-	// integration testing to be able to create a secret that is independent of the
-	// underlying system trust store.
-	if ca, ok := secret.Data["tls.ca"]; ok {
+	_, tokenOK := secret.Data["token"]
+	if tokenOK {
+		ca := secret.Data["ca.crt"]
 		config.CAData = ca
-	}
 
-	config.CertData = secret.Data["tls.crt"]
-	config.KeyData = secret.Data["tls.key"]
+		token := secret.Data["token"]
+		config.BearerToken = string(token)
+	} else {
+		// The cluster secret controller does not include the CA in the secret: you end
+		// up using the system CA trust store. However, it's much handier for
+		// integration testing to be able to create a secret that is independent of the
+		// underlying system trust store.
+		if ca, ok := secret.Data["tls.ca"]; ok {
+			config.CAData = ca
+		}
 
-	if encodedInsecureSkipTlsVerify, ok := secret.Annotations[shipper.SecretClusterSkipTlsVerifyAnnotation]; ok {
-		if insecureSkipTlsVerify, err := strconv.ParseBool(encodedInsecureSkipTlsVerify); err == nil {
-			glog.Infof("found %q annotation with value %q", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
-			config.Insecure = insecureSkipTlsVerify
-		} else {
-			glog.Infof("found %q annotation with value %q, failed to decode a bool from it, ignoring it", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
+		config.CertData = secret.Data["tls.crt"]
+		config.KeyData = secret.Data["tls.key"]
+
+		if encodedInsecureSkipTlsVerify, ok := secret.Annotations[shipper.SecretClusterSkipTlsVerifyAnnotation]; ok {
+			if insecureSkipTlsVerify, err := strconv.ParseBool(encodedInsecureSkipTlsVerify); err == nil {
+				glog.Infof("found %q annotation with value %q", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
+				config.Insecure = insecureSkipTlsVerify
+			} else {
+				glog.Infof("found %q annotation with value %q, failed to decode a bool from it, ignoring it", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
+			}
 		}
 	}
 

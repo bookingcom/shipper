@@ -1,5 +1,6 @@
 SHIPPER_IMAGE ?= bookingcom/shipper:latest
 METRICS_IMAGE ?= bookingcom/shipper-state-metrics:latest
+HELM_IMAGE ?= bookingcom/shipper-helm:latest
 SHIPPER_NAMESPACE ?= shipper-system
 KUBECTL ?= kubectl -n $(SHIPPER_NAMESPACE)
 PKG = pkg/**/* vendor/**/*
@@ -21,3 +22,7 @@ restart:
 
 logs:
 	$(KUBECTL) get po -o jsonpath='{.items[*].metadata.name}' | xargs $(KUBECTL) logs --follow
+
+helm:
+	docker build -f Dockerfile.helm -t $(HELM_IMAGE) --build-arg HTTP_PROXY=$(HTTP_PROXY) --build-arg HTTPS_PROXY=$(HTTPS_PROXY) .
+	docker push $(HELM_IMAGE)
