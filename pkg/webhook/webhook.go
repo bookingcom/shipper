@@ -211,7 +211,7 @@ func (c *Webhook) validateRelease(request *admission_v1beta1.AdmissionRequest, r
 
 	if request.Operation == kubeclient.Update {
 		var oldRelease shipper.Release
-		err = json.Unmarshal(request.Object.Raw, &oldRelease)
+		err = json.Unmarshal(request.OldObject.Raw, &oldRelease)
 		if err != nil {
 			return nil
 		}
