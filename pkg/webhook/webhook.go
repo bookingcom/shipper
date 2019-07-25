@@ -211,7 +211,7 @@ func (c *Webhook) validateRelease(request *admission_v1beta1.AdmissionRequest, r
 
 	if request.Operation == kubeclient.Update {
 		var oldRelease shipper.Release
-		err = json.Unmarshal(request.Object.Raw, &oldRelease)
+		err = json.Unmarshal(request.OldObject.Raw, &oldRelease)
 		if err != nil {
 			return nil
 		}
@@ -223,7 +223,7 @@ func (c *Webhook) validateRelease(request *admission_v1beta1.AdmissionRequest, r
 			err = c.processRolloutBlocks(release.Namespace, overrideRBs)
 		} else {
 			// rolloutblock override were changed, making sure spec was not changed
-			if !reflect.DeepEqual(release, oldRelease) {
+			if !reflect.DeepEqual(release.Spec, oldRelease.Spec) {
 				err = fmt.Errorf("releases Spec was changed %v", release)
 			}
 		}
