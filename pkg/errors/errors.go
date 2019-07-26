@@ -28,7 +28,7 @@ func ShouldRetry(err error) bool {
 		return retryAware.ShouldRetry()
 	}
 
-	glog.V(8).Infof("Cannot determine if untagged error %#v is retriable, will assume it is", err)
+	glog.V(4).Infof("Cannot determine if untagged error %#v is retriable, will assume it is", err)
 
 	return true
 }
