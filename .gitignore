@@ -8,6 +8,3 @@ docs/generated
 ./shipper
 ./shipper-state-metrics
 ./e2e.test
-
-# IntelliJ IDE auto generated files
-.idea/**

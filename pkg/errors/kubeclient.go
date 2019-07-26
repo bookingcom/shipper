@@ -6,6 +6,7 @@ import (
 	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -44,24 +45,26 @@ func (e KubeclientError) Error() string {
 }
 
 // ShouldRetry implements the RetryAware interface, and determines if the error
-// should be retried based on its status code. It follows the API conventions
+// should be retried based on its reason. It follows the API conventions
 // stipulated by
 // https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#http-status-codes
 func (e KubeclientError) ShouldRetry() bool {
-	// client-go does not build its own metav1.Status in some cases,
-	// particularly when it gets a response returned by an admission
-	// controller. If the admission controller does not return
-	// Status.Reason, we'll get an unknown reason here. Luckily, they
-	// always return a Status.Code, so we can check it here instead of the
-	// reason.
-	statuserr, ok := e.err.(kerrors.APIStatus)
-	if ok {
-		switch statuserr.Status().Code {
-		case 400, 403, 404, 405, 410, 422:
-			return false
-		case 401, 409, 429, 500, 503, 504:
-			return true
-		}
+	switch kerrors.ReasonForError(e.err) {
+	case metav1.StatusReasonBadRequest,
+		metav1.StatusReasonForbidden,
+		metav1.StatusReasonNotFound,
+		metav1.StatusReasonMethodNotAllowed,
+		metav1.StatusReasonGone,
+		metav1.StatusReasonInvalid:
+		return false
+
+	case metav1.StatusReasonUnauthorized,
+		metav1.StatusReasonConflict,
+		metav1.StatusReasonTooManyRequests,
+		metav1.StatusReasonInternalError,
+		metav1.StatusReasonServiceUnavailable,
+		metav1.StatusReasonServerTimeout:
+		return true
 	}
 
 	glog.V(8).Infof("Cannot determine reason for error %#v, will assume it's retriable", e)

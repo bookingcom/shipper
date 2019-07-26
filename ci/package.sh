@@ -17,14 +17,16 @@ if [ "$TRAVIS_SECURE_ENV_VARS" != "true" ]; then
     exit 1
 fi
 
-# building a tagged release only
+echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+
+docker build -t bookingcom/shipper:$TRAVIS_COMMIT -f Dockerfile.shipper .
+docker push bookingcom/shipper:$TRAVIS_COMMIT
+
+docker build -t bookingcom/shipper-state-metrics:$TRAVIS_COMMIT -f Dockerfile.shipper-state-metrics .
+docker push bookingcom/shipper-state-metrics:$TRAVIS_COMMIT
+
+# building a tagged release
 if [ "$TRAVIS_BRANCH" == "$TRAVIS_TAG" ]; then
-
-    echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-
-    docker build -t bookingcom/shipper:$TRAVIS_COMMIT -f Dockerfile.shipper .
-    docker build -t bookingcom/shipper-state-metrics:$TRAVIS_COMMIT -f Dockerfile.shipper-state-metrics .
-
     docker tag bookingcom/shipper-state-metrics:$TRAVIS_COMMIT bookingcom/shipper-state-metrics:$TRAVIS_TAG
     docker push bookingcom/shipper-state-metrics:$TRAVIS_TAG
 
