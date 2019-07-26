@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: app
-          image: localhost:32000/bookingcom/shipper-helm:latest
+          image: <HELM_IMAGE>
           env:
             - name: POD_IP
               valueFrom:
