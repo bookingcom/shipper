@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"hash/crc32"
+	"time"
 
 	homedir "github.com/mitchellh/go-homedir"
 	certificatesv1beta1 "k8s.io/api/certificates/v1beta1"
@@ -19,8 +20,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"time"
-
 	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
@@ -33,7 +32,7 @@ const (
 	shipperValidatingWebhookSecretName  = "shipper-validating-webhook"
 	shipperValidatingWebhookName        = "shipper.booking.com"
 	shipperValidatingWebhookServiceName = "shipper-validating-webhook"
-	MaximumRetries                      = 10
+	MaximumRetries                      = 20
 )
 
 type Cluster struct {
@@ -143,13 +142,29 @@ func (c *Cluster) ShouldCopySecret(name, namespace string) (bool, error) {
 	return false, nil
 }
 
+// FetchSecretForServiceAccount polls the server 10 times with a 1
+// second delay between each. If there is still no secret, it returns
+// a SecretNotPopulated error.
 func (c *Cluster) FetchSecretForServiceAccount(name, namespace string) (*corev1.Secret, error) {
-	serviceAccount, err := c.KubeClient.CoreV1().ServiceAccounts(namespace).Get(name, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
+	var serviceAccount *corev1.ServiceAccount
+	var err error
+	found := false
+	for i := 0; i < 10; i++ {
+		serviceAccount, err = c.KubeClient.CoreV1().ServiceAccounts(namespace).Get(name, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+
+		if len(serviceAccount.Secrets) == 0 {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		found = true
+		break
 	}
 
-	if len(serviceAccount.Secrets) == 0 {
+	if !found {
 		return nil, NewSecretNotPopulatedError(serviceAccount)
 	}
 
@@ -356,7 +371,7 @@ func (c *Cluster) FetchCertificateFromCSR() ([]byte, error) {
 	}
 
 	// If we reach here, we have failed to get the certificate after all the retries
-	return nil, fmt.Errorf("certificate is not populated after 10 retries")
+	return nil, fmt.Errorf("certificate is not populated after %d retries", MaximumRetries)
 }
 
 func (c *Cluster) ValidatingWebhookSecretExists(namespace string) (bool, error) {
