@@ -22,6 +22,29 @@ func newChartError(chartspec *shipper.Chart) ChartError {
 	}
 }
 
+type UnrecoverableChartFetchFailureError struct {
+	ChartError
+	err error
+}
+
+func (e UnrecoverableChartFetchFailureError) Error() string {
+	return fmt.Sprintf(
+		"failed to fetch chart [name: %q, version: %q, repo: %q]: %s",
+		e.chartName, e.chartVersion, e.chartRepo,
+		e.err)
+}
+
+func (e UnrecoverableChartFetchFailureError) ShouldRetry() bool {
+	return false
+}
+
+func NewUnrecoverableChartFetchFailureError(chartspec *shipper.Chart, err error) UnrecoverableChartFetchFailureError {
+	return UnrecoverableChartFetchFailureError{
+		ChartError: newChartError(chartspec),
+		err:        err,
+	}
+}
+
 type ChartFetchFailureError struct {
 	ChartError
 	err error

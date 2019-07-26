@@ -22,6 +22,9 @@ func ResolveChartVersionFunc(c *Catalog) ChartVersionResolver {
 
 		if _, err := repo.RefreshIndex(); err != nil {
 			glog.Warningf("failed to refresh repo[%s] index: %s", chartspec.RepoURL, err)
+			if len(c.repos) == 1 {
+				return nil, errors.NewUnrecoverableChartFetchFailureError(chartspec, err)
+			}
 		}
 
 		return repo.ResolveVersion(chartspec)
