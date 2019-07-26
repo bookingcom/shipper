@@ -12,7 +12,8 @@ kubectl wait -n container-registry --for=condition=ready pod/$REGISTRY_POD
 
 # Build an image with the test charts and deploy it
 HELM_IMAGE=localhost:32000/bookingcom/shipper-helm:latest make helm
-kubectl apply -f ci/helm.yaml
+sed s=\<HELM_IMAGE\>=localhost:32000/bookingcom/shipper:latest= ci/helm.yaml | \
+	kubectl apply -f -
 
 # Build an image with shipper and deploy it
 SHIPPER_IMAGE=localhost:32000/bookingcom/shipper:latest make shipper
