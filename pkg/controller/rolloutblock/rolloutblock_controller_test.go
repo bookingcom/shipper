@@ -376,10 +376,7 @@ func newApplication(name string) *shipper.Application {
 }
 
 func newRelease(releaseName string, app *shipper.Application) *shipper.Release {
-	rolloutblocksOverrides, ok := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
-	if !ok {
-		rolloutblocksOverrides = ""
-	}
+	rolloutblocksOverrides := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 	return &shipper.Release{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: shipper.SchemeGroupVersion.String(),

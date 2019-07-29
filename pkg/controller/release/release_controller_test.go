@@ -314,11 +314,7 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 		f.t.Fatalf("The fixture is missing at least 1 Cluster object")
 	}
 
-	rolloutblocksOverrides, ok := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
-	if !ok {
-		rolloutblocksOverrides = ""
-	}
-
+	rolloutblocksOverrides := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 	rel := &shipper.Release{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: shipper.SchemeGroupVersion.String(),
@@ -511,11 +507,7 @@ func (f *fixture) buildContender(namespace string, relName string, replicaCount 
 		f.t.Fatalf("The fixture is missing at least 1 Cluster object")
 	}
 
-	rolloutblocksOverrides, ok := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
-	if !ok {
-		rolloutblocksOverrides = ""
-	}
-
+	rolloutblocksOverrides := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 	rel := &shipper.Release{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: shipper.SchemeGroupVersion.String(),
