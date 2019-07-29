@@ -194,7 +194,11 @@ func joinClusters(managementCluster, applicationCluster *config.ClusterConfigura
 		return err
 	}
 
-	if err := createApplicationClusterObjectOnManagementCluster(cmd, managementClusterConfigurator, applicationCluster, applicationClusterConfigurator.Host); err != nil {
+	if applicationCluster.APIMaster == "" {
+		applicationCluster.APIMaster = applicationClusterConfigurator.Host
+	}
+
+	if err := createApplicationClusterObjectOnManagementCluster(cmd, managementClusterConfigurator, applicationCluster); err != nil {
 		return err
 	}
 
@@ -502,7 +506,7 @@ func copySecretFromApplicationToManagementCluster(cmd *cobra.Command, applicatio
 	return nil
 }
 
-func createApplicationClusterObjectOnManagementCluster(cmd *cobra.Command, managementClusterConfigurator *configurator.Cluster, applicationCluster *config.ClusterConfiguration, host string) error {
+func createApplicationClusterObjectOnManagementCluster(cmd *cobra.Command, managementClusterConfigurator *configurator.Cluster, applicationCluster *config.ClusterConfiguration) error {
 	cmd.Printf("Creating or updating the cluster object for cluster %s on the management cluster... ", applicationCluster.Name)
 
 	// Initialize the map of capabilities if it's null so that we
@@ -510,7 +514,7 @@ func createApplicationClusterObjectOnManagementCluster(cmd *cobra.Command, manag
 	if applicationCluster.Capabilities == nil {
 		applicationCluster.Capabilities = []string{}
 	}
-	if err := managementClusterConfigurator.CreateOrUpdateClusterWithConfig(applicationCluster, host); err != nil {
+	if err := managementClusterConfigurator.CreateOrUpdateClusterWithConfig(applicationCluster); err != nil {
 		return err
 	}
 	cmd.Println("done")

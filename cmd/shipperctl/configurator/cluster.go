@@ -210,23 +210,22 @@ func (c *Cluster) CopySecret(cluster *shipper.Cluster, newNamespace string, secr
 	return err
 }
 
-func (c *Cluster) CreateOrUpdateClusterWithConfig(configuration *config.ClusterConfiguration, host string) error {
+func (c *Cluster) CreateOrUpdateClusterWithConfig(configuration *config.ClusterConfiguration) error {
 	existingCluster, err := c.ShipperClient.ShipperV1alpha1().Clusters().Get(configuration.Name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return c.CreateClusterFromConfig(configuration, host)
+			return c.CreateClusterFromConfig(configuration)
 		} else {
 			return err
 		}
 	}
 
 	existingCluster.Spec = configuration.ClusterSpec
-	existingCluster.Spec.APIMaster = host
 	_, err = c.ShipperClient.ShipperV1alpha1().Clusters().Update(existingCluster)
 	return err
 }
 
-func (c *Cluster) CreateClusterFromConfig(configuration *config.ClusterConfiguration, host string) error {
+func (c *Cluster) CreateClusterFromConfig(configuration *config.ClusterConfiguration) error {
 	cluster := &shipper.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: configuration.Name,
@@ -234,7 +233,6 @@ func (c *Cluster) CreateClusterFromConfig(configuration *config.ClusterConfigura
 		Spec: configuration.ClusterSpec,
 	}
 
-	cluster.Spec.APIMaster = host
 	_, err := c.ShipperClient.ShipperV1alpha1().Clusters().Create(cluster)
 	return err
 }
