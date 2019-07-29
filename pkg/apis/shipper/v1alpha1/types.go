@@ -9,7 +9,7 @@ import (
 
 const (
 	ShipperNamespace            = "shipper-system"
-	GlobalRolloutBlockNamespace = "global-rollout-blocks"
+	GlobalRolloutBlockNamespace = "rollout-blocks-global"
 
 	PhaseLabel = "phase"
 

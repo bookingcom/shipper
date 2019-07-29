@@ -22,10 +22,7 @@ func (c *Controller) createReleaseForApplication(app *shipper.Application, relea
 	// appname-hash-of-template-iteration.
 
 	glog.V(4).Infof("Generated Release name for Application %q: %q", controller.MetaKey(app), releaseName)
-	rolloutblocksOverrides, ok := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
-	if !ok {
-		rolloutblocksOverrides = ""
-	}
+	rolloutblocksOverrides := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 	newRelease := &shipper.Release{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      releaseName,

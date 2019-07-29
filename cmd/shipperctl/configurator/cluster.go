@@ -32,6 +32,7 @@ const (
 	shipperValidatingWebhookSecretName  = "shipper-validating-webhook"
 	shipperValidatingWebhookName        = "shipper.booking.com"
 	shipperValidatingWebhookServiceName = "shipper-validating-webhook"
+	shipperValidatingWebhookServicePath = "/validate"
 	MaximumRetries                      = 20
 )
 
@@ -422,7 +423,7 @@ func (c *Cluster) FetchKubernetesCABundle() ([]byte, error) {
 }
 
 func (c *Cluster) CreateValidatingWebhookConfiguration(caBundle []byte, namespace string) error {
-	shipperValidatingWebhookServicePath := "/validate"
+	path := shipperValidatingWebhookServicePath
 	validatingWebhookConfiguration := &admissionregistrationv1beta1.ValidatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: shipperValidatingWebhookName,
@@ -435,7 +436,7 @@ func (c *Cluster) CreateValidatingWebhookConfiguration(caBundle []byte, namespac
 					Service: &admissionregistrationv1beta1.ServiceReference{
 						Name:      shipperValidatingWebhookServiceName,
 						Namespace: namespace,
-						Path:      &shipperValidatingWebhookServicePath,
+						Path:      &path,
 					},
 				},
 				Rules: []admissionregistrationv1beta1.RuleWithOperations{

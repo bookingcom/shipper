@@ -20,7 +20,7 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
-	rolloutBlockOverride "github.com/bookingcom/shipper/pkg/util/rolloutblock"
+	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
 	kubeclient "k8s.io/api/admission/v1beta1"
 )
 
@@ -195,11 +195,7 @@ func (c *Webhook) validateHandlerFunc(review *admission_v1beta1.AdmissionReview)
 
 func (c *Webhook) validateRelease(request *admission_v1beta1.AdmissionRequest, release shipper.Release) error {
 	var err error
-	overrideRB, ok := release.Annotations[shipper.RolloutBlocksOverrideAnnotation]
-	if !ok {
-		overrideRB = ""
-	}
-	overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
+	overrideRBs := rolloutblock.NewOverride(release.Annotations[shipper.RolloutBlocksOverrideAnnotation])
 	err = c.validateOverrideRolloutBlockAnnotation(overrideRBs, release.Namespace)
 	if err != nil {
 		return err
@@ -215,8 +211,8 @@ func (c *Webhook) validateRelease(request *admission_v1beta1.AdmissionRequest, r
 		if err != nil {
 			return nil
 		}
-		newOverrides := rolloutBlockOverride.NewOverride(release.Annotations[shipper.RolloutBlocksOverrideAnnotation])
-		oldOverrides := rolloutBlockOverride.NewOverride(oldRelease.Annotations[shipper.RolloutBlocksOverrideAnnotation])
+		newOverrides := rolloutblock.NewOverride(release.Annotations[shipper.RolloutBlocksOverrideAnnotation])
+		oldOverrides := rolloutblock.NewOverride(oldRelease.Annotations[shipper.RolloutBlocksOverrideAnnotation])
 		subtractedOverrides := oldOverrides.Diff(newOverrides)
 		if len(subtractedOverrides) == 0 {
 			// no overrides were removed from annotation. validating release:
@@ -234,11 +230,7 @@ func (c *Webhook) validateRelease(request *admission_v1beta1.AdmissionRequest, r
 
 func (c *Webhook) validateApplication(request *admission_v1beta1.AdmissionRequest, application shipper.Application) error {
 	var err error
-	overrideRB, ok := application.Annotations[shipper.RolloutBlocksOverrideAnnotation]
-	if !ok {
-		overrideRB = ""
-	}
-	overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
+	overrideRBs := rolloutblock.NewOverride(application.Annotations[shipper.RolloutBlocksOverrideAnnotation])
 	err = c.validateOverrideRolloutBlockAnnotation(overrideRBs, application.Namespace)
 	if err != nil {
 		return err
@@ -251,8 +243,8 @@ func (c *Webhook) validateApplication(request *admission_v1beta1.AdmissionReques
 	return err
 }
 
-func (c *Webhook) processRolloutBlocks(namespace string, overrideRBs rolloutBlockOverride.Override) error {
-	existingRBs := rolloutBlockOverride.NewOverrideFromRolloutBlocks(c.existingRolloutBlocks(namespace))
+func (c *Webhook) processRolloutBlocks(namespace string, overrideRBs rolloutblock.Override) error {
+	existingRBs := rolloutblock.NewOverrideFromRolloutBlocks(c.existingRolloutBlocks(namespace))
 
 	nonOverriddenRBs := existingRBs.Diff(overrideRBs)
 	if len(nonOverriddenRBs) > 0 {
@@ -277,7 +269,7 @@ func (c *Webhook) existingRolloutBlocks(namespace string) []*shipper.RolloutBloc
 	return append(nsRBs, gbRBs...)
 }
 
-func (c *Webhook) validateOverrideRolloutBlockAnnotation(overrideRbs rolloutBlockOverride.Override, namespace string) error {
+func (c *Webhook) validateOverrideRolloutBlockAnnotation(overrideRbs rolloutblock.Override, namespace string) error {
 	if len(overrideRbs) == 0 {
 		return nil
 	}
@@ -290,7 +282,7 @@ func (c *Webhook) validateOverrideRolloutBlockAnnotation(overrideRbs rolloutBloc
 		}
 	}
 
-	existingRbs := rolloutBlockOverride.NewOverrideFromRolloutBlocks(c.existingRolloutBlocks(namespace))
+	existingRbs := rolloutblock.NewOverrideFromRolloutBlocks(c.existingRolloutBlocks(namespace))
 	nonExistingRbs := overrideRbs.Diff(existingRbs)
 
 	if len(nonExistingRbs) > 0 {

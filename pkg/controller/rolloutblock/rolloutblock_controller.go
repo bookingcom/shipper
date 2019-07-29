@@ -17,7 +17,7 @@ import (
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
-	rolloutBlockOverride "github.com/bookingcom/shipper/pkg/util/rolloutblock"
+	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
 const (
@@ -88,20 +88,20 @@ func NewController(
 
 	releaseInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.enqueueRelease,
+			AddFunc: controller.enqueueReleaseBlock,
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueRelease(newObj)
+				controller.enqueueReleaseBlock(newObj)
 			},
-			DeleteFunc: controller.enqueueRelease,
+			DeleteFunc: controller.enqueueReleaseBlock,
 		})
 
 	applicationInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.enqueueApplication,
+			AddFunc: controller.enqueueApplicationBlock,
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueApplication(newObj)
+				controller.enqueueApplicationBlock(newObj)
 			},
-			DeleteFunc: controller.enqueueApplication,
+			DeleteFunc: controller.enqueueApplicationBlock,
 		})
 
 	rolloutBlockInformer.Informer().AddEventHandler(
@@ -112,29 +112,27 @@ func NewController(
 	return controller
 }
 
-func (c *Controller) enqueueRelease(obj interface{}) {
+func (c *Controller) enqueueReleaseBlock(obj interface{}) {
 	rel, ok := obj.(*shipper.Release)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", obj))
 		return
 	}
 
-	overrideRB, _ := rel.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
-	overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
+	overrideRBs := rolloutblock.NewOverride(rel.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation])
 	for rbKey := range overrideRBs {
 		c.rolloutblockWorkqueue.Add(rbKey)
 	}
 }
 
-func (c *Controller) enqueueApplication(obj interface{}) {
+func (c *Controller) enqueueApplicationBlock(obj interface{}) {
 	app, ok := obj.(*shipper.Application)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.Application: %#v", obj))
 		return
 	}
 
-	overrideRB, _ := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
-	overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
+	overrideRBs := rolloutblock.NewOverride(app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation])
 	for rbKey := range overrideRBs {
 		c.rolloutblockWorkqueue.Add(rbKey)
 	}
