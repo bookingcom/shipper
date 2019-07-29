@@ -56,7 +56,7 @@ func init() {
 	applyCmd.Flags().StringVarP(&configFile, fileFlagName, "f", "clusters.yaml", "config file")
 	applyCmd.Flags().StringVar(&kubeConfigFile, kubeConfigFlagName, "~/.kube/config", "the path to the Kubernetes configuration file")
 	applyCmd.Flags().StringVarP(&shipperSystemNamespace, "shipper-system-namespace", "n", shipper.ShipperNamespace, "the namespace where Shipper is running")
-	applyCmd.Flags().StringVarP(&globalRolloutBlockNamespace, "global-rollout-blocks-namespace", "g", shipper.GlobalRolloutBlockNamespace, "the namespace where Global RolloutBlocks are running")
+	applyCmd.Flags().StringVarP(&globalRolloutBlockNamespace, "rollout-blocks-global-namespace", "g", shipper.GlobalRolloutBlockNamespace, "the namespace where Global RolloutBlocks are running")
 
 	err := applyCmd.MarkFlagFilename(fileFlagName, "yaml")
 	if err != nil {

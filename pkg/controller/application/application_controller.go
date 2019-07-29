@@ -25,7 +25,7 @@ import (
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
-	rolloutBlockOverride "github.com/bookingcom/shipper/pkg/util/rolloutblock"
+	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
 const (
@@ -249,8 +249,7 @@ func (c *Controller) syncApplication(key string) error {
 	}
 	overrideRB, ok := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 	if ok {
-		overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
-		app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = overrideRBs.String()
+		app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = rolloutblock.NewOverride(overrideRB).String()
 	}
 
 	if app.Spec.RevisionHistoryLimit == nil {

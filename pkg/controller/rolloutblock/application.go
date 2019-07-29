@@ -5,11 +5,11 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	rolloutBlockOverride "github.com/bookingcom/shipper/pkg/util/rolloutblock"
+	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
 func (c *Controller) addApplicationsToRolloutBlocks(rolloutBlockKey string, rolloutBlock *shipper.RolloutBlock, applications ...*shipper.Application) error {
-	appsKeys := rolloutBlockOverride.NewOverride("")
+	appsKeys := rolloutblock.NewOverride("")
 	for _, app := range applications {
 		if app.DeletionTimestamp != nil {
 			continue
@@ -21,12 +21,12 @@ func (c *Controller) addApplicationsToRolloutBlocks(rolloutBlockKey string, roll
 			continue
 		}
 
-		overrideRB, ok := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
+		rbOverrideAnnotation, ok := app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
 		if !ok {
 			continue
 		}
 
-		overrideRBs := rolloutBlockOverride.NewOverride(overrideRB)
+		overrideRBs := rolloutblock.NewOverride(rbOverrideAnnotation)
 		for rbKey := range overrideRBs {
 			if rbKey == rolloutBlockKey {
 				appsKeys.Add(appKey)
