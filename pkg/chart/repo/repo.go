@@ -17,9 +17,9 @@ import (
 	// in structure definitions and therefore always parses empty
 	// index structures. This version is patched to understand json
 	// annotations and works fine.
-	"github.com/Masterminds/semver"
-	yaml "github.com/ghodss/yaml"
+	"sigs.k8s.io/yaml"
 
+	"github.com/Masterminds/semver"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/proto/hapi/chart"

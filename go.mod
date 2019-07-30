@@ -10,7 +10,6 @@ require (
 	github.com/aokoli/goutils v1.0.1 // indirect
 	github.com/cespare/xxhash v1.1.0
 	github.com/evanphx/json-patch v4.2.0+incompatible // indirect
-	github.com/ghodss/yaml v1.0.0
 	github.com/gobwas/glob v0.2.2 // indirect
 	github.com/gogo/protobuf v1.2.1 // indirect
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef // indirect
@@ -54,4 +53,5 @@ require (
 	k8s.io/klog v0.3.2
 	k8s.io/kube-openapi v0.0.0-20190603182131-db7b694dc208 // indirect
 	k8s.io/utils v0.0.0-20190529001817-6999998975a7 // indirect
+	sigs.k8s.io/yaml v1.1.0
 )
