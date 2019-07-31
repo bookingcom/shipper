@@ -120,6 +120,9 @@ func (c *Controller) enqueueReleaseBlock(obj interface{}) {
 	}
 
 	overrideRBs := rolloutblock.NewOverride(rel.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation])
+	// We are pushing all RolloutBlocks that this release is overriding to the queue. We're pushing
+	// them separately in order to utilize the deduplication quality of the queue. This way the
+	// controller will handle each RolloutBlock object once.
 	for rbKey := range overrideRBs {
 		c.rolloutblockWorkqueue.Add(rbKey)
 	}
@@ -133,6 +136,9 @@ func (c *Controller) enqueueApplicationBlock(obj interface{}) {
 	}
 
 	overrideRBs := rolloutblock.NewOverride(app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation])
+	// We are pushing all RolloutBlocks that this application is overriding to the queue. We're pushing
+	// them separately in order to utilize the deduplication quality of the queue. This way the
+	// controller will handle each RolloutBlock object once.
 	for rbKey := range overrideRBs {
 		c.rolloutblockWorkqueue.Add(rbKey)
 	}
