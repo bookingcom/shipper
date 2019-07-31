@@ -135,9 +135,17 @@ func NewController(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: controller.enqueueRelease,
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				oldRel, oldOk := oldObj.(*shipper.Release)
-				newRel, newOk := newObj.(*shipper.Release)
-				if oldOk && newOk && oldRel.GetResourceVersion() == newRel.GetResourceVersion() {
+				oldRel, ok := oldObj.(*shipper.Release)
+				if !ok {
+					return
+				}
+
+				newRel, ok := newObj.(*shipper.Release)
+				if !ok {
+					return
+				}
+
+				if oldRel.GetResourceVersion() == newRel.GetResourceVersion() {
 					controller.enqueueReleaseRateLimited(newObj)
 					return
 				}
