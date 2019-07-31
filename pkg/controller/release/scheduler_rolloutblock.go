@@ -23,7 +23,8 @@ func (s *Scheduler) processRolloutBlocks(rel *shipper.Release) (bool, string) {
 		runtime.HandleError(fmt.Errorf("failed to list rollout block objects: %s", err))
 	}
 
-	shouldBlockRollout, nonOverriddenRBsStatement, obsoleteRbs := rolloutblock.ProcessRolloutBlocks(relOverrideRBs, append(nsRBs, gbRBs...))
+	existingRBs := rolloutblock.NewOverrideFromRolloutBlocks(append(nsRBs, gbRBs...))
+	obsoleteRbs := relOverrideRBs.Diff(existingRBs)
 
 	if len(obsoleteRbs) > 0 {
 		for o := range obsoleteRbs {
@@ -31,6 +32,10 @@ func (s *Scheduler) processRolloutBlocks(rel *shipper.Release) (bool, string) {
 		}
 		s.recorder.Event(rel, corev1.EventTypeWarning, "Non Existing RolloutBlock", obsoleteRbs.String())
 	}
+
+	nonOverriddenRBs := existingRBs.Diff(relOverrideRBs)
+	shouldBlockRollout := len(nonOverriddenRBs) != 0
+	nonOverriddenRBsStatement := nonOverriddenRBs.String()
 
 	if shouldBlockRollout {
 		s.recorder.Event(rel, corev1.EventTypeWarning, "RolloutBlock", nonOverriddenRBsStatement)

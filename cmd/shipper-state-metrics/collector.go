@@ -335,13 +335,13 @@ func (ssm ShipperStateMetrics) collectClusters(ch chan<- prometheus.Metric) {
 func (ssm ShipperStateMetrics) collectRolloutBlocks(ch chan<- prometheus.Metric) {
 	nss, err := getNamespaces(ssm.nssLister)
 	if err != nil {
-		glog.Warningf("collect Namespaces: %s", err)
+		glog.Errorf("collect Namespaces: %s", err)
 		return
 	}
 
 	rolloutBlocks, err := ssm.rbLister.List(everything)
 	if err != nil {
-		glog.Warningf("collect RolloutBlocks: %s", err)
+		glog.Errorf("collect RolloutBlocks: %s", err)
 		return
 	}
 

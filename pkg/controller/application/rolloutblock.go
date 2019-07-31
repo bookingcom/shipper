@@ -12,7 +12,8 @@ func (c *Controller) processRolloutBlocks(app *shipper.Application, nsRBs, gbRBs
 	appOverrideRBs := rolloutblock.NewOverride(app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation])
 	rbs := append(nsRBs, gbRBs...)
 
-	shouldBlockRollout, nonOverriddenRBsStatement, obsoleteRbs := rolloutblock.ProcessRolloutBlocks(appOverrideRBs, rbs)
+	existingRBs := rolloutblock.NewOverrideFromRolloutBlocks(rbs)
+	obsoleteRbs := appOverrideRBs.Diff(existingRBs)
 
 	if len(obsoleteRbs) > 0 {
 		for o := range obsoleteRbs {
@@ -22,8 +23,11 @@ func (c *Controller) processRolloutBlocks(app *shipper.Application, nsRBs, gbRBs
 		c.recorder.Event(app, corev1.EventTypeWarning, "Non Existing RolloutBlock", obsoleteRbs.String())
 	}
 
+	nonOverriddenRBs := existingRBs.Diff(appOverrideRBs)
+	shouldBlockRollout := len(nonOverriddenRBs) != 0
+
 	if shouldBlockRollout {
-		c.recorder.Event(app, corev1.EventTypeWarning, "RolloutBlock", nonOverriddenRBsStatement)
+		c.recorder.Event(app, corev1.EventTypeWarning, "RolloutBlock", nonOverriddenRBs.String())
 	} else if len(appOverrideRBs) > 0 {
 		c.recorder.Event(app, corev1.EventTypeNormal, "Overriding RolloutBlock", appOverrideRBs.String())
 	}
