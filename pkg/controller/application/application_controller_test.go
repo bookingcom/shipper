@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Masterminds/semver"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -15,6 +16,7 @@ import (
 	"k8s.io/helm/pkg/repo"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shipperrepo "github.com/bookingcom/shipper/pkg/chart/repo"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
@@ -31,10 +33,23 @@ func init() {
 }
 
 var localResolveChartVersion = func(chartspec *shipper.Chart) (*repo.ChartVersion, error) {
+	resolvedVer := chartspec.Version
+	if _, err := semver.NewVersion(chartspec.Version); err != nil {
+		if c, err := semver.NewConstraint(chartspec.Version); err == nil {
+			// Common versions we use in the tests: the loop picks
+			// the first that satisfies the constraint
+			for _, strver := range []string{"0.0.1", "0.0.2", "0.1.0", "0.2.0", "1.0.0", "2.0.0"} {
+				if ver, _ := semver.NewVersion(strver); c.Check(ver) {
+					resolvedVer = strver
+					break
+				}
+			}
+		}
+	}
 	return &repo.ChartVersion{
 		Metadata: &helmchart.Metadata{
 			Name:    chartspec.Name,
-			Version: chartspec.Version,
+			Version: resolvedVer,
 		},
 	}, nil
 }
@@ -65,12 +80,17 @@ func TestCreateFirstRelease(t *testing.T) {
 	f := newFixture(t)
 	app := newApplication(testAppName)
 
-	envHash := hashReleaseEnvironment(app.Spec.Template)
-	expectedRelName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
-
 	f.objects = append(f.objects, app)
 	expectedApp := app.DeepCopy()
 	expectedApp.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "0"
+	apputil.UpdateChartNameAnnotation(expectedApp, "simple")
+	apputil.UpdateChartVersionRawAnnotation(expectedApp, "0.0.1")
+	apputil.UpdateChartVersionResolvedAnnotation(expectedApp, "0.0.1")
+	expectedApp.Spec.Template.Chart.Version = "0.0.1"
+
+	envHash := hashReleaseEnvironment(expectedApp.Spec.Template)
+	expectedRelName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
+
 	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
 		{
 			Type:   shipper.ApplicationConditionTypeAborting,
@@ -95,7 +115,58 @@ func TestCreateFirstRelease(t *testing.T) {
 	// We do not expect entries in the history or 'RollingOut: true' in the state
 	// because the testing client does not update listers after Create actions.
 
-	expectedRelease := newRelease(expectedRelName, app)
+	expectedRelease := newRelease(expectedRelName, expectedApp)
+	expectedRelease.Labels[shipper.ReleaseEnvironmentHashLabel] = envHash
+	expectedRelease.Annotations[shipper.ReleaseTemplateIterationAnnotation] = "0"
+	expectedRelease.Annotations[shipper.ReleaseGenerationAnnotation] = "0"
+
+	f.expectReleaseCreate(expectedRelease)
+	f.expectApplicationUpdate(expectedApp)
+	f.run()
+}
+
+func TestCreateFirstReleaseWithChartVersionResolve(t *testing.T) {
+	f := newFixture(t)
+	app := newApplication(testAppName)
+	// Helm chart floating version
+	app.Spec.Template.Chart.Version = "~0.0.0"
+
+	f.objects = append(f.objects, app)
+	expectedApp := app.DeepCopy()
+	apputil.UpdateChartNameAnnotation(expectedApp, "simple")
+	apputil.UpdateChartVersionRawAnnotation(expectedApp, "~0.0.0")
+	apputil.UpdateChartVersionResolvedAnnotation(expectedApp, "0.0.1")
+	expectedApp.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "0"
+	expectedApp.Spec.Template.Chart.Version = "0.0.1"
+
+	envHash := hashReleaseEnvironment(expectedApp.Spec.Template)
+	expectedRelName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
+
+	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
+		{
+			Type:   shipper.ApplicationConditionTypeAborting,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeReleaseSynced,
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:    shipper.ApplicationConditionTypeRollingOut,
+			Status:  corev1.ConditionTrue,
+			Message: fmt.Sprintf(InitialReleaseMessageFormat, expectedRelName),
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeValidHistory,
+			Status: corev1.ConditionTrue,
+		},
+	}
+	expectedApp.Status.History = []string{expectedRelName}
+
+	// We do not expect entries in the history or 'RollingOut: true' in the state
+	// because the testing client does not update listers after Create actions.
+
+	expectedRelease := newRelease(expectedRelName, expectedApp)
 	expectedRelease.Labels[shipper.ReleaseEnvironmentHashLabel] = envHash
 	expectedRelease.Annotations[shipper.ReleaseTemplateIterationAnnotation] = "0"
 	expectedRelease.Annotations[shipper.ReleaseGenerationAnnotation] = "0"
@@ -125,6 +196,10 @@ func TestStatusStableState(t *testing.T) {
 	}
 
 	app.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "1"
+	apputil.UpdateChartNameAnnotation(app, "simple")
+	apputil.UpdateChartVersionRawAnnotation(app, "0.0.1")
+	apputil.UpdateChartVersionResolvedAnnotation(app, "0.0.1")
+
 	app.Spec.Template.Chart.RepoURL = "http://localhost"
 	envHashB := hashReleaseEnvironment(app.Spec.Template)
 	expectedRelNameB := fmt.Sprintf("%s-%s-0", testAppName, envHashB)
@@ -211,6 +286,9 @@ func TestRevisionHistoryLimit(t *testing.T) {
 
 	expectedApp := app.DeepCopy()
 	expectedApp.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "2"
+	apputil.UpdateChartNameAnnotation(expectedApp, "simple")
+	apputil.UpdateChartVersionRawAnnotation(expectedApp, "0.0.1")
+	apputil.UpdateChartVersionResolvedAnnotation(expectedApp, "0.0.1")
 
 	// This ought to be true, but deletes don't filter through the kubetesting
 	// lister.
@@ -291,6 +369,9 @@ func TestCreateThirdRelease(t *testing.T) {
 		incumbentRelName,
 		expectedContenderRelName,
 	}
+	apputil.UpdateChartNameAnnotation(expectedApp, "simple")
+	apputil.UpdateChartVersionRawAnnotation(expectedApp, "0.0.1")
+	apputil.UpdateChartVersionResolvedAnnotation(expectedApp, "0.0.1")
 
 	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
 		{
@@ -359,6 +440,105 @@ func TestCreateSecondRelease(t *testing.T) {
 		incumbentRelName,
 		contenderRelName,
 	}
+	apputil.UpdateChartNameAnnotation(expectedApp, "simple")
+	apputil.UpdateChartVersionRawAnnotation(expectedApp, "0.0.1")
+	apputil.UpdateChartVersionResolvedAnnotation(expectedApp, "0.0.1")
+
+	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
+		{
+			Type:   shipper.ApplicationConditionTypeAborting,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeReleaseSynced,
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:    shipper.ApplicationConditionTypeRollingOut,
+			Status:  corev1.ConditionTrue,
+			Message: fmt.Sprintf(TransitioningMessageFormat, incumbentRelName, contenderRelName),
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeValidHistory,
+			Status: corev1.ConditionTrue,
+		},
+	}
+
+	f.expectReleaseCreate(contenderRel)
+	f.expectApplicationUpdate(expectedApp)
+	f.run()
+}
+
+func TestCreateSecondReleaseWithUpdatedChartVersionResolve(t *testing.T) {
+	f := newFixture(t)
+	resolveCnt := 1
+	f.resolveChartVersion = func(chartspec *shipper.Chart) (*repo.ChartVersion, error) {
+		defer func() { resolveCnt++ }()
+		// Ever incrementing versions: returns: 0.0.1, 0.0.2, ...
+		return localResolveChartVersion(&shipper.Chart{
+			Version: fmt.Sprintf("0.0.%d", resolveCnt),
+			Name:    chartspec.Name,
+			RepoURL: chartspec.RepoURL,
+		})
+	}
+
+	app := newApplication(testAppName)
+	app.Spec.Template.Chart.Version = "~0.0.0"
+	apputil.UpdateChartNameAnnotation(app, "simple")
+	apputil.UpdateChartVersionRawAnnotation(app, "~0.0.0")
+	apputil.UpdateChartVersionResolvedAnnotation(app, "0.0.1")
+
+	apputil.SetHighestObservedGeneration(app, 0)
+	f.objects = append(f.objects, app)
+
+	incumbentTmpl := app.Spec.Template.DeepCopy()
+	incumbentTmpl.Chart.Version = "0.0.1"
+
+	incumbentEnvHash := hashReleaseEnvironment(*incumbentTmpl)
+	incumbentRelName := fmt.Sprintf("%s-%s-0", testAppName, incumbentEnvHash)
+
+	incumbentRel := newRelease(incumbentRelName, app)
+	incumbentRel.Spec.Environment.Chart.Version = "0.0.1"
+	releaseutil.SetGeneration(incumbentRel, 0)
+	releaseutil.SetIteration(incumbentRel, 0)
+	releaseutil.SetReleaseCondition(&incumbentRel.Status, *releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", ""))
+	incumbentRel.Spec.TargetStep = 2
+	incumbentRel.Status.AchievedStep = &shipper.AchievedStep{
+		Step: 2,
+		Name: incumbentRel.Spec.Environment.Strategy.Steps[2].Name,
+	}
+
+	f.objects = append(f.objects, incumbentRel)
+
+	// Emulating the first version resolution so the next round will return
+	// 0.0.2
+	f.resolveChartVersion(&incumbentRel.Spec.Environment.Chart)
+
+	app.Status.History = []string{incumbentRelName}
+	app.Spec.Template.ClusterRequirements = shipper.ClusterRequirements{
+		Regions: []shipper.RegionRequirement{{Name: "foo"}},
+	}
+
+	contenderTmpl := app.Spec.Template.DeepCopy()
+	contenderTmpl.Chart.Version = "0.0.2"
+
+	contenderEnvHash := hashReleaseEnvironment(*contenderTmpl)
+	contenderRelName := fmt.Sprintf("%s-%s-0", testAppName, contenderEnvHash)
+
+	contenderRel := newRelease(contenderRelName, app)
+	contenderRel.Labels[shipper.ReleaseEnvironmentHashLabel] = contenderEnvHash
+	contenderRel.Spec.Environment.Chart.Version = "0.0.2"
+	releaseutil.SetIteration(contenderRel, 0)
+	releaseutil.SetGeneration(contenderRel, 1)
+
+	expectedApp := app.DeepCopy()
+	apputil.SetHighestObservedGeneration(expectedApp, 1)
+	expectedApp.Status.History = []string{
+		incumbentRelName,
+		contenderRelName,
+	}
+	expectedApp.Spec.Template.Chart.Version = "0.0.2"
+	apputil.UpdateChartVersionResolvedAnnotation(expectedApp, "0.0.2")
 
 	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
 		{
@@ -421,6 +601,72 @@ func TestAbort(t *testing.T) {
 
 	expectedApp := app.DeepCopy()
 	expectedApp.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "0"
+	apputil.UpdateChartNameAnnotation(expectedApp, "simple")
+	apputil.UpdateChartVersionRawAnnotation(expectedApp, "0.0.1")
+	apputil.UpdateChartVersionResolvedAnnotation(expectedApp, "0.0.1")
+	// Should have overwritten the old template with the generation 0 one.
+	expectedApp.Spec.Template = release.Spec.Environment
+
+	expectedApp.Status.History = []string{relName}
+
+	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
+		{
+			Type:    shipper.ApplicationConditionTypeAborting,
+			Status:  corev1.ConditionTrue,
+			Reason:  "",
+			Message: fmt.Sprintf("abort in progress, returning state to release %q", relName),
+		},
+		{
+			Type:   shipper.ApplicationConditionTypeRollingOut,
+			Status: corev1.ConditionTrue,
+		},
+	}
+
+	f.expectApplicationUpdate(expectedApp)
+	f.run()
+}
+
+func TestAbortWithChartVerisonResolve(t *testing.T) {
+	f := newFixture(t)
+	app := newApplication(testAppName)
+	app.Spec.Template.Chart.Version = "~0.0.0"
+	// Highest observed is higher than any known release. We have an older release
+	// (gen 0) with a different cluster selector. We expect app template to be
+	// reverted.
+	app.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "1"
+	app.Spec.Template.ClusterRequirements = shipper.ClusterRequirements{
+		Regions: []shipper.RegionRequirement{{Name: "foo"}},
+	}
+
+	f.objects = append(f.objects, app)
+
+	tmpl := app.Spec.Template.DeepCopy()
+	tmpl.Chart.Version = "0.0.1"
+	envHash := hashReleaseEnvironment(app.Spec.Template)
+	relName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
+
+	release := newRelease(relName, app)
+	release.Annotations[shipper.ReleaseGenerationAnnotation] = "0"
+	release.Spec.TargetStep = 2
+	release.Status.AchievedStep = &shipper.AchievedStep{
+		Step: 2,
+		Name: release.Spec.Environment.Strategy.Steps[2].Name,
+	}
+
+	release.Spec.Environment.ClusterRequirements = shipper.ClusterRequirements{
+		Regions: []shipper.RegionRequirement{{Name: "bar"}},
+	}
+	release.Spec.Environment.Chart.Version = "0.0.1"
+
+	f.objects = append(f.objects, release)
+
+	app.Status.History = []string{relName, "blorgblorgblorg"}
+
+	expectedApp := app.DeepCopy()
+	apputil.UpdateChartNameAnnotation(expectedApp, "simple")
+	apputil.UpdateChartVersionRawAnnotation(expectedApp, "~0.0.0")
+	apputil.UpdateChartVersionResolvedAnnotation(expectedApp, "0.0.1")
+	expectedApp.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "0"
 	// Should have overwritten the old template with the generation 0 one.
 	expectedApp.Spec.Template = release.Spec.Environment
 
@@ -477,6 +723,9 @@ func TestStateRollingOut(t *testing.T) {
 	f.objects = append(f.objects, contender)
 
 	appRollingOut := app.DeepCopy()
+	apputil.UpdateChartNameAnnotation(appRollingOut, "simple")
+	apputil.UpdateChartVersionRawAnnotation(appRollingOut, "0.0.1")
+	apputil.UpdateChartVersionResolvedAnnotation(appRollingOut, "0.0.1")
 
 	appRollingOut.Status.Conditions = []shipper.ApplicationCondition{
 		{
@@ -527,6 +776,9 @@ func TestDeletingAbortedReleases(t *testing.T) {
 
 	expectedApp := app.DeepCopy()
 	expectedApp.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "1"
+	apputil.UpdateChartNameAnnotation(expectedApp, "simple")
+	apputil.UpdateChartVersionRawAnnotation(expectedApp, "0.0.1")
+	apputil.UpdateChartVersionResolvedAnnotation(expectedApp, "0.0.1")
 
 	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
 		{
@@ -625,10 +877,16 @@ type fixture struct {
 	client  *shipperfake.Clientset
 	actions []kubetesting.Action
 	objects []runtime.Object
+
+	resolveChartVersion shipperrepo.ChartVersionResolver
 }
 
 func newFixture(t *testing.T) *fixture {
-	return &fixture{t: t}
+	return &fixture{
+		t: t,
+
+		resolveChartVersion: localResolveChartVersion,
+	}
 }
 
 func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerFactory) {
@@ -637,7 +895,7 @@ func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerF
 	const noResyncPeriod time.Duration = 0
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(f.client, noResyncPeriod)
 
-	c := NewController(f.client, shipperInformerFactory, localResolveChartVersion, record.NewFakeRecorder(42))
+	c := NewController(f.client, shipperInformerFactory, f.resolveChartVersion, record.NewFakeRecorder(42))
 
 	return c, shipperInformerFactory
 }

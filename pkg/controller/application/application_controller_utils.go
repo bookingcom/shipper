@@ -50,13 +50,6 @@ func (c *Controller) createReleaseForApplication(app *shipper.Application, relea
 		newRelease.Labels[k] = v
 	}
 
-	// application may contain semver range, need to convert it into a specific version
-	cv, err := c.versionResolver(&newRelease.Spec.Environment.Chart)
-	if err != nil {
-		return nil, err
-	}
-	newRelease.Spec.Environment.Chart.Version = cv.Version
-
 	glog.V(4).Infof("Release %q labels: %v", controller.MetaKey(app), newRelease.Labels)
 	glog.V(4).Infof("Release %q annotations: %v", controller.MetaKey(app), newRelease.Annotations)
 
@@ -114,6 +107,11 @@ func identicalEnvironments(envs ...shipper.ReleaseEnvironment) bool {
 	if len(envs) == 0 {
 		return true
 	}
+
+	// chartVersions := make([]string, 0, len(envs))
+	// for _, env := range envs {
+	// 	chartVersions = append(chartVersions, env.Chart.Version)
+	// }
 
 	referenceHash := hashReleaseEnvironment(envs[0])
 	for _, env := range envs[1:] {
