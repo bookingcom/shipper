@@ -6,8 +6,6 @@ sudo: required
 dist: xenial
 services:
 - docker
-env:
-- RESYNC_PERIOD=30s GOFLAGS=-mod=vendor
 
 before_install:
 - sudo snap install microk8s --classic --channel=1.14/stable
@@ -23,7 +21,7 @@ before_install:
 install: true
 
 script:
-- "./ci/test.sh && ./ci/build.sh && ./ci/package.sh"
+- "./ci/test.sh && ./ci/build.sh && ./ci/e2e.sh && ./ci/package.sh"
 
 after_success:
 - "./ci/build-release-files.sh"
