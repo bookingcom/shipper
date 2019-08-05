@@ -108,11 +108,6 @@ func identicalEnvironments(envs ...shipper.ReleaseEnvironment) bool {
 		return true
 	}
 
-	// chartVersions := make([]string, 0, len(envs))
-	// for _, env := range envs {
-	// 	chartVersions = append(chartVersions, env.Chart.Version)
-	// }
-
 	referenceHash := hashReleaseEnvironment(envs[0])
 	for _, env := range envs[1:] {
 		currentHash := hashReleaseEnvironment(env)
