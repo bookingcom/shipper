@@ -34,6 +34,9 @@ func FetchChartFunc(c *Catalog) ChartFetcher {
 		if err != nil {
 			return nil, err
 		}
+		if _, err := repo.RefreshIndex(); err != nil {
+			glog.Warningf("failed to refresh repo[%s] index: %s", chartspec.RepoURL, err)
+		}
 
 		return repo.Fetch(chartspec)
 	}
