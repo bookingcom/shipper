@@ -1,7 +1,6 @@
 package repo
 
 import (
-	"github.com/golang/glog"
 	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 	"k8s.io/helm/pkg/repo"
 
@@ -20,10 +19,6 @@ func ResolveChartVersionFunc(c *Catalog) ChartVersionResolver {
 			return nil, errors.NewChartVersionResolveError(chartspec, err)
 		}
 
-		if _, err := repo.RefreshIndex(); err != nil {
-			glog.Warningf("failed to refresh repo[%s] index: %s", chartspec.RepoURL, err)
-		}
-
 		return repo.ResolveVersion(chartspec)
 	}
 }
@@ -33,9 +28,6 @@ func FetchChartFunc(c *Catalog) ChartFetcher {
 		repo, err := c.CreateRepoIfNotExist(chartspec.RepoURL)
 		if err != nil {
 			return nil, err
-		}
-		if _, err := repo.RefreshIndex(); err != nil {
-			glog.Warningf("failed to refresh repo[%s] index: %s", chartspec.RepoURL, err)
 		}
 
 		return repo.Fetch(chartspec)
