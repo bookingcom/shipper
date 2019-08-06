@@ -53,14 +53,12 @@ func NewRepo(repoURL string, cache Cache, fetcher RemoteFetcher) *Repo {
 	}
 }
 
-func (r *Repo) IsIndexExpired() bool {
+func (r *Repo) isIndexExpired() bool {
 	return r.indexFetched.Add(RepoIndexTTL).Before(time.Now())
 }
 
-func (r *Repo) RefreshIndex() (*repo.IndexFile, error) {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
+// This method is not thread-safe and requires concurrency control by the caller
+func (r *Repo) refreshIndex() (*repo.IndexFile, error) {
 	parsed, err := url.ParseRequestURI(r.url)
 	if err != nil {
 		return nil, shippererrors.NewChartRepoIndexError(
@@ -132,11 +130,13 @@ func (r *Repo) ResolveVersion(chartspec *shipper.Chart) (*repo.ChartVersion, err
 }
 
 func (r *Repo) FetchChartVersions(chartspec *shipper.Chart) (repo.ChartVersions, error) {
-	if r.IsIndexExpired() {
-		if _, err := r.RefreshIndex(); err != nil {
+	r.mutex.Lock()
+	if r.isIndexExpired() {
+		if _, err := r.refreshIndex(); err != nil {
 			glog.Warningf("failed to refresh repo[%s] index: %s", chartspec.RepoURL, err)
 		}
 	}
+	r.mutex.Unlock()
 
 	data, err := r.cache.Fetch("index.yaml")
 	if err != nil {
