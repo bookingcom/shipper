@@ -30,6 +30,14 @@ type InstallationTargetListerExpansion interface{}
 // InstallationTargetNamespaceLister.
 type InstallationTargetNamespaceListerExpansion interface{}
 
+// RolloutBlockListerExpansion allows custom methods to be added to
+// RolloutBlockLister.
+type RolloutBlockListerExpansion interface{}
+
+// RolloutBlockNamespaceListerExpansion allows custom methods to be added to
+// RolloutBlockNamespaceLister.
+type RolloutBlockNamespaceListerExpansion interface{}
+
 // TrafficTargetListerExpansion allows custom methods to be added to
 // TrafficTargetLister.
 type TrafficTargetListerExpansion interface{}

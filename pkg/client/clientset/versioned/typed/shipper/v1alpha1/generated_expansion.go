@@ -12,4 +12,6 @@ type InstallationTargetExpansion interface{}
 
 type ReleaseExpansion interface{}
 
+type RolloutBlockExpansion interface{}
+
 type TrafficTargetExpansion interface{}

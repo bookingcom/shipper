@@ -22,7 +22,7 @@ func (c *Controller) createReleaseForApplication(app *shipper.Application, relea
 	// appname-hash-of-template-iteration.
 
 	glog.V(4).Infof("Generated Release name for Application %q: %q", controller.MetaKey(app), releaseName)
-
+	rolloutblocksOverrides := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 	newRelease := &shipper.Release{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      releaseName,
@@ -35,6 +35,7 @@ func (c *Controller) createReleaseForApplication(app *shipper.Application, relea
 			Annotations: map[string]string{
 				shipper.ReleaseTemplateIterationAnnotation: strconv.Itoa(iteration),
 				shipper.ReleaseGenerationAnnotation:        strconv.Itoa(generation),
+				shipper.RolloutBlocksOverrideAnnotation:    rolloutblocksOverrides,
 			},
 			OwnerReferences: []metav1.OwnerReference{
 				createOwnerRefFromApplication(app),

@@ -144,11 +144,13 @@ func NewController(
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				oldRel, ok := oldObj.(*shipper.Release)
 				if !ok {
+					runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", oldObj))
 					return
 				}
 
 				newRel, ok := newObj.(*shipper.Release)
 				if !ok {
+					runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", newObj))
 					return
 				}
 
@@ -555,8 +557,6 @@ func reasonForReleaseCondition(err error) string {
 		return "BrokenChartSpec"
 	case shippererrors.WrongChartDeploymentsError:
 		return "WrongChartDeployments"
-	case shippererrors.InvalidRolloutBlockOverrideError:
-		return "InvalidRolloutBlockOverride"
 	case shippererrors.RolloutBlockError:
 		return "RolloutBlock"
 	}

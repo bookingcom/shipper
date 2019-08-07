@@ -18,6 +18,8 @@ type Interface interface {
 	InstallationTargets() InstallationTargetInformer
 	// Releases returns a ReleaseInformer.
 	Releases() ReleaseInformer
+	// RolloutBlocks returns a RolloutBlockInformer.
+	RolloutBlocks() RolloutBlockInformer
 	// TrafficTargets returns a TrafficTargetInformer.
 	TrafficTargets() TrafficTargetInformer
 }
@@ -56,6 +58,11 @@ func (v *version) InstallationTargets() InstallationTargetInformer {
 // Releases returns a ReleaseInformer.
 func (v *version) Releases() ReleaseInformer {
 	return &releaseInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// RolloutBlocks returns a RolloutBlockInformer.
+func (v *version) RolloutBlocks() RolloutBlockInformer {
+	return &rolloutBlockInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // TrafficTargets returns a TrafficTargetInformer.
