@@ -5,9 +5,7 @@ pkg/chart/testdata/index.yaml
 docs/generated
 
 # Binaries generated when building Shipper
-./shipper
-./shipper-state-metrics
-./e2e.test
+build/
 
 # IntelliJ IDE auto generated files
 .idea/**

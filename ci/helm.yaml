@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: helm
+  namespace: shipper-system
 spec:
   selector:
     matchLabels:
@@ -15,9 +16,3 @@ spec:
       containers:
         - name: app
           image: <HELM_IMAGE>
-          env:
-            - name: POD_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.podIP
-

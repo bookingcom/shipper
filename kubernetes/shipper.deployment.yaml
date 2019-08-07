@@ -25,6 +25,8 @@ spec:
           - "/etc/webhook/certs/tls.key"
           - "-webhook-port"
           - "9443"
+          - "-resync"
+          - "10m"
         ports:
         - containerPort: 9443
         volumeMounts:
