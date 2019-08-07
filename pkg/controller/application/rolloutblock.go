@@ -1,6 +1,7 @@
 package application
 
 import (
+	"fmt"
 	corev1 "k8s.io/api/core/v1"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -9,10 +10,10 @@ import (
 )
 
 func (c *Controller) processRolloutBlocks(app *shipper.Application, nsRBs, gbRBs []*shipper.RolloutBlock) bool {
-	appOverrideRBs := rolloutblock.NewOverride(app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation])
+	appOverrideRBs := rolloutblock.NewObjectNameList(app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation])
 	rbs := append(nsRBs, gbRBs...)
 
-	existingRBs := rolloutblock.NewOverrideFromRolloutBlocks(rbs)
+	existingRBs := rolloutblock.NewObjectNameListFromRolloutBlocksList(rbs)
 	obsoleteRbs := appOverrideRBs.Diff(existingRBs)
 
 	if len(obsoleteRbs) > 0 {
@@ -29,13 +30,13 @@ func (c *Controller) processRolloutBlocks(app *shipper.Application, nsRBs, gbRBs
 	if shouldBlockRollout {
 		c.recorder.Event(app, corev1.EventTypeWarning, "RolloutBlock", nonOverriddenRBs.String())
 	} else if len(appOverrideRBs) > 0 {
-		c.recorder.Event(app, corev1.EventTypeNormal, "Overriding RolloutBlock", appOverrideRBs.String())
+		c.recorder.Event(app, corev1.EventTypeNormal, "RolloutBlockOverriden", appOverrideRBs.String())
 	}
 
 	return shouldBlockRollout
 }
 
-func (c *Controller) removeRolloutBlockFromAnnotations(overrideRBs rolloutblock.Override, rbName string, app *shipper.Application) {
+func (c *Controller) removeRolloutBlockFromAnnotations(overrideRBs rolloutblock.ObjectNameList, rbName string, app *shipper.Application) {
 	overrideRBs.Delete(rbName)
 
 	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = overrideRBs.String()
@@ -43,11 +44,11 @@ func (c *Controller) removeRolloutBlockFromAnnotations(overrideRBs rolloutblock.
 
 func (c *Controller) updateApplicationRolloutBlockCondition(rbs []*shipper.RolloutBlock, app *shipper.Application) {
 	if len(rbs) > 0 {
-		existingRolloutBlocks := rolloutblock.NewOverrideFromRolloutBlocks(rbs)
-		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionTrue, existingRolloutBlocks.String(), "")
+		existingRolloutBlocks := fmt.Sprintf("rollouts blocked by: %s", rolloutblock.NewObjectNameListFromRolloutBlocksList(rbs).String())
+		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeBlocked, corev1.ConditionTrue, shipper.RolloutBlockReason, existingRolloutBlocks)
 		apputil.SetApplicationCondition(&app.Status, *rolloutBlockCond)
 	} else {
-		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRolloutBlock, corev1.ConditionFalse, "", "")
+		rolloutBlockCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeBlocked, corev1.ConditionFalse, "", "")
 		apputil.SetApplicationCondition(&app.Status, *rolloutBlockCond)
 	}
 }

@@ -45,6 +45,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&CapacityTargetList{},
 		&TrafficTarget{},
 		&TrafficTargetList{},
+		&RolloutBlock{},
+		&RolloutBlockList{},
 	)
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil

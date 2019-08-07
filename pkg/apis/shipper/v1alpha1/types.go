@@ -44,7 +44,7 @@ const (
 	SecretChecksumAnnotation             = "shipper.booking.com/cluster-secret.checksum"
 	SecretClusterSkipTlsVerifyAnnotation = "shipper.booking.com/cluster-secret.insecure-tls-skip-verify"
 
-	RolloutBlocksOverrideAnnotation = "shipper.booking.com/block.override"
+	RolloutBlocksOverrideAnnotation = "shipper.booking.com/rollout-block.override"
 
 	LBLabel         = "shipper-lb"
 	LBForProduction = "production"
@@ -104,7 +104,7 @@ const (
 	ApplicationConditionTypeReleaseSynced ApplicationConditionType = "ReleaseSynced"
 	ApplicationConditionTypeAborting      ApplicationConditionType = "Aborting"
 	ApplicationConditionTypeRollingOut    ApplicationConditionType = "RollingOut"
-	ApplicationConditionTypeRolloutBlock  ApplicationConditionType = "RolloutBlock"
+	ApplicationConditionTypeBlocked       ApplicationConditionType = "Blocked"
 )
 
 type ApplicationCondition struct {
@@ -555,6 +555,10 @@ type RolloutBlockAuthor struct {
 	Type string `json:"type"`
 	Name string `json:"name"`
 }
+
+const (
+	RolloutBlockReason = "RolloutsBlocked"
+)
 
 func (ss *StrategyState) UnmarshalJSON(b []byte) error {
 	var s string

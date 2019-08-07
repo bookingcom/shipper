@@ -51,6 +51,8 @@ type Controller struct {
 	rolloutBlockSynced cache.InformerSynced
 
 	rolloutblockWorkqueue workqueue.RateLimitingInterface
+	releaseWorkqueue      workqueue.RateLimitingInterface
+	applicationWorkqueue  workqueue.RateLimitingInterface
 }
 
 // NewController returns a new RolloutBlock controller.
@@ -82,6 +84,14 @@ func NewController(
 			workqueue.DefaultControllerRateLimiter(),
 			"rolloutblock_controller_rolloutblocks",
 		),
+		releaseWorkqueue: workqueue.NewNamedRateLimitingQueue(
+			workqueue.DefaultControllerRateLimiter(),
+			"rolloutblock_controller_releases",
+		),
+		applicationWorkqueue: workqueue.NewNamedRateLimitingQueue(
+			workqueue.DefaultControllerRateLimiter(),
+			"rolloutblock_controller_applications",
+		),
 	}
 
 	glog.Info("Setting up event handlers")
@@ -90,7 +100,7 @@ func NewController(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: controller.enqueueReleaseBlock,
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueReleaseBlock(newObj)
+				controller.onUpdateRelease(oldObj, newObj)
 			},
 			DeleteFunc: controller.enqueueReleaseBlock,
 		})
@@ -106,10 +116,35 @@ func NewController(
 
 	rolloutBlockInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.onAddRolloutBlock,
+			AddFunc:    controller.onAddRolloutBlock,
+			DeleteFunc: controller.onDeleteRolloutBlock,
 		})
 
 	return controller
+}
+
+func (c *Controller) onUpdateRelease(oldObj interface{}, newObj interface{}) {
+	oldRel, ok := oldObj.(*shipper.Release)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", oldObj))
+		return
+	}
+
+	newRel, ok := newObj.(*shipper.Release)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", newObj))
+		return
+	}
+
+	oldOverrideRBs := rolloutblock.NewObjectNameList(oldRel.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation])
+	newOverrideRBs := rolloutblock.NewObjectNameList(newRel.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation])
+	// rolloutblock object should be updated if a release has added it to override annotation,
+	// or removed it from override annotation
+	if len(oldOverrideRBs.Diff(newOverrideRBs)) > 0 {
+		c.enqueueReleaseBlock(oldObj)
+	} else {
+		c.enqueueReleaseBlock(newObj)
+	}
 }
 
 func (c *Controller) enqueueReleaseBlock(obj interface{}) {
@@ -119,7 +154,7 @@ func (c *Controller) enqueueReleaseBlock(obj interface{}) {
 		return
 	}
 
-	overrideRBs := rolloutblock.NewOverride(rel.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation])
+	overrideRBs := rolloutblock.NewObjectNameList(rel.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation])
 	// We are pushing all RolloutBlocks that this release is overriding to the queue. We're pushing
 	// them separately in order to utilize the deduplication quality of the queue. This way the
 	// controller will handle each RolloutBlock object once.
@@ -135,7 +170,7 @@ func (c *Controller) enqueueApplicationBlock(obj interface{}) {
 		return
 	}
 
-	overrideRBs := rolloutblock.NewOverride(app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation])
+	overrideRBs := rolloutblock.NewObjectNameList(app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation])
 	// We are pushing all RolloutBlocks that this application is overriding to the queue. We're pushing
 	// them separately in order to utilize the deduplication quality of the queue. This way the
 	// controller will handle each RolloutBlock object once.
@@ -160,6 +195,24 @@ func (c *Controller) onAddRolloutBlock(obj interface{}) {
 	c.rolloutblockWorkqueue.Add(key)
 }
 
+func (c *Controller) onDeleteRolloutBlock(obj interface{}) {
+	rb, ok := obj.(*shipper.RolloutBlock)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.RolloutBlock: %#v", obj))
+		return
+	}
+
+	// When deleting a rolloutblock, update all overriding object to not override dead rolloutblock
+	apps := rolloutblock.NewObjectNameList(rb.Status.Overrides.Application)
+	for appKey := range apps {
+		c.applicationWorkqueue.Add(appKey)
+	}
+	rels := rolloutblock.NewObjectNameList(rb.Status.Overrides.Release)
+	for relKey := range rels {
+		c.releaseWorkqueue.Add(relKey)
+	}
+}
+
 // Run starts RolloutBlock controller workers and blocks until stopCh is
 // closed.
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
@@ -180,6 +233,8 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	}
 
 	for i := 0; i < threadiness; i++ {
+		go wait.Until(c.runApplicationWorker, time.Second, stopCh)
+		go wait.Until(c.runReleaseWorker, time.Second, stopCh)
 		go wait.Until(c.runRolloutBlockWorker, time.Second, stopCh)
 	}
 
@@ -188,9 +243,115 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
+func (c *Controller) runApplicationWorker() {
+	for c.processNextApplicationWorkItem() {
+	}
+}
+
+func (c *Controller) runReleaseWorker() {
+	for c.processNextReleaseWorkItem() {
+	}
+}
+
 func (c *Controller) runRolloutBlockWorker() {
 	for c.processNextRolloutBlockWorkItem() {
 	}
+}
+
+func (c *Controller) processNextApplicationWorkItem() bool {
+	obj, shutdown := c.applicationWorkqueue.Get()
+	if shutdown {
+		return false
+	}
+
+	defer c.applicationWorkqueue.Done(obj)
+
+	var (
+		ok  bool
+		key string
+	)
+
+	if key, ok = obj.(string); !ok {
+		c.applicationWorkqueue.Forget(obj)
+		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
+		return true
+	}
+
+	shouldRetry := false
+	err := c.syncApplication(key)
+
+	if err != nil {
+		shouldRetry = shippererrors.ShouldRetry(err)
+		runtime.HandleError(fmt.Errorf("error syncing Application %q (will retry: %t): %s", key, shouldRetry, err.Error()))
+	}
+
+	if shouldRetry {
+		if c.applicationWorkqueue.NumRequeues(key) >= maxRetries {
+			// Drop this update out of the workqueue and thus reset its
+			// backoff. This limits the time a "broken" object can hog a worker.
+			glog.Warningf("Update %q for Application has been retried too many times, dropping from the queue", key)
+			c.applicationWorkqueue.Forget(key)
+
+			return true
+		}
+
+		c.applicationWorkqueue.AddRateLimited(key)
+
+		return true
+	}
+
+	glog.V(4).Infof("Successfully synced Application after RolloutBlock Delete %q", key)
+	c.applicationWorkqueue.Forget(obj)
+
+	return true
+}
+
+func (c *Controller) processNextReleaseWorkItem() bool {
+	obj, shutdown := c.releaseWorkqueue.Get()
+	if shutdown {
+		return false
+	}
+
+	defer c.releaseWorkqueue.Done(obj)
+
+	var (
+		ok  bool
+		key string
+	)
+
+	if key, ok = obj.(string); !ok {
+		c.releaseWorkqueue.Forget(obj)
+		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
+		return true
+	}
+
+	shouldRetry := false
+	err := c.syncRelease(key)
+
+	if err != nil {
+		shouldRetry = shippererrors.ShouldRetry(err)
+		runtime.HandleError(fmt.Errorf("error syncing Release %q (will retry: %t): %s", key, shouldRetry, err.Error()))
+	}
+
+	if shouldRetry {
+		if c.releaseWorkqueue.NumRequeues(key) >= maxRetries {
+			// Drop this update out of the workqueue and thus reset its
+			// backoff. This limits the time a "broken" object can hog a worker.
+			glog.Warningf("Update %q for Release has been retried too many times, dropping from the queue", key)
+			c.releaseWorkqueue.Forget(key)
+
+			return true
+		}
+
+		c.releaseWorkqueue.AddRateLimited(key)
+
+		return true
+	}
+
+	glog.V(4).Infof("Successfully synced Application after RolloutBlock Delete %q", key)
+	c.releaseWorkqueue.Forget(obj)
+
+	return true
 }
 
 func (c *Controller) processNextRolloutBlockWorkItem() bool {

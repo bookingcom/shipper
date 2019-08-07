@@ -65,6 +65,13 @@ var (
 		[]string{"name", "schedulable", "has_secret"},
 		nil,
 	)
+
+	rolloutblocksDesc = prometheus.NewDesc(
+		fqn("rolloutblocks"),
+		"Number of RolloutBlock objects",
+		[]string{"namespace"},
+		nil,
+	)
 )
 
 var everything = labels.Everything()
@@ -76,6 +83,7 @@ type ShipperStateMetrics struct {
 	ctsLister      shipperlisters.CapacityTargetLister
 	ttsLister      shipperlisters.TrafficTargetLister
 	clustersLister shipperlisters.ClusterLister
+	rbLister       shipperlisters.RolloutBlockLister
 
 	nssLister     kubelisters.NamespaceLister
 	secretsLister kubelisters.SecretLister
@@ -90,6 +98,7 @@ func (ssm ShipperStateMetrics) Collect(ch chan<- prometheus.Metric) {
 	ssm.collectCapacityTargets(ch)
 	ssm.collectTrafficTargets(ch)
 	ssm.collectClusters(ch)
+	ssm.collectRolloutBlocks(ch)
 }
 
 func (ssm ShipperStateMetrics) Describe(ch chan<- *prometheus.Desc) {
@@ -99,6 +108,7 @@ func (ssm ShipperStateMetrics) Describe(ch chan<- *prometheus.Desc) {
 	ch <- ctsDesc
 	ch <- ttsDesc
 	ch <- clustersDesc
+	ch <- rolloutblocksDesc
 }
 
 func (ssm ShipperStateMetrics) collectApplications(ch chan<- prometheus.Metric) {
@@ -322,6 +332,36 @@ func (ssm ShipperStateMetrics) collectClusters(ch chan<- prometheus.Metric) {
 	}
 }
 
+func (ssm ShipperStateMetrics) collectRolloutBlocks(ch chan<- prometheus.Metric) {
+	nss, err := getNamespaces(ssm.nssLister)
+	if err != nil {
+		glog.Errorf("collect Namespaces: %s", err)
+		return
+	}
+
+	rolloutBlocks, err := ssm.rbLister.List(everything)
+	if err != nil {
+		glog.Errorf("collect RolloutBlocks: %s", err)
+		return
+	}
+
+	rbsPerNamespace := make(map[string]float64)
+	for _, rolloutBlock := range rolloutBlocks {
+		rbsPerNamespace[rolloutBlock.Namespace]++
+	}
+
+	glog.V(4).Infof("RolloutBlocks: %v", rbsPerNamespace)
+
+	for _, ns := range nss {
+		n, ok := rbsPerNamespace[ns.Name]
+		if !ok {
+			n = 0
+		}
+
+		ch <- prometheus.MustNewConstMetric(rolloutblocksDesc, prometheus.GaugeValue, n, ns.Name)
+	}
+}
+
 func fqn(name string) string {
 	const (
 		ns     = "shipper"
@@ -337,7 +377,9 @@ func getNamespaces(lister kubelisters.NamespaceLister) ([]*corev1.Namespace, err
 		return nil, err
 	}
 
-	nsBlacklist := []string{"kube-system", "kube-public", "kube-dns", shipper.ShipperNamespace}
+	// we filter out these namespaces when gathering metrics,
+	// since these namespaces should not hold any shipper applications
+	nsBlacklist := []string{"kube-system", "kube-public", "kube-dns", shipper.ShipperNamespace, shipper.GlobalRolloutBlockNamespace}
 
 	filtered := make([]*corev1.Namespace, 0, len(nss))
 NS:

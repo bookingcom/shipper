@@ -247,9 +247,13 @@ func (c *Controller) syncApplication(key string) error {
 	if app.Annotations == nil {
 		app.Annotations = map[string]string{}
 	}
+
+	// stable annotation trigger for de-duplication and sorting.
+	// this annotation is always converted to an object in order to avoid code duplications and to
+	// handle this annotation the same way across shipper.
 	overrideRB, ok := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 	if ok {
-		app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = rolloutblock.NewOverride(overrideRB).String()
+		app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = rolloutblock.NewObjectNameList(overrideRB).String()
 	}
 
 	if app.Spec.RevisionHistoryLimit == nil {
@@ -373,6 +377,15 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 	// Required by subsequent calls to GetContender and GetIncumbent.
 	appReleases = releaseutil.SortByGenerationDescending(appReleases)
 
+	// Check if application chart spec is resolved: the original version
+	// might contain either a specific version or a semver constraint.
+	// If a semver constraint is found, it would be resolved in-place.
+	if !apputil.ChartVersionResolved(app) {
+		if _, err := apputil.ResolveChartVersion(app, c.versionResolver); err != nil {
+			return err
+		}
+	}
+
 	// existing rollout blocks in the system
 	var nsRolloutBlocks, globalRolloutBlocks []*shipper.RolloutBlock
 	if nsRolloutBlocks, err = c.rbLister.RolloutBlocks(app.Namespace).List(labels.Everything()); err != nil {
@@ -384,15 +397,6 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 	rbs = append(nsRolloutBlocks, globalRolloutBlocks...)
 	if c.processRolloutBlocks(app, nsRolloutBlocks, globalRolloutBlocks) {
 		return c.wrapUpApplicationConditions(app, appReleases, rbs)
-	}
-
-	// Check if application chart spec is resolved: the original version
-	// might contain either a specific version or a semver constraint.
-	// If a semver constraint is found, it would be resolved in-place.
-	if !apputil.ChartVersionResolved(app) {
-		if _, err := apputil.ResolveChartVersion(app, c.versionResolver); err != nil {
-			return err
-		}
 	}
 
 	if contender, err = apputil.GetContender(app.Name, appReleases); err != nil {

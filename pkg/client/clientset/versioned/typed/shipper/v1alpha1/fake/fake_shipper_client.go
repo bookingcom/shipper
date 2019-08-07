@@ -32,6 +32,10 @@ func (c *FakeShipperV1alpha1) Releases(namespace string) v1alpha1.ReleaseInterfa
 	return &FakeReleases{c, namespace}
 }
 
+func (c *FakeShipperV1alpha1) RolloutBlocks(namespace string) v1alpha1.RolloutBlockInterface {
+	return &FakeRolloutBlocks{c, namespace}
+}
+
 func (c *FakeShipperV1alpha1) TrafficTargets(namespace string) v1alpha1.TrafficTargetInterface {
 	return &FakeTrafficTargets{c, namespace}
 }

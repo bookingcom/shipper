@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Scheduler) processRolloutBlocks(rel *shipper.Release) (bool, string) {
-	relOverrideRBs := rolloutblock.NewOverride(rel.Annotations[shipper.RolloutBlocksOverrideAnnotation])
+	relOverrideRBs := rolloutblock.NewObjectNameList(rel.Annotations[shipper.RolloutBlocksOverrideAnnotation])
 
 	nsRBs, err := s.rolloutBlockLister.RolloutBlocks(rel.Namespace).List(labels.Everything())
 	if err != nil {
@@ -23,7 +23,7 @@ func (s *Scheduler) processRolloutBlocks(rel *shipper.Release) (bool, string) {
 		runtime.HandleError(fmt.Errorf("failed to list rollout block objects: %s", err))
 	}
 
-	existingRBs := rolloutblock.NewOverrideFromRolloutBlocks(append(nsRBs, gbRBs...))
+	existingRBs := rolloutblock.NewObjectNameListFromRolloutBlocksList(append(nsRBs, gbRBs...))
 	obsoleteRbs := relOverrideRBs.Diff(existingRBs)
 
 	if len(obsoleteRbs) > 0 {
@@ -40,13 +40,13 @@ func (s *Scheduler) processRolloutBlocks(rel *shipper.Release) (bool, string) {
 	if shouldBlockRollout {
 		s.recorder.Event(rel, corev1.EventTypeWarning, "RolloutBlock", nonOverriddenRBsStatement)
 	} else if len(relOverrideRBs) > 0 {
-		s.recorder.Event(rel, corev1.EventTypeNormal, "Overriding RolloutBlock", relOverrideRBs.String())
+		s.recorder.Event(rel, corev1.EventTypeNormal, "RolloutBlockOverriden", relOverrideRBs.String())
 	}
 
 	return shouldBlockRollout, nonOverriddenRBsStatement
 }
 
-func (s *Scheduler) removeRolloutBlockFromAnnotations(overrideRBs rolloutblock.Override, rbName string, release *shipper.Release) {
+func (s *Scheduler) removeRolloutBlockFromAnnotations(overrideRBs rolloutblock.ObjectNameList, rbName string, release *shipper.Release) {
 	overrideRBs.Delete(rbName)
 	release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = overrideRBs.String()
 }

@@ -9,7 +9,7 @@ type InvalidRolloutBlockOverrideError struct {
 }
 
 func (e InvalidRolloutBlockOverrideError) Error() string {
-	return fmt.Sprintf("rollout block with name %s does not exists",
+	return fmt.Sprintf("rollout block with name %s does not exist",
 		e.RolloutBlockName)
 }
 
@@ -18,7 +18,7 @@ func (e InvalidRolloutBlockOverrideError) ShouldRetry() bool {
 }
 
 func (e InvalidRolloutBlockOverrideError) ShouldBroadcast() bool {
-	return false
+	return true
 }
 
 func NewInvalidRolloutBlockOverrideError(invalidRolloutBlockName string) InvalidRolloutBlockOverrideError {
@@ -36,7 +36,7 @@ func (e RolloutBlockError) ShouldRetry() bool {
 }
 
 func (e RolloutBlockError) ShouldBroadcast() bool {
-	return false
+	return true
 }
 
 func NewRolloutBlockError(invalidRolloutBlockName string) RolloutBlockError {
