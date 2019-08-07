@@ -364,31 +364,42 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		c.cleanUpReleasesForApplication(app, appReleases)
 	}()
 
-	if contender, err = apputil.GetContender(app.Name, appReleases); err != nil {
-		if shippererrors.IsContenderNotFoundError(err) {
-			// Contender doesn't exist, so we are covering the case where Shipper
-			// is creating the first release for this application.
-			var generation = 0
-			if releaseName, iteration, err := c.releaseNameForApplication(app); err != nil {
-				return err
-			} else if rel, err := c.createReleaseForApplication(app, releaseName, iteration, generation); err != nil {
-				releaseSyncedCond := apputil.NewApplicationCondition(
-					shipper.ApplicationConditionTypeReleaseSynced,
-					corev1.ConditionFalse,
-					conditions.CreateReleaseFailed,
-					fmt.Sprintf("could not create a new release: %q", err))
-				apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
-				return err
-			} else {
-				appReleases = append(appReleases, rel)
-			}
-			// It seems that adding an object to the fakeClient doesn't
-			// update listers and informers automatically during tests...
-			// How should we do it then?
-			apputil.SetHighestObservedGeneration(app, generation)
-			return c.wrapUpApplicationConditions(app, appReleases)
+	// Check if application chart spec is resolved: the original version
+	// might contain either a specific version or a semver constraint.
+	// If a semver constraint is found, it would be resolved in-place.
+	if !apputil.ChartVersionResolved(app) {
+		if _, err := apputil.ResolveChartVersion(app, c.versionResolver); err != nil {
+			return err
 		}
-		return err
+	}
+
+	if contender, err = apputil.GetContender(app.Name, appReleases); err != nil {
+		// Anything else rather than not found err is an abort case
+		if !shippererrors.IsContenderNotFoundError(err) {
+			return err
+		}
+
+		// Contender doesn't exist, so we are covering the case where Shipper
+		// is creating the first release for this application.
+		var generation = 0
+		if releaseName, iteration, err := c.releaseNameForApplication(app); err != nil {
+			return err
+		} else if rel, err := c.createReleaseForApplication(app, releaseName, iteration, generation); err != nil {
+			releaseSyncedCond := apputil.NewApplicationCondition(
+				shipper.ApplicationConditionTypeReleaseSynced,
+				corev1.ConditionFalse,
+				conditions.CreateReleaseFailed,
+				fmt.Sprintf("could not create a new release: %q", err))
+			apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
+			return err
+		} else {
+			appReleases = append(appReleases, rel)
+		}
+		// It seems that adding an object to the fakeClient doesn't
+		// update listers and informers automatically during tests...
+		// How should we do it then?
+		apputil.SetHighestObservedGeneration(app, generation)
+		return c.wrapUpApplicationConditions(app, appReleases)
 	}
 
 	if generation, err = releaseutil.GetGeneration(contender); err != nil {
@@ -409,6 +420,8 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		// created and deleted. As side-effect of this, the contender's
 		// environment will be copied back to the application.
 		apputil.CopyEnvironment(app, contender)
+		// keeping app annotations consistent with the new "old" release
+		apputil.UpdateChartVersionResolvedAnnotation(app, contender.Spec.Environment.Chart.Version)
 		apputil.SetHighestObservedGeneration(app, generation)
 		abortingCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeAborting, corev1.ConditionTrue, "", fmt.Sprintf("abort in progress, returning state to release %q", contender.Name))
 		apputil.SetApplicationCondition(&app.Status, *abortingCond)

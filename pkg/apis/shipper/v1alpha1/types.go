@@ -32,6 +32,10 @@ const (
 
 	AppHighestObservedGenerationAnnotation = "shipper.booking.com/app.highestObservedGeneration"
 
+	AppChartNameAnnotation            = "shipper.booking.com/app.chart.name"
+	AppChartVersionResolvedAnnotation = "shipper.booking.com/app.chart.version.resolved"
+	AppChartVersionRawAnnotation      = "shipper.booking.com/app.chart.version.raw"
+
 	ReleaseGenerationAnnotation        = "shipper.booking.com/release.generation"
 	ReleaseTemplateIterationAnnotation = "shipper.booking.com/release.template.iteration"
 	ReleaseClustersAnnotation          = "shipper.booking.com/release.clusters"

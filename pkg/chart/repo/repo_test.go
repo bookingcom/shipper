@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 	"testing"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -138,7 +139,7 @@ func TestRefreshIndex(t *testing.T) {
 				},
 			)
 
-			_, err := repo.RefreshIndex()
+			_, err := repo.refreshIndex()
 
 			if !equivalent(err, testCase.expectedErr) {
 				t.Fatalf("Unexpected error: %q, want: %q", err, testCase.expectedErr)
@@ -268,7 +269,7 @@ func TestResolveVersion(t *testing.T) {
 				cache,
 				localFetch(t),
 			)
-			if _, err := repo.RefreshIndex(); err != nil {
+			if _, err := repo.refreshIndex(); err != nil {
 				t.Fatalf(err.Error())
 			}
 			chartspec := &shipper.Chart{
@@ -360,7 +361,7 @@ func TestFetch(t *testing.T) {
 				cache,
 				localFetch(t),
 			)
-			if _, err := repo.RefreshIndex(); err != nil {
+			if _, err := repo.refreshIndex(); err != nil {
 				t.Fatalf(err.Error())
 			}
 
@@ -387,6 +388,57 @@ func TestFetch(t *testing.T) {
 				t.Fatalf("unexpected chart version: %s, want: %s", chart.Metadata.Version, testCase.wantver)
 			}
 		})
+	}
+}
+
+func TestConcurrentFetchChartVersionsRefreshesIndexOnce(t *testing.T) {
+	var cnt int
+	cache := NewTestCache("test-cache")
+	repo := NewRepo(
+		"https://chart.example.com",
+		cache,
+		func(url string) ([]byte, error) {
+			// This variable intentionally has no safety measures
+			// around and the major goal of this test case is to
+			// exercise only-once index refresh.
+			cnt++
+			return []byte(IndexYamlResp), nil
+		},
+	)
+
+	// Chart contents doesn't really matter
+	chartspec := &shipper.Chart{
+		Name:    "sample",
+		Version: "0.0.1",
+		RepoURL: "https://chart.example.com",
+	}
+
+	start := make(chan struct{})
+	wg := sync.WaitGroup{}
+
+	// The number of co-routines doesn't really matter, should be enough to
+	// create some scheduler jam, so, number of cores on my laptop * 4.
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			// block all co-routines until awake is broadcasted
+			<-start
+			// The return result is not treacked as we only care
+			// about the number of internal fetcher calls.
+			repo.FetchChartVersions(chartspec)
+			wg.Done()
+		}()
+	}
+
+	// all co-routines are awaken around the same time
+	close(start)
+
+	wg.Wait()
+
+	// Counter should be incremented exactly 1 time: this is how many times
+	// fetch function is expected to be called.
+	if cnt != 1 {
+		t.Fatalf("unexpected counter value: got: %d, want: %d", cnt, 1)
 	}
 }
 

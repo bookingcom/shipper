@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	// Importing this yaml package is a very crucial point:
 	// the "classical" yaml.v2 does not understand json annotations
@@ -17,6 +18,7 @@ import (
 	// annotations and works fine.
 	"github.com/Masterminds/semver"
 	yaml "github.com/ghodss/yaml"
+	"github.com/golang/glog"
 
 	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/proto/hapi/chart"
@@ -26,16 +28,21 @@ import (
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
+const (
+	RepoIndexTTL = 5 * time.Second
+)
+
 var (
 	ErrInvalidConstraint = errors.New("invalid constraint")
 	ErrNoneMatching      = errors.New("no matching version found")
 )
 
 type Repo struct {
-	url     string
-	cache   Cache
-	fetcher RemoteFetcher
-	mutex   sync.Mutex
+	url          string
+	cache        Cache
+	fetcher      RemoteFetcher
+	mutex        sync.Mutex
+	indexFetched time.Time
 }
 
 func NewRepo(repoURL string, cache Cache, fetcher RemoteFetcher) *Repo {
@@ -46,10 +53,12 @@ func NewRepo(repoURL string, cache Cache, fetcher RemoteFetcher) *Repo {
 	}
 }
 
-func (r *Repo) RefreshIndex() (*repo.IndexFile, error) {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+func (r *Repo) isIndexExpired() bool {
+	return r.indexFetched.Add(RepoIndexTTL).Before(time.Now())
+}
 
+// This method is not thread-safe and requires concurrency control by the caller
+func (r *Repo) refreshIndex() (*repo.IndexFile, error) {
 	parsed, err := url.ParseRequestURI(r.url)
 	if err != nil {
 		return nil, shippererrors.NewChartRepoIndexError(
@@ -78,6 +87,8 @@ func (r *Repo) RefreshIndex() (*repo.IndexFile, error) {
 			fmt.Errorf("failed to cache index.yaml: %v", err),
 		)
 	}
+
+	r.indexFetched = time.Now()
 
 	return index, nil
 }
@@ -119,6 +130,14 @@ func (r *Repo) ResolveVersion(chartspec *shipper.Chart) (*repo.ChartVersion, err
 }
 
 func (r *Repo) FetchChartVersions(chartspec *shipper.Chart) (repo.ChartVersions, error) {
+	r.mutex.Lock()
+	if r.isIndexExpired() {
+		if _, err := r.refreshIndex(); err != nil {
+			glog.Warningf("failed to refresh repo[%s] index: %s", chartspec.RepoURL, err)
+		}
+	}
+	r.mutex.Unlock()
+
 	data, err := r.cache.Fetch("index.yaml")
 	if err != nil {
 		return nil, shippererrors.NewChartFetchFailureError(
