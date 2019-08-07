@@ -8,7 +8,8 @@ import (
 )
 
 const (
-	ShipperNamespace = "shipper-system"
+	ShipperNamespace            = "shipper-system"
+	GlobalRolloutBlockNamespace = "rollout-blocks-global"
 
 	PhaseLabel = "phase"
 
@@ -42,6 +43,8 @@ const (
 
 	SecretChecksumAnnotation             = "shipper.booking.com/cluster-secret.checksum"
 	SecretClusterSkipTlsVerifyAnnotation = "shipper.booking.com/cluster-secret.insecure-tls-skip-verify"
+
+	RolloutBlocksOverrideAnnotation = "shipper.booking.com/block.override"
 
 	LBLabel         = "shipper-lb"
 	LBForProduction = "production"
@@ -101,6 +104,7 @@ const (
 	ApplicationConditionTypeReleaseSynced ApplicationConditionType = "ReleaseSynced"
 	ApplicationConditionTypeAborting      ApplicationConditionType = "Aborting"
 	ApplicationConditionTypeRollingOut    ApplicationConditionType = "RollingOut"
+	ApplicationConditionTypeRolloutBlock  ApplicationConditionType = "RolloutBlock"
 )
 
 type ApplicationCondition struct {
@@ -510,6 +514,47 @@ const (
 	StrategyStateTrue    StrategyState = "True"
 	StrategyStateFalse   StrategyState = "False"
 )
+
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// A RolloutBlock defines the a state where rollouts are blocked, locally or globally.
+// This is used by the ApplicationController to disable rollouts.
+type RolloutBlock struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   RolloutBlockSpec   `json:"spec"`
+	Status RolloutBlockStatus `json:"status"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type RolloutBlockList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata"`
+
+	Items []RolloutBlock `json:"items"`
+}
+
+type RolloutBlockStatus struct {
+	Overrides RolloutBlockOverrides `json:"overrides"`
+}
+
+type RolloutBlockOverrides struct {
+	Application string `json:"application"`
+	Release     string `json:"release"`
+}
+
+type RolloutBlockSpec struct {
+	Message string             `json:"message"`
+	Author  RolloutBlockAuthor `json:"author"`
+}
+
+type RolloutBlockAuthor struct {
+	Type string `json:"type"`
+	Name string `json:"name"`
+}
 
 func (ss *StrategyState) UnmarshalJSON(b []byte) error {
 	var s string

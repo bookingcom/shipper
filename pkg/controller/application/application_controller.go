@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -24,6 +25,7 @@ import (
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
+	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
 const (
@@ -51,6 +53,9 @@ type Controller struct {
 	relLister listers.ReleaseLister
 	relSynced cache.InformerSynced
 
+	rbLister listers.RolloutBlockLister
+	rbSynced cache.InformerSynced
+
 	versionResolver shipperrepo.ChartVersionResolver
 
 	recorder record.EventRecorder
@@ -65,6 +70,7 @@ func NewController(
 ) *Controller {
 	appInformer := shipperInformerFactory.Shipper().V1alpha1().Applications()
 	relInformer := shipperInformerFactory.Shipper().V1alpha1().Releases()
+	rbInformer := shipperInformerFactory.Shipper().V1alpha1().RolloutBlocks()
 
 	c := &Controller{
 		shipperClientset: shipperClientset,
@@ -75,6 +81,9 @@ func NewController(
 
 		relLister: relInformer.Lister(),
 		relSynced: relInformer.Informer().HasSynced,
+
+		rbLister: rbInformer.Lister(),
+		rbSynced: rbInformer.Informer().HasSynced,
 
 		versionResolver: versionResolver,
 		recorder:        recorder,
@@ -115,7 +124,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	glog.V(2).Info("Starting Application controller")
 	defer glog.V(2).Info("Shutting down Application controller")
 
-	if !cache.WaitForCacheSync(stopCh, c.appSynced, c.relSynced) {
+	if !cache.WaitForCacheSync(stopCh, c.appSynced, c.relSynced, c.rbSynced) {
 		runtime.HandleError(fmt.Errorf("failed to sync caches for the Application controller"))
 		return
 	}
@@ -238,6 +247,10 @@ func (c *Controller) syncApplication(key string) error {
 	if app.Annotations == nil {
 		app.Annotations = map[string]string{}
 	}
+	overrideRB, ok := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
+	if ok {
+		app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = rolloutblock.NewOverride(overrideRB).String()
+	}
 
 	if app.Spec.RevisionHistoryLimit == nil {
 		var i int32 = DefaultRevisionHistoryLimit
@@ -285,7 +298,7 @@ func (c *Controller) syncApplication(key string) error {
 // given Release slice, whether it is the first release being rolled out, a
 // transition between two releases or, if stable and a release process is not
 // ongoing, inform which Release is currently active.
-func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels []*shipper.Release) error {
+func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels []*shipper.Release, rbs []*shipper.RolloutBlock) error {
 	var (
 		contenderRel *shipper.Release
 		incumbentRel *shipper.Release
@@ -295,6 +308,7 @@ func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels 
 	// Required by GetContender() and GetIncumbent() below.
 	rels = releaseutil.SortByGenerationDescending(rels)
 
+	c.updateApplicationRolloutBlockCondition(rbs, app)
 	abortingCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeAborting, corev1.ConditionFalse, "", "")
 	apputil.SetApplicationCondition(&app.Status, *abortingCond)
 	validHistoryCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeValidHistory, corev1.ConditionTrue, "", "")
@@ -345,6 +359,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 
 	var (
 		appReleases     []*shipper.Release
+		rbs             []*shipper.RolloutBlock
 		contender       *shipper.Release
 		err             error
 		generation      int
@@ -357,6 +372,19 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 
 	// Required by subsequent calls to GetContender and GetIncumbent.
 	appReleases = releaseutil.SortByGenerationDescending(appReleases)
+
+	// existing rollout blocks in the system
+	var nsRolloutBlocks, globalRolloutBlocks []*shipper.RolloutBlock
+	if nsRolloutBlocks, err = c.rbLister.RolloutBlocks(app.Namespace).List(labels.Everything()); err != nil {
+		glog.Warningf("failed to list Namespace RolloutBlocks %s", err.Error())
+	}
+	if globalRolloutBlocks, err = c.rbLister.RolloutBlocks(shipper.GlobalRolloutBlockNamespace).List(labels.Everything()); err != nil {
+		glog.Warningf("failed to list Global RolloutBlocks %s", err.Error())
+	}
+	rbs = append(nsRolloutBlocks, globalRolloutBlocks...)
+	if c.processRolloutBlocks(app, nsRolloutBlocks, globalRolloutBlocks) {
+		return c.wrapUpApplicationConditions(app, appReleases, rbs)
+	}
 
 	// Check if application chart spec is resolved: the original version
 	// might contain either a specific version or a semver constraint.
@@ -398,7 +426,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 			return err
 		}
 
-		return c.wrapUpApplicationConditions(app, appReleases)
+		return c.wrapUpApplicationConditions(app, appReleases, rbs)
 	}
 
 	if generation, err = releaseutil.GetGeneration(contender); err != nil {
@@ -426,6 +454,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		apputil.SetApplicationCondition(&app.Status, *abortingCond)
 		rollingOutCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
 		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
+		c.updateApplicationRolloutBlockCondition(rbs, app)
 
 		app.Status.History = apputil.ReleasesToApplicationHistory(appReleases)
 		return c.cleanUpReleasesForApplication(app, appReleases)
@@ -453,6 +482,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 			apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
 			rollingOutCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRollingOut, corev1.ConditionFalse, conditions.CreateReleaseFailed, err.Error())
 			apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
+			c.updateApplicationRolloutBlockCondition(rbs, app)
 			return err
 		} else {
 			appReleases = append(appReleases, rel)
@@ -466,7 +496,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		return err
 	}
 
-	return c.wrapUpApplicationConditions(app, appReleases)
+	return c.wrapUpApplicationConditions(app, appReleases, rbs)
 }
 
 func (c *Controller) cleanUpReleasesForApplication(app *shipper.Application, releases []*shipper.Release) error {

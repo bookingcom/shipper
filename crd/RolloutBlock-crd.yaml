@@ -1,0 +1,49 @@
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  # name must match the spec fields below, and be in the form: <plural>.<group>
+  name: rolloutblocks.shipper.booking.com
+spec:
+  # group name to use for REST API: /apis/<group>/<version>
+  group: shipper.booking.com
+  # version name to use for REST API: /apis/<group>/<version>
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+  # either Namespaced or Cluster
+  scope: Namespaced
+  names:
+    # plural name to be used in the URL: /apis/<group>/<version>/<plural>
+    plural: rolloutblocks
+    # singular name to be used as an alias on the CLI and for display
+    singular: rolloutblock
+    # kind is normally the CamelCased singular type. Your resource manifests use this.
+    kind: RolloutBlock
+    # shortNames allow shorter string to match your resource on the CLI
+    shortNames:
+    - rb
+    categories:
+    - all
+    - shipper
+  validation:
+    openAPIV3Schema:
+      properties:
+        spec:
+          type: object
+          required:
+            - message
+            - author
+          properties:
+            message:
+              type: string
+            author:
+              type: object
+              required:
+              - type
+              - name
+              properties:
+                type:
+                  type: string
+                name:
+                  type: string
