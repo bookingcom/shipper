@@ -57,6 +57,9 @@ type Controller struct {
 	capacityTargetLister  shipperlisters.CapacityTargetLister
 	capacityTargetsSynced cache.InformerSynced
 
+	rolloutBlockLister shipperlisters.RolloutBlockLister
+	rolloutBlockSynced cache.InformerSynced
+
 	releaseWorkqueue     workqueue.RateLimitingInterface
 	applicationWorkqueue workqueue.RateLimitingInterface
 
@@ -91,6 +94,7 @@ func NewController(
 	installationTargetInformer := informerFactory.Shipper().V1alpha1().InstallationTargets()
 	trafficTargetInformer := informerFactory.Shipper().V1alpha1().TrafficTargets()
 	capacityTargetInformer := informerFactory.Shipper().V1alpha1().CapacityTargets()
+	rolloutBlockInformer := informerFactory.Shipper().V1alpha1().RolloutBlocks()
 
 	glog.Info("Building a release controller")
 
@@ -114,6 +118,9 @@ func NewController(
 
 		capacityTargetLister:  capacityTargetInformer.Lister(),
 		capacityTargetsSynced: capacityTargetInformer.Informer().HasSynced,
+
+		rolloutBlockLister: rolloutBlockInformer.Lister(),
+		rolloutBlockSynced: rolloutBlockInformer.Informer().HasSynced,
 
 		releaseWorkqueue: workqueue.NewNamedRateLimitingQueue(
 			workqueue.DefaultControllerRateLimiter(),
@@ -202,6 +209,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 		c.installationTargetsSynced,
 		c.trafficTargetsSynced,
 		c.capacityTargetsSynced,
+		c.rolloutBlockSynced,
 	); !ok {
 		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
 		return
@@ -309,6 +317,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 		c.installationTargetLister,
 		c.capacityTargetLister,
 		c.trafficTargetLister,
+		c.rolloutBlockLister,
 		c.chartFetcher,
 		c.recorder,
 	)
@@ -546,6 +555,10 @@ func reasonForReleaseCondition(err error) string {
 		return "BrokenChartSpec"
 	case shippererrors.WrongChartDeploymentsError:
 		return "WrongChartDeployments"
+	case shippererrors.InvalidRolloutBlockOverrideError:
+		return "InvalidRolloutBlockOverride"
+	case shippererrors.RolloutBlockError:
+		return "RolloutBlock"
 	}
 
 	if shippererrors.IsKubeclientError(err) {

@@ -31,6 +31,7 @@ type Scheduler struct {
 	installationTargetLister listers.InstallationTargetLister
 	trafficTargetLister      listers.TrafficTargetLister
 	capacityTargetLister     listers.CapacityTargetLister
+	rolloutBlockLister       listers.RolloutBlockLister
 
 	chartFetcher shipperrepo.ChartFetcher
 
@@ -43,6 +44,7 @@ func NewScheduler(
 	installationTargerLister listers.InstallationTargetLister,
 	capacityTargetLister listers.CapacityTargetLister,
 	trafficTargetLister listers.TrafficTargetLister,
+	rolloutBlockLister listers.RolloutBlockLister,
 	chartFetcher shipperrepo.ChartFetcher,
 	recorder record.EventRecorder,
 ) *Scheduler {
@@ -53,6 +55,7 @@ func NewScheduler(
 		installationTargetLister: installationTargerLister,
 		trafficTargetLister:      trafficTargetLister,
 		capacityTargetLister:     capacityTargetLister,
+		rolloutBlockLister:       rolloutBlockLister,
 
 		chartFetcher: chartFetcher,
 
@@ -103,6 +106,11 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 	metaKey := controller.MetaKey(rel)
 	glog.Infof("Processing release %q", metaKey)
 	defer glog.Infof("Finished processing %q", metaKey)
+
+	shouldBlockRollout, nonOverriddenRBsStatement := s.processRolloutBlocks(rel)
+	if shouldBlockRollout {
+		return nil, shippererrors.NewRolloutBlockError(nonOverriddenRBsStatement)
+	}
 
 	if !releaseHasClusters(rel) {
 		return nil, shippererrors.NewUnrecoverableError(fmt.Errorf("release %q clusters have not been chosen yet", metaKey))

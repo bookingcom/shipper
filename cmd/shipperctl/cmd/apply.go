@@ -31,9 +31,10 @@ var applyCmd = &cobra.Command{
 
 // Parameters
 var (
-	configFile             string
-	kubeConfigFile         string
-	shipperSystemNamespace string
+	configFile                  string
+	kubeConfigFile              string
+	shipperSystemNamespace      string
+	globalRolloutBlockNamespace string
 )
 
 // Name constants
@@ -55,6 +56,7 @@ func init() {
 	applyCmd.Flags().StringVarP(&configFile, fileFlagName, "f", "clusters.yaml", "config file")
 	applyCmd.Flags().StringVar(&kubeConfigFile, kubeConfigFlagName, "~/.kube/config", "the path to the Kubernetes configuration file")
 	applyCmd.Flags().StringVarP(&shipperSystemNamespace, "shipper-system-namespace", "n", shipper.ShipperNamespace, "the namespace where Shipper is running")
+	applyCmd.Flags().StringVarP(&globalRolloutBlockNamespace, "rollout-blocks-global-namespace", "g", shipper.GlobalRolloutBlockNamespace, "the namespace where Global RolloutBlocks are running")
 
 	err := applyCmd.MarkFlagFilename(fileFlagName, "yaml")
 	if err != nil {
@@ -132,6 +134,10 @@ func setupManagementCluster(managementCluster *config.ClusterConfiguration, cmd 
 	}
 
 	if err := createNamespace(cmd, configurator); err != nil {
+		return err
+	}
+
+	if err := createGlobalRolloutBlockNamespace(cmd, configurator); err != nil {
 		return err
 	}
 
@@ -235,6 +241,10 @@ func createOrUpdateCrds(cmd *cobra.Command, configurator *configurator.Cluster) 
 		return err
 	}
 
+	if err := configurator.CreateOrUpdateCRD(crds.RolloutBlock); err != nil {
+		return err
+	}
+
 	cmd.Println("done")
 
 	return nil
@@ -243,6 +253,21 @@ func createOrUpdateCrds(cmd *cobra.Command, configurator *configurator.Cluster) 
 func createNamespace(cmd *cobra.Command, configurator *configurator.Cluster) error {
 	cmd.Printf("Creating a namespace called %s... ", shipperSystemNamespace)
 	if err := configurator.CreateNamespace(shipperSystemNamespace); err != nil {
+		if errors.IsAlreadyExists(err) {
+			cmd.Println("already exists. Skipping")
+			return nil
+		} else {
+			return err
+		}
+	}
+
+	cmd.Println("done")
+	return nil
+}
+
+func createGlobalRolloutBlockNamespace(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	cmd.Printf("Creating a namespace called %s... ", globalRolloutBlockNamespace)
+	if err := configurator.CreateNamespace(globalRolloutBlockNamespace); err != nil {
 		if errors.IsAlreadyExists(err) {
 			cmd.Println("already exists. Skipping")
 			return nil
