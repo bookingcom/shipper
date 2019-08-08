@@ -40,5 +40,25 @@ var Application = &apiextensionv1beta1.CustomResourceDefinition{
 				},
 			},
 		},
+		AdditionalPrinterColumns: []apiextensionv1beta1.CustomResourceColumnDefinition{
+			apiextensionv1beta1.CustomResourceColumnDefinition{
+				Name:        "Latest Release",
+				Type:        "string",
+				Description: "The application's latest release.",
+				JSONPath:    ".status.history[-1]",
+			},
+			apiextensionv1beta1.CustomResourceColumnDefinition{
+				Name:        "Rolling Out",
+				Type:        "string",
+				Description: "Whether the application is going through a rollout.",
+				JSONPath:    ".status.conditions[?(@.type=='RollingOut')].status",
+			},
+			apiextensionv1beta1.CustomResourceColumnDefinition{
+				Name:        "Age",
+				Type:        "date",
+				Description: "The application's age.",
+				JSONPath:    ".metadata.creationTimestamp",
+			},
+		},
 	},
 }
