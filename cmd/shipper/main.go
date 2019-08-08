@@ -36,7 +36,6 @@ import (
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/controller/application"
 	"github.com/bookingcom/shipper/pkg/controller/capacity"
-	"github.com/bookingcom/shipper/pkg/controller/clustersecret"
 	"github.com/bookingcom/shipper/pkg/controller/installation"
 	"github.com/bookingcom/shipper/pkg/controller/janitor"
 	"github.com/bookingcom/shipper/pkg/controller/release"
@@ -48,7 +47,6 @@ import (
 
 var controllers = []string{
 	"application",
-	"clustersecret",
 	"release",
 	"installation",
 	"capacity",
@@ -63,8 +61,6 @@ const defaultResync time.Duration = 30 * time.Second
 var (
 	masterURL           = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
 	kubeconfig          = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
-	certPath            = flag.String("cert", "", "Path to the TLS certificate for target clusters.")
-	keyPath             = flag.String("key", "", "Path to the TLS private key for target clusters.")
 	ns                  = flag.String("namespace", shipper.ShipperNamespace, "Namespace for Shipper resources.")
 	enabledControllers  = flag.String("enable", strings.Join(controllers, ","), "comma-seperated list of controllers to run (if not all)")
 	disabledControllers = flag.String("disable", "", "comma-seperated list of controllers to disable")
@@ -165,11 +161,6 @@ func main() {
 	}
 
 	enabledControllers := buildEnabledControllers(*enabledControllers, *disabledControllers)
-	if enabledControllers["clustersecret"] {
-		if *certPath == "" || *keyPath == "" {
-			glog.Fatal("--cert and --key must both be specified if the clustersecret controller is running")
-		}
-	}
 
 	wg := &sync.WaitGroup{}
 
@@ -229,10 +220,8 @@ func main() {
 		chartVersionResolver: repo.ResolveChartVersionFunc(repoCatalog),
 		chartFetcher:         repo.FetchChartFunc(repoCatalog),
 
-		certPath: *certPath,
-		keyPath:  *keyPath,
-		ns:       *ns,
-		workers:  *workers,
+		ns:      *ns,
+		workers: *workers,
 
 		webhookCertPath: *webhookCertPath,
 		webhookKeyPath:  *webhookKeyPath,
@@ -387,7 +376,6 @@ type initFunc func(*cfg) (bool, error)
 func buildInitializers() map[string]initFunc {
 	controllers := map[string]initFunc{}
 	controllers["application"] = startApplicationController
-	controllers["clustersecret"] = startClusterSecretController
 	controllers["release"] = startReleaseController
 	controllers["installation"] = startInstallationController
 	controllers["capacity"] = startCapacityController
@@ -408,31 +396,6 @@ func startApplicationController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		cfg.chartVersionResolver,
 		cfg.recorder(application.AgentName),
-	)
-
-	cfg.wg.Add(1)
-	go func() {
-		c.Run(cfg.workers, cfg.stopCh)
-		cfg.wg.Done()
-	}()
-
-	return true, nil
-}
-
-func startClusterSecretController(cfg *cfg) (bool, error) {
-	enabled := cfg.enabledControllers["clustersecret"]
-	if !enabled {
-		return false, nil
-	}
-
-	c := clustersecret.NewController(
-		cfg.shipperInformerFactory,
-		buildKubeClient(cfg.restCfg, clustersecret.AgentName, cfg.restTimeout),
-		cfg.kubeInformerFactory,
-		cfg.certPath,
-		cfg.keyPath,
-		cfg.ns,
-		cfg.recorder(clustersecret.AgentName),
 	)
 
 	cfg.wg.Add(1)

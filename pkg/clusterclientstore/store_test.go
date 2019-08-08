@@ -323,8 +323,7 @@ func newSecret(name string, crt, key, checksum []byte) *corev1.Secret {
 			Name:      name,
 			Namespace: shipper.ShipperNamespace,
 			Annotations: map[string]string{
-				shipper.SecretClusterNameAnnotation: name,
-				shipper.SecretChecksumAnnotation:    string(checksum),
+				shipper.SecretChecksumAnnotation: string(checksum),
 			},
 		},
 		Data: map[string][]byte{
