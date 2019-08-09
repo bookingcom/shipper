@@ -90,7 +90,7 @@ func (s *Executor) Execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 				shipper.StrategyConditionContenderAchievedInstallation,
 				conditions.StrategyConditionsUpdate{
 					Reason:             conditions.ClustersNotReady,
-					Message:            fmt.Sprintf("clusters pending installation: %v", clusters),
+					Message:            fmt.Sprintf("clusters pending installation: %v. for more details, try `kubectl describe it %s`", clusters, s.contender.installationTarget.Name),
 					Step:               targetStep,
 					LastTransitionTime: lastTransitionTime,
 				})
@@ -130,7 +130,7 @@ func (s *Executor) Execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 				shipper.StrategyConditionContenderAchievedCapacity,
 				conditions.StrategyConditionsUpdate{
 					Reason:             conditions.ClustersNotReady,
-					Message:            fmt.Sprintf("clusters pending capacity adjustments: %v", clustersNotReady),
+					Message:            fmt.Sprintf("clusters pending capacity adjustments: %v. for more details, try `kubectl describe ct %s`", clustersNotReady, s.contender.capacityTarget.Name),
 					Step:               targetStep,
 					LastTransitionTime: lastTransitionTime,
 				})
@@ -170,7 +170,7 @@ func (s *Executor) Execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 				shipper.StrategyConditionContenderAchievedTraffic,
 				conditions.StrategyConditionsUpdate{
 					Reason:             conditions.ClustersNotReady,
-					Message:            fmt.Sprintf("clusters pending traffic adjustments: %v", clustersNotReady),
+					Message:            fmt.Sprintf("clusters pending traffic adjustments: %v. for more details, try `kubectl describe tt %s`", clustersNotReady, s.contender.trafficTarget.Name),
 					Step:               targetStep,
 					LastTransitionTime: lastTransitionTime,
 				})
@@ -216,7 +216,7 @@ func (s *Executor) Execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 				shipper.StrategyConditionIncumbentAchievedTraffic,
 				conditions.StrategyConditionsUpdate{
 					Reason:             conditions.ClustersNotReady,
-					Message:            fmt.Sprintf("clusters pending traffic adjustments: %v", clustersNotReady),
+					Message:            fmt.Sprintf("incumbent traffic is unhealthy in clusters: %v. for more details, try `kubectl describe tt %s`", clustersNotReady, s.incumbent.trafficTarget.Name),
 					Step:               targetStep,
 					LastTransitionTime: lastTransitionTime,
 				})
@@ -256,7 +256,7 @@ func (s *Executor) Execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 				shipper.StrategyConditionIncumbentAchievedCapacity,
 				conditions.StrategyConditionsUpdate{
 					Reason:             conditions.ClustersNotReady,
-					Message:            fmt.Sprintf("clusters pending capacity adjustments: %v", clustersNotReady),
+					Message:            fmt.Sprintf("incumbent capacity is unhealthy in clusters: %v. for more details, try `kubectl describe ct %s`", clustersNotReady, s.incumbent.capacityTarget.Name),
 					Step:               targetStep,
 					LastTransitionTime: lastTransitionTime,
 				})
