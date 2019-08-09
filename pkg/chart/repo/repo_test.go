@@ -127,27 +127,34 @@ func TestRefreshIndex(t *testing.T) {
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			var fetchedURL string
+			var mutex sync.Mutex
 
 			cache := NewTestCache(testCase.name)
 
-			repo := NewRepo(
+			repo, err := NewRepo(
 				testCase.repoURL,
 				cache,
 				func(url string) ([]byte, error) {
+					mutex.Lock()
+					defer mutex.Unlock()
 					fetchedURL = url
 					return []byte(testCase.fetchBody), testCase.fetchErr
 				},
 			)
 
-			_, err := repo.refreshIndex()
+			if err != nil {
+				t.Fatalf("failed to initialize repo: %s", err)
+			}
 
-			if !equivalent(err, testCase.expectedErr) {
+			if err := repo.refreshIndex(); !equivalent(err, testCase.expectedErr) {
 				t.Fatalf("Unexpected error: %q, want: %q", err, testCase.expectedErr)
 			}
 
+			mutex.Lock()
 			if fetchedURL != testCase.expectedFetchURL {
 				t.Fatalf("Unexpected fetch URL: %q, want: %q", fetchedURL, testCase.expectedFetchURL)
 			}
+			mutex.Unlock()
 		})
 	}
 }
@@ -264,18 +271,21 @@ func TestResolveVersion(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			repo := NewRepo(
+			repo, err := NewRepo(
 				"https://charts.example.com",
 				cache,
 				localFetch(t),
 			)
-			if _, err := repo.refreshIndex(); err != nil {
+			if err != nil {
+				t.Fatalf("failed to initialize repo: %s", err)
+			}
+			if err := repo.refreshIndex(); err != nil {
 				t.Fatalf(err.Error())
 			}
 			chartspec := &shipper.Chart{
 				Name:    testCase.chartname,
 				Version: testCase.verspec,
-				RepoURL: repo.url,
+				RepoURL: repo.repoURL,
 			}
 			gotcv, goterr := repo.ResolveVersion(chartspec)
 
@@ -356,19 +366,22 @@ func TestFetch(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			repo := NewRepo(
+			repo, err := NewRepo(
 				"https://chart.example.com",
 				cache,
 				localFetch(t),
 			)
-			if _, err := repo.refreshIndex(); err != nil {
+			if err != nil {
+				t.Fatalf("failed to initialize repo: %s", err)
+			}
+			if err := repo.refreshIndex(); err != nil {
 				t.Fatalf(err.Error())
 			}
 
 			chartspec := &shipper.Chart{
 				Name:    testCase.chartname,
 				Version: testCase.chartver,
-				RepoURL: repo.url,
+				RepoURL: repo.repoURL,
 			}
 
 			chart, err := repo.Fetch(chartspec)
@@ -394,7 +407,7 @@ func TestFetch(t *testing.T) {
 func TestConcurrentFetchChartVersionsRefreshesIndexOnce(t *testing.T) {
 	var cnt int
 	cache := NewTestCache("test-cache")
-	repo := NewRepo(
+	repo, err := NewRepo(
 		"https://chart.example.com",
 		cache,
 		func(url string) ([]byte, error) {
@@ -405,6 +418,9 @@ func TestConcurrentFetchChartVersionsRefreshesIndexOnce(t *testing.T) {
 			return []byte(IndexYamlResp), nil
 		},
 	)
+	if err != nil {
+		t.Fatalf("failed to initialize repo: %s", err)
+	}
 
 	// Chart contents doesn't really matter
 	chartspec := &shipper.Chart{

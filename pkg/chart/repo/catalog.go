@@ -72,7 +72,10 @@ func (c *Catalog) CreateRepoIfNotExist(repoURL string) (*Repo, error) {
 				fmt.Errorf("failed to create cache: %v", err),
 			)
 		}
-		repo = NewRepo(repoURL, cache, c.fetcher)
+		repo, err = NewRepo(repoURL, cache, c.fetcher)
+		if err != nil {
+			return nil, err
+		}
 		c.repos[name] = repo
 	}
 
