@@ -8,7 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	// Importing this yaml package is a very crucial point:
@@ -20,6 +20,7 @@ import (
 	yaml "github.com/ghodss/yaml"
 	"github.com/golang/glog"
 
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/proto/hapi/chart"
 	"k8s.io/helm/pkg/repo"
@@ -29,7 +30,7 @@ import (
 )
 
 const (
-	RepoIndexTTL = 5 * time.Second
+	RepoIndexRefreshPeriod = 10 * time.Second
 )
 
 var (
@@ -38,28 +39,36 @@ var (
 )
 
 type Repo struct {
-	url          string
-	cache        Cache
-	fetcher      RemoteFetcher
-	mutex        sync.Mutex
-	indexFetched time.Time
+	repoURL       string
+	indexURL      string
+	cache         Cache
+	fetcher       RemoteFetcher
+	index         atomic.Value
+	indexResolved chan struct{}
 }
 
-func NewRepo(repoURL string, cache Cache, fetcher RemoteFetcher) *Repo {
-	return &Repo{
-		url:     repoURL,
-		cache:   cache,
-		fetcher: fetcher,
+func NewRepo(repoURL string, cache Cache, fetcher RemoteFetcher) (*Repo, error) {
+	// NOTE: currently, all of shipper's Applications using
+	// charts.prod.booking.com point to an URL that's not a proper repo
+	// (where a repo is a path that contains an index.yaml file). We
+	// silently rewrite those URLs here. This patch is expected to not live
+	// forever, as charts.prod.booking.com is deprecated in favor of
+	// artifactory.
+	//
+	// The patch for artifactory, on the other hand, is expected to be a
+	// very temporary one. We used to lie to shipper that
+	// "https://artifactory.booking.com/charts/projects/$PROJECT" was a
+	// repository, but really that was because shipper just did string
+	// concatenation to find charts. There is a single application in
+	// production using artifactory, we intend to contact their owners to
+	// fix it, and then this patch can be removed.
+	if strings.HasPrefix(repoURL, "https://charts.prod.booking.com/charts") {
+		repoURL = "https://charts.prod.booking.com"
+	} else if strings.HasPrefix(repoURL, "https://artifactory.booking.com") {
+		repoURL = "https://artifactory.booking.com/charts"
 	}
-}
 
-func (r *Repo) isIndexExpired() bool {
-	return r.indexFetched.Add(RepoIndexTTL).Before(time.Now())
-}
-
-// This method is not thread-safe and requires concurrency control by the caller
-func (r *Repo) refreshIndex() (*repo.IndexFile, error) {
-	parsed, err := url.ParseRequestURI(r.url)
+	parsed, err := url.ParseRequestURI(repoURL)
 	if err != nil {
 		return nil, shippererrors.NewChartRepoIndexError(
 			fmt.Errorf("failed to parse repo URL: %v", err),
@@ -68,29 +77,50 @@ func (r *Repo) refreshIndex() (*repo.IndexFile, error) {
 	parsed.Path = path.Join(parsed.Path, "index.yaml")
 	indexURL := parsed.String()
 
-	data, err := r.fetcher(indexURL)
+	repo := &Repo{
+		repoURL:       repoURL,
+		indexURL:      indexURL,
+		cache:         cache,
+		fetcher:       fetcher,
+		indexResolved: make(chan struct{}),
+	}
+
+	// runs repo.refreshIndex forever
+	go wait.Forever(func() {
+		if err := repo.refreshIndex(); err != nil {
+			glog.Errorf("failed to refresh repo %q index: %s", repo.repoURL, err)
+		}
+	}, RepoIndexRefreshPeriod)
+
+	return repo, nil
+}
+
+func (r *Repo) refreshIndex() error {
+	data, err := r.fetcher(r.indexURL)
 	if err != nil {
-		return nil, shippererrors.NewChartRepoIndexError(
-			fmt.Errorf("failed to fetch %q: %v", indexURL, err),
+		return shippererrors.NewChartRepoIndexError(
+			fmt.Errorf("failed to fetch %q: %v", r.indexURL, err),
 		)
 	}
 
 	index, err := loadIndexData(data)
 	if err != nil {
-		return nil, shippererrors.NewChartRepoIndexError(
+		return shippererrors.NewChartRepoIndexError(
 			fmt.Errorf("failed to load index file: %v", err),
 		)
 	}
 
-	if err := r.cache.Store("index.yaml", data); err != nil {
-		return nil, shippererrors.NewChartRepoIndexError(
-			fmt.Errorf("failed to cache index.yaml: %v", err),
-		)
+	r.index.Store(index)
+
+	// close indexResolved once
+	select {
+	default:
+		close(r.indexResolved)
+	case <-r.indexResolved:
+		// already closed
 	}
 
-	r.indexFetched = time.Now()
-
-	return index, nil
+	return nil
 }
 
 func (r *Repo) ResolveVersion(chartspec *shipper.Chart) (*repo.ChartVersion, error) {
@@ -130,31 +160,10 @@ func (r *Repo) ResolveVersion(chartspec *shipper.Chart) (*repo.ChartVersion, err
 }
 
 func (r *Repo) FetchChartVersions(chartspec *shipper.Chart) (repo.ChartVersions, error) {
-	r.mutex.Lock()
-	if r.isIndexExpired() {
-		if _, err := r.refreshIndex(); err != nil {
-			glog.Warningf("failed to refresh repo[%s] index: %s", chartspec.RepoURL, err)
-		}
-	}
-	r.mutex.Unlock()
 
-	data, err := r.cache.Fetch("index.yaml")
-	if err != nil {
-		return nil, shippererrors.NewChartFetchFailureError(
-			chartspec,
-			err,
-		)
-	}
+	<-r.indexResolved
 
-	index, err := loadIndexData(data)
-	if err != nil {
-		return nil, shippererrors.NewChartFetchFailureError(
-			chartspec,
-			err,
-		)
-	}
-
-	vs, ok := index.Entries[chartspec.Name]
+	vs, ok := r.index.Load().(*repo.IndexFile).Entries[chartspec.Name]
 	if !ok {
 		return nil, repo.ErrNoChartName
 	}
@@ -234,7 +243,7 @@ func (r *Repo) FetchRemote(cv *repo.ChartVersion) (*chart.Chart, error) {
 
 	// If the URL is relative (no scheme), prepend the chart repo's base URL
 	if !chartURL.IsAbs() {
-		repoURL, err := url.Parse(r.url)
+		repoURL, err := url.Parse(r.repoURL)
 		if err != nil {
 			return nil, err
 		}
