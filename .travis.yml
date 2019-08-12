@@ -25,7 +25,7 @@ deploy:
     secure: sn8/ZmHs3IJIbmtUGTA3hvoynmTF1tZfoEaDJ1FY2abw9FutwU6XFHN4HUY2HGjBTXEd2jYYL7hlRoQsIUXILB7ausW7S73sVR5PtnRowzFkcYiCc0A2ZzhmsLWqrAY2761frqpRjhNVp/HEdKhszVTLuWA7hYWrojVyM0jlhpjZi98BYqy47ppVPOfZ8MdLRU9SS04EJpDvKLOnm1pHi1GO/8QiTVx4dStYpCZ9Y2wPQqK3Y3wVvRExFI/V0m51RzeTb/I63HU++6yWV28/llPfruFAEe6TA/th1xrUdh6fFwfnLHezIxmN5LNz6c0vdq3KKeKDeOWmSYnzwriq/LhFqCHVoqgbeOm6He7Yyz45vSV68nIHDbbPx/Q6caN1nPIE2/u7wrRlfJgzZIfLKNXjoUkCdxN1D0YmfXxyPotdh0qEdCyYDPPfuqZTO6Kj8cvRXaU3q6hFxVPaBjCdZitgLGFHOzibhZ2wxSQJtuPgqYsqZqjwmdvPaNGWoAwNVWEXmovQVLuCZryurEl9Ejf9GCFsgoMB+c5SiNto7QqUWed/iinUOoLlcKllYb+mUB28xTFVBS9svmmU5dBFGbaCSy7FiGxOhSxxOryfffkU98PCLYgRXC02PiilWP1fG9/oIQ0yL2um04To0gqpHTkfPaCsUfSfjAXtksChmFE=
   file_glob: true
   file:
-    - "release-files/*.tgz"
+    - "release-files/*.tar.gz"
     - "release-files/sha256sums.txt"
     - "release-files/kubernetes-deployment.yaml"
   skip_cleanup: true

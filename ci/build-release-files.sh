@@ -31,18 +31,10 @@ function package {
     fi
 
     GO="go"
+
     build_and_package "$version" linux   amd64
-    build_and_package "$version" linux   386
     build_and_package "$version" darwin  amd64
-    build_and_package "$version" darwin  386
     build_and_package "$version" windows amd64
-    build_and_package "$version" windows 386
-    build_and_package "$version" freebsd amd64
-    build_and_package "$version" freebsd 386
-    build_and_package "$version" openbsd amd64
-    build_and_package "$version" openbsd 386
-    build_and_package "$version" netbsd  amd64
-    build_and_package "$version" netbsd  386
 }
 
 function create_deployment_yaml {
@@ -65,7 +57,7 @@ function build_and_package {
     mkdir -p "$BASE/${name}"
 
     export CGO_ENABLED=0
-    (export GOOS="$os" GOARCH="$arch"; $GO build -v -o "${BASE}/${name}/shipperctl" cmd/shipperctl/*.go)
+    (export GOOS="$os" GOARCH="$arch"; $GO build -o "${BASE}/${name}/shipperctl" cmd/shipperctl/*.go)
     echo "... done"
 
     echo "packing $name into $tgz ..."
