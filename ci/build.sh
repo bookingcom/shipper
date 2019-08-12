@@ -1,3 +1,3 @@
 #!/bin/bash -ex
 
-make build
+make build-bin

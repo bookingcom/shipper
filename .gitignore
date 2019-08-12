@@ -4,7 +4,7 @@ pkg/chart/testdata/chartmuseum
 pkg/chart/testdata/index.yaml
 docs/generated
 
-# Binaries generated when building Shipper
+# Artifacts generated when building Shipper
 build/
 
 # IntelliJ IDE auto generated files

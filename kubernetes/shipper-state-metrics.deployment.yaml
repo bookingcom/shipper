@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shipper-state-metrics
+  namespace: shipper-system
+  labels:
+    app: shipper-state-metrics
+spec:
+  selector:
+    matchLabels:
+      app: shipper-state-metrics
+  template:
+    metadata:
+      labels:
+        app: shipper-state-metrics
+    spec:
+      containers:
+      - name: shipper-state-metrics
+        image: <IMAGE>
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8890

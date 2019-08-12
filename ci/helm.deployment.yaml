@@ -15,4 +15,4 @@ spec:
     spec:
       containers:
         - name: app
-          image: <HELM_IMAGE>
+          image: <IMAGE>
