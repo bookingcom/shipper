@@ -2123,7 +2123,7 @@ func workingOnIncumbentCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
 func TestShouldNotProducePatches(t *testing.T) {
 	var wg sync.WaitGroup
 
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 25; i++ {
 		wg.Add(1)
 		go workingOnContenderCapacity(i, &wg, t)
 
