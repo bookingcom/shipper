@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/pmezard/go-difflib/difflib"
-	"gopkg.in/yaml.v2"
+	"sigs.k8s.io/yaml"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
