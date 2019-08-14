@@ -110,7 +110,7 @@ func (r *Repo) ResolveVersion(chartspec *shipper.Chart) (*repo.ChartVersion, err
 	}
 
 	if len(versions) == 0 {
-		return nil, repo.ErrNoChartVersion
+		return nil, shippererrors.NewChartVersionResolveError(chartspec, repo.ErrNoChartVersion)
 	}
 
 	var highestver *repo.ChartVersion
@@ -145,10 +145,10 @@ func (r *Repo) FetchChartVersions(chartspec *shipper.Chart) (repo.ChartVersions,
 
 	vs, ok := r.index.Load().(*repo.IndexFile).Entries[chartspec.Name]
 	if !ok {
-		return nil, repo.ErrNoChartName
+		return nil, shippererrors.NewChartVersionResolveError(chartspec, repo.ErrNoChartName)
 	}
 	if len(vs) == 0 {
-		return nil, repo.ErrNoChartVersion
+		return nil, shippererrors.NewChartVersionResolveError(chartspec, repo.ErrNoChartVersion)
 	}
 
 	var constraint *semver.Constraints
@@ -267,7 +267,7 @@ func (r *Repo) Fetch(chartspec *shipper.Chart) (*chart.Chart, error) {
 		}
 	}
 	if chartver == nil {
-		return nil, repo.ErrNoChartVersion
+		return nil, shippererrors.NewChartVersionResolveError(chartspec, repo.ErrNoChartVersion)
 	}
 
 	if chart, err := r.LoadCached(chartver); err == nil {
