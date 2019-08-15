@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -45,6 +46,7 @@ type Repo struct {
 	fetcher       RemoteFetcher
 	index         atomic.Value
 	indexResolved chan struct{}
+	resolveOnce   sync.Once
 }
 
 func NewRepo(repoURL string, cache Cache, fetcher RemoteFetcher) (*Repo, error) {
@@ -93,12 +95,9 @@ func (r *Repo) refreshIndex() error {
 	r.index.Store(index)
 
 	// close indexResolved once
-	select {
-	default:
+	r.resolveOnce.Do(func() {
 		close(r.indexResolved)
-	case <-r.indexResolved:
-		// already closed
-	}
+	})
 
 	return nil
 }
