@@ -325,6 +325,7 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 			Conditions: []shipper.ReleaseCondition{
 				{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
 				{Type: shipper.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
+				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 			},
 		},
 		Spec: shipper.ReleaseSpec{
@@ -689,6 +690,11 @@ func addCluster(ri *releaseInfo, cluster *shipper.Cluster) {
 }
 
 func (f *fixture) expectReleaseWaitingForCommand(rel *shipper.Release, step int32) {
+	f.filter = f.filter.Extend(actionfilter{
+		[]string{"patch"},
+		[]string{"releases"},
+	})
+
 	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 	newStatus := map[string]interface{}{
 		"status": shipper.ReleaseStatus{
@@ -926,6 +932,11 @@ func (f *fixture) expectReleaseScheduled(release *shipper.Release, clusters []*s
 }
 
 func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipper.Release, value uint, totalReplicaCount uint, role role) {
+	f.filter = f.filter.Extend(actionfilter{
+		[]string{"patch"},
+		[]string{"releases", "capacitytargets"},
+	})
+
 	gvr := shipper.SchemeGroupVersion.WithResource("capacitytargets")
 	newSpec := map[string]interface{}{
 		"spec": shipper.CapacityTargetSpec{
@@ -1009,6 +1020,11 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipp
 }
 
 func (f *fixture) expectTrafficStatusPatch(tt *shipper.TrafficTarget, r *shipper.Release, value uint32, role role) {
+	f.filter = f.filter.Extend(actionfilter{
+		[]string{"patch"},
+		[]string{"releases", "traffictargets"},
+	})
+
 	gvr := shipper.SchemeGroupVersion.WithResource("traffictargets")
 	newSpec := map[string]interface{}{
 		"spec": shipper.TrafficTargetSpec{
@@ -1092,6 +1108,11 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipper.TrafficTarget, r *shipper
 }
 
 func (f *fixture) expectReleaseReleased(rel *shipper.Release, targetStep int32) {
+	f.filter = f.filter.Extend(actionfilter{
+		[]string{"patch"},
+		[]string{"releases"},
+	})
+
 	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 	newStatus := map[string]interface{}{
 		"status": shipper.ReleaseStatus{
@@ -1160,6 +1181,11 @@ func (f *fixture) expectReleaseReleased(rel *shipper.Release, targetStep int32) 
 // NOTE(btyler): when we add tests to use this function with a wider set of use
 // cases, we'll need a "pint32(int32) *int32" func to let us take pointers to literals
 func (f *fixture) expectInstallationNotReady(rel *shipper.Release, achievedStepIndex *int32, targetStepIndex int32, role role) {
+	f.filter = f.filter.Extend(actionfilter{
+		[]string{"patch"},
+		[]string{"releases"},
+	})
+
 	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 
 	var achievedStep *shipper.AchievedStep
@@ -1205,6 +1231,11 @@ func (f *fixture) expectInstallationNotReady(rel *shipper.Release, achievedStepI
 }
 
 func (f *fixture) expectCapacityNotReady(rel *shipper.Release, targetStep, achievedStepIndex int32, role role, brokenClusterName string) {
+	f.filter = f.filter.Extend(actionfilter{
+		[]string{"patch"},
+		[]string{"releases"},
+	})
+
 	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 
 	var newStatus map[string]interface{}
@@ -1305,6 +1336,11 @@ func (f *fixture) expectCapacityNotReady(rel *shipper.Release, targetStep, achie
 }
 
 func (f *fixture) expectTrafficNotReady(rel *shipper.Release, targetStep, achievedStepIndex int32, role role, brokenClusterName string) {
+	f.filter = f.filter.Extend(actionfilter{
+		[]string{"patch"},
+		[]string{"releases"},
+	})
+
 	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 	var newStatus map[string]interface{}
 

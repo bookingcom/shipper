@@ -131,7 +131,7 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 		return nil, releaseErrors.Flatten()
 	}
 
-	if !releaseutil.ReleaseInstalled(rel) && !releaseutil.ReleaseScheduled(rel) && !releaseutil.ReleaseComplete(rel) {
+	if !releaseutil.ReleaseScheduled(rel) {
 		condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 		releaseutil.SetReleaseCondition(&rel.Status, *condition)
 
