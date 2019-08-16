@@ -211,6 +211,7 @@ func main() {
 	repoCatalog := repo.NewCatalog(
 		repo.DefaultFileCacheFactory(*chartCacheDir),
 		repo.DefaultRemoteFetcher,
+		stopCh,
 	)
 
 	cfg := &cfg{

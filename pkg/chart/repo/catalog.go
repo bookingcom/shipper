@@ -44,14 +44,16 @@ type Catalog struct {
 	factory CacheFactory
 	repos   map[string]*Repo
 	fetcher RemoteFetcher
+	stopCh  <-chan struct{}
 	sync.Mutex
 }
 
-func NewCatalog(factory CacheFactory, fetcher RemoteFetcher) *Catalog {
+func NewCatalog(factory CacheFactory, fetcher RemoteFetcher, stopCh <-chan struct{}) *Catalog {
 	return &Catalog{
 		factory: factory,
 		repos:   make(map[string]*Repo),
 		fetcher: fetcher,
+		stopCh:  stopCh,
 	}
 }
 
@@ -77,6 +79,7 @@ func (c *Catalog) CreateRepoIfNotExist(repoURL string) (*Repo, error) {
 			return nil, err
 		}
 		c.repos[name] = repo
+		go repo.Start(c.stopCh)
 	}
 
 	return repo, nil

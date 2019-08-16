@@ -57,7 +57,7 @@ func NewRepo(repoURL string, cache Cache, fetcher RemoteFetcher) (*Repo, error) 
 	parsed.Path = path.Join(parsed.Path, "index.yaml")
 	indexURL := parsed.String()
 
-	repo := &Repo{
+	r := &Repo{
 		repoURL:       repoURL,
 		indexURL:      indexURL,
 		cache:         cache,
@@ -65,14 +65,15 @@ func NewRepo(repoURL string, cache Cache, fetcher RemoteFetcher) (*Repo, error) 
 		indexResolved: make(chan struct{}),
 	}
 
-	// runs repo.refreshIndex forever
-	go wait.Forever(func() {
-		if err := repo.refreshIndex(); err != nil {
-			glog.Errorf("failed to refresh repo %q index: %s", repo.repoURL, err)
-		}
-	}, RepoIndexRefreshPeriod)
+	return r, nil
+}
 
-	return repo, nil
+func (r *Repo) Start(stopCh <-chan struct{}) {
+	wait.Until(func() {
+		if err := r.refreshIndex(); err != nil {
+			glog.Errorf("failed to refresh repo %q index: %s", r.repoURL, err)
+		}
+	}, RepoIndexRefreshPeriod, stopCh)
 }
 
 func (r *Repo) refreshIndex() error {
@@ -88,6 +89,15 @@ func (r *Repo) refreshIndex() error {
 		return shippererrors.NewChartRepoIndexError(
 			fmt.Errorf("failed to load index file: %v", err),
 		)
+	}
+
+	oldindex, ok := r.index.Load().(*repo.IndexFile)
+	if ok && oldindex != nil {
+		if len(oldindex.Entries) != 0 && len(index.Entries) == 0 {
+			return shippererrors.NewChartRepoIndexError(
+				fmt.Errorf("the new index contains no entries whereas the previous fetch returned a non-empty result"),
+			)
+		}
 	}
 
 	r.index.Store(index)
@@ -113,30 +123,7 @@ func (r *Repo) ResolveVersion(chartspec *shipper.Chart) (*repo.ChartVersion, err
 		return nil, repo.ErrNoChartVersion
 	}
 
-	var highestver *repo.ChartVersion
-	var lasterr error
-
-	for _, ver := range versions {
-		if _, lasterr = r.LoadCached(ver); lasterr == nil {
-			highestver = ver
-			break
-		}
-		if _, lasterr = r.FetchRemote(ver); lasterr == nil {
-			highestver = ver
-			break
-		}
-	}
-	if highestver == nil {
-		if lasterr == nil {
-			lasterr = repo.ErrNoChartVersion
-		}
-		return nil, shippererrors.NewChartVersionResolveError(
-			chartspec,
-			lasterr,
-		)
-	}
-
-	return highestver, nil
+	return versions[0], nil
 }
 
 func (r *Repo) FetchChartVersions(chartspec *shipper.Chart) (repo.ChartVersions, error) {
@@ -290,7 +277,7 @@ func loadIndexData(data []byte) (*repo.IndexFile, error) {
 	i.SortEntries()
 	if i.APIVersion == "" {
 		// do not support pre-v2.0.0
-		return i, repo.ErrNoAPIVersion
+		return nil, repo.ErrNoAPIVersion
 	}
 
 	return i, nil
