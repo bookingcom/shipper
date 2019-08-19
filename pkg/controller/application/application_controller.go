@@ -358,12 +358,6 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 	// Required by subsequent calls to GetContender and GetIncumbent.
 	appReleases = releaseutil.SortByGenerationDescending(appReleases)
 
-	// clean up excessive releases regardless of exit path
-	defer func() {
-		app.Status.History = apputil.ReleasesToApplicationHistory(appReleases)
-		c.cleanUpReleasesForApplication(app, appReleases)
-	}()
-
 	// Check if application chart spec is resolved: the original version
 	// might contain either a specific version or a semver constraint.
 	// If a semver constraint is found, it would be resolved in-place.
@@ -381,7 +375,6 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 
 		// Contender doesn't exist, so we are covering the case where Shipper
 		// is creating the first release for this application.
-		var generation = 0
 		if releaseName, iteration, err := c.releaseNameForApplication(app); err != nil {
 			return err
 		} else if rel, err := c.createReleaseForApplication(app, releaseName, iteration, generation); err != nil {
@@ -399,6 +392,12 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		// update listers and informers automatically during tests...
 		// How should we do it then?
 		apputil.SetHighestObservedGeneration(app, generation)
+
+		app.Status.History = apputil.ReleasesToApplicationHistory(appReleases)
+		if err = c.cleanUpReleasesForApplication(app, appReleases); err != nil {
+			return err
+		}
+
 		return c.wrapUpApplicationConditions(app, appReleases)
 	}
 
@@ -427,7 +426,9 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		apputil.SetApplicationCondition(&app.Status, *abortingCond)
 		rollingOutCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
 		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
-		return nil
+
+		app.Status.History = apputil.ReleasesToApplicationHistory(appReleases)
+		return c.cleanUpReleasesForApplication(app, appReleases)
 	}
 
 	if generation > highestObserved {
@@ -459,17 +460,23 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 	}
 
 	apputil.SetHighestObservedGeneration(app, highestObserved)
+
+	app.Status.History = apputil.ReleasesToApplicationHistory(appReleases)
+	if err = c.cleanUpReleasesForApplication(app, appReleases); err != nil {
+		return err
+	}
+
 	return c.wrapUpApplicationConditions(app, appReleases)
 }
 
-// TODO(jgreff): wrap bare errors with shippererrors and actually return them
-// so they can be retried if needed, instead of relying on resyncs to do the
-// trick.
-func (c *Controller) cleanUpReleasesForApplication(app *shipper.Application, releases []*shipper.Release) {
+func (c *Controller) cleanUpReleasesForApplication(app *shipper.Application, releases []*shipper.Release) error {
 	var installedReleases []*shipper.Release
 
 	// Process releases by a predictable, ascending generation order.
 	releases = releaseutil.SortByGenerationAscending(releases)
+
+	namespace := app.GetNamespace()
+	releaseErrors := shippererrors.NewMultiError()
 
 	// Delete any releases that are not installed. Don't touch the latest release
 	// because a release that isn't installed and is the last release just means
@@ -481,15 +488,16 @@ func (c *Controller) cleanUpReleasesForApplication(app *shipper.Application, rel
 			continue
 		}
 
-		err := c.shipperClientset.ShipperV1alpha1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})
+		err := c.shipperClientset.ShipperV1alpha1().Releases(namespace).Delete(rel.GetName(), &metav1.DeleteOptions{})
 		if err != nil {
 			if kerrors.IsNotFound(err) {
 				// Skip this release: it's already deleted.
 				continue
 			}
 
-			// Handle the error, but keep on going.
-			runtime.HandleError(err)
+			releaseErrors.Append(shippererrors.
+				NewKubeclientDeleteError(namespace, rel.GetName(), err).
+				WithShipperKind("Release"))
 		}
 	}
 
@@ -501,10 +509,20 @@ func (c *Controller) cleanUpReleasesForApplication(app *shipper.Application, rel
 	overhead := len(installedReleases) - int(revisionHistoryLimit)
 	for i := 0; i < overhead; i++ {
 		rel := installedReleases[i]
-		err := c.shipperClientset.ShipperV1alpha1().Releases(app.GetNamespace()).Delete(rel.GetName(), &metav1.DeleteOptions{})
+		err := c.shipperClientset.ShipperV1alpha1().Releases(namespace).Delete(rel.GetName(), &metav1.DeleteOptions{})
 		if err != nil {
-			runtime.HandleError(err)
-			return
+			if kerrors.IsNotFound(err) {
+				// Skip this release: it's already deleted.
+				continue
+			}
+
+			releaseErrors.Append(shippererrors.
+				NewKubeclientDeleteError(namespace, rel.GetName(), err).
+				WithShipperKind("Release"))
+
+			break
 		}
 	}
+
+	return releaseErrors.Flatten()
 }

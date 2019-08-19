@@ -472,9 +472,8 @@ func TestCreateSecondRelease(t *testing.T) {
 func TestCreateSecondReleaseWithUpdatedChartVersionResolve(t *testing.T) {
 	f := newFixture(t)
 	resolveCnt := 1
+
 	f.resolveChartVersion = func(chartspec *shipper.Chart) (*repo.ChartVersion, error) {
-		defer func() { resolveCnt++ }()
-		// Ever incrementing versions: returns: 0.0.1, 0.0.2, ...
 		return localResolveChartVersion(&shipper.Chart{
 			Version: fmt.Sprintf("0.0.%d", resolveCnt),
 			Name:    chartspec.Name,
@@ -510,9 +509,7 @@ func TestCreateSecondReleaseWithUpdatedChartVersionResolve(t *testing.T) {
 
 	f.objects = append(f.objects, incumbentRel)
 
-	// Emulating the first version resolution so the next round will return
-	// 0.0.2
-	f.resolveChartVersion(&incumbentRel.Spec.Environment.Chart)
+	resolveCnt++
 
 	app.Status.History = []string{incumbentRelName}
 	app.Spec.Template.ClusterRequirements = shipper.ClusterRequirements{
