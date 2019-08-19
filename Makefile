@@ -34,6 +34,11 @@ E2E_FLAGS ?=
 # when building releases.
 USE_IMAGE_NAME_WITH_SHA256 ?= 1
 
+# Defines which version shipper is gonna report itself as. By default, it takes
+# the latest tag, and annotates it further with the topmost commit if it doesn't
+# match the latest tag, and whether the working copy is dirty.
+SHIPPER_VERSION ?= $(shell git describe --tags --dirty)
+
 # All the files (*.go and otherwise) that, when changed, trigger rebuilds of
 # binaries in the next run of `make`.
 PKG := pkg/**/* vendor/**/*
@@ -48,6 +53,9 @@ OS := linux windows darwin
 # The operating system where we're currently running. This is just a shorthand
 # for a few targets.
 GOOS := $(shell go env GOOS)
+
+VERSION_PKG := github.com/bookingcom/shipper/pkg/version
+LDFLAGS := -ldflags "-X $(VERSION_PKG).Version=$(SHIPPER_VERSION)"
 
 # Setup go environment variables that we want for every `go build` and `go
 # test`, to ensure our environment is consistent for all developers.
@@ -138,13 +146,13 @@ build:
 	mkdir -p build
 
 build/shipper-state-metrics.%-amd64: cmd/shipper-state-metrics/*.go $(PKG)
-	GOOS=$* GOARCH=amd64 go build -o build/shipper-state-metrics.$*-amd64 cmd/shipper-state-metrics/*.go
+	GOOS=$* GOARCH=amd64 go build $(LDFLAGS) -o build/shipper-state-metrics.$*-amd64 cmd/shipper-state-metrics/*.go
 
 build/shipper.%-amd64: cmd/shipper/*.go $(PKG)
-	GOOS=$* GOARCH=amd64 go build -o build/shipper.$*-amd64 cmd/shipper/*.go
+	GOOS=$* GOARCH=amd64 go build $(LDFLAGS) -o build/shipper.$*-amd64 cmd/shipper/*.go
 
 build/shipperctl.%-amd64: cmd/shipperctl/*.go $(PKG)
-	GOOS=$* GOARCH=amd64 go build -o build/shipperctl.$*-amd64 cmd/shipperctl/*.go
+	GOOS=$* GOARCH=amd64 go build $(LDFLAGS) -o build/shipperctl.$*-amd64 cmd/shipperctl/*.go
 
 build/e2e.test: $(PKG) test/e2e/*
 	go test -c ./test/e2e/ -o build/e2e.test
