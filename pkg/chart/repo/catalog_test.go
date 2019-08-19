@@ -82,9 +82,11 @@ func TestCreateRepoIfNotExist(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
+			stopCh := make(chan struct{})
+			defer close(stopCh)
 			c := NewCatalog(testCase.factory, func(_ string) ([]byte, error) {
 				return []byte{}, nil
-			})
+			}, stopCh)
 			_, err := c.CreateRepoIfNotExist(testCase.url)
 			if (err == nil && testCase.err != nil) ||
 				(err != nil && testCase.err == nil) ||

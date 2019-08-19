@@ -84,6 +84,13 @@ entries:
 generated: 2016-10-06T16:23:20.499029981-06:00
 `
 
+	IndexYamlRespNoCharts = `
+---
+apiVersion: v1
+entries:
+generated: 2016-10-06T16:23:20.499029981-06:00
+`
+
 	repoURL = "https://registry.example.com/charts"
 )
 
@@ -117,6 +124,22 @@ func TestRefreshIndex(t *testing.T) {
 		{
 			name:             "Plain fetch",
 			fetchBody:        IndexYamlResp,
+			fetchErr:         nil,
+			repoURL:          repoURL,
+			expectedFetchURL: repoURL + "/index.yaml",
+			expectedErr:      nil,
+		},
+		{
+			name:             "Empty response",
+			fetchBody:        "",
+			fetchErr:         nil,
+			repoURL:          repoURL,
+			expectedFetchURL: repoURL + "/index.yaml",
+			expectedErr:      fmt.Errorf("failed to get chart repo index: failed to load index file: no index content"),
+		},
+		{
+			name:             "no charts in valid response",
+			fetchBody:        IndexYamlRespNoCharts,
 			fetchErr:         nil,
 			repoURL:          repoURL,
 			expectedFetchURL: repoURL + "/index.yaml",
@@ -206,14 +229,14 @@ func TestResolveVersion(t *testing.T) {
 			"Existing dual version >= function applied",
 			"nginx",
 			">=0.0.1",
-			"0.0.2",
+			"0.0.3",
 			nil,
 		},
 		{
 			"Existing dual version > function applied",
 			"nginx",
 			">0.0.1",
-			"0.0.2",
+			"0.0.3",
 			nil,
 		},
 		{
@@ -229,34 +252,6 @@ func TestResolveVersion(t *testing.T) {
 			"<0.0.2",
 			"0.0.1",
 			nil,
-		},
-		{
-			"Failed fetch version downgrade to a lower one",
-			"nginx",
-			"<=0.0.3",
-			"0.0.2",
-			nil,
-		},
-		{
-			"Failed fetch version exact match",
-			"nginx",
-			"0.0.3",
-			"",
-			fmt.Errorf("failed to resolve chart version [name: \"nginx\", version: \"0.0.3\", repo: \"https://charts.example.com\"]: failed to read file \"nginx-0.0.3.tgz\": open testdata/nginx-0.0.3.tgz: no such file or directory"),
-		},
-		{
-			"Faield fetch version a lower one is in the cache",
-			"non-existing",
-			"<=0.0.2",
-			"0.0.1",
-			nil,
-		},
-		{
-			"Failed fetch version exact match with lower version available in cache",
-			"non-existing",
-			"0.0.2",
-			"",
-			fmt.Errorf("failed to resolve chart version [name: \"non-existing\", version: \"0.0.2\", repo: \"https://charts.example.com\"]: failed to read file \"non-existing-0.0.2.tgz\": open testdata/non-existing-0.0.2.tgz: no such file or directory"),
 		},
 	}
 
@@ -421,6 +416,9 @@ func TestConcurrentFetchChartVersionsRefreshesIndexOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to initialize repo: %s", err)
 	}
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	go repo.Start(stopCh)
 
 	// Chart contents doesn't really matter
 	chartspec := &shipper.Chart{
