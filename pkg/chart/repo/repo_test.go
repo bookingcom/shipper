@@ -1,7 +1,6 @@
 package repo
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/url"
@@ -216,7 +215,7 @@ func TestResolveVersion(t *testing.T) {
 			"simple",
 			"=1.0.0",
 			"",
-			errors.New("no chart version found"),
+			fmt.Errorf("failed to resolve chart version [name: \"simple\", version: \"=1.0.0\", repo: \"https://charts.example.com\"]: no chart version found"),
 		},
 		{
 			"Existing dual version exact match",
@@ -322,7 +321,7 @@ func TestFetch(t *testing.T) {
 			"0.0.1",
 			"",
 			"",
-			fmt.Errorf("no chart name found"),
+			fmt.Errorf("failed to resolve chart version [name: \"unknown\", version: \"0.0.1\", repo: \"https://chart.example.com\"]: no chart name found"),
 		},
 		{
 			"Non-existing chart",
@@ -330,7 +329,7 @@ func TestFetch(t *testing.T) {
 			"10.20.30",
 			"nginx",
 			"",
-			fmt.Errorf("no chart version found"),
+			fmt.Errorf("failed to resolve chart version [name: \"nginx\", version: \"10.20.30\", repo: \"https://chart.example.com\"]: no chart version found"),
 		},
 		{
 			"Fails to fetch but exists in the cache",
