@@ -61,6 +61,11 @@ const (
 	Incumbent
 )
 
+type releaseInfoPair struct {
+	incumbent *releaseInfo
+	contender *releaseInfo
+}
+
 type actionfilter struct {
 	verbs     []string
 	resources []string
@@ -965,7 +970,7 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipp
 				Status:  corev1.ConditionFalse,
 				Step:    step,
 				Reason:  conditions.ClustersNotReady,
-				Message: "clusters pending capacity adjustments: [minikube]",
+				Message: fmt.Sprintf("clusters pending capacity adjustments: [minikube]. for more details, try `kubectl describe ct %s`", ct.Name),
 			},
 		)
 	} else {
@@ -995,7 +1000,7 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipp
 				Status:  corev1.ConditionFalse,
 				Step:    step,
 				Reason:  conditions.ClustersNotReady,
-				Message: "clusters pending capacity adjustments: [minikube]",
+				Message: fmt.Sprintf("incumbent capacity is unhealthy in clusters: [minikube]. for more details, try `kubectl describe ct %s`", ct.Name),
 			},
 		)
 	}
@@ -1058,7 +1063,7 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipper.TrafficTarget, r *shipper
 				Status:  corev1.ConditionFalse,
 				Step:    step,
 				Reason:  conditions.ClustersNotReady,
-				Message: "clusters pending traffic adjustments: [minikube]",
+				Message: fmt.Sprintf("clusters pending traffic adjustments: [minikube]. for more details, try `kubectl describe tt %s`", tt.Name),
 			},
 		)
 	} else {
@@ -1083,7 +1088,7 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipper.TrafficTarget, r *shipper
 				Status:  corev1.ConditionFalse,
 				Step:    step,
 				Reason:  conditions.ClustersNotReady,
-				Message: "clusters pending traffic adjustments: [minikube]",
+				Message: fmt.Sprintf("incumbent traffic is unhealthy in clusters: [minikube]. for more details, try `kubectl describe tt %s`", tt.Name),
 			},
 		)
 	}
@@ -1215,7 +1220,7 @@ func (f *fixture) expectInstallationNotReady(rel *shipper.Release, achievedStepI
 						Status:  corev1.ConditionFalse,
 						Reason:  conditions.ClustersNotReady,
 						Step:    targetStepIndex,
-						Message: "clusters pending installation: [broken-installation-cluster]",
+						Message: fmt.Sprintf("clusters pending installation: [broken-installation-cluster]. for more details, try `kubectl describe it %s`", rel.Name),
 					},
 				},
 			},
@@ -1230,13 +1235,9 @@ func (f *fixture) expectInstallationNotReady(rel *shipper.Release, achievedStepI
 	f.expectedEvents = []string{}
 }
 
-func (f *fixture) expectCapacityNotReady(rel *shipper.Release, targetStep, achievedStepIndex int32, role role, brokenClusterName string) {
-	f.filter = f.filter.Extend(actionfilter{
-		[]string{"patch"},
-		[]string{"releases"},
-	})
-
+func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, achievedStepIndex int32, role role, brokenClusterName string) {
 	gvr := shipper.SchemeGroupVersion.WithResource("releases")
+	rel := relpair.contender.release
 
 	var newStatus map[string]interface{}
 
@@ -1267,7 +1268,7 @@ func (f *fixture) expectCapacityNotReady(rel *shipper.Release, targetStep, achie
 							Type:    shipper.StrategyConditionContenderAchievedCapacity,
 							Status:  corev1.ConditionFalse,
 							Reason:  conditions.ClustersNotReady,
-							Message: fmt.Sprintf("clusters pending capacity adjustments: [%s]", brokenClusterName),
+							Message: fmt.Sprintf("clusters pending capacity adjustments: [%s]. for more details, try `kubectl describe ct %s`", brokenClusterName, relpair.contender.capacityTarget.Name),
 							Step:    targetStep,
 						},
 						{
@@ -1314,7 +1315,7 @@ func (f *fixture) expectCapacityNotReady(rel *shipper.Release, targetStep, achie
 							Status:  corev1.ConditionFalse,
 							Reason:  conditions.ClustersNotReady,
 							Step:    targetStep,
-							Message: fmt.Sprintf("clusters pending capacity adjustments: [%s]", brokenClusterName),
+							Message: fmt.Sprintf("incumbent capacity is unhealthy in clusters: [%s]. for more details, try `kubectl describe ct %s`", brokenClusterName, relpair.incumbent.capacityTarget.Name),
 						},
 						{
 							Type:   shipper.StrategyConditionIncumbentAchievedTraffic,
@@ -1335,13 +1336,9 @@ func (f *fixture) expectCapacityNotReady(rel *shipper.Release, targetStep, achie
 	f.expectedEvents = []string{}
 }
 
-func (f *fixture) expectTrafficNotReady(rel *shipper.Release, targetStep, achievedStepIndex int32, role role, brokenClusterName string) {
-	f.filter = f.filter.Extend(actionfilter{
-		[]string{"patch"},
-		[]string{"releases"},
-	})
-
+func (f *fixture) expectTrafficNotReady(relpair releaseInfoPair, targetStep, achievedStepIndex int32, role role, brokenClusterName string) {
 	gvr := shipper.SchemeGroupVersion.WithResource("releases")
+	rel := relpair.contender.release
 	var newStatus map[string]interface{}
 
 	var achievedStep *shipper.AchievedStep
@@ -1381,7 +1378,7 @@ func (f *fixture) expectTrafficNotReady(rel *shipper.Release, targetStep, achiev
 							Type:    shipper.StrategyConditionContenderAchievedTraffic,
 							Status:  corev1.ConditionFalse,
 							Reason:  conditions.ClustersNotReady,
-							Message: fmt.Sprintf("clusters pending traffic adjustments: [%s]", brokenClusterName),
+							Message: fmt.Sprintf("clusters pending traffic adjustments: [%s]. for more details, try `kubectl describe tt %s`", brokenClusterName, relpair.contender.trafficTarget.Name),
 							Step:    targetStep,
 						},
 					},
@@ -1422,7 +1419,7 @@ func (f *fixture) expectTrafficNotReady(rel *shipper.Release, targetStep, achiev
 							Type:    shipper.StrategyConditionIncumbentAchievedTraffic,
 							Status:  corev1.ConditionFalse,
 							Reason:  conditions.ClustersNotReady,
-							Message: fmt.Sprintf("clusters pending traffic adjustments: [%s]", brokenClusterName),
+							Message: fmt.Sprintf("incumbent traffic is unhealthy in clusters: [%s]. for more details, try `kubectl describe tt %s`", brokenClusterName, relpair.incumbent.trafficTarget.Name),
 							Step:    targetStep,
 						},
 					},
@@ -1616,8 +1613,11 @@ func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
 			incumbent.trafficTarget.DeepCopy(),
 		)
 
-		r := contender.release.DeepCopy()
-		f.expectCapacityNotReady(r, 1, 0, Contender, brokenCluster.Name)
+		relpair := releaseInfoPair{
+			contender: contender,
+			incumbent: incumbent,
+		}
+		f.expectCapacityNotReady(relpair, 1, 0, Contender, brokenCluster.Name)
 		f.run()
 	}
 }
@@ -1679,8 +1679,11 @@ func TestContenderDoNothingClusterTrafficNotReady(t *testing.T) {
 			incumbent.trafficTarget.DeepCopy(),
 		)
 
-		r := contender.release.DeepCopy()
-		f.expectTrafficNotReady(r, 1, 0, Contender, brokenCluster.Name)
+		relpair := releaseInfoPair{
+			contender: contender,
+			incumbent: incumbent,
+		}
+		f.expectTrafficNotReady(relpair, 1, 0, Contender, brokenCluster.Name)
 		f.run()
 	}
 }
@@ -1991,8 +1994,11 @@ func workingOnContenderCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
 		incumbent.trafficTarget.DeepCopy(),
 	)
 
-	r := contender.release.DeepCopy()
-	f.expectCapacityNotReady(r, 1, 0, Contender, "minikube")
+	relpair := releaseInfoPair{
+		contender: contender,
+		incumbent: incumbent,
+	}
+	f.expectCapacityNotReady(relpair, 1, 0, Contender, "minikube")
 	f.run()
 }
 
@@ -2039,8 +2045,11 @@ func workingOnContenderTraffic(percent int, wg *sync.WaitGroup, t *testing.T) {
 		incumbent.trafficTarget.DeepCopy(),
 	)
 
-	r := contender.release.DeepCopy()
-	f.expectTrafficNotReady(r, 1, 0, Contender, "minikube")
+	relpair := releaseInfoPair{
+		contender: contender,
+		incumbent: incumbent,
+	}
+	f.expectTrafficNotReady(relpair, 1, 0, Contender, "minikube")
 	f.run()
 
 }
@@ -2092,8 +2101,11 @@ func workingOnIncumbentTraffic(percent int, wg *sync.WaitGroup, t *testing.T) {
 		incumbent.trafficTarget.DeepCopy(),
 	)
 
-	r := contender.release.DeepCopy()
-	f.expectTrafficNotReady(r, 1, 0, Incumbent, "minikube")
+	relpair := releaseInfoPair{
+		contender: contender,
+		incumbent: incumbent,
+	}
+	f.expectTrafficNotReady(relpair, 1, 0, Incumbent, "minikube")
 	f.run()
 }
 
@@ -2151,8 +2163,11 @@ func workingOnIncumbentCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
 		incumbent.trafficTarget.DeepCopy(),
 	)
 
-	r := contender.release.DeepCopy()
-	f.expectCapacityNotReady(r, 1, 0, Incumbent, "minikube")
+	relpair := releaseInfoPair{
+		contender: contender,
+		incumbent: incumbent,
+	}
+	f.expectCapacityNotReady(relpair, 1, 0, Incumbent, "minikube")
 	f.run()
 }
 
