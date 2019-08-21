@@ -71,11 +71,9 @@ setup: $(SHIPPER_CLUSTERS_YAML) build/shipperctl.$(GOOS)-amd64
 		-f $(SHIPPER_CLUSTERS_YAML) \
 		--shipper-system-namespace $(SHIPPER_NAMESPACE)
 
-# Install shipper in kubernetes, by applying all the required service and
-# deployment yamls.
+# Install shipper in kubernetes, by applying all the required deployment yamls.
 install: install-shipper install-shipper-state-metrics
-install-shipper: build/shipper.image.$(IMAGE_TAG) build/shipper.service.$(IMAGE_TAG).yaml build/shipper.deployment.$(IMAGE_TAG).yaml
-	$(KUBECTL) apply -f build/shipper.service.$(IMAGE_TAG).yaml
+install-shipper: build/shipper.image.$(IMAGE_TAG) build/shipper.deployment.$(IMAGE_TAG).yaml
 	$(KUBECTL) apply -f build/shipper.deployment.$(IMAGE_TAG).yaml
 
 install-shipper-state-metrics: build/shipper-state-metrics.image.$(IMAGE_TAG) build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
@@ -132,7 +130,7 @@ clean:
 .PHONY: build-bin build-yaml build-images build-all
 SHA = $(if $(shell which sha256sum),sha256sum,shasum -a 256)
 build-bin: $(foreach bin,$(BINARIES),build/$(bin).$(GOOS)-amd64)
-build-yaml:  build/shipper.deployment.$(IMAGE_TAG).yaml build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml build/shipper.service.$(IMAGE_TAG).yaml
+build-yaml:  build/shipper.deployment.$(IMAGE_TAG).yaml build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
 build-images: build/shipper.image.$(IMAGE_TAG) build/shipper-state-metrics.image.$(IMAGE_TAG)
 build-all: $(foreach os,$(OS),build/shipperctl.$(os)-amd64.tar.gz) build/sha256sums.txt build-yaml build-images
 
@@ -150,9 +148,6 @@ build/shipperctl.%-amd64: cmd/shipperctl/*.go $(PKG)
 
 build/e2e.test: $(PKG) test/e2e/*
 	go test -c ./test/e2e/ -o build/e2e.test
-
-build/%.service.$(IMAGE_TAG).yaml: kubernetes/%.service.yaml build
-	cp $< $@
 
 IMAGE_NAME_WITH_SHA256 = $(shell cat build/$*.image.$(IMAGE_TAG))
 IMAGE_NAME_TO_USE = $(if $(USE_IMAGE_NAME_WITH_SHA256),$(IMAGE_NAME_WITH_SHA256),$(IMAGE_NAME_WITH_TAG))
