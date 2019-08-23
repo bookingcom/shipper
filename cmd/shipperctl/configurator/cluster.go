@@ -22,6 +22,7 @@ import (
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	client "github.com/bookingcom/shipper/pkg/client"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -33,6 +34,7 @@ const (
 	shipperValidatingWebhookName        = "shipper.booking.com"
 	shipperValidatingWebhookServiceName = "shipper-validating-webhook"
 	MaximumRetries                      = 20
+	AgentName                           = "configurator"
 )
 
 type Cluster struct {
@@ -270,17 +272,17 @@ func NewClusterConfigurator(clusterConfiguration *config.ClusterConfiguration, k
 		return nil, err
 	}
 
-	clientset, err := kubernetes.NewForConfig(restConfig)
+	clientset, err := client.NewKubeClient(restConfig, AgentName, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	shipperClient, err := shipperclientset.NewForConfig(restConfig)
+	shipperClient, err := client.NewShipperClient(restConfig, AgentName, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	apiExtensionClient, err := apiextensionclientset.NewForConfig(restConfig)
+	apiExtensionClient, err := client.NewApiExtensionClient(restConfig, AgentName, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -30,7 +30,7 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/chart/repo"
-	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	"github.com/bookingcom/shipper/pkg/client"
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
@@ -138,8 +138,8 @@ func main() {
 	// These are only used in shared informers. Setting HTTP timeout here would
 	// affect watches which is undesirable. Instead, we leave it to client-go (see
 	// k8s.io/client-go/tools/cache) to govern watch durations.
-	informerKubeClient := buildKubeClient(baseRestCfg, "kube-shared-informer", nil)
-	informerShipperClient := buildShipperClient(baseRestCfg, "shipper-shared-informer", nil)
+	informerKubeClient := client.NewKubeClientOrDie(baseRestCfg, "kube-shared-informer", nil)
+	informerShipperClient := client.NewShipperClientOrDie(baseRestCfg, "shipper-shared-informer", nil)
 
 	stopCh := setupSignalHandler()
 	metricsReadyCh := make(chan struct{})
@@ -152,7 +152,7 @@ func main() {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(glog.Infof)
 	func() {
-		kubeClient := buildKubeClient(baseRestCfg, "event-broadcaster", restTimeout)
+		kubeClient := client.NewKubeClientOrDie(baseRestCfg, "event-broadcaster", restTimeout)
 		broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 	}()
 
@@ -167,21 +167,7 @@ func main() {
 	store := clusterclientstore.NewStore(
 		func(clusterName string, ua string, config *rest.Config) (kubernetes.Interface, error) {
 			glog.V(8).Infof("Building a client for Cluster %q, UserAgent %q", clusterName, ua)
-
-			// NOTE(btyler/asurikov) Ooookaaayyy. This is temporary. I promise.
-			// No, really. This is to buy us time to think how the
-			// clusterclientstore API needs to change to make it nice and easy
-			// keeping distinct clients per controller per cluster. The number
-			// 30 is 10x the default for each controller that shares a client
-			// in the current implementation. This is deliberately high so that
-			// we can track optimization efforts with precision; we're
-			// reasonably confident that the API server can tolerate it.
-			shallowCopy := *config
-			shallowCopy.QPS = rest.DefaultQPS * 30
-			shallowCopy.Burst = rest.DefaultBurst * 30
-			rest.AddUserAgent(&shallowCopy, ua)
-
-			return kubernetes.NewForConfig(&shallowCopy)
+			return client.NewKubeClient(config, ua, nil)
 		},
 		kubeInformerFactory.Core().V1().Secrets(),
 		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
@@ -393,7 +379,7 @@ func startApplicationController(cfg *cfg) (bool, error) {
 	}
 
 	c := application.NewController(
-		buildShipperClient(cfg.restCfg, application.AgentName, cfg.restTimeout),
+		client.NewShipperClientOrDie(cfg.restCfg, application.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.chartVersionResolver,
 		cfg.recorder(application.AgentName),
@@ -415,7 +401,7 @@ func startReleaseController(cfg *cfg) (bool, error) {
 	}
 
 	c := release.NewController(
-		buildShipperClient(cfg.restCfg, release.AgentName, cfg.restTimeout),
+		client.NewShipperClientOrDie(cfg.restCfg, release.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.chartFetcher,
 		cfg.recorder(release.AgentName),
@@ -452,7 +438,7 @@ func startInstallationController(cfg *cfg) (bool, error) {
 	}
 
 	c := installation.NewController(
-		buildShipperClient(cfg.restCfg, installation.AgentName, cfg.restTimeout),
+		client.NewShipperClientOrDie(cfg.restCfg, installation.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.store,
 		dynamicClientBuilderFunc,
@@ -476,7 +462,7 @@ func startCapacityController(cfg *cfg) (bool, error) {
 	}
 
 	c := capacity.NewController(
-		buildShipperClient(cfg.restCfg, capacity.AgentName, cfg.restTimeout),
+		client.NewShipperClientOrDie(cfg.restCfg, capacity.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.store,
 		cfg.recorder(capacity.AgentName),
@@ -496,7 +482,7 @@ func startTrafficController(cfg *cfg) (bool, error) {
 	}
 
 	c := traffic.NewController(
-		buildShipperClient(cfg.restCfg, traffic.AgentName, cfg.restTimeout),
+		client.NewShipperClientOrDie(cfg.restCfg, traffic.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.store,
 		cfg.recorder(traffic.AgentName),
@@ -535,7 +521,7 @@ func startJanitorController(cfg *cfg) (bool, error) {
 	}
 
 	c := janitor.NewController(
-		buildShipperClient(cfg.restCfg, janitor.AgentName, cfg.restTimeout),
+		client.NewShipperClientOrDie(cfg.restCfg, janitor.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.store,
 		cfg.recorder(janitor.AgentName),
@@ -548,44 +534,4 @@ func startJanitorController(cfg *cfg) (bool, error) {
 	}()
 
 	return true, nil
-}
-
-func buildShipperClient(restCfg *rest.Config, ua string, timeout *time.Duration) *shipperclientset.Clientset {
-	shallowCopy := *restCfg
-
-	rest.AddUserAgent(&shallowCopy, ua)
-
-	if timeout != nil {
-		shallowCopy.Timeout = *timeout
-	}
-
-	// NOTE(btyler): These are deliberately high: we're reasonably certain the
-	// API servers can handle a much larger number of requests, and we want to
-	// have better sensitivity to any shifts in API call efficiency (as well as
-	// give users a better experience by reducing queue latency). I plan to
-	// turn this back down once we've got some metrics on where our current ratio
-	// of shipper objects to API calls is and we start working towards optimizing
-	// that ratio.
-	shallowCopy.QPS = rest.DefaultQPS * 10
-	shallowCopy.Burst = rest.DefaultBurst * 10
-
-	return shipperclientset.NewForConfigOrDie(&shallowCopy)
-}
-
-func buildKubeClient(restCfg *rest.Config, ua string, timeout *time.Duration) *kubernetes.Clientset {
-	shallowCopy := *restCfg
-
-	rest.AddUserAgent(&shallowCopy, ua)
-
-	if timeout != nil {
-		shallowCopy.Timeout = *timeout
-	}
-	// NOTE(btyler): Like with the Shipper client, these are deliberately high.
-	// The vast majority of API calls here are Events, so optimization in
-	// this case will be examining utility of the various events we emit.
-
-	shallowCopy.QPS = rest.DefaultQPS * 10
-	shallowCopy.Burst = rest.DefaultBurst * 10
-
-	return kubernetes.NewForConfigOrDie(&shallowCopy)
 }
