@@ -507,7 +507,7 @@ func startRolloutBlockController(cfg *cfg) (bool, error) {
 	}
 
 	c := rolloutblock.NewController(
-		buildShipperClient(cfg.restCfg, rolloutblock.AgentName, cfg.restTimeout),
+		client.NewShipperClientOrDie(cfg.restCfg, rolloutblock.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.recorder(rolloutblock.AgentName),
 	)
@@ -532,7 +532,7 @@ func startWebhook(cfg *cfg) (bool, error) {
 		cfg.webhookBindPort,
 		cfg.webhookKeyPath,
 		cfg.webhookCertPath,
-		buildShipperClient(cfg.restCfg, rolloutblock.AgentName, cfg.restTimeout))
+		client.NewShipperClientOrDie(cfg.restCfg, rolloutblock.AgentName, cfg.restTimeout))
 
 	cfg.wg.Add(1)
 	go func() {
