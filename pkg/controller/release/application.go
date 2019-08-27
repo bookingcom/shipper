@@ -5,7 +5,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
@@ -14,6 +13,7 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
@@ -180,64 +180,23 @@ func (c *Controller) buildExecutor(incumbentRelease, contenderRelease *shipper.R
 	}, nil
 }
 
-func (c *Controller) sortedReleasesForApp(namespace, name string) ([]*shipper.Release, error) {
-	selector := labels.Set{
-		shipper.AppLabel: name,
-	}.AsSelector()
-
-	releases, err := c.releaseLister.Releases(namespace).List(selector)
-	if err != nil {
-		return nil, shippererrors.NewKubeclientListError(
-			shipper.SchemeGroupVersion.WithKind("Release"),
-			namespace, selector, err)
-	}
-
-	sorted, err := shippercontroller.SortReleasesByGeneration(releases)
-	if err != nil {
-		return nil, err
-	}
-
-	return sorted, nil
-}
-
 func (c *Controller) getWorkingReleasePair(app *shipper.Application) (*shipper.Release, *shipper.Release, error) {
-	appReleases, err := c.sortedReleasesForApp(app.GetNamespace(), app.GetName())
+
+	appReleases, err := c.releaseLister.Releases(app.Namespace).ReleasesForApplication(app.Name)
 	if err != nil {
 		return nil, nil, err
 	}
+	// Required by subsequent calls to GetContender and GetIncumbent.
+	appReleases = releaseutil.SortByGenerationDescending(appReleases)
 
-	if len(appReleases) == 0 {
-		err := fmt.Errorf(
-			"zero release records in app %q: will not execute strategy",
-			shippercontroller.MetaKey(app))
+	contender, err := apputil.GetContender(app.Name, appReleases)
+	if err != nil {
 		return nil, nil, shippererrors.NewRecoverableError(err)
 	}
 
-	// Walk backwards until we find a scheduled release. There may be pending
-	// releases ahead of the actual contender, that's not we're looking for.
-	var contender *shipper.Release
-	for i := len(appReleases) - 1; i >= 0; i-- {
-		if releaseutil.ReleaseScheduled(appReleases[i]) {
-			contender = appReleases[i]
-			break
-		}
-	}
-
-	if contender == nil {
-		err := fmt.Errorf("couldn't find a contender for Application %q",
-			shippercontroller.MetaKey(app))
-		return nil, nil, shippererrors.NewRecoverableError(err)
-	}
-
-	var incumbent *shipper.Release
-	// Walk backwards until we find an installed release that isn't the head of
-	// history. For releases A -> B -> C, if B was never finished this allows C to
-	// ignore it and let it get deleted so the transition is A->C.
-	for i := len(appReleases) - 1; i >= 0; i-- {
-		if releaseutil.ReleaseComplete(appReleases[i]) && contender != appReleases[i] {
-			incumbent = appReleases[i]
-			break
-		}
+	incumbent, err := apputil.GetIncumbent(app.Name, appReleases)
+	if err != nil && !shippererrors.IsIncumbentNotFoundError(err) {
+		return nil, nil, err
 	}
 
 	// It is OK if incumbent is nil. It just means this is our first rollout.

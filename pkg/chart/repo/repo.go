@@ -224,7 +224,11 @@ func (r *Repo) FetchRemote(cv *repo.ChartVersion) (*chart.Chart, error) {
 	url := chartURL.String()
 	data, err := r.fetcher(url)
 	if err != nil {
-		return nil, err
+		chart, convErr := newChart(cv)
+		if convErr != nil {
+			return nil, shippererrors.NewChartRepoInternalError(convErr)
+		}
+		return nil, shippererrors.NewChartFetchFailureError(chart, err)
 	}
 
 	chart, err := loadChartData(data)
@@ -306,4 +310,15 @@ func chart2file(cv *repo.ChartVersion) string {
 	version = strings.Replace(version, "/", "-", -1)
 
 	return fmt.Sprintf("%s-%s.tgz", name, version)
+}
+
+func newChart(cv *repo.ChartVersion) (*shipper.Chart, error) {
+	if len(cv.URLs) < 1 {
+		return nil, fmt.Errorf("chart version is missing URLs")
+	}
+	return &shipper.Chart{
+		Name:    cv.GetName(),
+		Version: cv.GetVersion(),
+		RepoURL: cv.URLs[0],
+	}, nil
 }

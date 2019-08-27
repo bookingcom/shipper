@@ -218,7 +218,9 @@ func (f *fixture) run() {
 
 	wait.PollUntil(
 		10*time.Millisecond,
-		func() (bool, error) { return controller.releaseWorkqueue.Len() >= 1, nil },
+		func() (bool, error) {
+			return (controller.releaseWorkqueue.Len() >= 1 || controller.applicationWorkqueue.Len() >= 1), nil
+		},
 		stopCh,
 	)
 
@@ -230,10 +232,8 @@ func (f *fixture) run() {
 		close(readyCh)
 	}()
 
-	for controller.releaseWorkqueue.Len() > 0 {
-		controller.processNextReleaseWorkItem()
-	}
-	for controller.applicationWorkqueue.Len() > 0 {
+	controller.processNextReleaseWorkItem()
+	if controller.applicationWorkqueue.Len() > 0 {
 		controller.processNextAppWorkItem()
 	}
 	close(f.recorder.Events)
@@ -903,7 +903,15 @@ func buildExpectedActions(release *shipper.Release, clusters []*shipper.Cluster)
 }
 
 func (f *fixture) expectAssociatedObjectsCreated(release *shipper.Release, clusters []*shipper.Cluster) {
+	clusterNames := make([]string, 0, len(clusters))
+	for _, cluster := range clusters {
+		clusterNames = append(clusterNames, cluster.GetName())
+	}
+	sort.Strings(clusterNames)
+	clusterNamesStr := strings.Join(clusterNames, ",")
+
 	expected := release.DeepCopy()
+	expected.Annotations[shipper.ReleaseClustersAnnotation] = clusterNamesStr
 	expected.Status.Conditions = []shipper.ReleaseCondition{
 		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
@@ -912,9 +920,13 @@ func (f *fixture) expectAssociatedObjectsCreated(release *shipper.Release, clust
 			[]string{"create"},
 			[]string{"installationtargets", "traffictargets", "capacitytargets"},
 		})
-	f.actions = buildExpectedActions(expected, clusters)
+	f.actions = append(f.actions, buildExpectedActions(expected, clusters)...)
+	f.actions = append(f.actions, kubetesting.NewUpdateAction(
+		shipper.SchemeGroupVersion.WithResource("releases"),
+		release.GetNamespace(),
+		expected))
 	relKey := fmt.Sprintf("%s/%s", release.GetNamespace(), release.GetName())
-	f.expectedEvents = []string{
+	f.expectedEvents = append(f.expectedEvents,
 		fmt.Sprintf(
 			"Normal ReleaseScheduled Created InstallationTarget \"%s\"",
 			relKey,
@@ -927,7 +939,7 @@ func (f *fixture) expectAssociatedObjectsCreated(release *shipper.Release, clust
 			"Normal ReleaseScheduled Created CapacityTarget \"%s\"",
 			relKey,
 		),
-	}
+	)
 }
 
 func (f *fixture) expectReleaseScheduled(release *shipper.Release, clusters []*shipper.Cluster) {
@@ -945,23 +957,15 @@ func (f *fixture) expectReleaseScheduled(release *shipper.Release, clusters []*s
 	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 	releaseutil.SetReleaseCondition(&expectedWithConditions.Status, *condition)
 
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			release.GetNamespace(),
-			expected),
-	}
-
-	f.actions = append(f.actions, expectedActions...)
 	f.filter = f.filter.Extend(actionfilter{[]string{"update"}, []string{"releases"}})
 	relKey := fmt.Sprintf("%s/%s", release.GetNamespace(), release.GetName())
-	f.expectedEvents = []string{
+	f.expectedEvents = append(f.expectedEvents,
 		fmt.Sprintf(
 			"Normal ClustersSelected Set clusters for \"%s\" to %s",
 			relKey,
 			clusterNamesStr,
 		),
-	}
+	)
 }
 
 func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipper.Release, value uint, totalReplicaCount uint, role role) {
@@ -1463,7 +1467,7 @@ func (f *fixture) expectTrafficNotReady(relpair releaseInfoPair, targetStep, ach
 	f.expectedEvents = []string{}
 }
 
-func TestControllerComputeTargetClusters(t *testing.T) {
+func TestControllerComputeTargetClustersAndCreateAssociatedObjects(t *testing.T) {
 	namespace := "test-namespace"
 	app := buildApplication(namespace, "test-app")
 	cluster := buildCluster("minikube")
@@ -1478,25 +1482,8 @@ func TestControllerComputeTargetClusters(t *testing.T) {
 	)
 
 	f.expectReleaseScheduled(contender.release.DeepCopy(), []*shipper.Cluster{cluster})
-	f.run()
-}
-
-func TestControllerCreateAssociatedObjects(t *testing.T) {
-	namespace := "test-namespace"
-	app := buildApplication(namespace, "test-app")
-	cluster := buildCluster("minikube")
-
-	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
-	contenderName := "test-contender"
-	var replicaCount int32 = 1
-	contender := f.buildContender(namespace, contenderName, replicaCount)
-	contender.release.ObjectMeta.Annotations[shipper.ReleaseClustersAnnotation] = cluster.Name
-
-	f.addObjects(
-		contender.release.DeepCopy(),
-	)
-
 	f.expectAssociatedObjectsCreated(contender.release.DeepCopy(), []*shipper.Cluster{cluster})
+
 	f.run()
 }
 
@@ -1792,7 +1779,7 @@ func TestContenderCapacityShouldIncreaseWithRolloutBlockOverride(t *testing.T) {
 		r := contender.release.DeepCopy()
 		f.expectCapacityStatusPatch(ct, r, 50, uint(totalReplicaCount), Contender)
 		overrideEvent := fmt.Sprintf("%s RolloutBlockOverriden %s", corev1.EventTypeNormal, rolloutBlockKey)
-		f.expectedEvents = append(f.expectedEvents, overrideEvent, overrideEvent) // one for contender, one for incumbent
+		f.expectedEvents = append(f.expectedEvents, overrideEvent)
 		f.run()
 	}
 }
@@ -1940,7 +1927,7 @@ func TestContenderTrafficShouldIncreaseWithRolloutBlockOverride(t *testing.T) {
 		r := contender.release.DeepCopy()
 		f.expectTrafficStatusPatch(tt, r, 50, Contender)
 		overrideEvent := fmt.Sprintf("%s RolloutBlockOverriden %s", corev1.EventTypeNormal, rolloutBlockKey)
-		f.expectedEvents = append(f.expectedEvents, overrideEvent, overrideEvent) // one for contender, one for incumbent
+		f.expectedEvents = append(f.expectedEvents, overrideEvent)
 		f.run()
 	}
 }
@@ -2093,7 +2080,7 @@ func TestIncumbentTrafficShouldDecreaseWithRolloutBlockOverride(t *testing.T) {
 		r := contender.release.DeepCopy()
 		f.expectTrafficStatusPatch(tt, r, 50, Incumbent)
 		overrideEvent := fmt.Sprintf("%s RolloutBlockOverriden %s", corev1.EventTypeNormal, rolloutBlockKey)
-		f.expectedEvents = append(f.expectedEvents, overrideEvent, overrideEvent) // one for contender, one for incumbent
+		f.expectedEvents = append(f.expectedEvents, overrideEvent)
 		f.run()
 	}
 }
@@ -2254,7 +2241,7 @@ func TestIncumbentCapacityShouldDecreaseWithRolloutBlockOverride(t *testing.T) {
 		r := contender.release.DeepCopy()
 		f.expectCapacityStatusPatch(tt, r, 50, uint(totalReplicaCount), Incumbent)
 		overrideEvent := fmt.Sprintf("%s RolloutBlockOverriden %s", corev1.EventTypeNormal, rolloutBlockKey)
-		f.expectedEvents = append(f.expectedEvents, overrideEvent, overrideEvent) // one for contender, one for incumbent
+		f.expectedEvents = append(f.expectedEvents, overrideEvent)
 		f.run()
 	}
 }
@@ -2654,4 +2641,109 @@ func TestShouldNotProducePatches(t *testing.T) {
 		go workingOnIncumbentCapacity(i, &wg, t)
 	}
 	wg.Wait()
+}
+
+func TestControllerChooseClusters(t *testing.T) {
+	namespace := "test-namespace"
+	app := buildApplication(namespace, "test-app")
+
+	clusterA := buildCluster("minikube-a")
+	clusterB := buildCluster("minikube-b")
+
+	f := newFixture(t, app.DeepCopy(), clusterA.DeepCopy(), clusterB.DeepCopy())
+
+	contender := buildRelease()
+
+	replicaCount := int32(2)
+	contender.Spec.Environment.ClusterRequirements.Regions[0].Replicas = &replicaCount
+	f.addObjects(contender.DeepCopy())
+
+	expected := contender.DeepCopy()
+	expected.Annotations[shipper.ReleaseClustersAnnotation] = fmt.Sprintf("%s,%s", clusterA.Name, clusterB.Name)
+	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&expected.Status, *condition)
+
+	f.actions = []kubetesting.Action{
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			contender.GetNamespace(),
+			expected),
+	}
+
+	f.filter = f.filter.Extend(actionfilter{[]string{"update"}, []string{"releases"}})
+
+	relKey := fmt.Sprintf("%s/%s", contender.GetNamespace(), contender.GetName())
+	f.expectedEvents = append(f.expectedEvents,
+		fmt.Sprintf(
+			"Normal ClustersSelected Set clusters for \"%s\" to %s,%s",
+			relKey,
+			clusterA.Name,
+			clusterB.Name,
+		),
+		fmt.Sprintf(
+			"Normal ReleaseScheduled Created InstallationTarget \"%s\"",
+			relKey,
+		),
+		fmt.Sprintf(
+			"Normal ReleaseScheduled Created TrafficTarget \"%s\"",
+			relKey,
+		),
+		fmt.Sprintf(
+			"Normal ReleaseScheduled Created CapacityTarget \"%s\"",
+			relKey,
+		),
+	)
+
+	f.run()
+}
+
+func TestControllerChooseClustersSkipsUnschedulable(t *testing.T) {
+	namespace := "test-namespace"
+	app := buildApplication(namespace, "test-app")
+
+	clusterA := buildCluster("minikube-a")
+	clusterB := buildCluster("minikube-b")
+	clusterB.Spec.Scheduler.Unschedulable = true
+
+	f := newFixture(t, app.DeepCopy(), clusterA.DeepCopy(), clusterB.DeepCopy())
+
+	contender := buildRelease()
+	f.addObjects(contender.DeepCopy())
+
+	expected := contender.DeepCopy()
+	expected.Annotations[shipper.ReleaseClustersAnnotation] = clusterA.Name
+	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&expected.Status, *condition)
+
+	f.actions = []kubetesting.Action{
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			contender.GetNamespace(),
+			expected),
+	}
+
+	f.filter = f.filter.Extend(actionfilter{[]string{"update"}, []string{"releases"}})
+
+	relKey := fmt.Sprintf("%s/%s", contender.GetNamespace(), contender.GetName())
+	f.expectedEvents = append(f.expectedEvents,
+		fmt.Sprintf(
+			"Normal ClustersSelected Set clusters for \"%s\" to %s",
+			relKey,
+			clusterA.Name,
+		),
+		fmt.Sprintf(
+			"Normal ReleaseScheduled Created InstallationTarget \"%s\"",
+			relKey,
+		),
+		fmt.Sprintf(
+			"Normal ReleaseScheduled Created TrafficTarget \"%s\"",
+			relKey,
+		),
+		fmt.Sprintf(
+			"Normal ReleaseScheduled Created CapacityTarget \"%s\"",
+			relKey,
+		),
+	)
+
+	f.run()
 }

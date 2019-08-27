@@ -1,9 +1,9 @@
 package application
 
 import (
-	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/errors"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 // GetContender returns the contender from the given Release slice. The slice
@@ -21,7 +21,15 @@ func GetContender(appName string, rels []*shipper.Release) (*shipper.Release, er
 // An incumbent release is the first release in this slice that is considered
 // completed.
 func GetIncumbent(appName string, rels []*shipper.Release) (*shipper.Release, error) {
+	contender, err := GetContender(appName, rels)
+	if err != nil {
+		return nil, err
+	}
 	for _, r := range rels {
+		// As per https://github.com/bookingcom/shipper/pull/166#discussion_r319758380
+		if r.GetName() == contender.GetName() {
+			continue
+		}
 		if releaseutil.ReleaseComplete(r) {
 			return r, nil
 		}
