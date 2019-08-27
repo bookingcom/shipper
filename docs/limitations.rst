@@ -45,7 +45,7 @@ able to balance traffic between multiple *Releases*.
 
 If you cannot modify the Chart you're rolling out, you can ask Shipper to
 remove the ``release`` selector from the *Service* ``selector`` by adding the
-``enable-helm-release-workaround: true`` label to your *Application*. This
+``enable-helm-release-workaround: "true"`` label to your *Application*. This
 workaround helps make Charts created with ``helm create`` work out of the box.
 
 **************
