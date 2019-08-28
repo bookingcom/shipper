@@ -23,7 +23,7 @@ defining the range of acceptable chart versions. Shipper will resolve an
 appropriate available chart version and pin the *Release* on it. Shipper
 resolves the version in-place: it will substitute the initial constraint with a
 specific resolved version and preserve the initial constraint in the Application
-annotation.
+annotation named ``shipper.booking.com/app.chart.version.raw``.
 
 The resolved ``.spec.template`` field will be copied to a new *Release*
 object under the ``.spec.environment`` field during deployment.
