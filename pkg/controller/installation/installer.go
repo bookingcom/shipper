@@ -500,8 +500,9 @@ func (i *Installer) installManifests(
 		}
 
 		// If the existing object is owned by the installation target,
-		// it doesn't need any installation, and we don't want to
-		// updated because reasons.
+		// it doesn't need any installation, we don't want to update it
+		// because it's common practice for users and other controllers
+		// to patch objects, and expect that they'll remain changed.
 		//
 		// If it's owned by a different installation target, it'll be
 		// overwritten only if it.Spec.CanOverride == true.
