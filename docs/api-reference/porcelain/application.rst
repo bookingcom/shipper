@@ -17,7 +17,15 @@ object on each edit. This model is identical to to Kubernetes *Deployment*
 objects and their ``.spec.template`` field, which serves as a mold for
 *ReplicaSet* objects (and by extension, *Pod* objects).
 
-The ``.spec.template`` field will be copied to a new *Release*
+Application's ``.spec.template.chart`` contains ambiguity by design: a user is
+expected to provide either a specific chart version or a *SemVer constraint*
+defining the range of acceptable chart versions. Shipper will resolve an
+appropriate available chart version and pin the *Release* on it. Shipper
+resolves the version in-place: it will substitute the initial constraint with a
+specific resolved version and preserve the initial constraint in the Application
+annotation.
+
+The resolved ``.spec.template`` field will be copied to a new *Release*
 object under the ``.spec.environment`` field during deployment.
 
 *******
@@ -52,6 +60,11 @@ The ``.spec.template`` is the only required field of the ``.spec``.
 The ``.spec.template`` is a *Release* template. It has the same schema as the
 :ref:`.spec.environment <api-reference_release_environment>` in a *Release*
 object.
+
+*Application*'s ``.spec.template`` can define either a specific chart version,
+or a SemVer constraint.
+
+Please refer to `Semantic Version Ranges`_ section for more details on supported cosntrtaints.
 
 ******
 Status
@@ -173,3 +186,84 @@ form a valid sequence.
       - BrokenApplicationObservedGeneration
       - The *Application* has an invalid ``highestObservedGeneration``
         annotation. check ``message`` for more details.
+
+***********************
+Semantic Version Ranges
+***********************
+
+Shipper supports an extended range of semantic version constraints in
+Application's ``.spec.template.chart.version``.
+
+This section highlights the major features of supported SemVer constraints. For
+a full reference please see `the underlying library spec`_.
+
+.. _the underlying library spec: https://github.com/Masterminds/semver/blob/master/README.md
+
+Composition
+===========
+
+SemVer specifications are composable: there are 2 composition operators defined:
+- ``,``: stands for AND
+- ``||``: stands for OR
+
+In the example ``>=1.2.3, <3.4.5 || 6.7.8`` the constraint defines a range where
+any version between 1.2.3 inclusive *and* 3.4.5 non-inclusive, *or* a specific
+version 6.7.8 would satisfy it.
+
+Trivial Comparisons
+===================
+
+Trivial comparison constraints belong to a category of equality check
+relationships.
+
+The range of comparison checks is defined as:
+- ``=``: strictly equal to
+- ``!=``: not equal to
+- ``>``: greater than (non-inclusive)
+- ``<``: less than (non-inclusive)
+- ``>=``: greater than or equal to (inclusive)
+- ``<=``: less than or equal to (inclusive)
+
+The rest of the constraints is mainly a semantical syntax sugar and is fully
+based on this category therefore the forecoming constraints are explained using
+these operators.
+
+Hyphens
+=======
+
+A hyphen-separated range is an equivalent to defining a lower and an upper
+bound for a range of acceptable versions.
+
+- ``1.2.3-4.5.6`` is equivalent to ``>=1.2.3, <=4.5.6``
+- ``1.2-4.5`` is equivalent to ``>=1.2, <=4.5``
+
+Wildcards
+=========
+
+There are 3 wildcard characters: ``x``, ``X`` and ``*``. They are absolutely
+equivalent to each other: ``1.2.*`` is the same as ``1.2.X``.
+
+- ``1.2.x`` is equivalent to ``>=1.2.0, <1.3.0`` (note the non-inclusive range)
+- ``>=1.2.*`` is equivalent to ``>=1.2.0`` (the wildcard is optional here)
+- ``*`` is equivalent to ``>=0.0.0`` (one can use ``x`` and ``X`` as well)
+
+Tildes
+======
+
+A tilde is a context-dependant operator: it changes the range based on the
+least significant version component provided.
+
+- ``~1.2.3`` is equivalent to ``>=1.2.3, <1.3.0``
+- ``~1.2`` is equivalent to ``>=1.2, <1.3``
+- ``~1`` is equivalent to ``>=1, <2``
+
+Carets
+======
+
+Carets pin the major version to a specific branch.
+
+- ``^1.2.3`` is equivalent to ``>=1.2.3, <2.0.0``
+- ``^1.2`` is equivalent to ``>=1.2, <2.0``
+
+A caret-defined constraint is a handy way to say: give me the latest non-breaking
+version.
