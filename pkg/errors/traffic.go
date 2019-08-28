@@ -7,7 +7,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 )
 
-// TODO(jgreff): this can be reused to replace NewIncompleteReleaseError
 type MissingShipperLabelError struct {
 	tt    *shipper.TrafficTarget
 	label string

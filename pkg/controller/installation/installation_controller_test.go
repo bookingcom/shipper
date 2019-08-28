@@ -5,6 +5,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	runtimeutil "k8s.io/apimachinery/pkg/util/runtime"
@@ -26,47 +27,17 @@ const (
 	repoUrl = "https://charts.example.com"
 )
 
-func TestInstallIncumbent(t *testing.T) {
-	cluster := buildCluster("minikube-a")
-	appName := "reviews-api"
-	testNs := "reviews-api"
-	incumbentRel := buildRelease(repoUrl, testNs, "release-1", "0.0.1", "0", "deadbeef", appName)
-	contenderRel := buildRelease(repoUrl, testNs, "release-2", "0.0.2", "1", "beefdead", appName)
-	incumbentIt := buildInstallationTarget(incumbentRel, testNs, appName, []string{cluster.Name})
-
-	shipperObjects := []runtime.Object{cluster, contenderRel, incumbentRel, incumbentIt}
-	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory := initializeClients(apiResourceList, shipperObjects, objectsPerClusterMap{cluster.Name: nil})
-	clusterPair := clientsPerCluster[cluster.Name]
-
-	fakeClientProvider := &FakeClientProvider{
-		clientsPerCluster: clientsPerCluster,
-		restConfig:        &rest.Config{},
-	}
-	fakeRecorder := record.NewFakeRecorder(42)
-
-	c := newController(
-		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
-
-	if !c.processNextWorkItem() {
-		t.Fatal("Could not process work item")
-	}
-
-	expectedActions := []kubetesting.Action{}
-	shippertesting.CheckActions(expectedActions, clusterPair.fakeDynamicClient.Actions(), t)
-}
-
 // TestInstallOneCluster tests the installation process using the
 // installation.Controller.
 func TestInstallOneCluster(t *testing.T) {
 	cluster := buildCluster("minikube-a")
 	appName := "reviews-api"
-	testNs := "reviews-api"
-	app := buildApplication(appName, appName)
-	release := buildRelease(repoUrl, testNs, "release", "0.0.1", "0", "deadbeef", app.Name)
-	installationTarget := buildInstallationTarget(release, testNs, appName, []string{cluster.Name})
+	testNs := "test-namespace"
+	chart := buildChart(appName, "0.0.1", repoUrl)
+	installationTarget := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 
 	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, []runtime.Object{app, cluster, release, installationTarget}, objectsPerClusterMap{cluster.Name: []runtime.Object{}})
+		initializeClients(apiResourceList, []runtime.Object{cluster, installationTarget}, objectsPerClusterMap{cluster.Name: []runtime.Object{}})
 
 	clusterPair := clientsPerCluster[cluster.Name]
 	fakeClientProvider := &FakeClientProvider{
@@ -91,16 +62,16 @@ func TestInstallOneCluster(t *testing.T) {
 	// fakeDynamicClientBuilder function passed to the controller, which mimics a
 	// connection to a Target Cluster.
 	expectedDynamicActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, nil),
 	}
 	shippertesting.ShallowCheckActions(expectedDynamicActions, clusterPair.fakeDynamicClient.Actions(), t)
 
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, nil),
 		shippertesting.NewDiscoveryAction("services"),
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
@@ -117,6 +88,7 @@ func TestInstallOneCluster(t *testing.T) {
 	// Now we need to check if the installation target process was properly
 	// patched.
 	it := installationTarget.DeepCopy()
+	it.Spec.CanOverride = false
 	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
 			Name: "minikube-a", Status: shipper.InstallationStatusInstalled,
@@ -137,7 +109,7 @@ func TestInstallOneCluster(t *testing.T) {
 			Resource: "installationtargets",
 			Version:  shipper.SchemeGroupVersion.Version,
 			Group:    shipper.SchemeGroupVersion.Group,
-		}, release.GetNamespace(), it),
+		}, testNs, it),
 	}
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
@@ -147,12 +119,11 @@ func TestInstallMultipleClusters(t *testing.T) {
 	clusterB := buildCluster("minikube-b")
 	appName := "reviews-api"
 	testNs := "reviews-api"
-	app := buildApplication(appName, testNs)
-	release := buildRelease(repoUrl, testNs, "release", "0.0.1", "0", "deadbeef", appName)
-	installationTarget := buildInstallationTarget(release, testNs, appName, []string{clusterA.Name, clusterB.Name})
+	chart := buildChart(appName, "0.0.1", repoUrl)
+	installationTarget := buildInstallationTarget(testNs, appName, []string{clusterA.Name, clusterB.Name}, &chart)
 
 	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, []runtime.Object{app, clusterA, clusterB, release, installationTarget}, objectsPerClusterMap{
+		initializeClients(apiResourceList, []runtime.Object{clusterA, clusterB, installationTarget}, objectsPerClusterMap{
 			clusterA.Name: []runtime.Object{},
 			clusterB.Name: []runtime.Object{},
 		})
@@ -179,15 +150,15 @@ func TestInstallMultipleClusters(t *testing.T) {
 	// fakeDynamicClientBuilder function passed to the controller, which mimics a
 	// connection to a Target Cluster.
 	expectedDynamicActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), "0.0.1-reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, release.GetNamespace(), nil),
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), "0.0.1-reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, nil),
 	}
 
 	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), "0.0.1-anchor"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, release.GetNamespace(), nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, nil),
 		shippertesting.NewDiscoveryAction("services"),
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
@@ -208,6 +179,7 @@ func TestInstallMultipleClusters(t *testing.T) {
 	// Now we need to check if the installation target process was properly patched
 	// and the clusters are listed in alphabetical order.
 	it := installationTarget.DeepCopy()
+	it.Spec.CanOverride = false
 	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
 			Name:   "minikube-a",
@@ -243,53 +215,9 @@ func TestInstallMultipleClusters(t *testing.T) {
 			Resource: "installationtargets",
 			Version:  shipper.SchemeGroupVersion.Version,
 			Group:    shipper.SchemeGroupVersion.Group,
-		}, release.GetNamespace(), it),
+		}, testNs, it),
 	}
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
-}
-
-// TestMissingRelease tests a case that the installation target object is being
-// processed but the release it refers to doesn't exist in the management
-// cluster anymore.
-//
-// This doesn't raise an error, but handles it to Kubernetes runtime.HandleError
-// instead, so this test checks whether or not HandleError has been called and
-// if it has been called with the message we expect.
-func TestMissingRelease(t *testing.T) {
-	var shipperclientset *shipperfake.Clientset
-
-	cluster := buildCluster("minikube-a")
-	appName := "reviews-api"
-	testNs := "reviews-api"
-	installationTarget := buildInstallationTargetWithOwner("0.0.1", "deadbeef", testNs, appName, []string{cluster.Name})
-
-	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, []runtime.Object{cluster, installationTarget}, nil)
-
-	fakeClientProvider := &FakeClientProvider{
-		clientsPerCluster: clientsPerCluster,
-		restConfig:        &rest.Config{},
-	}
-	fakeRecorder := record.NewFakeRecorder(42)
-
-	c := newController(
-		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
-
-	handleErrors := 0
-	runtimeutil.ErrorHandlers = []func(error){
-		func(err error) {
-			handleErrors++
-		},
-	}
-
-	if !c.processNextWorkItem() {
-		t.Fatal("Could not process work item")
-	}
-
-	const expectedHandleErrors = 1
-	if handleErrors != expectedHandleErrors {
-		t.Fatalf("expected %d handle errors, got %d instead", expectedHandleErrors, handleErrors)
-	}
 }
 
 // TestClientError tests a case where an error has been returned by the
@@ -304,12 +232,11 @@ func TestClientError(t *testing.T) {
 	cluster := buildCluster("minikube-a")
 	appName := "reviews-api"
 	testNs := "reviews-api"
-	app := buildApplication(appName, testNs)
-	release := buildRelease(repoUrl, testNs, "release", "0.0.1", "0", "deadbeef", appName)
-	installationTarget := buildInstallationTarget(release, testNs, appName, []string{cluster.Name})
+	chart := buildChart(appName, "0.0.1", repoUrl)
+	installationTarget := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 
 	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, []runtime.Object{app, release, cluster, installationTarget}, nil)
+		initializeClients(apiResourceList, []runtime.Object{cluster, installationTarget}, nil)
 
 	fakeClientProvider := &FakeClientProvider{
 		clientsPerCluster:   clientsPerCluster,
@@ -364,7 +291,7 @@ func TestClientError(t *testing.T) {
 			Resource: "installationtargets",
 			Version:  shipper.SchemeGroupVersion.Version,
 			Group:    shipper.SchemeGroupVersion.Group,
-		}, release.GetNamespace(), it),
+		}, testNs, it),
 	}
 	var filteredActions []kubetesting.Action
 	for _, a := range shipperclientset.Actions() {
@@ -388,12 +315,11 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 	cluster := buildCluster("minikube-a")
 	appName := "reviews-api"
 	testNs := "reviews-api"
-	app := buildApplication(appName, testNs)
-	release := buildRelease(repoUrl, testNs, "release", "0.0.1", "0", "deadbeef", appName)
-	installationTarget := buildInstallationTarget(release, testNs, appName, []string{cluster.Name})
+	chart := buildChart(appName, "0.0.1", repoUrl)
+	installationTarget := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 
 	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients([]*v1.APIResourceList{}, []runtime.Object{app, release, cluster, installationTarget}, objectsPerClusterMap{cluster.Name: nil})
+		initializeClients([]*v1.APIResourceList{}, []runtime.Object{cluster, installationTarget}, objectsPerClusterMap{cluster.Name: nil})
 
 	fakeClientProvider := &FakeClientProvider{
 		clientsPerCluster: clientsPerCluster,
@@ -445,7 +371,7 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 			Resource: "installationtargets",
 			Version:  shipper.SchemeGroupVersion.Version,
 			Group:    shipper.SchemeGroupVersion.Group,
-		}, release.GetNamespace(), it),
+		}, testNs, it),
 	}
 	var filteredActions []kubetesting.Action
 	for _, a := range shipperclientset.Actions() {
@@ -468,12 +394,11 @@ func TestManagementServerMissesCluster(t *testing.T) {
 
 	appName := "reviews-api"
 	testNs := "reviews-api"
-	app := buildApplication(appName, testNs)
-	release := buildRelease(repoUrl, testNs, "release", "0.0.1", "0", "deadbeef", appName)
-	installationTarget := buildInstallationTarget(release, testNs, appName, []string{"minikube-a"})
+	chart := buildChart(appName, "0.0.1", repoUrl)
+	installationTarget := buildInstallationTarget(testNs, appName, []string{"minikube-a"}, &chart)
 
 	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, []runtime.Object{app, release, installationTarget}, nil)
+		initializeClients(apiResourceList, []runtime.Object{installationTarget}, nil)
 
 	fakeClientProvider := &FakeClientProvider{
 		clientsPerCluster: clientsPerCluster,
@@ -527,7 +452,7 @@ func TestManagementServerMissesCluster(t *testing.T) {
 			Resource: "installationtargets",
 			Version:  shipper.SchemeGroupVersion.Version,
 			Group:    shipper.SchemeGroupVersion.Group,
-		}, release.GetNamespace(), it),
+		}, testNs, it),
 	}
 	var filteredActions []kubetesting.Action
 	for _, a := range shipperclientset.Actions() {
@@ -536,5 +461,113 @@ func TestManagementServerMissesCluster(t *testing.T) {
 		}
 	}
 
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
+}
+
+// TestInstallNoOverride verifies that an InstallationTarget with disabled
+// overrides does not get processed.
+func TestInstallNoOverride(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "test-namespace"
+	chart := buildChart(appName, "0.0.1", repoUrl)
+
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	it.Spec.CanOverride = false
+
+	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
+		initializeClients(apiResourceList, []runtime.Object{cluster, it},
+			objectsPerClusterMap{cluster.Name: []runtime.Object{}})
+
+	clusterPair := clientsPerCluster[cluster.Name]
+	fakeClientProvider := &FakeClientProvider{
+		clientsPerCluster: clientsPerCluster,
+		restConfig:        &rest.Config{},
+	}
+
+	fakeRecorder := record.NewFakeRecorder(42)
+
+	c := newController(shipperclientset, shipperInformerFactory,
+		fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
+
+	if !c.processNextWorkItem() {
+		t.Fatal("Could not process work item")
+	}
+
+	expectedActions := []kubetesting.Action{}
+	shippertesting.ShallowCheckActions(expectedActions, clusterPair.fakeDynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, clusterPair.fakeClient.Actions(), t)
+}
+
+func TestInstallWithoutChart(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "test-namespace"
+	chart := buildChart(appName, "0.0.1", repoUrl)
+
+	rel := buildRelease(testNs, appName, chart)
+
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, nil)
+	it.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
+		{
+			APIVersion: shipper.SchemeGroupVersion.String(),
+			Kind:       "Release",
+			Name:       rel.GetName(),
+			UID:        rel.GetUID(),
+		},
+	}
+
+	shipperObjects := []runtime.Object{cluster, rel, it}
+	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
+		initializeClients(apiResourceList, shipperObjects,
+			objectsPerClusterMap{cluster.Name: []runtime.Object{}})
+
+	fakeClientProvider := &FakeClientProvider{
+		clientsPerCluster: clientsPerCluster,
+		restConfig:        &rest.Config{},
+	}
+
+	fakeRecorder := record.NewFakeRecorder(42)
+
+	c := newController(shipperclientset, shipperInformerFactory,
+		fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
+
+	if !c.processNextWorkItem() {
+		t.Fatal("Could not process work item")
+	}
+
+	var filteredActions []kubetesting.Action
+	for _, a := range shipperclientset.Actions() {
+		if a.GetVerb() == "update" {
+			filteredActions = append(filteredActions, a)
+		}
+	}
+
+	it = it.DeepCopy()
+	it.Spec.CanOverride = false
+	it.Spec.Chart = &chart
+	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
+		{
+			Name: "minikube-a", Status: shipper.InstallationStatusInstalled,
+			Conditions: []shipper.ClusterInstallationCondition{
+				{
+					Type:   shipper.ClusterConditionTypeOperational,
+					Status: corev1.ConditionTrue,
+				},
+				{
+					Type:   shipper.ClusterConditionTypeReady,
+					Status: corev1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewUpdateAction(schema.GroupVersionResource{
+			Resource: "installationtargets",
+			Version:  shipper.SchemeGroupVersion.Version,
+			Group:    shipper.SchemeGroupVersion.Group,
+		}, testNs, it),
+	}
 	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }

@@ -107,7 +107,10 @@ func buildAssociatedObjects(release *shipper.Release, clusters []*shipper.Cluste
 			},
 		},
 		Spec: shipper.InstallationTargetSpec{
-			Clusters: clusterNames,
+			Clusters:    clusterNames,
+			CanOverride: true,
+			Chart:       release.Spec.Environment.Chart.DeepCopy(),
+			Values:      release.Spec.Environment.Values,
 		},
 	}
 
@@ -570,6 +573,11 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetMismatchingClusters(t
 				shipper.AppLabel:     release.OwnerReferences[0].Name,
 				shipper.ReleaseLabel: release.GetName(),
 			},
+		},
+		Spec: shipper.InstallationTargetSpec{
+			Chart:       release.Spec.Environment.Chart.DeepCopy(),
+			Values:      release.Spec.Environment.Values,
+			CanOverride: true,
 		},
 	}
 

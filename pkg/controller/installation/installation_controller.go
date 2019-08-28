@@ -213,32 +213,36 @@ func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 	c.workqueue.Add(key)
 }
 
-// processInstallation attempts to install the related release on all target clusters.
+// processInstallation attempts to install the related InstallationTarget on
+// all target clusters.
 func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
-	relNamespaceLister := c.releaseLister.Releases(it.Namespace)
-
-	release, err := relNamespaceLister.ReleaseForInstallationTarget(it)
-	if err != nil {
-		return err
-	}
-
-	appName, ok := release.GetLabels()[shipper.AppLabel]
-	if !ok {
-		return shippererrors.NewIncompleteReleaseError(`couldn't find label %q in release %q`, shipper.AppLabel, release.Name)
-	}
-
-	contenderRel, err := relNamespaceLister.ContenderForApplication(appName)
-	if err != nil {
-		return err
-	}
-
-	if contenderRel.Name != release.Name {
-		glog.V(3).Infof("InstallationTarget %q: Release %q is not the contender for Application %q, skipping",
-			it.Name, release.Name, appName)
+	if !it.Spec.CanOverride {
+		glog.V(3).Infof("InstallationTarget %q is not allowed to override, skipping", it.Name)
 		return nil
 	}
 
-	installer := NewInstaller(c.chartFetcher, release, it)
+	// If an InstallationTarget was created before we introduced
+	// self-contained InstallationTargets, it will not contain a chart nor
+	// values, so it will need to be migrated. We do so by getting those
+	// values from the release.
+	// Note that this is temporary. After this code gets released, it can
+	// safely be dropped in the next version.
+	if it.Spec.Chart == nil {
+		relNamespaceLister := c.releaseLister.Releases(it.Namespace)
+
+		release, err := relNamespaceLister.ReleaseForInstallationTarget(it)
+		if err != nil {
+			return shippererrors.NewUnrecoverableError(fmt.Errorf(
+				"InstallationTarget is missing Chart, and the owning release cannot be found: %s", err))
+		}
+
+		it.Spec.Chart = release.Spec.Environment.Chart.DeepCopy()
+
+		if release.Spec.Environment.Values != nil {
+			values := release.Spec.Environment.Values.DeepCopy()
+			it.Spec.Values = &values
+		}
+	}
 
 	// Build .status over based on the current .spec.clusters.
 	newClusterStatuses := make([]*shipper.ClusterInstallationStatus, 0, len(it.Spec.Clusters))
@@ -253,6 +257,7 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 	// not be operational if operations on the application cluster fail for any
 	// reason.
 
+	installer := NewInstaller(c.chartFetcher, it)
 	clusterErrors := shippererrors.NewMultiError()
 
 	for _, name := range it.Spec.Clusters {
@@ -269,13 +274,27 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 		newClusterStatuses = append(newClusterStatuses, status)
 
 		var cluster *shipper.Cluster
+		var err error
 		if cluster, err = c.clusterLister.Get(name); err != nil {
-			err = shippererrors.NewKubeclientGetError("", name, err).WithShipperKind("Cluster")
+			err = shippererrors.NewKubeclientGetError("", name, err).
+				WithShipperKind("Cluster")
 			clusterErrors.Append(err)
 			status.Status = shipper.InstallationStatusFailed
 			status.Message = err.Error()
-			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeOperational, corev1.ConditionFalse, reasonForOperationalCondition(err), err.Error())
-			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeReady, corev1.ConditionUnknown, reasonForReadyCondition(err), err.Error())
+			status.Conditions = conditions.SetInstallationCondition(
+				status.Conditions,
+				shipper.ClusterConditionTypeOperational,
+				corev1.ConditionFalse,
+				reasonForOperationalCondition(err),
+				err.Error())
+
+			status.Conditions = conditions.SetInstallationCondition(
+				status.Conditions,
+				shipper.ClusterConditionTypeReady,
+				corev1.ConditionUnknown,
+				reasonForReadyCondition(err),
+				err.Error())
+
 			continue
 		}
 
@@ -296,7 +315,7 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 		// otherwise arrives.
 		status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeOperational, corev1.ConditionTrue, "", "")
 
-		if err = installer.installRelease(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
+		if err = installer.install(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
 			clusterErrors.Append(err)
 			status.Status = shipper.InstallationStatusFailed
 			status.Message = err.Error()
@@ -311,7 +330,11 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 	sort.Sort(byClusterName(newClusterStatuses))
 	it.Status.Clusters = newClusterStatuses
 
-	_, err = c.shipperclientset.ShipperV1alpha1().InstallationTargets(it.Namespace).Update(it)
+	if !clusterErrors.Any() {
+		it.Spec.CanOverride = false
+	}
+
+	_, err := c.shipperclientset.ShipperV1alpha1().InstallationTargets(it.Namespace).Update(it)
 	if err != nil {
 		err = shippererrors.NewKubeclientUpdateError(it, err).
 			WithShipperKind("InstallationTarget")
