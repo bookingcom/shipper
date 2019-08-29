@@ -9,7 +9,7 @@ TEST_STATUS=$?
 
 # Remove yaml artifacts that we no longer need, so they don't end up in
 # releases
-rm build/*.latest.yaml
+rm -f build/*.latest.yaml
 
 # Output all of the logs from the shipper pod, for reference
 kubectl -n shipper-system logs -l app=shipper --tail=-1

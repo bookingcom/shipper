@@ -52,7 +52,7 @@ OS := linux windows darwin
 
 # The operating system where we're currently running. This is just a shorthand
 # for a few targets.
-GOOS := $(shell go env GOOS)
+GOOS ?= $(shell go env GOOS)
 
 VERSION_PKG := github.com/bookingcom/shipper/pkg/version
 LDFLAGS := -ldflags "-X $(VERSION_PKG).Version=$(SHIPPER_VERSION)"
