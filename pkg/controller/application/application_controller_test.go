@@ -432,7 +432,6 @@ func TestStatusStableState(t *testing.T) {
 	}
 
 	releaseA.Status.Conditions = []shipper.ReleaseCondition{
-		{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
 		{Type: shipper.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
 	}
 
@@ -453,7 +452,6 @@ func TestStatusStableState(t *testing.T) {
 	}
 
 	releaseB.Status.Conditions = []shipper.ReleaseCondition{
-		{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
 		{Type: shipper.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
 	}
 
@@ -976,7 +974,6 @@ func TestStateRollingOut(t *testing.T) {
 	incumbent := newRelease(incumbentName, app)
 	incumbent.Annotations[shipper.ReleaseGenerationAnnotation] = "0"
 	incumbent.Status.Conditions = []shipper.ReleaseCondition{
-		{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
 		{Type: shipper.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
 	}
 	f.objects = append(f.objects, incumbent)
