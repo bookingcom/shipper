@@ -21,11 +21,10 @@ import (
 )
 
 var (
-	masterURL    = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
-	kubeconfig   = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
-	resyncPeriod = flag.String("resync", "5m", "Informer's cache re-sync in Go's duration format.")
-	addr         = flag.String("addr", ":8890", "Addr to expose /metrics on.")
-	ns           = flag.String("namespace", shipper.ShipperNamespace, "Namespace for Shipper resources.")
+	masterURL  = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
+	kubeconfig = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
+	addr       = flag.String("addr", ":8890", "Addr to expose /metrics on.")
+	ns         = flag.String("namespace", shipper.ShipperNamespace, "Namespace for Shipper resources.")
 )
 
 func main() {
@@ -50,14 +49,9 @@ func main() {
 		klog.Fatal(err)
 	}
 
-	resync, err := time.ParseDuration(*resyncPeriod)
-	if err != nil {
-		klog.Warningf("Couldn't parse resync period %q, defaulting to 5 minutes", *resyncPeriod)
-		resync = 5 * time.Minute
-	}
-
 	stopCh := setupSignalHandler()
 
+	resync := time.Second * 0
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(shipperClient, resync)
 	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, resync)
 
