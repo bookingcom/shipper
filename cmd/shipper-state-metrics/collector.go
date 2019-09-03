@@ -27,7 +27,7 @@ var (
 	relsDesc = prometheus.NewDesc(
 		fqn("releases"),
 		"Number of Release objects",
-		[]string{"namespace", "shipper_app", "cluster", "cond_type", "cond_status", "cond_reason"},
+		[]string{"namespace", "shipper_app", "cond_type", "cond_status", "cond_reason"},
 		nil,
 	)
 
@@ -155,6 +155,10 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 	relAgesByCondition := make(map[string][]float64)
 
 	breakdown := make(map[string]float64)
+	conditions := []shipper.ReleaseConditionType{
+		shipper.ReleaseConditionTypeScheduled,
+		shipper.ReleaseConditionTypeComplete,
+	}
 	for _, rel := range rels {
 		var appName string
 		if len(rel.OwnerReferences) == 1 {
@@ -163,20 +167,25 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 			appName = "unknown"
 		}
 
-		clusters := strings.Split(rel.Annotations[shipper.ReleaseClustersAnnotation], ",")
-		if len(clusters) == 0 || len(clusters) == 1 && clusters[0] == "" {
-			clusters = []string{"unknown"}
-		}
+		for _, c := range conditions {
+			var reason, status string
 
-		for _, cluster := range clusters {
-			for _, cond := range rel.Status.Conditions {
-				reason := cond.Reason
-				if reason == "" {
-					reason = "NoReason"
-				}
-				// it's either this or map[string]map[string]map[string]map[string]float64
-				breakdown[key(rel.Namespace, appName, cluster, string(cond.Type), string(cond.Status), reason)]++
+			cond := releaseutil.GetReleaseCondition(rel.Status, c)
+
+			if cond != nil {
+				reason = cond.Reason
+				status = string(cond.Status)
+			} else {
+				reason = "NoReason"
+				status = "False"
 			}
+
+			if reason == "" {
+				reason = "NoReason"
+			}
+
+			// it's either this or map[string]map[string]map[string]map[string]float64
+			breakdown[key(rel.Namespace, appName, string(c), status, reason)]++
 		}
 
 		// We're only interested in incomplete releases, as this metric
