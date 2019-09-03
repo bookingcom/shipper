@@ -89,6 +89,8 @@ type ShipperStateMetrics struct {
 	secretsLister kubelisters.SecretLister
 
 	shipperNs string
+
+	releaseDurationBuckets []float64
 }
 
 func (ssm ShipperStateMetrics) Collect(ch chan<- prometheus.Metric) {
@@ -212,18 +214,13 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(relsDesc, prometheus.GaugeValue, v, unkey(k)...)
 	}
 
-	quantiles := []float64{0.5, 0.9, 0.99}
-
 	for condition, ages := range relAgesByCondition {
 		count := uint64(len(ages))
 		sum := Sum(ages)
-		summary, err := MakeSummary(ages, quantiles)
-		if err != nil {
-			klog.Warningf("collect Releases: %s", err)
-			return
-		}
+		histogram := MakeHistogram(ages, ssm.releaseDurationBuckets)
 
-		ch <- prometheus.MustNewConstSummary(relDurationDesc, count, sum, summary, condition)
+		ch <- prometheus.MustNewConstHistogram(relDurationDesc, count,
+			sum, histogram, condition)
 	}
 }
 

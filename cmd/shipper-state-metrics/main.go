@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,6 +27,8 @@ var (
 	kubeconfig = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
 	addr       = flag.String("addr", ":8890", "Addr to expose /metrics on.")
 	ns         = flag.String("namespace", shipper.ShipperNamespace, "Namespace for Shipper resources.")
+
+	relDurationBuckets = flag.String("release-duration-buckets", "15,30,45,60,120", "Comma-separated list of buckets for the shipper_objects_release_durations histogram, in seconds")
 )
 
 func main() {
@@ -68,6 +72,8 @@ func main() {
 		secretsLister: kubeInformerFactory.Core().V1().Secrets().Lister(),
 
 		shipperNs: *ns,
+
+		releaseDurationBuckets: parseFloat64Slice(*relDurationBuckets),
 	}
 	prometheus.MustRegister(ssm)
 
@@ -111,6 +117,21 @@ func setupSignalHandler() <-chan struct{} {
 	}()
 
 	return stopCh
+}
+
+func parseFloat64Slice(str string) []float64 {
+	strSlice := strings.Split(str, ",")
+	float64Slice := make([]float64, len(strSlice))
+
+	for i, b := range strSlice {
+		n, err := strconv.ParseFloat(b, 64)
+		if err != nil {
+			klog.Fatal(err)
+		}
+		float64Slice[i] = n
+	}
+
+	return float64Slice
 }
 
 type klogStdLogger struct{}
