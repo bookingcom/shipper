@@ -54,11 +54,6 @@ func RemoveReleaseCondition(status shipper.ReleaseStatus, condType shipper.Relea
 	status.Conditions = filterOutCondition(status.Conditions, condType)
 }
 
-func ReleaseInstalled(release *shipper.Release) bool {
-	installedCond := GetReleaseCondition(release.Status, shipper.ReleaseConditionTypeInstalled)
-	return installedCond != nil && installedCond.Status == corev1.ConditionTrue
-}
-
 func ReleaseScheduled(release *shipper.Release) bool {
 	scheduledCond := GetReleaseCondition(release.Status, shipper.ReleaseConditionTypeScheduled)
 	return scheduledCond != nil && scheduledCond.Status == corev1.ConditionTrue

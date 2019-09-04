@@ -352,7 +352,6 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 				Name: "full on",
 			},
 			Conditions: []shipper.ReleaseCondition{
-				{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
 				{Type: shipper.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
 				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 			},
@@ -1156,7 +1155,6 @@ func (f *fixture) expectReleaseReleased(rel *shipper.Release, targetStep int32) 
 			},
 			Conditions: []shipper.ReleaseCondition{
 				{Type: shipper.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
-				{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
 				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 			},
 			Strategy: &shipper.ReleaseStrategyStatus{
@@ -2396,7 +2394,6 @@ func TestContenderReleaseIsInstalled(t *testing.T) {
 		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = totalReplicaCount
 		contender.trafficTarget.Spec.Clusters[0].Weight = 100
 		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 100
-		releaseutil.SetReleaseCondition(&contender.release.Status, shipper.ReleaseCondition{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue, Reason: "", Message: ""})
 
 		incumbent.trafficTarget.Spec.Clusters[0].Weight = 0
 		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 0

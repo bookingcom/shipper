@@ -504,7 +504,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 }
 
 func (c *Controller) cleanUpReleasesForApplication(app *shipper.Application, releases []*shipper.Release) error {
-	var installedReleases []*shipper.Release
+	var completedReleases []*shipper.Release
 
 	// Process releases by a predictable, ascending generation order.
 	releases = releaseutil.SortByGenerationAscending(releases)
@@ -512,13 +512,13 @@ func (c *Controller) cleanUpReleasesForApplication(app *shipper.Application, rel
 	namespace := app.GetNamespace()
 	releaseErrors := shippererrors.NewMultiError()
 
-	// Delete any releases that are not installed. Don't touch the latest release
-	// because a release that isn't installed and is the last release just means
-	// that the user is rolling out the application.
+	// Delete any releases that are not completed. Don't touch the latest
+	// release because a release that isn't complete and is the last
+	// release just means that the user is rolling out the application.
 	for i := 0; i < len(releases)-1; i++ {
 		rel := releases[i]
 		if releaseutil.ReleaseComplete(releases[i]) {
-			installedReleases = append(installedReleases, releases[i])
+			completedReleases = append(completedReleases, releases[i])
 			continue
 		}
 
@@ -540,9 +540,9 @@ func (c *Controller) cleanUpReleasesForApplication(app *shipper.Application, rel
 	// failing to delete A and successfully deleting B and C in an 'A B C'
 	// history).
 	revisionHistoryLimit := math.Max(float64(*app.Spec.RevisionHistoryLimit), 1)
-	overhead := len(installedReleases) - int(revisionHistoryLimit)
+	overhead := len(completedReleases) - int(revisionHistoryLimit)
 	for i := 0; i < overhead; i++ {
-		rel := installedReleases[i]
+		rel := completedReleases[i]
 		err := c.shipperClientset.ShipperV1alpha1().Releases(namespace).Delete(rel.GetName(), &metav1.DeleteOptions{})
 		if err != nil {
 			if kerrors.IsNotFound(err) {

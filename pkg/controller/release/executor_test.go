@@ -10,7 +10,6 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/conditions"
-	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 
@@ -210,7 +209,6 @@ func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 				Name: "full on",
 			},
 			Conditions: []shipper.ReleaseCondition{
-				{Type: shipper.ReleaseConditionTypeInstalled, Status: corev1.ConditionTrue},
 				{Type: shipper.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
 			},
 		},
@@ -603,10 +601,6 @@ func ensureFinalReleasePatches(e *Executor) error {
 					return fmt.Errorf("expected a ReleaseUpdateResult, got something else")
 				} else {
 					if p.Name == contenderName {
-						installedCond := releaseutil.GetReleaseCondition(*p.NewStatus, shipper.ReleaseConditionTypeInstalled)
-						if installedCond != nil && installedCond.Status == corev1.ConditionTrue {
-							return fmt.Errorf("expected contender to be installed")
-						}
 						if p.NewStatus.AchievedStep == nil || p.NewStatus.AchievedStep.Step != 2 {
 							return fmt.Errorf(
 								"expected contender achievedSteps %d, got %v",

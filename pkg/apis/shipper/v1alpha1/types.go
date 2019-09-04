@@ -220,7 +220,6 @@ type ReleaseConditionType string
 
 const (
 	ReleaseConditionTypeScheduled ReleaseConditionType = "Scheduled"
-	ReleaseConditionTypeInstalled ReleaseConditionType = "Installed"
 	ReleaseConditionTypeComplete  ReleaseConditionType = "Complete"
 )
 
