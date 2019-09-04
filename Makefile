@@ -52,7 +52,7 @@ OS := linux windows darwin
 
 # The operating system where we're currently running. This is just a shorthand
 # for a few targets.
-GOOS := $(shell go env GOOS)
+GOOS ?= $(shell go env GOOS)
 
 VERSION_PKG := github.com/bookingcom/shipper/pkg/version
 LDFLAGS := -ldflags "-X $(VERSION_PKG).Version=$(SHIPPER_VERSION)"
@@ -69,7 +69,7 @@ export CGO_ENABLED := 0
 # working on shipper, or via CI scripts.
 
 KUBECTL ?= kubectl -n $(SHIPPER_NAMESPACE)
-.PHONY: setup install install-shipper install-shipper-state-metrics install-helm e2e restart logs lint test vendor clean
+.PHONY: setup install install-shipper install-shipper-state-metrics install-helm e2e restart logs lint test vendor verify-codegen update-codegen clean
 
 # Set up shipper clusters with `shipperctl`. This is probably the first thing
 # you should do when starting to work on shipper, as most of everything else
@@ -127,6 +127,15 @@ vendor:
 	go mod tidy -v
 	go mod vendor -v
 	go mod verify
+
+# Verifies if the auto-generated code in pkg/apis/shipper/v1alpha1 and
+# pkg/client is up to date.
+verify-codegen:
+	GOPATH=$(shell go env GOPATH) ./hack/verify-codegen.sh
+
+# Generates code for the types in pkg/apis/shipper/v1alpha1 and pkg/client.
+update-codegen:
+	GOPATH=$(shell go env GOPATH) ./hack/update-codegen.sh
 
 # Remove all build artifacts from the filesystem, and all objects installed in
 # kubernetes.

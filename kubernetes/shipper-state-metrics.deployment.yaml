@@ -20,3 +20,4 @@ spec:
         imagePullPolicy: Always
         ports:
         - containerPort: 8890
+      serviceAccountName: shipper-management-cluster
