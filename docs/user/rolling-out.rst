@@ -338,6 +338,7 @@ This will show all information about all rollout blocks in the namsespace (defau
 
 This might look like this:
 
-.. code-block::
+.. code-block:: text
+
     NAMESPACE               NAME        MESSAGE                                   AUTHOR TYPE   AUTHOR NAME   OVERRIDING APPLICATIONS   OVERRIDING RELEASES
     rollout-blocks-global   dns-outage  DNS issues, troubleshooting in progress   user          jdoe          default/super-server      default/super-server-83e4eedd-0
