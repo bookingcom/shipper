@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,6 +19,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
@@ -92,17 +92,17 @@ func TestMain(m *testing.M) {
 	if *runEndToEnd {
 		globalTimeout, err = time.ParseDuration(*timeoutFlag)
 		if err != nil {
-			glog.Fatalf("could not parse given timeout duration: %q", err)
+			klog.Fatalf("could not parse given timeout duration: %q", err)
 		}
 
 		kubeClient, shipperClient, err = buildManagementClients(*masterURL, *kubeconfig)
 		if err != nil {
-			glog.Fatalf("could not build a client: %v", err)
+			klog.Fatalf("could not build a client: %v", err)
 		}
 
 		appCluster, err := shipperClient.ShipperV1alpha1().Clusters().Get(*appClusterName, metav1.GetOptions{})
 		if err != nil {
-			glog.Fatalf("could not fetch cluster object for cluster %q: %q", *appClusterName, err)
+			klog.Fatalf("could not fetch cluster object for cluster %q: %q", *appClusterName, err)
 		}
 
 		testRegion = appCluster.Spec.Region
@@ -1701,7 +1701,7 @@ func setupNamespace(name string) (*corev1.Namespace, error) {
 func teardownNamespace(name string) {
 	err := kubeClient.CoreV1().Namespaces().Delete(name, &metav1.DeleteOptions{})
 	if err != nil {
-		glog.Fatalf("failed to clean up namespace %q: %q", name, err)
+		klog.Fatalf("failed to clean up namespace %q: %q", name, err)
 	}
 }
 
@@ -1721,7 +1721,7 @@ func purgeTestNamespaces() {
 
 	list, err := kubeClient.CoreV1().Namespaces().List(listOptions)
 	if err != nil {
-		glog.Fatalf("failed to list namespaces: %q", err)
+		klog.Fatalf("failed to list namespaces: %q", err)
 	}
 
 	if len(list.Items) == 0 {
@@ -1735,14 +1735,14 @@ func purgeTestNamespaces() {
 				// this means the namespace is still cleaning up from some other delete, so we should poll and wait
 				continue
 			}
-			glog.Fatalf("failed to delete namespace %q: %q", namespace.GetName(), err)
+			klog.Fatalf("failed to delete namespace %q: %q", namespace.GetName(), err)
 		}
 	}
 
 	err = poll(globalTimeout, func() (bool, error) {
 		list, listErr := kubeClient.CoreV1().Namespaces().List(listOptions)
 		if listErr != nil {
-			glog.Fatalf("failed to list namespaces: %q", listErr)
+			klog.Fatalf("failed to list namespaces: %q", listErr)
 		}
 
 		if len(list.Items) == 0 {
@@ -1753,7 +1753,7 @@ func purgeTestNamespaces() {
 	})
 
 	if err != nil {
-		glog.Fatalf("timed out waiting for namespaces to be cleaned up before testing")
+		klog.Fatalf("timed out waiting for namespaces to be cleaned up before testing")
 	}
 }
 
@@ -1791,7 +1791,7 @@ func buildManagementClients(masterURL, kubeconfig string) (kubernetes.Interface,
 func buildApplicationClient(cluster *shipper.Cluster) kubernetes.Interface {
 	secret, err := kubeClient.CoreV1().Secrets(shipper.ShipperNamespace).Get(cluster.Name, metav1.GetOptions{})
 	if err != nil {
-		glog.Fatalf("could not build target kubeclient for cluster %q: problem fetching secret: %q", cluster.Name, err)
+		klog.Fatalf("could not build target kubeclient for cluster %q: problem fetching secret: %q", cluster.Name, err)
 	}
 
 	config := &rest.Config{
@@ -1819,17 +1819,17 @@ func buildApplicationClient(cluster *shipper.Cluster) kubernetes.Interface {
 
 		if encodedInsecureSkipTlsVerify, ok := secret.Annotations[shipper.SecretClusterSkipTlsVerifyAnnotation]; ok {
 			if insecureSkipTlsVerify, err := strconv.ParseBool(encodedInsecureSkipTlsVerify); err == nil {
-				glog.Infof("found %q annotation with value %q", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
+				klog.Infof("found %q annotation with value %q", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
 				config.Insecure = insecureSkipTlsVerify
 			} else {
-				glog.Infof("found %q annotation with value %q, failed to decode a bool from it, ignoring it", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
+				klog.Infof("found %q annotation with value %q, failed to decode a bool from it, ignoring it", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify)
 			}
 		}
 	}
 
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		glog.Fatalf("could not build target kubeclient for cluster %q: problem fetching cluster: %q", cluster.Name, err)
+		klog.Fatalf("could not build target kubeclient for cluster %q: problem fetching cluster: %q", cluster.Name, err)
 	}
 	return client
 }

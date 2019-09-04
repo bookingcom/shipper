@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	corev1 "k8s.io/api/core/v1"
@@ -116,25 +115,12 @@ type cfg struct {
 }
 
 func main() {
+	klog.InitFlags(nil)
 	flag.Parse()
-
-	// As we use runtime.HandlerError a lot, and it uses klog instead of
-	// glog, we need to sync glog flags into klog, because klog doesn't do
-	// anything in init(), as it's the main reason of its fork from glog.
-	// NOTE(jgreff): this is also probably a good opportunity to discuss
-	// whether we should move shipper to klog entirely.
-	klogFlags := flag.NewFlagSet("klog", flag.ExitOnError)
-	klog.InitFlags(klogFlags)
-	flag.CommandLine.VisitAll(func(f1 *flag.Flag) {
-		f2 := klogFlags.Lookup(f1.Name)
-		if f2 != nil {
-			_ = f2.Value.Set(f1.Value.String())
-		}
-	})
 
 	baseRestCfg, err := clientcmd.BuildConfigFromFlags(*masterURL, *kubeconfig)
 	if err != nil {
-		glog.Fatal(err)
+		klog.Fatal(err)
 	}
 
 	// These are only used in shared informers. Setting HTTP timeout here would
@@ -152,7 +138,7 @@ func main() {
 	shipperscheme.AddToScheme(scheme.Scheme)
 
 	broadcaster := record.NewBroadcaster()
-	broadcaster.StartLogging(glog.Infof)
+	broadcaster.StartLogging(klog.Infof)
 	func() {
 		kubeClient := client.NewKubeClientOrDie(baseRestCfg, "event-broadcaster", restTimeout)
 		broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
@@ -168,7 +154,7 @@ func main() {
 
 	store := clusterclientstore.NewStore(
 		func(clusterName string, ua string, config *rest.Config) (kubernetes.Interface, error) {
-			glog.V(8).Infof("Building a client for Cluster %q, UserAgent %q", clusterName, ua)
+			klog.V(8).Infof("Building a client for Cluster %q, UserAgent %q", clusterName, ua)
 			return client.NewKubeClient(config, ua, nil)
 		},
 		kubeInformerFactory.Core().V1().Secrets(),
@@ -184,8 +170,8 @@ func main() {
 		wg.Done()
 	}()
 
-	glog.V(1).Infof("Chart cache stored at %q", *chartCacheDir)
-	glog.V(1).Infof("REST client timeout is %s", *restTimeout)
+	klog.V(1).Infof("Chart cache stored at %q", *chartCacheDir)
+	klog.V(1).Infof("REST client timeout is %s", *restTimeout)
 
 	repoCatalog := repo.NewCatalog(
 		repo.DefaultFileCacheFactory(*chartCacheDir),
@@ -229,11 +215,11 @@ func main() {
 	}
 
 	go func() {
-		glog.V(1).Infof("Metrics will listen on %s", *metricsAddr)
+		klog.V(1).Infof("Metrics will listen on %s", *metricsAddr)
 		<-metricsReadyCh
 
-		glog.V(3).Info("Starting the metrics web server")
-		defer glog.V(3).Info("The metrics web server has shut down")
+		klog.V(3).Info("Starting the metrics web server")
+		defer klog.V(3).Info("The metrics web server has shut down")
 
 		runMetrics(cfg.metrics)
 	}()
@@ -241,12 +227,12 @@ func main() {
 	runControllers(cfg)
 }
 
-type glogStdLogger struct{}
+type klogStdLogger struct{}
 
-func (glogStdLogger) Println(v ...interface{}) {
+func (klogStdLogger) Println(v ...interface{}) {
 	// Prometheus only logs errors (which aren't fatal so we downgrade them to
 	// warnings).
-	glog.Warning(v...)
+	klog.Warning(v...)
 }
 
 func runMetrics(cfg *metricsCfg) {
@@ -260,13 +246,13 @@ func runMetrics(cfg *metricsCfg) {
 			prometheus.DefaultGatherer,
 			promhttp.HandlerOpts{
 				ErrorHandling: promhttp.ContinueOnError,
-				ErrorLog:      glogStdLogger{},
+				ErrorLog:      klogStdLogger{},
 			},
 		),
 	}
 	err := srv.ListenAndServe()
 	if err != nil {
-		glog.Fatalf("could not start /metrics endpoint: %s", err)
+		klog.Fatalf("could not start /metrics endpoint: %s", err)
 	}
 }
 
@@ -284,7 +270,7 @@ func buildEnabledControllers(enabledControllers, disabledControllers string) map
 
 		_, ok := willRun[controller]
 		if !ok {
-			glog.Fatalf("cannot enable %q: it is not a known controller", controller)
+			klog.Fatalf("cannot enable %q: it is not a known controller", controller)
 		}
 		willRun[controller] = true
 	}
@@ -297,7 +283,7 @@ func buildEnabledControllers(enabledControllers, disabledControllers string) map
 
 		_, ok := willRun[controller]
 		if !ok {
-			glog.Fatalf("cannot disable %q: it is not a known controller", controller)
+			klog.Fatalf("cannot disable %q: it is not a known controller", controller)
 		}
 
 		willRun[controller] = false
@@ -318,11 +304,11 @@ func runControllers(cfg *cfg) {
 		started, err := initializer(cfg)
 		// TODO make it visible when some controller's aren't starting properly; all of the initializers return 'nil' ATM
 		if err != nil {
-			glog.Fatalf("%q failed to initialize", name)
+			klog.Fatalf("%q failed to initialize", name)
 		}
 
 		if !started {
-			glog.Infof("%q was skipped per config", name)
+			klog.Infof("%q was skipped per config", name)
 		}
 	}
 
@@ -341,7 +327,7 @@ func runControllers(cfg *cfg) {
 	}()
 
 	<-doneCh
-	glog.Info("Controllers have shut down")
+	klog.Info("Controllers have shut down")
 }
 
 func setupSignalHandler() <-chan struct{} {
@@ -435,7 +421,7 @@ func startInstallationController(cfg *cfg) (bool, error) {
 
 		dynamicClient, newClientErr := dynamic.NewForConfig(config)
 		if newClientErr != nil {
-			glog.Fatal(newClientErr)
+			klog.Fatal(newClientErr)
 		}
 		return dynamicClient
 	}

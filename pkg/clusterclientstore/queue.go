@@ -3,11 +3,11 @@ package clusterclientstore
 import (
 	"fmt"
 
-	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	kubecache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
@@ -129,7 +129,7 @@ func processNextWorkItem(wq workqueue.RateLimitingInterface, handler func(string
 
 	wq.Forget(obj)
 
-	glog.Infof("Successfully synced %q", key)
+	klog.Infof("Successfully synced %q", key)
 
 	return true
 }

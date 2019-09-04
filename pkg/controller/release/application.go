@@ -3,14 +3,13 @@ package release
 import (
 	"fmt"
 
-	"github.com/golang/glog"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
@@ -50,7 +49,7 @@ func (c *Controller) processNextAppWorkItem() bool {
 
 	if shouldRetry {
 		if c.applicationWorkqueue.NumRequeues(key) >= maxRetries {
-			glog.Warningf("Application %q has been retried too many times, droppping from the queue", key)
+			klog.Warningf("Application %q has been retried too many times, droppping from the queue", key)
 			c.applicationWorkqueue.Forget(key)
 
 			return true
@@ -62,7 +61,7 @@ func (c *Controller) processNextAppWorkItem() bool {
 	}
 
 	c.applicationWorkqueue.Forget(obj)
-	glog.V(4).Infof("Successfully synced Application %q", key)
+	klog.V(4).Infof("Successfully synced Application %q", key)
 
 	return true
 }
@@ -79,7 +78,7 @@ func (c *Controller) syncOneApplicationHandler(key string) error {
 	app, err := c.applicationLister.Applications(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			glog.V(3).Infof("Application %q not found", key)
+			klog.V(3).Infof("Application %q not found", key)
 			return nil
 		}
 
@@ -87,19 +86,19 @@ func (c *Controller) syncOneApplicationHandler(key string) error {
 			WithShipperKind("Application")
 	}
 
-	glog.V(4).Infof("Fetching release pair for Application %q", key)
+	klog.V(4).Infof("Fetching release pair for Application %q", key)
 	incumbent, contender, err := c.getWorkingReleasePair(app)
 	if err != nil {
 		return err
 	}
 
-	glog.V(4).Infof("Building a strategy excecutor for Application %q", key)
+	klog.V(4).Infof("Building a strategy excecutor for Application %q", key)
 	strategyExecutor, err := c.buildExecutor(incumbent, contender)
 	if err != nil {
 		return err
 	}
 
-	glog.V(4).Infof("Executing the strategy on Application %q", key)
+	klog.V(4).Infof("Executing the strategy on Application %q", key)
 	patches, transitions, err := strategyExecutor.Execute()
 	if err != nil {
 		return err
@@ -118,11 +117,11 @@ func (c *Controller) syncOneApplicationHandler(key string) error {
 	}
 
 	if len(patches) == 0 {
-		glog.V(4).Infof("Strategy verified, nothing to patch")
+		klog.V(4).Infof("Strategy verified, nothing to patch")
 		return nil
 	}
 
-	glog.V(4).Infof("Strategy has been executed, applying patches")
+	klog.V(4).Infof("Strategy has been executed, applying patches")
 	for _, patch := range patches {
 		name, gvk, b := patch.PatchSpec()
 

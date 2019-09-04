@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -17,6 +16,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
@@ -68,7 +68,7 @@ func NewController(
 		recorder:             recorder,
 	}
 
-	glog.Info("Setting up event handlers")
+	klog.Info("Setting up event handlers")
 	// Set up an event handler for when TrafficTarget resources change.
 	trafficTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueTrafficTarget,
@@ -94,8 +94,8 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.workqueue.ShutDown()
 
-	glog.V(2).Info("Starting Traffic controller")
-	defer glog.V(2).Info("Shutting down Traffic controller")
+	klog.V(2).Info("Starting Traffic controller")
+	defer klog.V(2).Info("Shutting down Traffic controller")
 
 	if ok := cache.WaitForCacheSync(stopCh, c.trafficTargetsSynced); !ok {
 		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
@@ -106,7 +106,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 		go wait.Until(c.runWorker, time.Second, stopCh)
 	}
 
-	glog.V(4).Info("Started Traffic controller")
+	klog.V(4).Info("Started Traffic controller")
 
 	<-stopCh
 }
@@ -147,7 +147,7 @@ func (c *Controller) processNextWorkItem() bool {
 		if c.workqueue.NumRequeues(key) >= maxRetries {
 			// Drop the TrafficTarget's key out of the workqueue and thus reset its
 			// backoff. This limits the time a "broken" object can hog a worker.
-			glog.Warningf("TrafficTarget %q has been retried too many times, dropping from the queue", key)
+			klog.Warningf("TrafficTarget %q has been retried too many times, dropping from the queue", key)
 			c.workqueue.Forget(key)
 
 			return true
@@ -159,7 +159,7 @@ func (c *Controller) processNextWorkItem() bool {
 	}
 
 	c.workqueue.Forget(obj)
-	glog.V(4).Infof("Successfully synced TrafficTarget %q", key)
+	klog.V(4).Infof("Successfully synced TrafficTarget %q", key)
 
 	return true
 }
@@ -173,7 +173,7 @@ func (c *Controller) syncHandler(key string) error {
 	syncingTT, err := c.trafficTargetsLister.TrafficTargets(namespace).Get(ttName)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			glog.V(3).Infof("TrafficTarget %q has been deleted", key)
+			klog.V(3).Infof("TrafficTarget %q has been deleted", key)
 			return nil
 		}
 

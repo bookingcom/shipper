@@ -11,12 +11,11 @@ import (
 	"reflect"
 	"regexp"
 
-	"github.com/golang/glog"
-
 	admission_v1beta1 "k8s.io/api/admission/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
@@ -67,18 +66,18 @@ func (c *Webhook) Run(stopCh <-chan struct{}) {
 		}
 
 		if serverError != nil && serverError != http.ErrServerClosed {
-			glog.Fatalf("failed to start shipper-webhook: %v", serverError)
+			klog.Fatalf("failed to start shipper-webhook: %v", serverError)
 		}
 	}()
 
-	glog.V(2).Info("Started the WebHook")
+	klog.V(2).Info("Started the WebHook")
 
 	<-stopCh
 
-	glog.V(2).Info("Shutting down the WebHook")
+	klog.V(2).Info("Shutting down the WebHook")
 
 	if err := server.Shutdown(context.Background()); err != nil {
-		glog.Errorf(`HTTP server Shutdown: %v`, err)
+		klog.Errorf(`HTTP server Shutdown: %v`, err)
 	}
 }
 

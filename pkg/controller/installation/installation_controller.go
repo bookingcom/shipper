@@ -5,7 +5,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -16,6 +15,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/helm/pkg/proto/hapi/chart"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperrepo "github.com/bookingcom/shipper/pkg/chart/repo"
@@ -109,8 +109,8 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.workqueue.ShutDown()
 
-	glog.V(2).Info("Starting Installation controller")
-	defer glog.V(2).Info("Shutting down Installation controller")
+	klog.V(2).Info("Starting Installation controller")
+	defer klog.V(2).Info("Shutting down Installation controller")
 
 	if !cache.WaitForCacheSync(stopCh, c.installationTargetsSynced, c.releaseSynced, c.appSynced, c.clusterSynced) {
 		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
@@ -121,7 +121,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 		go wait.Until(c.runWorker, time.Second, stopCh)
 	}
 
-	glog.V(4).Info("Started Installation controller")
+	klog.V(4).Info("Started Installation controller")
 
 	<-stopCh
 }
@@ -162,7 +162,7 @@ func (c *Controller) processNextWorkItem() bool {
 		if c.workqueue.NumRequeues(key) >= maxRetries {
 			// Drop the InstallationTarget's key out of the workqueue and thus reset its
 			// backoff. This limits the time a "broken" object can hog a worker.
-			glog.Warningf("InstallationTarget %q has been retried too many times, dropping from the queue", key)
+			klog.Warningf("InstallationTarget %q has been retried too many times, dropping from the queue", key)
 			c.workqueue.Forget(key)
 
 			return true
@@ -174,7 +174,7 @@ func (c *Controller) processNextWorkItem() bool {
 	}
 
 	c.workqueue.Forget(obj)
-	glog.V(4).Infof("Successfully synced InstallationTarget %q", key)
+	klog.V(4).Infof("Successfully synced InstallationTarget %q", key)
 
 	return true
 }
@@ -188,7 +188,7 @@ func (c *Controller) syncOne(key string) error {
 	it, err := c.installationTargetsLister.InstallationTargets(namespace).Get(name)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			glog.V(3).Infof("InstallationTarget %q has been deleted", key)
+			klog.V(3).Infof("InstallationTarget %q has been deleted", key)
 			return nil
 		}
 
@@ -217,7 +217,7 @@ func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 // all target clusters.
 func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 	if !it.Spec.CanOverride {
-		glog.V(3).Infof("InstallationTarget %q is not allowed to override, skipping", it.Name)
+		klog.V(3).Infof("InstallationTarget %q is not allowed to override, skipping", it.Name)
 		return nil
 	}
 

@@ -3,11 +3,11 @@ package errors
 import (
 	"fmt"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/klog"
 )
 
 type KubeclientVerb string
@@ -64,7 +64,7 @@ func (e KubeclientError) ShouldRetry() bool {
 		}
 	}
 
-	glog.V(8).Infof("Cannot determine reason for error %#v, will assume it's retriable", e)
+	klog.V(8).Infof("Cannot determine reason for error %#v, will assume it's retriable", e)
 	return true
 }
 
