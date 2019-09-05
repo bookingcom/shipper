@@ -2,7 +2,7 @@ package errors
 
 import (
 	"fmt"
-	"github.com/golang/glog"
+	"k8s.io/klog"
 	"strings"
 )
 
@@ -28,7 +28,7 @@ func ShouldRetry(err error) bool {
 		return retryAware.ShouldRetry()
 	}
 
-	glog.V(4).Infof("Cannot determine if untagged error %#v is retriable, will assume it is", err)
+	klog.V(4).Infof("Cannot determine if untagged error %#v is retriable, will assume it is", err)
 
 	return true
 }
@@ -44,7 +44,7 @@ func ShouldBroadcast(err error) bool {
 		return broadcastAware.ShouldBroadcast()
 	}
 
-	glog.V(8).Infof("Cannot determine if untagged error %#v is broadcastable, will assume it is", err)
+	klog.V(8).Infof("Cannot determine if untagged error %#v is broadcastable, will assume it is", err)
 
 	return true
 }

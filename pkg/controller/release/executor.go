@@ -5,10 +5,10 @@ import (
 	"sort"
 	"time"
 
-	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/conditions"
@@ -25,7 +25,7 @@ type Executor struct {
 }
 
 func (s *Executor) info(format string, args ...interface{}) {
-	glog.Infof("Release %q: %s", controller.MetaKey(s.contender.release), fmt.Sprintf(format, args...))
+	klog.Infof("Release %q: %s", controller.MetaKey(s.contender.release), fmt.Sprintf(format, args...))
 }
 
 func (s *Executor) event(obj runtime.Object, format string, args ...interface{}) {

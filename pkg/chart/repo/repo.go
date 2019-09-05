@@ -19,12 +19,12 @@ import (
 	// annotations and works fine.
 	"github.com/Masterminds/semver"
 	yaml "github.com/ghodss/yaml"
-	"github.com/golang/glog"
 
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/proto/hapi/chart"
 	"k8s.io/helm/pkg/repo"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
@@ -73,7 +73,7 @@ func NewRepo(repoURL string, cache Cache, fetcher RemoteFetcher) (*Repo, error) 
 func (r *Repo) Start(stopCh <-chan struct{}) {
 	wait.Until(func() {
 		if err := r.refreshIndex(); err != nil {
-			glog.Errorf("failed to refresh repo %q index: %s", r.repoURL, err)
+			klog.Errorf("failed to refresh repo %q index: %s", r.repoURL, err)
 		}
 	}, RepoIndexRefreshPeriod, stopCh)
 }

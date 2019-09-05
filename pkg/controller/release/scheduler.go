@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -13,6 +12,7 @@ import (
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
@@ -68,7 +68,7 @@ func (s *Scheduler) ChooseClusters(rel *shipper.Release, force bool) (*shipper.R
 	if !force && releaseHasClusters(rel) {
 		return rel, shippererrors.NewUnrecoverableError(fmt.Errorf("release %q has already been assigned to clusters", metaKey))
 	}
-	glog.Infof("Choosing clusters for release %q", metaKey)
+	klog.Infof("Choosing clusters for release %q", metaKey)
 
 	selector := labels.Everything()
 	allClusters, err := s.clusterLister.List(selector)
@@ -104,8 +104,8 @@ func (s *Scheduler) ChooseClusters(rel *shipper.Release, force bool) (*shipper.R
 
 func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, error) {
 	metaKey := controller.MetaKey(rel)
-	glog.Infof("Processing release %q", metaKey)
-	defer glog.Infof("Finished processing %q", metaKey)
+	klog.Infof("Processing release %q", metaKey)
+	defer klog.Infof("Finished processing %q", metaKey)
 
 	shouldBlockRollout, nonOverriddenRBsStatement := s.processRolloutBlocks(rel)
 	if shouldBlockRollout {
@@ -144,7 +144,7 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 		releaseutil.SetReleaseCondition(&rel.Status, *condition)
 
 		if len(rel.Status.Conditions) == 0 {
-			glog.Errorf(
+			klog.Errorf(
 				"Conditions don't see right here for Release %q",
 				metaKey,
 			)
@@ -266,7 +266,7 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 	it, err := s.installationTargetLister.InstallationTargets(rel.GetNamespace()).Get(rel.GetName())
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			glog.Errorf("Failed to get InstallationTarget %q from lister interface: %s",
+			klog.Errorf("Failed to get InstallationTarget %q from lister interface: %s",
 				controller.MetaKey(rel),
 				err)
 			return nil, err
@@ -313,19 +313,19 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 	}
 	if !ownerFound {
 		err := fmt.Errorf("mismatch in owner reference UIDs for InstallationTarget %q", controller.MetaKey(it))
-		glog.Errorf(err.Error())
+		klog.Errorf(err.Error())
 
 		return nil, errors.NewConflict(schema.GroupResource{Resource: "InstallationTarget"}, controller.MetaKey(it), err)
 	}
 
 	if !installationTargetClustersMatch(it, clusters) {
-		glog.Infof("Updating InstallationTarget %q clusters to %s",
+		klog.Infof("Updating InstallationTarget %q clusters to %s",
 			controller.MetaKey(it),
 			strings.Join(clusters, ","))
 		setInstallationTargetClusters(it, clusters)
 		updIt, err := s.clientset.ShipperV1alpha1().InstallationTargets(rel.GetNamespace()).Update(it)
 		if err != nil {
-			glog.Errorf("Failed to update InstallationTarget %q clusters: %s",
+			klog.Errorf("Failed to update InstallationTarget %q clusters: %s",
 				controller.MetaKey(it),
 				err)
 			return nil, err
@@ -349,7 +349,7 @@ func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalRepl
 	ct, err := s.capacityTargetLister.CapacityTargets(rel.GetNamespace()).Get(rel.GetName())
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			glog.Errorf("Failed to get CapacityTarget %q from lister interface: %s",
+			klog.Errorf("Failed to get CapacityTarget %q from lister interface: %s",
 				controller.MetaKey(rel),
 				err)
 			return nil, err
@@ -391,19 +391,19 @@ func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalRepl
 	}
 	if !ownerFound {
 		err := fmt.Errorf("mismatch in owner reference UIDs for CapacityTarget %q", controller.MetaKey(ct))
-		glog.Errorf(err.Error())
+		klog.Errorf(err.Error())
 
 		return nil, errors.NewConflict(schema.GroupResource{Resource: "CapacityTarget"}, controller.MetaKey(ct), err)
 	}
 
 	if !capacityTargetClustersMatch(ct, clusters) {
-		glog.Infof("Updating CapacityTarget %q clusters to %s",
+		klog.Infof("Updating CapacityTarget %q clusters to %s",
 			controller.MetaKey(ct),
 			strings.Join(clusters, ","))
 		setCapacityTargetClusters(ct, clusters, totalReplicaCount)
 		updCt, err := s.clientset.ShipperV1alpha1().CapacityTargets(rel.GetNamespace()).Update(ct)
 		if err != nil {
-			glog.Errorf("Failed to update CapacityTarget %q clusters: %s",
+			klog.Errorf("Failed to update CapacityTarget %q clusters: %s",
 				controller.MetaKey(ct),
 				err)
 			return nil, err
@@ -427,7 +427,7 @@ func (s *Scheduler) CreateOrUpdateTrafficTarget(rel *shipper.Release) (*shipper.
 	tt, err := s.trafficTargetLister.TrafficTargets(rel.GetNamespace()).Get(rel.GetName())
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			glog.Errorf("Failed to get TrafficTarget %q from lister interface: %s",
+			klog.Errorf("Failed to get TrafficTarget %q from lister interface: %s",
 				controller.MetaKey(rel),
 				err)
 			return nil, err
@@ -469,19 +469,19 @@ func (s *Scheduler) CreateOrUpdateTrafficTarget(rel *shipper.Release) (*shipper.
 	}
 	if !ownerFound {
 		err := fmt.Errorf("mismatch in owner reference UIDs for TrafficTarget %q", controller.MetaKey(tt))
-		glog.Errorf(err.Error())
+		klog.Errorf(err.Error())
 
 		return nil, errors.NewConflict(schema.GroupResource{Resource: "TrafficTarget"}, controller.MetaKey(tt), err)
 	}
 
 	if !trafficTargetClustersMatch(tt, clusters) {
-		glog.Infof("Updating TrafficTarget %q clusters to %s",
+		klog.Infof("Updating TrafficTarget %q clusters to %s",
 			controller.MetaKey(tt),
 			strings.Join(clusters, ","))
 		setTrafficTargetClusters(tt, clusters)
 		updTt, err := s.clientset.ShipperV1alpha1().TrafficTargets(rel.GetNamespace()).Update(tt)
 		if err != nil {
-			glog.Errorf("Failed to update TrafficTarget %q clusters: %s",
+			klog.Errorf("Failed to update TrafficTarget %q clusters: %s",
 				controller.MetaKey(tt),
 				err)
 			return nil, err
@@ -627,7 +627,7 @@ func (s *Scheduler) fetchChartAndExtractReplicaCount(rel *shipper.Release) (int3
 		return 0, err
 	}
 
-	glog.V(4).Infof("Extracted %d replicas from release %q", replicas, controller.MetaKey(rel))
+	klog.V(4).Infof("Extracted %d replicas from release %q", replicas, controller.MetaKey(rel))
 
 	return int32(replicas), nil
 }

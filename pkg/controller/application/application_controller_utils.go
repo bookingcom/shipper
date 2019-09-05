@@ -6,7 +6,7 @@ import (
 	"hash/fnv"
 	"strconv"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -21,7 +21,7 @@ func (c *Controller) createReleaseForApplication(app *shipper.Application, relea
 	// Label releases with their hash; select by that label and increment if needed
 	// appname-hash-of-template-iteration.
 
-	glog.V(4).Infof("Generated Release name for Application %q: %q", controller.MetaKey(app), releaseName)
+	klog.V(4).Infof("Generated Release name for Application %q: %q", controller.MetaKey(app), releaseName)
 	rolloutblocksOverrides := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 	newRelease := &shipper.Release{
 		ObjectMeta: metav1.ObjectMeta{
@@ -58,8 +58,8 @@ func (c *Controller) createReleaseForApplication(app *shipper.Application, relea
 	}
 	newRelease.Spec.Environment.Chart.Version = cv.Version
 
-	glog.V(4).Infof("Release %q labels: %v", controller.MetaKey(newRelease), newRelease.Labels)
-	glog.V(4).Infof("Release %q annotations: %v", controller.MetaKey(newRelease), newRelease.Annotations)
+	klog.V(4).Infof("Release %q labels: %v", controller.MetaKey(newRelease), newRelease.Labels)
+	klog.V(4).Infof("Release %q annotations: %v", controller.MetaKey(newRelease), newRelease.Annotations)
 
 	rel, err := c.shipperClientset.ShipperV1alpha1().Releases(app.Namespace).Create(newRelease)
 	if err != nil {
@@ -86,7 +86,7 @@ func (c *Controller) releaseNameForApplication(app *shipper.Application) (string
 	}
 
 	if len(releases) == 0 {
-		glog.V(3).Infof("No Releases with template %q for Application %q", hash, controller.MetaKey(app))
+		klog.V(3).Infof("No Releases with template %q for Application %q", hash, controller.MetaKey(app))
 		return fmt.Sprintf("%s-%s-%d", app.GetName(), hash, 0), 0, nil
 	}
 
@@ -119,7 +119,7 @@ func identicalEnvironments(envs ...shipper.ReleaseEnvironment) bool {
 	referenceHash := hashReleaseEnvironment(envs[0])
 	for _, env := range envs[1:] {
 		currentHash := hashReleaseEnvironment(env)
-		glog.V(4).Infof("Comparing ReleaseEnvironments: %q vs %q", referenceHash, currentHash)
+		klog.V(4).Infof("Comparing ReleaseEnvironments: %q vs %q", referenceHash, currentHash)
 
 		if referenceHash != currentHash {
 			return false

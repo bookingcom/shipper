@@ -5,7 +5,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/golang/glog"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -18,6 +17,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
@@ -77,7 +77,7 @@ func NewController(
 		clusterClientStore:      store,
 	}
 
-	glog.Info("Setting up event handlers")
+	klog.Info("Setting up event handlers")
 	capacityTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueCapacityTarget,
 		UpdateFunc: func(old, new interface{}) {
@@ -100,8 +100,8 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer c.capacityTargetWorkqueue.ShutDown()
 	defer c.deploymentWorkqueue.ShutDown()
 
-	glog.V(2).Info("Starting Capacity controller")
-	defer glog.V(2).Info("Shutting down Capacity controller")
+	klog.V(2).Info("Starting Capacity controller")
+	defer klog.V(2).Info("Shutting down Capacity controller")
 
 	if !cache.WaitForCacheSync(stopCh, c.capacityTargetsSynced, c.releasesListerSynced) {
 		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
@@ -113,7 +113,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 		go wait.Until(c.runDeploymentWorker, time.Second, stopCh)
 	}
 
-	glog.V(4).Info("Started Capacity controller")
+	klog.V(4).Info("Started Capacity controller")
 
 	<-stopCh
 }
@@ -154,7 +154,7 @@ func (c *Controller) processNextCapacityTargetWorkItem() bool {
 		if c.capacityTargetWorkqueue.NumRequeues(key) >= maxRetries {
 			// Drop the CapacityTarget's key out of the workqueue and thus reset its
 			// backoff. This limits the time a "broken" object can hog a worker.
-			glog.Warningf("CapacityTarget %q has been retried too many times, dropping from the queue", key)
+			klog.Warningf("CapacityTarget %q has been retried too many times, dropping from the queue", key)
 			c.capacityTargetWorkqueue.Forget(key)
 
 			return true
@@ -165,7 +165,7 @@ func (c *Controller) processNextCapacityTargetWorkItem() bool {
 		return true
 	}
 
-	glog.V(4).Infof("Successfully synced CapacityTarget %q", key)
+	klog.V(4).Infof("Successfully synced CapacityTarget %q", key)
 	c.capacityTargetWorkqueue.Forget(obj)
 
 	return true
@@ -180,7 +180,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 	ct, err := c.capacityTargetsLister.CapacityTargets(namespace).Get(name)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			glog.V(3).Infof("CapacityTarget %q has been deleted", key)
+			klog.V(3).Infof("CapacityTarget %q has been deleted", key)
 			return nil
 		}
 

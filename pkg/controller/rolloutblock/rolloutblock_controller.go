@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
@@ -65,7 +65,7 @@ func NewController(
 	releaseInformer := informerFactory.Shipper().V1alpha1().Releases()
 	rolloutBlockInformer := informerFactory.Shipper().V1alpha1().RolloutBlocks()
 
-	glog.Info("Building a RolloutBlock controller")
+	klog.Info("Building a RolloutBlock controller")
 
 	controller := &Controller{
 		recorder:         recorder,
@@ -94,7 +94,7 @@ func NewController(
 		),
 	}
 
-	glog.Info("Setting up event handlers")
+	klog.Info("Setting up event handlers")
 
 	releaseInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
@@ -219,8 +219,8 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.rolloutblockWorkqueue.ShutDown()
 
-	glog.V(2).Info("Starting RolloutBlock controller")
-	defer glog.V(2).Info("Shutting down RolloutBlock controller")
+	klog.V(2).Info("Starting RolloutBlock controller")
+	defer klog.V(2).Info("Shutting down RolloutBlock controller")
 
 	if ok := cache.WaitForCacheSync(
 		stopCh,
@@ -238,7 +238,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 		go wait.Until(c.runRolloutBlockWorker, time.Second, stopCh)
 	}
 
-	glog.V(4).Info("Started RolloutBlock controller")
+	klog.V(4).Info("Started RolloutBlock controller")
 
 	<-stopCh
 }
@@ -289,7 +289,7 @@ func (c *Controller) processNextApplicationWorkItem() bool {
 		if c.applicationWorkqueue.NumRequeues(key) >= maxRetries {
 			// Drop this update out of the workqueue and thus reset its
 			// backoff. This limits the time a "broken" object can hog a worker.
-			glog.Warningf("Update %q for Application has been retried too many times, dropping from the queue", key)
+			klog.Warningf("Update %q for Application has been retried too many times, dropping from the queue", key)
 			c.applicationWorkqueue.Forget(key)
 
 			return true
@@ -300,7 +300,7 @@ func (c *Controller) processNextApplicationWorkItem() bool {
 		return true
 	}
 
-	glog.V(4).Infof("Successfully synced Application after RolloutBlock Delete %q", key)
+	klog.V(4).Infof("Successfully synced Application after RolloutBlock Delete %q", key)
 	c.applicationWorkqueue.Forget(obj)
 
 	return true
@@ -337,7 +337,7 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 		if c.releaseWorkqueue.NumRequeues(key) >= maxRetries {
 			// Drop this update out of the workqueue and thus reset its
 			// backoff. This limits the time a "broken" object can hog a worker.
-			glog.Warningf("Update %q for Release has been retried too many times, dropping from the queue", key)
+			klog.Warningf("Update %q for Release has been retried too many times, dropping from the queue", key)
 			c.releaseWorkqueue.Forget(key)
 
 			return true
@@ -348,7 +348,7 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 		return true
 	}
 
-	glog.V(4).Infof("Successfully synced Application after RolloutBlock Delete %q", key)
+	klog.V(4).Infof("Successfully synced Application after RolloutBlock Delete %q", key)
 	c.releaseWorkqueue.Forget(obj)
 
 	return true
@@ -385,7 +385,7 @@ func (c *Controller) processNextRolloutBlockWorkItem() bool {
 		if c.rolloutblockWorkqueue.NumRequeues(key) >= maxRetries {
 			// Drop this update out of the workqueue and thus reset its
 			// backoff. This limits the time a "broken" object can hog a worker.
-			glog.Warningf("Update %q for RolloutBlock has been retried too many times, dropping from the queue", key)
+			klog.Warningf("Update %q for RolloutBlock has been retried too many times, dropping from the queue", key)
 			c.rolloutblockWorkqueue.Forget(key)
 
 			return true
@@ -396,7 +396,7 @@ func (c *Controller) processNextRolloutBlockWorkItem() bool {
 		return true
 	}
 
-	glog.V(4).Infof("Successfully synced RolloutBlock Updater %q", key)
+	klog.V(4).Infof("Successfully synced RolloutBlock Updater %q", key)
 	c.rolloutblockWorkqueue.Forget(obj)
 
 	return true

@@ -8,12 +8,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
@@ -29,29 +29,30 @@ var (
 )
 
 func main() {
+	klog.InitFlags(nil)
 	flag.Parse()
 
-	glog.Infof("Starting shipper-state-metrics on %s", *addr)
-	defer glog.Info("Stopping shipper-state-metrics")
+	klog.Infof("Starting shipper-state-metrics on %s", *addr)
+	defer klog.Info("Stopping shipper-state-metrics")
 
 	restCfg, err := clientcmd.BuildConfigFromFlags(*masterURL, *kubeconfig)
 	if err != nil {
-		glog.Fatal(err)
+		klog.Fatal(err)
 	}
 
 	shipperClient, err := shipperclientset.NewForConfig(restCfg)
 	if err != nil {
-		glog.Fatal(err)
+		klog.Fatal(err)
 	}
 
 	kubeClient, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
-		glog.Fatal(err)
+		klog.Fatal(err)
 	}
 
 	resync, err := time.ParseDuration(*resyncPeriod)
 	if err != nil {
-		glog.Warningf("Couldn't parse resync period %q, defaulting to 5 minutes", *resyncPeriod)
+		klog.Warningf("Couldn't parse resync period %q, defaulting to 5 minutes", *resyncPeriod)
 		resync = 5 * time.Minute
 	}
 
@@ -88,13 +89,13 @@ func main() {
 				prometheus.DefaultGatherer,
 				promhttp.HandlerOpts{
 					ErrorHandling: promhttp.ContinueOnError,
-					ErrorLog:      glogStdLogger{},
+					ErrorLog:      klogStdLogger{},
 				},
 			),
 		}
 		err := srv.ListenAndServe()
 		if err != nil {
-			glog.Fatalf("could not start /metrics endpoint: %s", err)
+			klog.Fatalf("could not start /metrics endpoint: %s", err)
 		}
 	}()
 
@@ -117,10 +118,10 @@ func setupSignalHandler() <-chan struct{} {
 	return stopCh
 }
 
-type glogStdLogger struct{}
+type klogStdLogger struct{}
 
-func (glogStdLogger) Println(v ...interface{}) {
+func (klogStdLogger) Println(v ...interface{}) {
 	// Prometheus only logs errors (which aren't fatal so we downgrade them to
 	// warnings).
-	glog.Warning(v...)
+	klog.Warning(v...)
 }

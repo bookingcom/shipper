@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/golang/glog"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -18,6 +17,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
@@ -70,7 +70,7 @@ func (i *Installer) renderManifests(_ *shipper.Cluster) ([]string, error) {
 	}
 
 	for _, v := range rendered {
-		glog.V(10).Infof("Rendered object:\n%s", v)
+		klog.V(10).Infof("Rendered object:\n%s", v)
 	}
 
 	return rendered, err

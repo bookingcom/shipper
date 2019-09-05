@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang/glog"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,6 +12,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperrepo "github.com/bookingcom/shipper/pkg/chart/repo"
@@ -96,7 +95,7 @@ func NewController(
 	capacityTargetInformer := informerFactory.Shipper().V1alpha1().CapacityTargets()
 	rolloutBlockInformer := informerFactory.Shipper().V1alpha1().RolloutBlocks()
 
-	glog.Info("Building a release controller")
+	klog.Info("Building a release controller")
 
 	controller := &Controller{
 		clientset: clientset,
@@ -136,7 +135,7 @@ func NewController(
 		recorder: recorder,
 	}
 
-	glog.Info("Setting up event handlers")
+	klog.Info("Setting up event handlers")
 
 	releaseInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
@@ -200,8 +199,8 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer c.releaseWorkqueue.ShutDown()
 	defer c.applicationWorkqueue.ShutDown()
 
-	glog.V(2).Info("Starting Release controller")
-	defer glog.V(2).Info("Shutting down Release controller")
+	klog.V(2).Info("Starting Release controller")
+	defer klog.V(2).Info("Shutting down Release controller")
 
 	if ok := cache.WaitForCacheSync(
 		stopCh,
@@ -222,7 +221,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 		go wait.Until(c.runApplicationWorker, time.Second, stopCh)
 	}
 
-	glog.V(4).Info("Started Release controller")
+	klog.V(4).Info("Started Release controller")
 
 	<-stopCh
 }
@@ -269,7 +268,7 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 
 	if shouldRetry {
 		if c.releaseWorkqueue.NumRequeues(key) >= maxRetries {
-			glog.Warningf("Release %q has been retried too many times, droppping from the queue", key)
+			klog.Warningf("Release %q has been retried too many times, droppping from the queue", key)
 			c.releaseWorkqueue.Forget(key)
 			return true
 		}
@@ -279,7 +278,7 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 		return true
 	}
 
-	glog.V(4).Infof("Successfully synced Release %q", key)
+	klog.V(4).Infof("Successfully synced Release %q", key)
 	c.releaseWorkqueue.Forget(obj)
 
 	return true
@@ -297,7 +296,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 	rel, err := c.releaseLister.Releases(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			glog.V(3).Infof("Release %q not found", key)
+			klog.V(3).Infof("Release %q not found", key)
 			return nil
 		}
 
@@ -311,7 +310,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 		return nil
 	}
 
-	glog.V(4).Infof("Start processing Release %q", key)
+	klog.V(4).Infof("Start processing Release %q", key)
 
 	scheduler := NewScheduler(
 		c.clientset,
@@ -366,7 +365,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 		return err
 	}
 
-	glog.V(4).Infof("Release %q has been successfully scheduled", key)
+	klog.V(4).Infof("Release %q has been successfully scheduled", key)
 
 	appKey, err := c.getAssociatedApplicationKey(rel)
 	if err != nil {
@@ -375,10 +374,10 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 
 	// If everything went fine, scheduling an application key in the
 	// application workqueue.
-	glog.V(4).Infof("Scheduling Application key %q", appKey)
+	klog.V(4).Infof("Scheduling Application key %q", appKey)
 	c.applicationWorkqueue.Add(appKey)
 
-	glog.V(4).Infof("Done processing Release %q", key)
+	klog.V(4).Infof("Done processing Release %q", key)
 
 	return nil
 }
@@ -457,7 +456,6 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 
 	c.releaseWorkqueue.Add(key)
 }
-
 
 func (c *Controller) enqueueReleaseRateLimited(obj interface{}) {
 	rel, ok := obj.(*shipper.Release)

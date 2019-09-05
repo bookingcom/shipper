@@ -4,12 +4,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	kubelisters "k8s.io/client-go/listers/core/v1"
+	klog "k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
@@ -114,13 +114,13 @@ func (ssm ShipperStateMetrics) Describe(ch chan<- *prometheus.Desc) {
 func (ssm ShipperStateMetrics) collectApplications(ch chan<- prometheus.Metric) {
 	nss, err := getNamespaces(ssm.nssLister)
 	if err != nil {
-		glog.Warningf("collect Namespaces: %s", err)
+		klog.Warningf("collect Namespaces: %s", err)
 		return
 	}
 
 	apps, err := ssm.appsLister.List(everything)
 	if err != nil {
-		glog.Warningf("collect Applications: %s", err)
+		klog.Warningf("collect Applications: %s", err)
 		return
 	}
 
@@ -129,7 +129,7 @@ func (ssm ShipperStateMetrics) collectApplications(ch chan<- prometheus.Metric) 
 		appsPerNamespace[app.Namespace]++
 	}
 
-	glog.V(4).Infof("apps: %v", appsPerNamespace)
+	klog.V(4).Infof("apps: %v", appsPerNamespace)
 
 	for _, ns := range nss {
 		n, ok := appsPerNamespace[ns.Name]
@@ -144,7 +144,7 @@ func (ssm ShipperStateMetrics) collectApplications(ch chan<- prometheus.Metric) 
 func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 	rels, err := ssm.relsLister.List(everything)
 	if err != nil {
-		glog.Warningf("collect Releases: %s", err)
+		klog.Warningf("collect Releases: %s", err)
 		return
 	}
 
@@ -197,7 +197,7 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 
 	}
 
-	glog.V(4).Infof("releases: %v", breakdown)
+	klog.V(4).Infof("releases: %v", breakdown)
 
 	for k, v := range breakdown {
 		ch <- prometheus.MustNewConstMetric(relsDesc, prometheus.GaugeValue, v, unkey(k)...)
@@ -210,7 +210,7 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 		sum := Sum(ages)
 		summary, err := MakeSummary(ages, quantiles)
 		if err != nil {
-			glog.Warningf("collect Releases: %s", err)
+			klog.Warningf("collect Releases: %s", err)
 			return
 		}
 
@@ -221,13 +221,13 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 func (ssm ShipperStateMetrics) collectInstallationTargets(ch chan<- prometheus.Metric) {
 	nss, err := getNamespaces(ssm.nssLister)
 	if err != nil {
-		glog.Warningf("collect Namespaces: %s", err)
+		klog.Warningf("collect Namespaces: %s", err)
 		return
 	}
 
 	its, err := ssm.itsLister.List(everything)
 	if err != nil {
-		glog.Warningf("collect InstallationTargets: %s", err)
+		klog.Warningf("collect InstallationTargets: %s", err)
 		return
 	}
 
@@ -236,7 +236,7 @@ func (ssm ShipperStateMetrics) collectInstallationTargets(ch chan<- prometheus.M
 		itsPerNamespace[it.Namespace]++
 	}
 
-	glog.V(4).Infof("its: %v", itsPerNamespace)
+	klog.V(4).Infof("its: %v", itsPerNamespace)
 
 	for _, ns := range nss {
 		n, ok := itsPerNamespace[ns.Name]
@@ -251,13 +251,13 @@ func (ssm ShipperStateMetrics) collectInstallationTargets(ch chan<- prometheus.M
 func (ssm ShipperStateMetrics) collectCapacityTargets(ch chan<- prometheus.Metric) {
 	nss, err := getNamespaces(ssm.nssLister)
 	if err != nil {
-		glog.Warningf("collect Namespaces: %s", err)
+		klog.Warningf("collect Namespaces: %s", err)
 		return
 	}
 
 	cts, err := ssm.ctsLister.List(everything)
 	if err != nil {
-		glog.Warningf("collect CapacityTargets: %s", err)
+		klog.Warningf("collect CapacityTargets: %s", err)
 		return
 	}
 
@@ -266,7 +266,7 @@ func (ssm ShipperStateMetrics) collectCapacityTargets(ch chan<- prometheus.Metri
 		ctsPerNamespace[it.Namespace]++
 	}
 
-	glog.V(4).Infof("cts: %v", ctsPerNamespace)
+	klog.V(4).Infof("cts: %v", ctsPerNamespace)
 
 	for _, ns := range nss {
 		n, ok := ctsPerNamespace[ns.Name]
@@ -281,13 +281,13 @@ func (ssm ShipperStateMetrics) collectCapacityTargets(ch chan<- prometheus.Metri
 func (ssm ShipperStateMetrics) collectTrafficTargets(ch chan<- prometheus.Metric) {
 	nss, err := getNamespaces(ssm.nssLister)
 	if err != nil {
-		glog.Warningf("collect Namespaces: %s", err)
+		klog.Warningf("collect Namespaces: %s", err)
 		return
 	}
 
 	tts, err := ssm.ttsLister.List(everything)
 	if err != nil {
-		glog.Warningf("collect TrafficTargets: %s", err)
+		klog.Warningf("collect TrafficTargets: %s", err)
 		return
 	}
 
@@ -296,7 +296,7 @@ func (ssm ShipperStateMetrics) collectTrafficTargets(ch chan<- prometheus.Metric
 		ttsPerNamespace[it.Namespace]++
 	}
 
-	glog.V(4).Infof("tts: %v", ttsPerNamespace)
+	klog.V(4).Infof("tts: %v", ttsPerNamespace)
 
 	for _, ns := range nss {
 		n, ok := ttsPerNamespace[ns.Name]
@@ -311,7 +311,7 @@ func (ssm ShipperStateMetrics) collectTrafficTargets(ch chan<- prometheus.Metric
 func (ssm ShipperStateMetrics) collectClusters(ch chan<- prometheus.Metric) {
 	clusters, err := ssm.clustersLister.List(everything)
 	if err != nil {
-		glog.Warningf("collect Clusters: %s", err)
+		klog.Warningf("collect Clusters: %s", err)
 		return
 	}
 
@@ -335,13 +335,13 @@ func (ssm ShipperStateMetrics) collectClusters(ch chan<- prometheus.Metric) {
 func (ssm ShipperStateMetrics) collectRolloutBlocks(ch chan<- prometheus.Metric) {
 	nss, err := getNamespaces(ssm.nssLister)
 	if err != nil {
-		glog.Errorf("collect Namespaces: %s", err)
+		klog.Errorf("collect Namespaces: %s", err)
 		return
 	}
 
 	rolloutBlocks, err := ssm.rbLister.List(everything)
 	if err != nil {
-		glog.Errorf("collect RolloutBlocks: %s", err)
+		klog.Errorf("collect RolloutBlocks: %s", err)
 		return
 	}
 
@@ -350,7 +350,7 @@ func (ssm ShipperStateMetrics) collectRolloutBlocks(ch chan<- prometheus.Metric)
 		rbsPerNamespace[rolloutBlock.Namespace]++
 	}
 
-	glog.V(4).Infof("RolloutBlocks: %v", rbsPerNamespace)
+	klog.V(4).Infof("RolloutBlocks: %v", rbsPerNamespace)
 
 	for _, ns := range nss {
 		n, ok := rbsPerNamespace[ns.Name]

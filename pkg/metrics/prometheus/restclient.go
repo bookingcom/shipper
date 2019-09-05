@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
 	prom "github.com/prometheus/client_golang/prometheus"
+	"k8s.io/klog"
 )
 
 type RESTLatencyMetric struct {
@@ -106,7 +106,7 @@ func extractGVR(path string) string {
 
 	}
 
-	glog.V(8).Infof("Parsed API path %q into GVR %q", origPath, gvr)
+	klog.V(8).Infof("Parsed API path %q into GVR %q", origPath, gvr)
 
 	return gvr
 }

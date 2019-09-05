@@ -5,7 +5,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,6 +14,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperrepo "github.com/bookingcom/shipper/pkg/chart/repo"
@@ -103,7 +103,7 @@ func NewController(
 			oldRel, oldOk := old.(*shipper.Release)
 			newRel, newOk := new.(*shipper.Release)
 			if oldOk && newOk && oldRel.ResourceVersion == newRel.ResourceVersion {
-				glog.V(4).Info("Received Release re-sync Update")
+				klog.V(4).Info("Received Release re-sync Update")
 				return
 			}
 
@@ -121,8 +121,8 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.appWorkqueue.ShutDown()
 
-	glog.V(2).Info("Starting Application controller")
-	defer glog.V(2).Info("Shutting down Application controller")
+	klog.V(2).Info("Starting Application controller")
+	defer klog.V(2).Info("Shutting down Application controller")
 
 	if !cache.WaitForCacheSync(stopCh, c.appSynced, c.relSynced, c.rbSynced) {
 		runtime.HandleError(fmt.Errorf("failed to sync caches for the Application controller"))
@@ -133,7 +133,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 		go wait.Until(c.applicationWorker, time.Second, stopCh)
 	}
 
-	glog.V(2).Info("Started Application controller")
+	klog.V(2).Info("Started Application controller")
 
 	<-stopCh
 }
@@ -174,7 +174,7 @@ func (c *Controller) processNextWorkItem() bool {
 		if c.appWorkqueue.NumRequeues(key) >= maxRetries {
 			// Drop the Application's key out of the workqueue and thus reset its
 			// backoff. This limits the time a "broken" object can hog a worker.
-			glog.Warningf("Application %q has been retried too many times, dropping from the queue", key)
+			klog.Warningf("Application %q has been retried too many times, dropping from the queue", key)
 			c.appWorkqueue.Forget(key)
 
 			return true
@@ -185,7 +185,7 @@ func (c *Controller) processNextWorkItem() bool {
 		return true
 	}
 
-	glog.V(4).Infof("Successfully synced Application %q", key)
+	klog.V(4).Infof("Successfully synced Application %q", key)
 	c.appWorkqueue.Forget(obj)
 
 	return true
@@ -233,7 +233,7 @@ func (c *Controller) syncApplication(key string) error {
 	app, err := c.appLister.Applications(ns).Get(name)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			glog.V(3).Infof("Application %q has been deleted", key)
+			klog.V(3).Infof("Application %q has been deleted", key)
 			return nil
 		}
 
@@ -389,10 +389,10 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 	// existing rollout blocks in the system
 	var nsRolloutBlocks, globalRolloutBlocks []*shipper.RolloutBlock
 	if nsRolloutBlocks, err = c.rbLister.RolloutBlocks(app.Namespace).List(labels.Everything()); err != nil {
-		glog.Warningf("failed to list Namespace RolloutBlocks %s", err.Error())
+		klog.Warningf("failed to list Namespace RolloutBlocks %s", err.Error())
 	}
 	if globalRolloutBlocks, err = c.rbLister.RolloutBlocks(shipper.GlobalRolloutBlockNamespace).List(labels.Everything()); err != nil {
-		glog.Warningf("failed to list Global RolloutBlocks %s", err.Error())
+		klog.Warningf("failed to list Global RolloutBlocks %s", err.Error())
 	}
 	rbs = append(nsRolloutBlocks, globalRolloutBlocks...)
 	if c.processRolloutBlocks(app, nsRolloutBlocks, globalRolloutBlocks) {

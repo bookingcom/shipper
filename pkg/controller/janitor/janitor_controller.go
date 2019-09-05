@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,6 +15,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
@@ -194,8 +194,8 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.workqueue.ShutDown()
 
-	glog.V(2).Info("Starting Janitor controller")
-	defer glog.V(2).Info("Shutting down Janitor controller")
+	klog.V(2).Info("Starting Janitor controller")
+	defer klog.V(2).Info("Shutting down Janitor controller")
 
 	if ok := cache.WaitForCacheSync(stopCh, c.itSynced); !ok {
 		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
@@ -206,7 +206,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 		go wait.Until(c.runWorker, time.Second, stopCh)
 	}
 
-	glog.V(4).Info("Started Janitor controller")
+	klog.V(4).Info("Started Janitor controller")
 
 	<-stopCh
 }
@@ -254,7 +254,7 @@ func (c *Controller) processNextWorkItem() bool {
 			if c.workqueue.NumRequeues(obj) >= maxRetries {
 				// Drop the CapacityTarget's key out of the workqueue and thus reset its
 				// backoff. This limits the time a "broken" object can hog a worker.
-				glog.Warningf("WorkItem %q has been retried too many times, dropping from the queue", key)
+				klog.Warningf("WorkItem %q has been retried too many times, dropping from the queue", key)
 				c.workqueue.Forget(obj)
 
 				return true
@@ -266,7 +266,7 @@ func (c *Controller) processNextWorkItem() bool {
 		}
 
 		c.workqueue.Forget(obj)
-		glog.Infof("Successfully synced %q", key)
+		klog.Infof("Successfully synced %q", key)
 	}
 
 	return true
@@ -287,7 +287,7 @@ func (c *Controller) syncAnchor(item *AnchorWorkItem) error {
 		// target object in the manage cluster match, so we just bail out here.
 		return nil
 	} else {
-		glog.V(2).Infof(
+		klog.V(2).Infof(
 			"Release anchor points to either wrong or non-existent installation target UID %q, proceeding to remove it",
 			item.InstallationTargetUID)
 	}

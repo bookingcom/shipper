@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/golang/glog"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -16,6 +15,7 @@ import (
 	"k8s.io/client-go/rest"
 	kubecache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperinformer "github.com/bookingcom/shipper/pkg/client/informers/externalversions/shipper/v1alpha1"
@@ -87,7 +87,7 @@ func (s *Store) Run(stopCh <-chan struct{}) {
 	defer s.secretWorkqueue.ShutDown()
 	defer s.cache.Stop()
 
-	glog.Info("Waiting for client store informer caches to sync")
+	klog.Info("Waiting for client store informer caches to sync")
 
 	ok := kubecache.WaitForCacheSync(
 		stopCh,
@@ -100,14 +100,14 @@ func (s *Store) Run(stopCh <-chan struct{}) {
 		return
 	}
 
-	glog.Info("Starting cluster client store workers")
+	klog.Info("Starting cluster client store workers")
 
 	go s.cache.Serve()
 	go wait.Until(s.clusterWorker, time.Second, stopCh)
 	go wait.Until(s.secretWorker, time.Second, stopCh)
 
-	glog.Info("client store is running")
-	defer glog.Info("shutting down client store...")
+	klog.Info("client store is running")
+	defer klog.Info("shutting down client store...")
 
 	<-stopCh
 }
@@ -157,7 +157,7 @@ func (s *Store) syncCluster(name string) error {
 	clusterObj, err := s.clusterInformer.Lister().Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			glog.Infof("Cluster %q has been deleted; purging it from client store", name)
+			klog.Infof("Cluster %q has been deleted; purging it from client store", name)
 			s.cache.Remove(name)
 			return nil
 		}
@@ -178,7 +178,7 @@ func (s *Store) syncCluster(name string) error {
 		// informer.
 		if err == nil || shippererrors.IsClusterNotReadyError(err) {
 			if config != nil && config.Host == clusterObj.Spec.APIMaster {
-				glog.Infof("Cluster %q syncing, but we already have a client with the right host in the cache", name)
+				klog.Infof("Cluster %q syncing, but we already have a client with the right host in the cache", name)
 				return nil
 			}
 		}
@@ -187,7 +187,7 @@ func (s *Store) syncCluster(name string) error {
 	secret, err := s.secretInformer.Lister().Secrets(s.ns).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			glog.Infof("Cluster %q has no corresponding secret", name)
+			klog.Infof("Cluster %q has no corresponding secret", name)
 			return nil
 		}
 
@@ -213,7 +213,7 @@ func (s *Store) syncSecret(key string) error {
 	secret, err := s.secretInformer.Lister().Secrets(s.ns).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			glog.Infof("Secret %q has been deleted; purging any associated client from client store", key)
+			klog.Infof("Secret %q has been deleted; purging any associated client from client store", key)
 			s.cache.Remove(name)
 			return nil
 		}
@@ -225,7 +225,7 @@ func (s *Store) syncSecret(key string) error {
 	clusterObj, err := s.clusterInformer.Lister().Get(secret.Name)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			glog.Infof("Secret %q has no corresponding cluster", key)
+			klog.Infof("Secret %q has no corresponding cluster", key)
 			return nil
 		}
 
@@ -250,7 +250,7 @@ func (s *Store) syncSecret(key string) error {
 		// informer.
 		if err == nil || shippererrors.IsClusterNotReadyError(err) {
 			if existingChecksum == checksum {
-				glog.Infof("Secret %q syncing but we already have a client based on the same checksum in the cache", key)
+				klog.Infof("Secret %q syncing but we already have a client based on the same checksum in the cache", key)
 				return nil
 			}
 		}
@@ -360,10 +360,10 @@ func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration)
 
 	if encodedInsecureSkipTlsVerify, ok := secret.Annotations[shipper.SecretClusterSkipTlsVerifyAnnotation]; ok {
 		if insecureSkipTlsVerify, err := strconv.ParseBool(encodedInsecureSkipTlsVerify); err == nil {
-			glog.Infof("found %q annotation with value %q for host %q", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify, host)
+			klog.Infof("found %q annotation with value %q for host %q", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify, host)
 			config.Insecure = insecureSkipTlsVerify
 		} else {
-			glog.Infof("found %q annotation with value %q for host %q but failed to decode a bool from it, ignoring it", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify, host)
+			klog.Infof("found %q annotation with value %q for host %q but failed to decode a bool from it, ignoring it", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify, host)
 		}
 	}
 

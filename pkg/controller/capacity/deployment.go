@@ -5,13 +5,13 @@ import (
 	"math"
 	"sort"
 
-	"github.com/golang/glog"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
@@ -58,7 +58,7 @@ func (c *Controller) processNextDeploymentWorkItem() bool {
 		if c.deploymentWorkqueue.NumRequeues(key) >= maxRetries {
 			// Drop the Deployment's key out of the workqueue and thus reset its
 			// backoff. This limits the time a "broken" object can hog a worker.
-			glog.Warningf("Deployment %q has been retried too many times, dropping from the queue", key.Key)
+			klog.Warningf("Deployment %q has been retried too many times, dropping from the queue", key.Key)
 			c.deploymentWorkqueue.Forget(key)
 
 			return true
@@ -69,7 +69,7 @@ func (c *Controller) processNextDeploymentWorkItem() bool {
 		return true
 	}
 
-	glog.V(4).Infof("Successfully synced Deployment %q", key.Key)
+	klog.V(4).Infof("Successfully synced Deployment %q", key.Key)
 	c.deploymentWorkqueue.Forget(key)
 
 	return true
@@ -95,7 +95,7 @@ func (c Controller) NewDeploymentResourceEventHandler(clusterName string) cache.
 		FilterFunc: func(obj interface{}) bool {
 			deploy, ok := obj.(*appsv1.Deployment)
 			if !ok {
-				glog.Warningf("Received something that's not a appsv1/Deployment: %v", obj)
+				klog.Warningf("Received something that's not a appsv1/Deployment: %v", obj)
 				return false
 			}
 
