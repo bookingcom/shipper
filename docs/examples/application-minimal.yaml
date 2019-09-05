@@ -7,7 +7,7 @@ spec:
     # helm chart for this application
     chart:
       name: reviews-api
-      version: 0.0.1
+      version: "0.0.1"
       repoUrl: https://charts.example.com
     # how to select clusters to deploy to
     clusterRequirements:
