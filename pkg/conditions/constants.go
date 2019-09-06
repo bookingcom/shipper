@@ -25,6 +25,7 @@ const (
 	FetchReleaseFailed                  = "FetchReleaseFailed"
 	BrokenReleaseGeneration             = "BrokenReleaseGeneration"
 	BrokenApplicationObservedGeneration = "BrokenApplicationObservedGeneration"
+	StrategyExecutionFailed             = "StrategyExecutionFailed"
 
 	ChartError  = "ChartError"
 	ClientError = "ClientError"

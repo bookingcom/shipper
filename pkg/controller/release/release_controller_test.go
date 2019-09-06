@@ -25,11 +25,13 @@ import (
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 
 func init() {
+	apputil.ConditionsShouldDiscardTimestamps = true
 	releaseutil.ConditionsShouldDiscardTimestamps = true
 	conditions.StrategyConditionsShouldDiscardTimestamps = true
 }
@@ -2417,6 +2419,77 @@ func TestContenderReleaseIsInstalled(t *testing.T) {
 
 		f.run()
 	}
+}
+
+func TestApplicationExposesStrategyFailure(t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+	app := buildApplication(namespace, "test-app")
+
+	cluster := buildCluster("minikube")
+
+	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+
+	totalReplicaCount := int32(1)
+	contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+	incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+	expectedApp := app.DeepCopy()
+	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
+		{
+			Type:    shipper.ApplicationConditionTypeReleaseSynced,
+			Status:  corev1.ConditionFalse,
+			Reason:  conditions.StrategyExecutionFailed,
+			Message: fmt.Sprintf("failed to execute application strategy: \"no step 2 in strategy for Release \\\"%s/%s\\\"\"", contender.release.Namespace, contender.release.Name),
+		},
+	}
+
+	contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
+	cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+	// We define 2 steps and will intentionally set target step index out of this bound
+	strategy := shipper.RolloutStrategy{
+		Steps: []shipper.RolloutStrategyStep{
+			{
+				Name:     "staging",
+				Capacity: shipper.RolloutStrategyStepValue{Incumbent: 100, Contender: 1},
+				Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 100, Contender: 0},
+			},
+			{
+				Name:     "full on",
+				Capacity: shipper.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+				Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+			},
+		},
+	}
+
+	contender.release.Spec.Environment.Strategy = &strategy
+	contender.release.Spec.TargetStep = 2 // out of bound index
+
+	f.addObjects(
+		contender.release.DeepCopy(),
+		contender.installationTarget.DeepCopy(),
+		contender.capacityTarget.DeepCopy(),
+		contender.trafficTarget.DeepCopy(),
+
+		incumbent.release.DeepCopy(),
+		incumbent.installationTarget.DeepCopy(),
+		incumbent.capacityTarget.DeepCopy(),
+		incumbent.trafficTarget.DeepCopy(),
+	)
+
+	f.actions = append(f.actions, kubetesting.NewUpdateAction(
+		shipper.SchemeGroupVersion.WithResource("applications"),
+		app.GetNamespace(),
+		expectedApp))
+
+	f.filter = f.filter.Extend(actionfilter{
+		[]string{"update"},
+		[]string{"applications"},
+	})
+
+	f.run()
 }
 
 func workingOnContenderCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
