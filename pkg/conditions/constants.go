@@ -22,6 +22,7 @@ const (
 	TargetClusterClientError = "TargetClusterClientError"
 
 	CreateReleaseFailed                 = "CreateReleaseFailed"
+	ChartVersionResolutionFailed        = "ChartVersionResolutionFailed"
 	FetchReleaseFailed                  = "FetchReleaseFailed"
 	BrokenReleaseGeneration             = "BrokenReleaseGeneration"
 	BrokenApplicationObservedGeneration = "BrokenApplicationObservedGeneration"

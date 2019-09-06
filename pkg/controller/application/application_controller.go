@@ -382,6 +382,16 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 	// If a semver constraint is found, it would be resolved in-place.
 	if !apputil.ChartVersionResolved(app) {
 		if _, err := apputil.ResolveChartVersion(app, c.versionResolver); err != nil {
+			cond := apputil.NewApplicationCondition(
+				shipper.ApplicationConditionTypeRollingOut,
+				corev1.ConditionFalse,
+				conditions.ChartVersionResolutionFailed,
+				err.Error(),
+			)
+			apputil.SetApplicationCondition(&app.Status, *cond)
+			if _, updErr := c.shipperClientset.ShipperV1alpha1().Applications(app.Namespace).Update(app); updErr != nil {
+				return shippererrors.NewKubeclientUpdateError(app, updErr).WithShipperKind("Application")
+			}
 			return err
 		}
 	}
