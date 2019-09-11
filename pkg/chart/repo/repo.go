@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -245,16 +246,17 @@ func (r *Repo) Fetch(chartspec *shipper.Chart) (*chart.Chart, error) {
 	if err != nil {
 		return nil, err
 	}
-	var chartver *repo.ChartVersion
-	for _, ver := range versions {
-		if ver.Version == chartspec.Version {
-			chartver = ver
-			break
-		}
-	}
-	if chartver == nil {
+
+	maxIx := len(versions)
+	ix := sort.Search(maxIx, func(i int) bool {
+		return versions[i].Version <= chartspec.Version
+	})
+
+	if ix == maxIx { // nothing found
 		return nil, shippererrors.NewChartVersionResolveError(chartspec, repo.ErrNoChartVersion)
 	}
+
+	chartver := versions[ix]
 
 	if chart, err := r.LoadCached(chartver); err == nil {
 		return chart, nil
