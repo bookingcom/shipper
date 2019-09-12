@@ -179,14 +179,13 @@ func TestNewAppAllInWithRolloutBlockOverride(t *testing.T) {
 		teardownNamespace(ns.GetName())
 	}()
 
-	newRolloutBlock := newRolloutBlock(rolloutBlockName, ns.GetName())
-	_, err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Create(newRolloutBlock)
+	rb, err := createRolloutBlock(ns.GetName(), rolloutBlockName)
 	if err != nil {
 		t.Fatalf("could not create rollout block %q: %q", rolloutBlockName, err)
 	}
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
-	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", newRolloutBlock.GetNamespace(), newRolloutBlock.GetName())
+	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
 	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
@@ -208,7 +207,7 @@ func TestNewAppAllInWithRolloutBlockOverride(t *testing.T) {
 		t.Fatalf("could not DELETE application %q: %q", appName, err)
 	}
 
-	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(newRolloutBlock.GetName(), &metav1.DeleteOptions{})
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(rb.GetName(), &metav1.DeleteOptions{})
 	if err != nil {
 		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -233,8 +232,7 @@ func TestBlockNewAppWithRolloutBlock(t *testing.T) {
 		teardownNamespace(ns.GetName())
 	}()
 
-	newRolloutBlock := newRolloutBlock(rolloutBlockName, ns.GetName())
-	_, err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Create(newRolloutBlock)
+	rb, err := createRolloutBlock(ns.GetName(), rolloutBlockName)
 	if err != nil {
 		t.Fatalf("could not create rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -247,7 +245,7 @@ func TestBlockNewAppWithRolloutBlock(t *testing.T) {
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
 		t.Logf("successfully did not create application %q: %q", appName, err)
-		err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(newRolloutBlock.GetName(), &metav1.DeleteOptions{})
+		err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(rb.GetName(), &metav1.DeleteOptions{})
 		if err != nil {
 			t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
 		}
@@ -260,7 +258,7 @@ func TestBlockNewAppWithRolloutBlock(t *testing.T) {
 		t.Fatalf("could not DELETE application %q: %q", appName, err)
 	}
 
-	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(newRolloutBlock.GetName(), &metav1.DeleteOptions{})
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(rb.GetName(), &metav1.DeleteOptions{})
 	if err != nil {
 		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -295,8 +293,7 @@ func TestBlockNewAppProgressWithRolloutBlock(t *testing.T) {
 		t.Fatalf("could not create application %q: %q", appName, err)
 	}
 
-	newRolloutBlock := newRolloutBlock(rolloutBlockName, ns.GetName())
-	_, err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Create(newRolloutBlock)
+	rb, err := createRolloutBlock(ns.GetName(), rolloutBlockName)
 	if err != nil {
 		t.Fatalf("could not create rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -307,7 +304,7 @@ func TestBlockNewAppProgressWithRolloutBlock(t *testing.T) {
 		t.Fatalf("could not DELETE application %q: %q", appName, err)
 	}
 
-	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(newRolloutBlock.GetName(), &metav1.DeleteOptions{})
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(rb.GetName(), &metav1.DeleteOptions{})
 	if err != nil {
 		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -389,14 +386,13 @@ func TestRolloutAllInWithRolloutBlockOverride(t *testing.T) {
 		teardownNamespace(ns.GetName())
 	}()
 
-	newRolloutBlock := newRolloutBlock(rolloutBlockName, ns.GetName())
-	_, err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Create(newRolloutBlock)
+	rb, err := createRolloutBlock(ns.GetName(), rolloutBlockName)
 	if err != nil {
 		t.Fatalf("could not create rollout block %q: %q", rolloutBlockName, err)
 	}
 
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", newRolloutBlock.GetNamespace(), newRolloutBlock.GetName())
+	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
 	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
@@ -434,7 +430,7 @@ func TestRolloutAllInWithRolloutBlockOverride(t *testing.T) {
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", contender.GetName(), targetReplicas)
 	f.checkPods(contender.GetName(), targetReplicas)
 
-	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(newRolloutBlock.GetName(), &metav1.DeleteOptions{})
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(rb.GetName(), &metav1.DeleteOptions{})
 	if err != nil {
 		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -508,14 +504,13 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int, t *t
 		teardownNamespace(ns.GetName())
 	}()
 
-	newRolloutBlock := newRolloutBlock(rolloutBlockName, ns.GetName())
-	_, err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Create(newRolloutBlock)
+	rb, err := createRolloutBlock(ns.GetName(), rolloutBlockName)
 	if err != nil {
 		t.Fatalf("could not create rollout block %q: %q", rolloutBlockName, err)
 	}
 
 	newApp := newApplication(ns.GetName(), appName, &vanguard)
-	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", newRolloutBlock.GetNamespace(), newRolloutBlock.GetName())
+	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
 	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
@@ -546,7 +541,7 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int, t *t
 		f.checkPods(relName, expectedCapacity)
 	}
 
-	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(newRolloutBlock.GetName(), &metav1.DeleteOptions{})
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(rb.GetName(), &metav1.DeleteOptions{})
 	if err != nil {
 		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -759,8 +754,7 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 	}
 
 	t.Logf("created a new rollout block object %q", rolloutBlockName)
-	newRolloutBlock := newRolloutBlock(rolloutBlockName, ns.GetName())
-	_, err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Create(newRolloutBlock)
+	rb, err := createRolloutBlock(ns.GetName(), rolloutBlockName)
 	if err != nil {
 		t.Fatalf("could not create rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -779,7 +773,7 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 	t.Logf("checking that release %q still has %d pods (strategy step %d aka %q)", relName, expectedCapacity, 1, step.Name)
 	f.checkPods(relName, int(expectedCapacity))
 
-	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(newRolloutBlock.GetName(), &metav1.DeleteOptions{})
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(rb.GetName(), &metav1.DeleteOptions{})
 	if err != nil {
 		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -934,8 +928,7 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 	f.checkPods(incumbentName, int(expectedIncumbentCapacity))
 
 	t.Logf("created a new rollout block object %q", rolloutBlockName)
-	newRolloutBlock := newRolloutBlock(rolloutBlockName, ns.GetName())
-	_, err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Create(newRolloutBlock)
+	rb, err := createRolloutBlock(ns.GetName(), rolloutBlockName)
 	if err != nil {
 		t.Fatalf("could not create rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -961,7 +954,7 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 	f.checkPods(contenderName, int(expectedContenderCapacity))
 	f.checkPods(incumbentName, int(expectedIncumbentCapacity))
 
-	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(newRolloutBlock.GetName(), &metav1.DeleteOptions{})
+	err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Delete(rb.GetName(), &metav1.DeleteOptions{})
 	if err != nil {
 		t.Fatalf("could not DELETE rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -1150,8 +1143,7 @@ func TestNewRolloutBlockAddOverrides(t *testing.T) {
 		teardownNamespace(namespace)
 	}()
 
-	newRolloutBlock := newRolloutBlock(rolloutBlockName, namespace)
-	_, err = shipperClient.ShipperV1alpha1().RolloutBlocks(namespace).Create(newRolloutBlock)
+	_, err = createRolloutBlock(namespace, rolloutBlockName)
 	if err != nil {
 		t.Fatalf("could not create rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -1166,7 +1158,7 @@ func TestNewRolloutBlockAddOverrides(t *testing.T) {
 	}
 
 	newApp := newApplication(namespace, appName, &allIn)
-	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", newRolloutBlock.GetNamespace(), newRolloutBlock.GetName())
+	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
 	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
@@ -1221,8 +1213,7 @@ func TestNewGlobalRolloutBlockAddOverrides(t *testing.T) {
 		teardownNamespace(ns.GetName())
 	}()
 
-	newRolloutBlock := newRolloutBlock(rolloutBlockName, shipper.GlobalRolloutBlockNamespace)
-	_, err = shipperClient.ShipperV1alpha1().RolloutBlocks(shipper.GlobalRolloutBlockNamespace).Create(newRolloutBlock)
+	_, err = createRolloutBlock(shipper.GlobalRolloutBlockNamespace, rolloutBlockName)
 	if err != nil {
 		t.Fatalf("could not create rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -1237,7 +1228,7 @@ func TestNewGlobalRolloutBlockAddOverrides(t *testing.T) {
 	}
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
-	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", newRolloutBlock.GetNamespace(), newRolloutBlock.GetName())
+	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
 	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
@@ -1293,8 +1284,7 @@ func TestNewRolloutBlockRemoveRelease(t *testing.T) {
 		teardownNamespace(ns.GetName())
 	}()
 
-	newRolloutBlock := newRolloutBlock(rolloutBlockName, ns.GetName())
-	_, err = shipperClient.ShipperV1alpha1().RolloutBlocks(ns.GetName()).Create(newRolloutBlock)
+	_, err = createRolloutBlock(ns.GetName(), rolloutBlockName)
 	if err != nil {
 		t.Fatalf("could not create rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -1309,7 +1299,7 @@ func TestNewRolloutBlockRemoveRelease(t *testing.T) {
 	}
 
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", newRolloutBlock.GetNamespace(), newRolloutBlock.GetName())
+	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
 	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
@@ -1386,8 +1376,7 @@ func TestNewGlobalRolloutBlockRemoveRelease(t *testing.T) {
 	}()
 
 	globalNamespace := shipper.GlobalRolloutBlockNamespace
-	newRolloutBlock := newRolloutBlock(rolloutBlockName, globalNamespace)
-	_, err = shipperClient.ShipperV1alpha1().RolloutBlocks(globalNamespace).Create(newRolloutBlock)
+	_, err = createRolloutBlock(globalNamespace, rolloutBlockName)
 	if err != nil {
 		t.Fatalf("could not create rollout block %q: %q", rolloutBlockName, err)
 	}
@@ -1402,7 +1391,7 @@ func TestNewGlobalRolloutBlockRemoveRelease(t *testing.T) {
 	}
 
 	app := newApplication(testNamespace, appName, &allIn)
-	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", newRolloutBlock.GetNamespace(), newRolloutBlock.GetName())
+	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
 	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
@@ -1857,18 +1846,33 @@ func newApplication(namespace, name string, strategy *shipper.RolloutStrategy) *
 	}
 }
 
-func newRolloutBlock(name string, namespace string) *shipper.RolloutBlock {
-	return &shipper.RolloutBlock{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: shipper.RolloutBlockSpec{
-			Message: "Simple test rollout block",
-			Author: shipper.RolloutBlockAuthor{
-				Type: "user",
-				Name: "testUser",
+func createRolloutBlock(namespace, name string) (*shipper.RolloutBlock, error) {
+
+	rb, err := shipperClient.ShipperV1alpha1().RolloutBlocks(namespace).Get(name, metav1.GetOptions{})
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			return nil, err
+		}
+
+		rolloutBlock := &shipper.RolloutBlock{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
 			},
-		},
+			Spec: shipper.RolloutBlockSpec{
+				Message: "Simple test rollout block",
+				Author: shipper.RolloutBlockAuthor{
+					Type: "user",
+					Name: "testUser",
+				},
+			},
+		}
+
+		rb, err = shipperClient.ShipperV1alpha1().RolloutBlocks(namespace).Create(rolloutBlock)
+		if err != nil {
+			return nil, err
+		}
 	}
+
+	return rb, nil
 }
