@@ -7,13 +7,14 @@ services:
 - docker
 before_install:
 - sudo snap install microk8s --classic --channel=1.14/stable
-- sudo snap alias microk8s.kubectl kubectl
+- curl -L https://storage.googleapis.com/kubernetes-release/release/v1.15.3/bin/linux/amd64/kubectl > $(go env GOPATH)/bin/kubectl
+- chmod +x $(go env GOPATH)/bin/kubectl
 - mkdir ~/.kube
-- microk8s.config > ~/.kube/config
+- sudo microk8s.config > ~/.kube/config
 - curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh |
   sh -s -- -b $(go env GOPATH)/bin v1.17.1
-- microk8s.status --wait-ready
-- microk8s.enable registry
+- sudo microk8s.status --wait-ready
+- sudo microk8s.enable registry
 install: true
 script:
 - "./ci/test.sh && ./ci/build.sh && ./ci/e2e.sh"
