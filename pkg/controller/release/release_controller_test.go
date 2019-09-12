@@ -208,7 +208,7 @@ func (f *fixture) run() {
 	f.informerFactory = informerFactory
 	f.recorder = record.NewFakeRecorder(42)
 
-	controller := f.newController()
+	controller := f.newController(time.Second)
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
@@ -246,12 +246,13 @@ func (f *fixture) run() {
 	shippertesting.CheckEvents(f.expectedEvents, f.receivedEvents, f.t)
 }
 
-func (f *fixture) newController() *Controller {
+func (f *fixture) newController(resync time.Duration) *Controller {
 	return NewController(
 		f.clientset,
 		f.informerFactory,
 		localFetchChart,
 		f.recorder,
+		resync,
 	)
 }
 

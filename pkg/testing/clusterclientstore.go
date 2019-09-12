@@ -3,6 +3,7 @@ package testing
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,6 +21,7 @@ func ClusterClientStore(
 	stopCh chan struct{},
 	clusterNames []string,
 	clientBuilderFunc clusterclientstore.ClientBuilderFunc,
+	resyncPeriod time.Duration,
 ) *clusterclientstore.Store {
 
 	// These are runtime.Object because NewSimpleClientset takes a varargs list of
@@ -49,7 +51,7 @@ func ClusterClientStore(
 		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
 		TestNamespace,
 		nil,
-		nil,
+		resyncPeriod,
 	)
 
 	kubeInformerFactory.Start(stopCh)

@@ -22,6 +22,7 @@ import (
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
+	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
@@ -38,6 +39,7 @@ const (
 )
 
 type Controller struct {
+	resyncPeriod       time.Duration
 	shipperClientset   shipperclient.Interface
 	workqueue          workqueue.RateLimitingInterface
 	clusterClientStore clusterclientstore.Interface
@@ -52,11 +54,13 @@ func NewController(
 	shipperInformerFactory shipperinformers.SharedInformerFactory,
 	store clusterclientstore.Interface,
 	recorder record.EventRecorder,
+	resyncPeriod time.Duration,
 ) *Controller {
 
 	itInformer := shipperInformerFactory.Shipper().V1alpha1().InstallationTargets()
 
 	controller := &Controller{
+		resyncPeriod:       resyncPeriod,
 		recorder:           recorder,
 		workqueue:          workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		clusterClientStore: store,
@@ -148,7 +152,7 @@ func NewController(
 								Key:                   key,
 								ReleaseName:           releaseName,
 							}
-							controller.workqueue.Add(wi)
+							controller.enqueueWorkItem(wi, cm, newObj.(*corev1.ConfigMap))
 						}
 					},
 				},
@@ -344,4 +348,11 @@ func (c *Controller) syncInstallationTarget(item *InstallationTargetWorkItem) er
 	}
 
 	return nil
+}
+
+func (c *Controller) enqueueWorkItem(wi *AnchorWorkItem, oldCm, newCm *corev1.ConfigMap) {
+	c.workqueue.AddAfter(
+		wi,
+		shippercontroller.CalculateDuration(oldCm, newCm, c.resyncPeriod, 0*time.Second),
+	)
 }

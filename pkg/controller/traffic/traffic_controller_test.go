@@ -164,11 +164,12 @@ func (f *fixture) newController(
 			f.t.Fatalf("tried to build a client for a cluster %q which was not present in the test fixture. this is a bug in the tests", clusterName)
 			return nil, fmt.Errorf("no such cluster")
 		},
+		time.Second,
 	)
 
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(client, shippertesting.NoResyncPeriod)
 	c := NewController(
-		client, shipperInformerFactory, store, record.NewFakeRecorder(42),
+		client, shipperInformerFactory, store, record.NewFakeRecorder(42), time.Second,
 	)
 
 	return client, c, store, shipperInformerFactory

@@ -19,6 +19,7 @@ import (
 	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
+	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
@@ -36,7 +37,8 @@ const (
 //
 // Release Controller has 2 primary workqueues: releases and applications.
 type Controller struct {
-	clientset shipperclient.Interface
+	resyncPeriod time.Duration
+	clientset    shipperclient.Interface
 
 	applicationLister  shipperlisters.ApplicationLister
 	applicationsSynced cache.InformerSynced
@@ -85,6 +87,7 @@ func NewController(
 	informerFactory shipperinformers.SharedInformerFactory,
 	chartFetcher shipperrepo.ChartFetcher,
 	recorder record.EventRecorder,
+	resyncPeriod time.Duration,
 ) *Controller {
 
 	applicationInformer := informerFactory.Shipper().V1alpha1().Applications()
@@ -98,7 +101,8 @@ func NewController(
 	klog.Info("Building a release controller")
 
 	controller := &Controller{
-		clientset: clientset,
+		resyncPeriod: resyncPeriod,
+		clientset:    clientset,
 
 		applicationLister:  applicationInformer.Lister(),
 		applicationsSynced: applicationInformer.Informer().HasSynced,
@@ -139,55 +143,112 @@ func NewController(
 
 	releaseInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.enqueueRelease,
+			AddFunc: func(obj interface{}) {
+				controller.enqueueReleaseAfter(obj, 0)
+			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				oldRel, ok := oldObj.(*shipper.Release)
+				_, ok := oldObj.(*shipper.Release)
 				if !ok {
 					runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", oldObj))
 					return
 				}
 
-				newRel, ok := newObj.(*shipper.Release)
+				_, ok = newObj.(*shipper.Release)
 				if !ok {
 					runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", newObj))
 					return
 				}
 
-				if oldRel.GetResourceVersion() == newRel.GetResourceVersion() {
-					controller.enqueueReleaseRateLimited(newObj)
-					return
-				}
-
-				controller.enqueueRelease(newObj)
+				controller.enqueueReleaseAfter(
+					newObj,
+					shippercontroller.CalculateDuration(oldObj, newObj, resyncPeriod, 0*time.Second),
+				)
 			},
 			DeleteFunc: controller.enqueueAppFromRelease,
 		})
 
 	installationTargetInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.enqueueInstallationTarget,
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueInstallationTarget(newObj)
+			AddFunc: func(obj interface{}) {
+				controller.enqueueInstallationTargetAfter(obj, 0)
 			},
-			DeleteFunc: controller.enqueueInstallationTarget,
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				_, ok := oldObj.(*shipper.InstallationTarget)
+				if !ok {
+					runtime.HandleError(fmt.Errorf("not a shipper.InstallationTarget: %#v", oldObj))
+					return
+				}
+
+				_, ok = newObj.(*shipper.InstallationTarget)
+				if !ok {
+					runtime.HandleError(fmt.Errorf("not a shipper.InstallationTarget: %#v", newObj))
+					return
+				}
+
+				controller.enqueueInstallationTargetAfter(
+					newObj,
+					shippercontroller.CalculateDuration(oldObj, newObj, resyncPeriod, 0*time.Second),
+				)
+			},
+			DeleteFunc: func(obj interface{}) {
+				controller.enqueueInstallationTargetAfter(obj, 0)
+			},
 		})
 
 	capacityTargetInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.enqueueCapacityTarget,
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueCapacityTarget(newObj)
+			AddFunc: func(obj interface{}) {
+				controller.enqueueCapacityTargetAfter(obj, 0)
 			},
-			DeleteFunc: controller.enqueueCapacityTarget,
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				_, ok := oldObj.(*shipper.CapacityTarget)
+				if !ok {
+					runtime.HandleError(fmt.Errorf("not a shipper.CapacityTarget: %#v", oldObj))
+					return
+				}
+
+				_, ok = newObj.(*shipper.CapacityTarget)
+				if !ok {
+					runtime.HandleError(fmt.Errorf("not a shipper.CapacityTarget: %#v", newObj))
+					return
+				}
+
+				controller.enqueueCapacityTargetAfter(
+					newObj,
+					shippercontroller.CalculateDuration(oldObj, newObj, resyncPeriod, 0*time.Second),
+				)
+			},
+			DeleteFunc: func(obj interface{}) {
+				controller.enqueueCapacityTargetAfter(obj, 0)
+			},
 		})
 
 	trafficTargetInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.enqueueTrafficTarget,
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueTrafficTarget(newObj)
+			AddFunc: func(obj interface{}) {
+				controller.enqueueTrafficTargetAfter(obj, 0)
 			},
-			DeleteFunc: controller.enqueueTrafficTarget,
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				_, ok := oldObj.(*shipper.TrafficTarget)
+				if !ok {
+					runtime.HandleError(fmt.Errorf("not a shipper.TrafficTarget: %#v", oldObj))
+					return
+				}
+
+				_, ok = newObj.(*shipper.TrafficTarget)
+				if !ok {
+					runtime.HandleError(fmt.Errorf("not a shipper.TrafficTarget: %#v", newObj))
+					return
+				}
+
+				controller.enqueueTrafficTargetAfter(
+					newObj,
+					shippercontroller.CalculateDuration(oldObj, newObj, resyncPeriod, 0*time.Second),
+				)
+			},
+			DeleteFunc: func(obj interface{}) {
+				controller.enqueueTrafficTargetAfter(obj, 0)
+			},
 		})
 
 	return controller
@@ -441,7 +502,7 @@ func (c *Controller) buildReleaseInfo(rel *shipper.Release) (*releaseInfo, error
 	}, nil
 }
 
-func (c *Controller) enqueueRelease(obj interface{}) {
+func (c *Controller) enqueueReleaseAfter(obj interface{}, duration time.Duration) {
 	rel, ok := obj.(*shipper.Release)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", obj))
@@ -454,23 +515,7 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 		return
 	}
 
-	c.releaseWorkqueue.Add(key)
-}
-
-func (c *Controller) enqueueReleaseRateLimited(obj interface{}) {
-	rel, ok := obj.(*shipper.Release)
-	if !ok {
-		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", obj))
-		return
-	}
-
-	key, err := cache.MetaNamespaceKeyFunc(rel)
-	if err != nil {
-		runtime.HandleError(err)
-		return
-	}
-
-	c.releaseWorkqueue.AddRateLimited(key)
+	c.releaseWorkqueue.AddAfter(key, duration)
 }
 
 func (c *Controller) enqueueAppFromRelease(obj interface{}) {
@@ -489,7 +534,7 @@ func (c *Controller) enqueueAppFromRelease(obj interface{}) {
 	c.applicationWorkqueue.Add(appName)
 }
 
-func (c *Controller) enqueueInstallationTarget(obj interface{}) {
+func (c *Controller) enqueueInstallationTargetAfter(obj interface{}, duration time.Duration) {
 	it, ok := obj.(*shipper.InstallationTarget)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.InstallationTarget: %#v", obj))
@@ -502,10 +547,10 @@ func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 		return
 	}
 
-	c.releaseWorkqueue.Add(releaseKey)
+	c.releaseWorkqueue.AddAfter(releaseKey, duration)
 }
 
-func (c *Controller) enqueueCapacityTarget(obj interface{}) {
+func (c *Controller) enqueueCapacityTargetAfter(obj interface{}, duration time.Duration) {
 	ct, ok := obj.(*shipper.CapacityTarget)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.CapacityTarget: %#v", obj))
@@ -518,10 +563,10 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 		return
 	}
 
-	c.releaseWorkqueue.Add(releaseKey)
+	c.releaseWorkqueue.AddAfter(releaseKey, duration)
 }
 
-func (c *Controller) enqueueTrafficTarget(obj interface{}) {
+func (c *Controller) enqueueTrafficTargetAfter(obj interface{}, duration time.Duration) {
 	tt, ok := obj.(*shipper.TrafficTarget)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a shipper.TrafficTarget: %#v", obj))
@@ -534,7 +579,7 @@ func (c *Controller) enqueueTrafficTarget(obj interface{}) {
 		return
 	}
 
-	c.releaseWorkqueue.Add(releaseKey)
+	c.releaseWorkqueue.AddAfter(releaseKey, duration)
 }
 
 func reasonForReleaseCondition(err error) string {

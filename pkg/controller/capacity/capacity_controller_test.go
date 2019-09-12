@@ -657,12 +657,13 @@ func (f *fixture) initializeFixture() {
 	f.store = shippertesting.NewFakeClusterClientStore(f.targetClusterClientset, f.targetClusterInformerFactory, clusterNames)
 }
 
-func (f *fixture) newController() *Controller {
+func (f *fixture) newController(resync time.Duration) *Controller {
 	controller := NewController(
 		f.managementClientset,
 		f.managementInformerFactory,
 		f.store,
 		record.NewFakeRecorder(10),
+		resync,
 	)
 
 	return controller
@@ -671,7 +672,7 @@ func (f *fixture) newController() *Controller {
 func (f *fixture) runInternal() *Controller {
 	f.initializeFixture()
 
-	controller := f.newController()
+	controller := f.newController(time.Second)
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)

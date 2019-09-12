@@ -24,6 +24,7 @@ import (
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/conditions"
+	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
@@ -39,6 +40,7 @@ const (
 
 // Controller is the controller implementation for TrafficTarget resources.
 type Controller struct {
+	resyncPeriod         time.Duration
 	shipperclientset     shipperclient.Interface
 	clusterClientStore   clusterclientstore.Interface
 	trafficTargetsLister listers.TrafficTargetLister
@@ -53,12 +55,14 @@ func NewController(
 	shipperInformerFactory informers.SharedInformerFactory,
 	store *clusterclientstore.Store,
 	recorder record.EventRecorder,
+	resyncPeriod time.Duration,
 ) *Controller {
 
 	// Obtain references to shared index informers for the TrafficTarget type.
 	trafficTargetInformer := shipperInformerFactory.Shipper().V1alpha1().TrafficTargets()
 
 	controller := &Controller{
+		resyncPeriod:       resyncPeriod,
 		shipperclientset:   shipperclientset,
 		clusterClientStore: store,
 
@@ -71,12 +75,31 @@ func NewController(
 	klog.Info("Setting up event handlers")
 	// Set up an event handler for when TrafficTarget resources change.
 	trafficTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: controller.enqueueTrafficTarget,
-		UpdateFunc: func(old, new interface{}) {
-			controller.enqueueTrafficTarget(new)
+		AddFunc: func(obj interface{}) {
+			controller.enqueueTrafficTargetAfter(obj, 0)
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			_, ok := oldObj.(*shipper.TrafficTarget)
+			if !ok {
+				runtime.HandleError(fmt.Errorf("not a shipper.TrafficTarget: %#v", oldObj))
+				return
+			}
+
+			_, ok = newObj.(*shipper.TrafficTarget)
+			if !ok {
+				runtime.HandleError(fmt.Errorf("not a shipper.TrafficTarget: %#v", newObj))
+				return
+			}
+
+			controller.enqueueTrafficTargetAfter(
+				newObj,
+				shippercontroller.CalculateDuration(oldObj, newObj, resyncPeriod, 0*time.Second),
+			)
 		},
 		// The sync handler needs to cope with the case where the object was deleted.
-		DeleteFunc: controller.enqueueTrafficTarget,
+		DeleteFunc: func(obj interface{}) {
+			controller.enqueueTrafficTargetAfter(obj, 0)
+		},
 	})
 
 	store.AddSubscriptionCallback(func(informerFactory kubeinformers.SharedInformerFactory) {
@@ -373,12 +396,12 @@ func (c *Controller) syncHandler(key string) error {
 // enqueueTrafficTarget takes a TrafficTarget resource and converts it into a
 // namespace/name string which is then put onto the work queue. This method
 // should *not* be passed resources of any type other than TrafficTarget.
-func (c *Controller) enqueueTrafficTarget(obj interface{}) {
+func (c *Controller) enqueueTrafficTargetAfter(obj interface{}, duration time.Duration) {
 	key, err := cache.MetaNamespaceKeyFunc(obj)
 	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
 
-	c.workqueue.Add(key)
+	c.workqueue.AddAfter(key, duration)
 }

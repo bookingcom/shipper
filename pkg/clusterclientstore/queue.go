@@ -2,6 +2,7 @@ package clusterclientstore
 
 import (
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -10,6 +11,7 @@ import (
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
@@ -24,7 +26,6 @@ func (s *Store) secretWorker() {
 }
 
 func (s *Store) bindEventHandlers() {
-	enqueueSecret := func(obj interface{}) { enqueueWorkItem(s.secretWorkqueue, obj) }
 	s.secretInformer.Informer().AddEventHandler(kubecache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
 			secret, ok := obj.(*corev1.Secret)
@@ -37,9 +38,24 @@ func (s *Store) bindEventHandlers() {
 			return ok && secret.Namespace == shipper.ShipperNamespace
 		},
 		Handler: kubecache.ResourceEventHandlerFuncs{
-			AddFunc: enqueueSecret,
-			UpdateFunc: func(_, newObj interface{}) {
-				enqueueSecret(newObj)
+			AddFunc: func(obj interface{}) {
+				s.enqueueSecretAfter(obj, 0)
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				_, ok := oldObj.(*corev1.Secret)
+				if !ok {
+					runtime.HandleError(fmt.Errorf("not a Secret: %#v", oldObj))
+					return
+				}
+				_, ok = newObj.(*corev1.Secret)
+				if !ok {
+					runtime.HandleError(fmt.Errorf("not a Secret: %#v", newObj))
+					return
+				}
+				s.enqueueSecretAfter(
+					newObj,
+					shippercontroller.CalculateDuration(oldObj, newObj, s.resyncPeriod, 0*time.Second),
+				)
 			},
 			DeleteFunc: func(obj interface{}) {
 				secret, ok := obj.(*corev1.Secret)
@@ -55,16 +71,31 @@ func (s *Store) bindEventHandlers() {
 						return
 					}
 				}
-				enqueueSecret(secret)
+				s.enqueueSecretAfter(secret, 0)
 			},
 		},
 	})
 
-	enqueueCluster := func(obj interface{}) { enqueueWorkItem(s.clusterWorkqueue, obj) }
 	s.clusterInformer.Informer().AddEventHandler(kubecache.ResourceEventHandlerFuncs{
-		AddFunc: enqueueCluster,
-		UpdateFunc: func(_, new interface{}) {
-			enqueueCluster(new)
+		AddFunc: func(obj interface{}) {
+			s.enqueueClusterAfter(obj, 0)
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			_, ok := oldObj.(*shipper.Cluster)
+			if !ok {
+				runtime.HandleError(fmt.Errorf("not a shipper.Cluster: %#v", oldObj))
+				return
+			}
+			_, ok = newObj.(*shipper.Cluster)
+			if !ok {
+				runtime.HandleError(fmt.Errorf("not a shipper.Cluster: %#v", newObj))
+				return
+			}
+
+			s.enqueueClusterAfter(
+				newObj,
+				shippercontroller.CalculateDuration(oldObj, newObj, s.resyncPeriod, 0*time.Second),
+			)
 		},
 		DeleteFunc: func(obj interface{}) {
 			cluster, ok := obj.(*shipper.Cluster)
@@ -80,19 +111,29 @@ func (s *Store) bindEventHandlers() {
 					return
 				}
 			}
-			enqueueCluster(cluster)
+			s.enqueueClusterAfter(cluster, 0)
 		},
 	})
 }
 
-func enqueueWorkItem(wq workqueue.RateLimitingInterface, obj interface{}) {
+func (s *Store) enqueueSecretAfter(obj interface{}, duration time.Duration) {
 	key, err := kubecache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
 
-	wq.AddRateLimited(key)
+	s.secretWorkqueue.AddAfter(key, duration)
+}
+
+func (s *Store) enqueueClusterAfter(obj interface{}, duration time.Duration) {
+	key, err := kubecache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	s.clusterWorkqueue.AddAfter(key, duration)
 }
 
 func processNextWorkItem(wq workqueue.RateLimitingInterface, handler func(string) error) bool {

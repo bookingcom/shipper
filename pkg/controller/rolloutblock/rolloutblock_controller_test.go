@@ -28,7 +28,7 @@ func (f *fixture) newController() (*Controller, shipperinformers.SharedInformerF
 	const noResyncPeriod time.Duration = 0
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(f.client, noResyncPeriod)
 
-	controller := NewController(f.client, shipperInformerFactory, record.NewFakeRecorder(42))
+	controller := NewController(f.client, shipperInformerFactory, record.NewFakeRecorder(42), time.Second)
 	return controller, shipperInformerFactory
 }
 

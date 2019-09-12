@@ -284,7 +284,7 @@ func (f *fixture) newStore() (*Store, kubeinformers.SharedInformerFactory, shipp
 		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
 		shipper.ShipperNamespace,
 		f.restTimeout,
-		&noResyncPeriod,
+		noResyncPeriod,
 	)
 
 	return store, kubeInformerFactory, shipperInformerFactory

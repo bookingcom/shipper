@@ -16,6 +16,7 @@ import (
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
+	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
@@ -38,6 +39,7 @@ const (
 // RolloutBlock Controller has one primary workqueues: a rolloutblock updater
 // object queue.
 type Controller struct {
+	resyncPeriod     time.Duration
 	shipperClientset clientset.Interface
 	recorder         record.EventRecorder
 
@@ -60,6 +62,7 @@ func NewController(
 	shipperClientset clientset.Interface,
 	informerFactory shipperinformers.SharedInformerFactory,
 	recorder record.EventRecorder,
+	resyncPeriod time.Duration,
 ) *Controller {
 	applicationInformer := informerFactory.Shipper().V1alpha1().Applications()
 	releaseInformer := informerFactory.Shipper().V1alpha1().Releases()
@@ -68,6 +71,7 @@ func NewController(
 	klog.Info("Building a RolloutBlock controller")
 
 	controller := &Controller{
+		resyncPeriod:     resyncPeriod,
 		recorder:         recorder,
 		shipperClientset: shipperClientset,
 
@@ -109,7 +113,7 @@ func NewController(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: controller.enqueueApplicationBlock,
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueApplicationBlock(newObj)
+				controller.onUpdateApplication(oldObj, newObj)
 			},
 			DeleteFunc: controller.enqueueApplicationBlock,
 		})
@@ -141,9 +145,17 @@ func (c *Controller) onUpdateRelease(oldObj interface{}, newObj interface{}) {
 	// rolloutblock object should be updated if a release has added it to override annotation,
 	// or removed it from override annotation
 	if len(oldOverrideRBs.Diff(newOverrideRBs)) > 0 {
-		c.enqueueReleaseBlock(oldObj)
+		if oldRel.GetResourceVersion() == newRel.GetResourceVersion() {
+			c.enqueueRolloutBlockKeysLater(oldOverrideRBs)
+		} else {
+			c.enqueueRolloutBlockKeys(oldOverrideRBs)
+		}
 	} else {
-		c.enqueueReleaseBlock(newObj)
+		if oldRel.GetResourceVersion() == newRel.GetResourceVersion() {
+			c.enqueueRolloutBlockKeysLater(newOverrideRBs)
+		} else {
+			c.enqueueRolloutBlockKeys(newOverrideRBs)
+		}
 	}
 }
 
@@ -163,6 +175,27 @@ func (c *Controller) enqueueReleaseBlock(obj interface{}) {
 	}
 }
 
+func (c *Controller) onUpdateApplication(oldObj, newObj interface{}) {
+	oldApp, ok := oldObj.(*shipper.Application)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.Application: %#v", oldObj))
+		return
+	}
+
+	newApp, ok := newObj.(*shipper.Application)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.Application: %#v", newObj))
+		return
+	}
+
+	overrideRBs := rolloutblock.NewObjectNameList(newApp.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation])
+	if oldApp.GetResourceVersion() == newApp.GetResourceVersion() {
+		c.enqueueRolloutBlockKeysLater(overrideRBs)
+	} else {
+		c.enqueueRolloutBlockKeys(overrideRBs)
+	}
+}
+
 func (c *Controller) enqueueApplicationBlock(obj interface{}) {
 	app, ok := obj.(*shipper.Application)
 	if !ok {
@@ -171,11 +204,25 @@ func (c *Controller) enqueueApplicationBlock(obj interface{}) {
 	}
 
 	overrideRBs := rolloutblock.NewObjectNameList(app.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation])
+	c.enqueueRolloutBlockKeys(overrideRBs)
+}
+
+func (c *Controller) enqueueRolloutBlockKeys(overrideRBs rolloutblock.ObjectNameList) {
 	// We are pushing all RolloutBlocks that this application is overriding to the queue. We're pushing
 	// them separately in order to utilize the deduplication quality of the queue. This way the
 	// controller will handle each RolloutBlock object once.
 	for rbKey := range overrideRBs {
 		c.rolloutblockWorkqueue.Add(rbKey)
+	}
+}
+
+func (c *Controller) enqueueRolloutBlockKeysLater(overrideRBs rolloutblock.ObjectNameList) {
+	// We are pushing all RolloutBlocks that this application is overriding to the queue. We're pushing
+	// them separately in order to utilize the deduplication quality of the queue. This way the
+	// controller will handle each RolloutBlock object once.
+	for rbKey := range overrideRBs {
+		duration := shippercontroller.GetRandomDuration(c.resyncPeriod)
+		c.rolloutblockWorkqueue.AddAfter(rbKey, duration)
 	}
 }
 

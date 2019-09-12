@@ -161,7 +161,7 @@ func main() {
 		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
 		*ns,
 		restTimeout,
-		resync,
+		*resync,
 	)
 
 	wg.Add(1)
@@ -372,6 +372,7 @@ func startApplicationController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		cfg.chartVersionResolver,
 		cfg.recorder(application.AgentName),
+		*cfg.resync,
 	)
 
 	cfg.wg.Add(1)
@@ -394,6 +395,7 @@ func startReleaseController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		cfg.chartFetcher,
 		cfg.recorder(release.AgentName),
+		*cfg.resync,
 	)
 
 	cfg.wg.Add(1)
@@ -433,6 +435,7 @@ func startInstallationController(cfg *cfg) (bool, error) {
 		dynamicClientBuilderFunc,
 		cfg.chartFetcher,
 		cfg.recorder(installation.AgentName),
+		*cfg.resync,
 	)
 
 	cfg.wg.Add(1)
@@ -455,6 +458,7 @@ func startCapacityController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		cfg.store,
 		cfg.recorder(capacity.AgentName),
+		*cfg.resync,
 	)
 	cfg.wg.Add(1)
 	go func() {
@@ -475,6 +479,7 @@ func startTrafficController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		cfg.store,
 		cfg.recorder(traffic.AgentName),
+		*cfg.resync,
 	)
 
 	cfg.wg.Add(1)
@@ -496,6 +501,7 @@ func startRolloutBlockController(cfg *cfg) (bool, error) {
 		client.NewShipperClientOrDie(cfg.restCfg, rolloutblock.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.recorder(rolloutblock.AgentName),
+		*cfg.resync,
 	)
 
 	cfg.wg.Add(1)
@@ -540,6 +546,7 @@ func startJanitorController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		cfg.store,
 		cfg.recorder(janitor.AgentName),
+		*cfg.resync,
 	)
 
 	cfg.wg.Add(1)

@@ -153,6 +153,7 @@ func newController(
 		fakeDynamicClientBuilder,
 		localFetchChart,
 		fakeRecorder,
+		time.Second,
 	)
 
 	stopCh := make(chan struct{})

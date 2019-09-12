@@ -22,6 +22,7 @@ import (
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/conditions"
+	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
@@ -44,6 +45,7 @@ const (
 // Controller is a Kubernetes controller that creates Releases from
 // Applications.
 type Controller struct {
+	resyncPeriod     time.Duration
 	shipperClientset clientset.Interface
 
 	appLister    listers.ApplicationLister
@@ -67,12 +69,14 @@ func NewController(
 	shipperInformerFactory informers.SharedInformerFactory,
 	versionResolver shipperrepo.ChartVersionResolver,
 	recorder record.EventRecorder,
+	resyncPeriod time.Duration,
 ) *Controller {
 	appInformer := shipperInformerFactory.Shipper().V1alpha1().Applications()
 	relInformer := shipperInformerFactory.Shipper().V1alpha1().Releases()
 	rbInformer := shipperInformerFactory.Shipper().V1alpha1().RolloutBlocks()
 
 	c := &Controller{
+		resyncPeriod:     resyncPeriod,
 		shipperClientset: shipperClientset,
 
 		appLister:    appInformer.Lister(),
@@ -90,11 +94,30 @@ func NewController(
 	}
 
 	appInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: c.enqueueApp,
-		UpdateFunc: func(_, new interface{}) {
-			c.enqueueApp(new)
+		AddFunc: func(obj interface{}) {
+			c.enqueueAppAfter(obj, 0)
 		},
-		DeleteFunc: c.enqueueApp,
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			_, ok := oldObj.(*shipper.Application)
+			if !ok {
+				runtime.HandleError(fmt.Errorf("not a shipper.Application: %#v", oldObj))
+				return
+			}
+
+			_, ok = newObj.(*shipper.Application)
+			if !ok {
+				runtime.HandleError(fmt.Errorf("not a shipper.Application: %#v", newObj))
+				return
+			}
+
+			c.enqueueAppAfter(
+				newObj,
+				shippercontroller.CalculateDuration(oldObj, newObj, resyncPeriod, 0*time.Second),
+			)
+		},
+		DeleteFunc: func(obj interface{}) {
+			c.enqueueAppAfter(obj, 0)
+		},
 	})
 
 	relInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -214,14 +237,14 @@ func (c *Controller) enqueueRel(obj interface{}) {
 	c.appWorkqueue.Add(fmt.Sprintf("%s/%s", rel.Namespace, owner.Name))
 }
 
-func (c *Controller) enqueueApp(obj interface{}) {
+func (c *Controller) enqueueAppAfter(obj interface{}, duration time.Duration) {
 	key, err := cache.MetaNamespaceKeyFunc(obj)
 	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
 
-	c.appWorkqueue.Add(key)
+	c.appWorkqueue.AddAfter(key, duration)
 }
 
 func (c *Controller) syncApplication(key string) error {

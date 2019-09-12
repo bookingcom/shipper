@@ -25,6 +25,7 @@ import (
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/conditions"
+	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
@@ -42,6 +43,7 @@ const (
 
 // Controller is the controller implementation for CapacityTarget resources
 type Controller struct {
+	resyncPeriod            time.Duration
 	shipperclientset        clientset.Interface
 	clusterClientStore      clusterClientStoreInterface
 	capacityTargetsLister   listers.CapacityTargetLister
@@ -59,6 +61,7 @@ func NewController(
 	shipperInformerFactory informers.SharedInformerFactory,
 	store clusterClientStoreInterface,
 	recorder record.EventRecorder,
+	resyncPeriod time.Duration,
 ) *Controller {
 
 	capacityTargetInformer := shipperInformerFactory.Shipper().V1alpha1().CapacityTargets()
@@ -66,6 +69,7 @@ func NewController(
 	releaseInformer := shipperInformerFactory.Shipper().V1alpha1().Releases()
 
 	controller := &Controller{
+		resyncPeriod:            resyncPeriod,
 		shipperclientset:        shipperclientset,
 		capacityTargetsLister:   capacityTargetInformer.Lister(),
 		capacityTargetsSynced:   capacityTargetInformer.Informer().HasSynced,
@@ -79,9 +83,25 @@ func NewController(
 
 	klog.Info("Setting up event handlers")
 	capacityTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: controller.enqueueCapacityTarget,
-		UpdateFunc: func(old, new interface{}) {
-			controller.enqueueCapacityTarget(new)
+		AddFunc: func(obj interface{}) {
+			controller.enqueueCapacityTargetAfter(obj, 0)
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			_, ok := oldObj.(*shipper.CapacityTarget)
+			if !ok {
+				runtime.HandleError(fmt.Errorf("not a shipper.CapacityTarget: %#v", oldObj))
+				return
+			}
+			_, ok = newObj.(*shipper.CapacityTarget)
+			if !ok {
+				runtime.HandleError(fmt.Errorf("not a shipper.CapacityTarget: %#v", newObj))
+				return
+			}
+
+			controller.enqueueCapacityTargetAfter(
+				newObj,
+				shippercontroller.CalculateDuration(oldObj, newObj, resyncPeriod, 0*time.Second),
+			)
 		},
 	})
 
@@ -289,14 +309,14 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 	return clusterErrors.Flatten()
 }
 
-func (c *Controller) enqueueCapacityTarget(obj interface{}) {
+func (c *Controller) enqueueCapacityTargetAfter(obj interface{}, duration time.Duration) {
 	key, err := cache.MetaNamespaceKeyFunc(obj)
 	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
 
-	c.capacityTargetWorkqueue.Add(key)
+	c.capacityTargetWorkqueue.AddAfter(key, duration)
 }
 
 func (c *Controller) registerEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {

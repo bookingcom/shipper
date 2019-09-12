@@ -30,11 +30,11 @@ const AgentName = "clusterclientstore"
 type ClientBuilderFunc func(string, string, *rest.Config) (kubernetes.Interface, error)
 
 type Store struct {
-	ns          string
-	buildClient ClientBuilderFunc
-	restTimeout *time.Duration
-	resync      *time.Duration
-	cache       cache.CacheServer
+	ns           string
+	buildClient  ClientBuilderFunc
+	restTimeout  *time.Duration
+	resyncPeriod time.Duration
+	cache        cache.CacheServer
 
 	secretInformer  corev1informer.SecretInformer
 	clusterInformer shipperinformer.ClusterInformer
@@ -59,15 +59,15 @@ func NewStore(
 	secretInformer corev1informer.SecretInformer,
 	clusterInformer shipperinformer.ClusterInformer,
 	ns string,
-	restTimeout,
-	resync *time.Duration,
+	restTimeout *time.Duration,
+	resyncPeriod time.Duration,
 ) *Store {
 	s := &Store{
-		ns:          ns,
-		buildClient: buildClient,
-		restTimeout: restTimeout,
-		resync:      resync,
-		cache:       cache.NewServer(),
+		ns:           ns,
+		buildClient:  buildClient,
+		restTimeout:  restTimeout,
+		resyncPeriod: resyncPeriod,
+		cache:        cache.NewServer(),
 
 		secretInformer:  secretInformer,
 		clusterInformer: clusterInformer,
@@ -284,12 +284,7 @@ func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
 		return shippererrors.NewClusterClientBuild(cluster.Name, err)
 	}
 
-	var resyncPeriod time.Duration
-	if s.resync != nil {
-		resyncPeriod = *s.resync
-	}
-
-	informerFactory := kubeinformers.NewSharedInformerFactory(informerClient, resyncPeriod)
+	informerFactory := kubeinformers.NewSharedInformerFactory(informerClient, s.resyncPeriod)
 	// Register all the resources that the controllers are interested in, e.g.
 	// informerFactory.Core().V1().Pods().Informer().
 	for _, cb := range s.subscriptionRegisterFuncs {

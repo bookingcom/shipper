@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -14,6 +15,7 @@ import (
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
@@ -75,7 +77,7 @@ func (c *Controller) processNextDeploymentWorkItem() bool {
 	return true
 }
 
-func (c *Controller) enqueueDeployment(obj interface{}, clusterName string) {
+func (c *Controller) enqueueDeploymentAfter(obj interface{}, clusterName string, duration time.Duration) {
 	key, err := cache.MetaNamespaceKeyFunc(obj)
 	if err != nil {
 		runtime.HandleError(err)
@@ -105,10 +107,14 @@ func (c Controller) NewDeploymentResourceEventHandler(clusterName string) cache.
 		},
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				c.enqueueDeployment(obj, clusterName)
+				c.enqueueDeploymentAfter(obj, clusterName, 0)
 			},
 			UpdateFunc: func(old, new interface{}) {
-				c.enqueueDeployment(new, clusterName)
+				c.enqueueDeploymentAfter(
+					new,
+					clusterName,
+					shippercontroller.CalculateDuration(old, new, c.resyncPeriod, 0*time.Second),
+				)
 			},
 		},
 	}
@@ -143,7 +149,7 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 		return err
 	}
 
-	c.enqueueCapacityTarget(capacityTarget)
+	c.enqueueCapacityTargetAfter(capacityTarget, 0)
 
 	return nil
 }

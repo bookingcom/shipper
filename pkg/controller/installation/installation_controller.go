@@ -43,6 +43,7 @@ const (
 // Controller is a Kubernetes controller that processes InstallationTarget
 // objects.
 type Controller struct {
+	resyncPeriod       time.Duration
 	shipperclientset   shipperclient.Interface
 	clusterClientStore clusterclientstore.ClientProvider
 
@@ -71,6 +72,7 @@ func NewController(
 	dynamicClientBuilderFunc DynamicClientBuilderFunc,
 	chartFetcher shipperrepo.ChartFetcher,
 	recorder record.EventRecorder,
+	resyncPeriod time.Duration,
 ) *Controller {
 
 	installationTargetInformer := shipperInformerFactory.Shipper().V1alpha1().InstallationTargets()
@@ -79,6 +81,7 @@ func NewController(
 	applicationInformer := shipperInformerFactory.Shipper().V1alpha1().Applications()
 
 	controller := &Controller{
+		resyncPeriod:              resyncPeriod,
 		appLister:                 applicationInformer.Lister(),
 		appSynced:                 applicationInformer.Informer().HasSynced,
 		shipperclientset:          shipperclientset,
@@ -96,9 +99,26 @@ func NewController(
 	}
 
 	installationTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: controller.enqueueInstallationTarget,
+		AddFunc: func(obj interface{}) {
+			controller.enqueueInstallationTargetAfter(obj, 0)
+		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			controller.enqueueInstallationTarget(newObj)
+			_, ok := oldObj.(*shipper.InstallationTarget)
+			if !ok {
+				runtime.HandleError(fmt.Errorf("not a shipper.InstallationTarget: %#v", oldObj))
+				return
+			}
+
+			_, ok = newObj.(*shipper.InstallationTarget)
+			if !ok {
+				runtime.HandleError(fmt.Errorf("not a shipper.InstallationTarget: %#v", newObj))
+				return
+			}
+
+			controller.enqueueInstallationTargetAfter(
+				newObj,
+				shippercontroller.CalculateDuration(oldObj, newObj, resyncPeriod, 0*time.Second),
+			)
 		},
 	})
 
@@ -203,14 +223,14 @@ func (c *Controller) syncOne(key string) error {
 	return nil
 }
 
-func (c *Controller) enqueueInstallationTarget(obj interface{}) {
+func (c *Controller) enqueueInstallationTargetAfter(obj interface{}, duration time.Duration) {
 	key, err := cache.MetaNamespaceKeyFunc(obj)
 	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
 
-	c.workqueue.Add(key)
+	c.workqueue.AddAfter(key, duration)
 }
 
 // processInstallation attempts to install the related InstallationTarget on

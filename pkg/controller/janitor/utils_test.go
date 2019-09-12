@@ -81,6 +81,7 @@ func newController(
 		shipperInformerFactory,
 		fakeClientStore,
 		fakeRecorder,
+		time.Second,
 	)
 
 	stopCh := make(chan struct{})
