@@ -20,6 +20,8 @@ import (
 	shipperrepo "github.com/bookingcom/shipper/pkg/chart/repo"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	"github.com/bookingcom/shipper/pkg/conditions"
+	"github.com/bookingcom/shipper/pkg/errors"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
@@ -1075,6 +1077,39 @@ func TestDeletingAbortedReleases(t *testing.T) {
 	}
 
 	f.expectReleaseDelete(releaseFoo)
+	f.expectApplicationUpdate(expectedApp)
+	f.run()
+}
+
+func TestHandleChartNotFound(t *testing.T) {
+	f := newFixture(t)
+	app := newApplication(testAppName)
+	app.Spec.Template.Chart.Name = "non-existing"
+	app.Spec.Template.Chart.Version = "4.8.15" // non-existing chart version
+	errReason := "no chart version found"
+	f.resolveChartVersion = func(chartspec *shipper.Chart) (*repo.ChartVersion, error) {
+		return nil, errors.NewChartVersionResolveError(chartspec, fmt.Errorf(errReason))
+	}
+
+	f.objects = append(f.objects, app)
+	expectedApp := app.DeepCopy()
+
+	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
+		{
+			Type:   shipper.ApplicationConditionTypeRollingOut,
+			Status: corev1.ConditionFalse,
+			Reason: conditions.ChartVersionResolutionFailed,
+			Message: fmt.Sprintf(
+				"failed to resolve chart version [name: \"%s\", version: \"%s\", repo: \"%s\"]: %s",
+				app.Spec.Template.Chart.Name,
+				app.Spec.Template.Chart.Version,
+				"",
+				errReason,
+			),
+		},
+	}
+	expectedApp.Status.History = []string{}
+
 	f.expectApplicationUpdate(expectedApp)
 	f.run()
 }
