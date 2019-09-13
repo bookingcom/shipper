@@ -10,7 +10,6 @@ require (
 	github.com/aokoli/goutils v1.0.1 // indirect
 	github.com/cespare/xxhash v1.1.0
 	github.com/evanphx/json-patch v4.2.0+incompatible // indirect
-	github.com/ghodss/yaml v1.0.0
 	github.com/gobwas/glob v0.2.2 // indirect
 	github.com/gogo/protobuf v1.2.1 // indirect
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef // indirect
@@ -43,7 +42,6 @@ require (
 	google.golang.org/appengine v1.6.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	gopkg.in/yaml.v2 v2.2.2
 	k8s.io/api v0.0.0-20190602205700-9b8cae951d65
 	k8s.io/apiextensions-apiserver v0.0.0-20190602131520-451a9c13a3c8
 	k8s.io/apimachinery v0.0.0-20190602183612-63a6072eb563
@@ -54,4 +52,5 @@ require (
 	k8s.io/klog v0.3.2
 	k8s.io/kube-openapi v0.0.0-20190603182131-db7b694dc208 // indirect
 	k8s.io/utils v0.0.0-20190529001817-6999998975a7 // indirect
+	sigs.k8s.io/yaml v1.1.0
 )

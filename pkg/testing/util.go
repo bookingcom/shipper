@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ghodss/yaml"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pmezard/go-difflib/difflib"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	kubetesting "k8s.io/client-go/testing"
+	"sigs.k8s.io/yaml"
 )
 
 const (
