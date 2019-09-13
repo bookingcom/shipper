@@ -58,7 +58,7 @@ func Render(chart *helmchart.Chart, name, ns string, shipperValues *shipper.Char
 		// It's annoying to ensure that your template doesn't render spurious
 		// newlines.
 		o = strings.TrimSpace(o)
-		if len(o) > 0 && strings.HasSuffix(n, ".yaml") {
+		if len(o) > 0 && (strings.HasSuffix(n, ".yaml") || strings.HasSuffix(n, ".yml")) {
 			objects = append(objects, o)
 		}
 	}
