@@ -95,7 +95,7 @@ service accounts, and so on, let's create the Shipper *Deployment*:
 
 .. code-block:: shell
 
-    $ kubectl create -f https://github.com/bookingcom/shipper/releases/download/v0.1.0/shipper-deploy.yaml
+    $ kubectl create -f https://github.com/bookingcom/shipper/releases/latest/download/shipper.deployment.yaml
     deployment.apps/shipper created
 
 This will create an instance of Shipper in the ``shipper-system`` namespace.
