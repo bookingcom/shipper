@@ -81,6 +81,19 @@ func (r *Repo) Start(stopCh <-chan struct{}) {
 func (r *Repo) refreshIndex() error {
 	data, err := r.fetcher(r.indexURL)
 	if err != nil {
+		_, cacheErr := r.cache.Fetch("index.yaml")
+		if cacheErr != nil {
+			multiError := shippererrors.NewMultiError()
+			multiError.Append(
+				shippererrors.NewChartRepoIndexError(
+					fmt.Errorf("failed to fetch %q: %v", r.indexURL, err),
+				))
+			multiError.Append(
+				shippererrors.NewNoCachedChartRepoIndexError(
+					fmt.Errorf("failed to fetch %q: %v", r.indexURL, cacheErr),
+				))
+			return multiError
+		}
 		return shippererrors.NewChartRepoIndexError(
 			fmt.Errorf("failed to fetch %q: %v", r.indexURL, err),
 		)
