@@ -494,9 +494,19 @@ func (i *Installer) installManifests(
 			continue
 		}
 
-		owner, ok := existingObj.GetLabels()[shipper.InstallationTargetOwnerLabel]
+		labels := existingObj.GetLabels()
+		owner, ok := labels[shipper.InstallationTargetOwnerLabel]
 		if !ok {
-			return shippererrors.NewMissingInstallationTargetOwnerLabelError(existingObj)
+			// If an object was created before we introduced
+			// self-contained InstallationTargets, it will not
+			// contain InstallationTargetOwnerLabel, values, so it
+			// will need to be migrated. We do so by getting the
+			// older ReleaseLabel.
+			if relLabel, ok := labels[shipper.ReleaseLabel]; ok {
+				owner = relLabel
+			} else {
+				return shippererrors.NewMissingInstallationTargetOwnerLabelError(existingObj)
+			}
 		}
 
 		// If the existing object is owned by the installation target,
