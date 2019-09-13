@@ -66,7 +66,7 @@ func NewScheduler(
 func (s *Scheduler) ChooseClusters(rel *shipper.Release, force bool) (*shipper.Release, error) {
 	metaKey := controller.MetaKey(rel)
 	if !force && releaseHasClusters(rel) {
-		return rel, shippererrors.NewUnrecoverableError(fmt.Errorf("release %q has already been assigned to clusters", metaKey))
+		return nil, shippererrors.NewUnrecoverableError(fmt.Errorf("release %q has already been assigned to clusters", metaKey))
 	}
 	klog.Infof("Choosing clusters for release %q", metaKey)
 
@@ -84,22 +84,7 @@ func (s *Scheduler) ChooseClusters(rel *shipper.Release, force bool) (*shipper.R
 	}
 	setReleaseClusters(rel, selectedClusters)
 
-	newrel, err := s.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel)
-	if err != nil {
-		return nil, shippererrors.NewKubeclientUpdateError(rel, err)
-	}
-	rel = newrel
-
-	s.recorder.Eventf(
-		rel,
-		corev1.EventTypeNormal,
-		"ClustersSelected",
-		"Set clusters for %q to %v",
-		metaKey,
-		rel.Annotations[shipper.ReleaseClustersAnnotation],
-	)
-
-	return newrel, nil
+	return rel, nil
 }
 
 func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, error) {
@@ -142,20 +127,6 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 	if !releaseutil.ReleaseScheduled(rel) {
 		condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 		releaseutil.SetReleaseCondition(&rel.Status, *condition)
-
-		if len(rel.Status.Conditions) == 0 {
-			klog.Errorf(
-				"Conditions don't see right here for Release %q",
-				metaKey,
-			)
-		}
-
-		newRel, err := s.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel)
-		if err != nil {
-			return nil, shippererrors.NewKubeclientUpdateError(rel, err)
-		}
-
-		return newRel, nil
 	}
 
 	return rel, nil
@@ -609,8 +580,13 @@ func validateClusterRequirements(requirements shipper.ClusterRequirements) error
 
 func setReleaseClusters(rel *shipper.Release, clusters []*shipper.Cluster) {
 	clusterNames := make([]string, 0, len(clusters))
+	memo := make(map[string]struct{})
 	for _, cluster := range clusters {
+		if _, ok := memo[cluster.Name]; ok {
+			continue
+		}
 		clusterNames = append(clusterNames, cluster.Name)
+		memo[cluster.Name] = struct{}{}
 	}
 	sort.Strings(clusterNames)
 	rel.Annotations[shipper.ReleaseClustersAnnotation] = strings.Join(clusterNames, ",")

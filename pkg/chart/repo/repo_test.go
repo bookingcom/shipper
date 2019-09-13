@@ -345,7 +345,7 @@ func TestFetch(t *testing.T) {
 			"0.0.2",
 			"",
 			"",
-			fmt.Errorf("failed to read file \"non-existing-0.0.2.tgz\": open testdata/non-existing-0.0.2.tgz: no such file or directory"),
+			fmt.Errorf("failed to fetch chart [name: \"non-existing\", version: \"0.0.2\", repo: \"https://charts.example.com/non-existing-0.0.2.tgz\"]: failed to read file \"non-existing-0.0.2.tgz\": open testdata/non-existing-0.0.2.tgz: no such file or directory"),
 		},
 	}
 

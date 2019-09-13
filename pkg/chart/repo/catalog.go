@@ -23,7 +23,7 @@ func DefaultRemoteFetcher(url string) ([]byte, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unsuccessful response code: %s (%d)", resp.Status, resp.StatusCode)
+		return nil, fmt.Errorf("bad response code: %s (%d)", resp.Status, resp.StatusCode)
 	}
 
 	return ioutil.ReadAll(resp.Body)

@@ -2,6 +2,7 @@ package release
 
 import (
 	"fmt"
+	"reflect"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -19,6 +20,7 @@ import (
 	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
+	"github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
@@ -304,14 +306,13 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 			WithShipperKind("Release")
 	}
 
-	rel = rel.DeepCopy()
-
 	if releaseutil.HasEmptyEnvironment(rel) {
 		return nil
 	}
 
-	klog.V(4).Infof("Start processing Release %q", key)
+	var initialRel *shipper.Release = rel.DeepCopy()
 
+	klog.V(4).Infof("Start processing Release %q", key)
 	scheduler := NewScheduler(
 		c.clientset,
 		c.clusterLister,
@@ -323,46 +324,51 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 		c.recorder,
 	)
 
-	// This is a 2-round handler: the 1st round schedules the release on a
-	// set of clusters, and the 2nd round creates associated objects and
-	// finalizes release scheduling process. This approach comes for a
-	// reason: we are eliminating a replication lag problem. While running
-	// the system in production, we observed some cases where a few
-	// sequentual updates on the same object experienced apiserver
-	// rejections due to the passed object outdate state. This happened due
-	// to the synchronisation/replication lag in etcd. This approach helps
-	// to eliminate this as a notification will be delivered once all
-	// parties are in sync.
 	if !releaseHasClusters(rel) {
-		_, err = scheduler.ChooseClusters(rel, false)
-	} else {
-		_, err = scheduler.ScheduleRelease(rel)
+		shouldForce := false
+		rel, err = scheduler.ChooseClusters(rel.DeepCopy(), shouldForce)
+		if err != nil {
+			return err
+		}
+		c.recorder.Eventf(
+			rel,
+			corev1.EventTypeNormal,
+			"ClustersSelected",
+			"Set clusters for %q to %v",
+			controller.MetaKey(rel),
+			rel.Annotations[shipper.ReleaseClustersAnnotation],
+		)
 	}
 
-	if err != nil {
+	var scheduleErr error
+	rel, scheduleErr = scheduler.ScheduleRelease(rel.DeepCopy())
+	if scheduleErr != nil {
 		if shippererrors.ShouldBroadcast(err) {
 			c.recorder.Eventf(
-				rel,
+				initialRel,
 				corev1.EventTypeWarning,
 				"FailedReleaseScheduling",
-				err.Error(),
+				scheduleErr.Error(),
 			)
 		}
-
-		reason := reasonForReleaseCondition(err)
+		reason := reasonForReleaseCondition(scheduleErr)
 		condition := releaseutil.NewReleaseCondition(
 			shipper.ReleaseConditionTypeScheduled,
 			corev1.ConditionFalse,
 			reason,
-			err.Error(),
+			scheduleErr.Error(),
 		)
-		releaseutil.SetReleaseCondition(&rel.Status, *condition)
-
-		if _, updateErr := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); updateErr != nil {
-			return shippererrors.NewKubeclientUpdateError(rel, updateErr)
+		releaseutil.SetReleaseCondition(&initialRel.Status, *condition)
+		if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Update(initialRel); err != nil {
+			return shippererrors.NewKubeclientUpdateError(initialRel, err)
 		}
+		return scheduleErr
+	}
 
-		return err
+	if !reflect.DeepEqual(initialRel, rel) {
+		if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); err != nil {
+			return shippererrors.NewKubeclientUpdateError(rel, err)
+		}
 	}
 
 	klog.V(4).Infof("Release %q has been successfully scheduled", key)
@@ -557,6 +563,8 @@ func reasonForReleaseCondition(err error) string {
 		return "WrongChartDeployments"
 	case shippererrors.RolloutBlockError:
 		return "RolloutBlock"
+	case shippererrors.ChartRepoInternalError:
+		return "ChartRepoInternal"
 	}
 
 	if shippererrors.IsKubeclientError(err) {

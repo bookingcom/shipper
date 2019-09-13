@@ -188,7 +188,7 @@ func newScheduler(
 	clientset := shipperfake.NewSimpleClientset(fixtures...)
 	informerFactory := shipperinformers.NewSharedInformerFactory(clientset, time.Millisecond*0)
 
-	clustersLister := informerFactory.Shipper().V1alpha1().Clusters().Lister()
+	clusterLister := informerFactory.Shipper().V1alpha1().Clusters().Lister()
 	installationTargetLister := informerFactory.Shipper().V1alpha1().InstallationTargets().Lister()
 	capacityTargetLister := informerFactory.Shipper().V1alpha1().CapacityTargets().Lister()
 	trafficTargetLister := informerFactory.Shipper().V1alpha1().TrafficTargets().Lister()
@@ -196,7 +196,7 @@ func newScheduler(
 
 	c := NewScheduler(
 		clientset,
-		clustersLister,
+		clusterLister,
 		installationTargetLister,
 		capacityTargetLister,
 		trafficTargetLister,
@@ -353,12 +353,7 @@ func TestSchedule(t *testing.T) {
 	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 	releaseutil.SetReleaseCondition(&relWithConditions.Status, *condition)
 
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			release.GetNamespace(),
-			expected),
-	}
+	expectedActions := []kubetesting.Action{}
 
 	c, clientset := newScheduler(fixtures)
 	if _, err := c.ChooseClusters(release.DeepCopy(), false); err != nil {
@@ -391,12 +386,7 @@ func TestScheduleSkipsUnschedulable(t *testing.T) {
 	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 	releaseutil.SetReleaseCondition(&relWithConditions.Status, *condition)
 
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			release.GetNamespace(),
-			expected),
-	}
+	expectedActions := []kubetesting.Action{}
 
 	c, clientset := newScheduler(fixtures)
 	if _, err := c.ChooseClusters(release.DeepCopy(), false); err != nil {
@@ -426,11 +416,6 @@ func TestCreateAssociatedObjects(t *testing.T) {
 		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
-	// Release should be marked as Scheduled
-	expectedActions = append(expectedActions, kubetesting.NewUpdateAction(
-		shipper.SchemeGroupVersion.WithResource("releases"),
-		release.GetNamespace(),
-		expected))
 
 	c, clientset := newScheduler(fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
@@ -462,11 +447,6 @@ func TestCreateAssociatedObjectsWithRolloutBlockOverride(t *testing.T) {
 		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
-	// Release should be marked as Scheduled
-	expectedActions = append(expectedActions, kubetesting.NewUpdateAction(
-		shipper.SchemeGroupVersion.WithResource("releases"),
-		release.GetNamespace(),
-		expected))
 
 	c, clientset := newScheduler(fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
@@ -498,11 +478,6 @@ func TestCreateAssociatedObjectsWithNonExistingRolloutBlockOverride(t *testing.T
 		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 	}
 	expectedActions := buildExpectedActions(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
-	// Release should be marked as Scheduled
-	expectedActions = append(expectedActions, kubetesting.NewUpdateAction(
-		shipper.SchemeGroupVersion.WithResource("releases"),
-		release.GetNamespace(),
-		expected))
 
 	c, clientset := newScheduler(fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
@@ -605,10 +580,6 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetMismatchingClusters(t
 			release.GetNamespace(),
 			ct,
 		),
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			release.GetNamespace(),
-			expected),
 	}
 
 	c, clientset := newScheduler(fixtures)
@@ -672,10 +643,6 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetMismatchingClusters(t *tes
 			release.GetNamespace(),
 			ct,
 		),
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			release.GetNamespace(),
-			expected),
 	}
 
 	c, clientset := newScheduler(fixtures)
@@ -739,10 +706,6 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetMismatchingClusters(t *te
 			release.GetNamespace(),
 			ct,
 		),
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			release.GetNamespace(),
-			expected),
 	}
 
 	c, clientset := newScheduler(fixtures)
@@ -800,10 +763,6 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetSameOwner(t *testing.
 			release.GetNamespace(),
 			ct,
 		),
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			release.GetNamespace(),
-			expected),
 	}
 
 	c, clientset := newScheduler(fixtures)
@@ -900,10 +859,6 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetSameOwner(t *testing.T) {
 			release.GetNamespace(),
 			ct,
 		),
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			release.GetNamespace(),
-			expected),
 	}
 
 	c, clientset := newScheduler(fixtures)
@@ -1001,10 +956,6 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetSameOwner(t *testing.T) {
 			release.GetNamespace(),
 			tt,
 		),
-		kubetesting.NewUpdateAction(
-			shipper.SchemeGroupVersion.WithResource("releases"),
-			release.GetNamespace(),
-			expected),
 	}
 
 	c, clientset := newScheduler(fixtures)
