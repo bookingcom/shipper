@@ -11,6 +11,7 @@ import (
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	"github.com/bookingcom/shipper/pkg/conditions"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
@@ -101,6 +102,18 @@ func (c *Controller) syncOneApplicationHandler(key string) error {
 	klog.V(4).Infof("Executing the strategy on Application %q", key)
 	patches, transitions, err := strategyExecutor.Execute()
 	if err != nil {
+		releaseSyncedCond := apputil.NewApplicationCondition(
+			shipper.ApplicationConditionTypeReleaseSynced,
+			corev1.ConditionFalse,
+			conditions.StrategyExecutionFailed,
+			fmt.Sprintf("failed to execute application strategy: %q", err),
+		)
+		apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
+		_, err = c.clientset.ShipperV1alpha1().Applications(app.Namespace).Update(app)
+		if err != nil {
+			return shippererrors.NewKubeclientUpdateError(app, err).
+				WithShipperKind("Application")
+		}
 		return err
 	}
 
