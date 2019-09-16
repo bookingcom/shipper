@@ -207,6 +207,13 @@ func buildRelease(namespace, name string, chart shipper.Chart) *shipper.Release 
 			Name:      name,
 			Namespace: namespace,
 			UID:       types.UID("foobar"),
+			Labels: map[string]string{
+				shipper.AppLabel:     name,
+				shipper.ReleaseLabel: name,
+			},
+			Annotations: map[string]string{
+				shipper.ReleaseGenerationAnnotation: "0",
+			},
 		},
 		Spec: shipper.ReleaseSpec{
 			Environment: shipper.ReleaseEnvironment{

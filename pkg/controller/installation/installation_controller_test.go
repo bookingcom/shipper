@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	runtimeutil "k8s.io/apimachinery/pkg/util/runtime"
@@ -506,6 +506,15 @@ func TestInstallWithoutChart(t *testing.T) {
 	chart := buildChart(appName, "0.0.1", repoUrl)
 
 	rel := buildRelease(testNs, appName, chart)
+	app := &shipper.Application{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      appName,
+			Namespace: testNs,
+		},
+		Status: shipper.ApplicationStatus{
+			History: []string{rel.Name},
+		},
+	}
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, nil)
 	it.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
@@ -517,7 +526,7 @@ func TestInstallWithoutChart(t *testing.T) {
 		},
 	}
 
-	shipperObjects := []runtime.Object{cluster, rel, it}
+	shipperObjects := []runtime.Object{cluster, app, rel, it}
 	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
 		initializeClients(apiResourceList, shipperObjects,
 			objectsPerClusterMap{cluster.Name: []runtime.Object{}})
@@ -544,23 +553,8 @@ func TestInstallWithoutChart(t *testing.T) {
 	}
 
 	it = it.DeepCopy()
-	it.Spec.CanOverride = false
+	it.Spec.CanOverride = true
 	it.Spec.Chart = &chart
-	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
-		{
-			Name: "minikube-a", Status: shipper.InstallationStatusInstalled,
-			Conditions: []shipper.ClusterInstallationCondition{
-				{
-					Type:   shipper.ClusterConditionTypeOperational,
-					Status: corev1.ConditionTrue,
-				},
-				{
-					Type:   shipper.ClusterConditionTypeReady,
-					Status: corev1.ConditionTrue,
-				},
-			},
-		},
-	}
 
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewUpdateAction(schema.GroupVersionResource{
