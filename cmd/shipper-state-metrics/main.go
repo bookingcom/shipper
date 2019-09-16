@@ -68,6 +68,7 @@ func main() {
 		ctsLister:      shipperInformerFactory.Shipper().V1alpha1().CapacityTargets().Lister(),
 		ttsLister:      shipperInformerFactory.Shipper().V1alpha1().TrafficTargets().Lister(),
 		clustersLister: shipperInformerFactory.Shipper().V1alpha1().Clusters().Lister(),
+		rbLister:       shipperInformerFactory.Shipper().V1alpha1().RolloutBlocks().Lister(),
 
 		nssLister:     kubeInformerFactory.Core().V1().Namespaces().Lister(),
 		secretsLister: kubeInformerFactory.Core().V1().Secrets().Lister(),
