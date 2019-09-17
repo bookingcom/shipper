@@ -190,6 +190,7 @@ RolloutBlock object
 Here's an example for a RolloutBlock object we'll use:
 
 .. code-block:: yaml
+
     apiVersion: shipper.booking.com/v1alpha1
     kind: RolloutBlock
     metadata:
@@ -212,6 +213,7 @@ In order to create a namespace rollout block, simply state the relevant namespac
 An example for a namespaced RolloutBlock object:
 
 .. code-block:: yaml
+
     apiVersion: shipper.booking.com/v1alpha1
     kind: RolloutBlock
     metadata:
@@ -273,6 +275,7 @@ blocks which are currently in effect.
 For example:
 
 .. code-block:: yaml
+
     apiVersion: shipper.booking.com/v1
     kind: Application
     metadata:
@@ -291,6 +294,7 @@ This will be accompanied with an event (can be viewed with ``kubectl describe ap
 For example:
 
 .. code-block:: yaml
+
     Events:
       Type     Reason             Age                 From                    Message
       ----     ------             ----                ----                    -------
@@ -314,6 +318,7 @@ This fields will state all living Application and Release objects that override 
 This might look like this:
 
 .. code-block:: yaml
+
     apiVersion: shipper.booking.com/v1alpha1
     kind: RolloutBlock
     metadata:
