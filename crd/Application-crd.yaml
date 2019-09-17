@@ -5,7 +5,7 @@ metadata:
   name: applications.shipper.booking.com
 spec:
   additionalPrinterColumns:
-  - JSONPath: .status.history[-1]
+  - JSONPath: .status.history[(@.length-1)]
     description: The application's latest release.
     name: Latest release
     type: string
