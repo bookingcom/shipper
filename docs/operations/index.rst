@@ -13,3 +13,4 @@ with many teams deploying code to them.
     shipperctl
     monitoring
     fleet-management
+    blocking-rollouts
