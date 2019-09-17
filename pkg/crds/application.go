@@ -45,7 +45,7 @@ var Application = &apiextensionv1beta1.CustomResourceDefinition{
 				Name:        "Latest Release",
 				Type:        "string",
 				Description: "The application's latest release.",
-				JSONPath:    ".status.history[-1]",
+				JSONPath:    ".status.history[(@.length-1)]",
 			},
 			apiextensionv1beta1.CustomResourceColumnDefinition{
 				Name:        "Rolling Out",
