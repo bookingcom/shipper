@@ -4,6 +4,33 @@ metadata:
   # name must match the spec fields below, and be in the form: <plural>.<group>
   name: rolloutblocks.shipper.booking.com
 spec:
+  # additional columns to print for kubectl get command besides NAME and AGE
+  # and NAMESPACE (in case of passing --all-namespaces flag)
+  additionalPrinterColumns:
+  - JSONPath: .spec.message
+    description: The reason for this rollout block.
+    name: Message
+    type: string
+  - JSONPath: .spec.author.type
+    priority: 1
+    description: The author type of this Rollout Block object.
+    name: Author Type
+    type: string
+  - JSONPath: .spec.author.name
+    priority: 1
+    description: The author name of this Rollout Block object.
+    name: Author Name
+    type: string
+  - JSONPath: .status.overrides.application
+    priority: 1
+    description: The list of applications that overrides this rollout block.
+    name: Overriding Applications
+    type: string
+  - JSONPath: .status.overrides.release
+    priority: 1
+    description: The list of releases that overrides this rollout block.
+    name: Overriding Releases
+    type: string
   # group name to use for REST API: /apis/<group>/<version>
   group: shipper.booking.com
   # version name to use for REST API: /apis/<group>/<version>
