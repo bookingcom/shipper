@@ -9,6 +9,11 @@ spec:
   selector:
     matchLabels:
       app: shipper-state-metrics
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -18,6 +23,14 @@ spec:
       - name: shipper-state-metrics
         image: <IMAGE>
         imagePullPolicy: Always
+        args:
+          - "-v"
+          - "2"
         ports:
-        - containerPort: 8890
+        - name: metrics
+          containerPort: 8890
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 8890
       serviceAccountName: shipper-management-cluster
