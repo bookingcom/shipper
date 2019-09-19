@@ -9,10 +9,17 @@ spec:
   selector:
     matchLabels:
       app: shipper
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
   template:
     metadata:
       labels:
         app: shipper
+      annotations:
+        prometheus.io/scrape_port: '8889'
     spec:
       containers:
       - name: shipper
@@ -27,8 +34,14 @@ spec:
           - "9443"
           - "-resync"
           - "10m"
+          - "-v"
+          - "4"
+          - "-logtostderr"
         ports:
-        - containerPort: 9443
+        - name: metrics
+          containerPort: 8889
+        - name: webhook
+          containerPort: 9443
         volumeMounts:
         - mountPath: /etc/webhook/certs
           name: webhook-certs
