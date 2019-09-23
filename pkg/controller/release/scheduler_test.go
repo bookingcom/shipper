@@ -22,7 +22,6 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
@@ -76,6 +75,12 @@ func buildRelease() *shipper.Release {
 				ClusterRequirements: shipper.ClusterRequirements{
 					Regions: []shipper.RegionRequirement{{Name: shippertesting.TestRegion}},
 				},
+			},
+		},
+		Status: shipper.ReleaseStatus{
+			Conditions: []shipper.ReleaseCondition{
+				{Type: shipper.ReleaseConditionTypeBlocked, Status: corev1.ConditionFalse},
+				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionFalse},
 			},
 		},
 	}
@@ -420,103 +425,6 @@ func TestCreateAssociatedObjects(t *testing.T) {
 	c, clientset := newScheduler(fixtures)
 	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
 		t.Fatal(err)
-	}
-
-	filteredActions := filterActions(
-		clientset.Actions(),
-		[]string{"update", "create"},
-		[]string{"releases", "installationtargets", "traffictargets", "capacitytargets"},
-	)
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
-}
-
-func TestCreateAssociatedObjectsWithRolloutBlockOverride(t *testing.T) {
-	rolloutblock := newRolloutBlock(testRolloutBlockName, shippertesting.TestNamespace)
-	cluster := buildCluster("minikube-a")
-	release := buildRelease()
-	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
-	release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", shippertesting.TestNamespace, testRolloutBlockName)
-	fixtures := []runtime.Object{release, cluster, rolloutblock}
-
-	// Expected release and actions. The release should have, at the end of the
-	// business logic, a list of clusters containing the sole cluster we've added
-	// to the client, and also a Scheduled condition with True status. Expected
-	// actions contain the intent to create all the associated target objects.
-	expected := release.DeepCopy()
-	expected.Status.Conditions = []shipper.ReleaseCondition{
-		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-	}
-	expectedActions := buildExpectedActions(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
-
-	c, clientset := newScheduler(fixtures)
-	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
-		t.Fatal(err)
-	}
-
-	filteredActions := filterActions(
-		clientset.Actions(),
-		[]string{"update", "create"},
-		[]string{"releases", "installationtargets", "traffictargets", "capacitytargets"},
-	)
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
-}
-
-func TestCreateAssociatedObjectsWithNonExistingRolloutBlockOverride(t *testing.T) {
-	cluster := buildCluster("minikube-a")
-	release := buildRelease()
-	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
-	release.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", shippertesting.TestNamespace, "non-existing-rolloutblock")
-	fixtures := []runtime.Object{release, cluster}
-
-	// Expected release and actions. The release should have, at the end of the
-	// business logic, a list of clusters containing the sole cluster we've added
-	// to the client, and also a Scheduled condition with True status. Expected
-	// actions contain the intent to create all the associated target objects.
-	expected := release.DeepCopy()
-	expected.Annotations[shipper.RolloutBlocksOverrideAnnotation] = ""
-	expected.Status.Conditions = []shipper.ReleaseCondition{
-		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-	}
-	expectedActions := buildExpectedActions(expected.DeepCopy(), []*shipper.Cluster{cluster.DeepCopy()})
-
-	c, clientset := newScheduler(fixtures)
-	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
-		t.Fatal(err)
-	}
-
-	filteredActions := filterActions(
-		clientset.Actions(),
-		[]string{"update", "create"},
-		[]string{"releases", "installationtargets", "traffictargets", "capacitytargets"},
-	)
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
-}
-
-func TestCreateAssociatedObjectsWithRolloutBlock(t *testing.T) {
-	rolloutblock := newRolloutBlock(testRolloutBlockName, shippertesting.TestNamespace)
-	cluster := buildCluster("minikube-a")
-	release := buildRelease()
-	release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
-	fixtures := []runtime.Object{release, cluster, rolloutblock}
-
-	// Expected release and actions. The release should have, at the end of the
-	// business logic, a list of clusters containing the sole cluster we've added
-	// to the client, and also a Scheduled condition with True status.
-	expected := release.DeepCopy()
-	expected.Status.Conditions = []shipper.ReleaseCondition{
-		{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-	}
-
-	var expectedActions []kubetesting.Action // expecting no action since this release is blocked
-
-	c, clientset := newScheduler(fixtures)
-	if _, err := c.ScheduleRelease(release.DeepCopy()); err != nil {
-		switch err.(type) {
-		case shippererrors.RolloutBlockError:
-			// Release was blocked!
-		default:
-			t.Fatal(err)
-		}
 	}
 
 	filteredActions := filterActions(
