@@ -221,6 +221,7 @@ type ReleaseConditionType string
 const (
 	ReleaseConditionTypeScheduled ReleaseConditionType = "Scheduled"
 	ReleaseConditionTypeComplete  ReleaseConditionType = "Complete"
+	ReleaseConditionTypeBlocked   ReleaseConditionType = "Blocked"
 )
 
 type ReleaseCondition struct {

@@ -16,6 +16,7 @@ import (
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
+	rolloutblock "github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
 // processNextAppWorkItem pops a next item from the head of the application
@@ -90,6 +91,15 @@ func (c *Controller) syncOneApplicationHandler(key string) error {
 	klog.V(4).Infof("Fetching release pair for Application %q", key)
 	incumbent, contender, err := c.getWorkingReleasePair(app)
 	if err != nil {
+		return err
+	}
+
+	// If rollouts are blocked for the contender release, here we will just
+	// bail out without updating any conditions. They've already been set
+	// both for the Application in the application controller, and for the
+	// release in the main queue of the release controller.
+	rolloutBlocked, _, err := rolloutblock.BlocksRollout(c.rolloutBlockLister, contender)
+	if rolloutBlocked {
 		return err
 	}
 
