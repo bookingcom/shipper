@@ -1483,8 +1483,8 @@ func TestControllerComputeTargetClustersAndCreateAssociatedObjects(t *testing.T)
 		contender.release.DeepCopy(),
 	)
 
-	f.expectReleaseScheduled(contender.release.DeepCopy(), []*shipper.Cluster{cluster})
-	f.expectAssociatedObjectsCreated(contender.release.DeepCopy(), []*shipper.Cluster{cluster})
+	f.expectReleaseScheduled(contender.release, []*shipper.Cluster{cluster})
+	f.expectAssociatedObjectsCreated(contender.release, []*shipper.Cluster{cluster})
 
 	f.run()
 }
@@ -1522,7 +1522,7 @@ func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.
 			contender.trafficTarget.DeepCopy(),
 		)
 		var step int32 = 0
-		f.expectReleaseWaitingForCommand(contender.release.DeepCopy(), step)
+		f.expectReleaseWaitingForCommand(contender.release, step)
 		f.run()
 	}
 }
@@ -2354,8 +2354,7 @@ func TestContenderReleasePhaseIsWaitingForCommandForFinalStepState(t *testing.T)
 			incumbent.trafficTarget.DeepCopy(),
 		)
 
-		rel := contender.release.DeepCopy()
-		f.expectReleaseWaitingForCommand(rel, 1)
+		f.expectReleaseWaitingForCommand(contender.release, 1)
 		f.run()
 	}
 }
@@ -2402,7 +2401,7 @@ func TestContenderReleaseIsInstalled(t *testing.T) {
 			incumbent.trafficTarget.DeepCopy(),
 		)
 
-		f.expectReleaseReleased(contender.release.DeepCopy(), 2)
+		f.expectReleaseReleased(contender.release, 2)
 
 		f.run()
 	}
