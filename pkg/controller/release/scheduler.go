@@ -92,11 +92,6 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 	klog.Infof("Processing release %q", metaKey)
 	defer klog.Infof("Finished processing %q", metaKey)
 
-	shouldBlockRollout, nonOverriddenRBsStatement := s.processRolloutBlocks(rel)
-	if shouldBlockRollout {
-		return nil, shippererrors.NewRolloutBlockError(nonOverriddenRBsStatement)
-	}
-
 	if !releaseHasClusters(rel) {
 		return nil, shippererrors.NewUnrecoverableError(fmt.Errorf("release %q clusters have not been chosen yet", metaKey))
 	}

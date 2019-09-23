@@ -23,6 +23,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
+	rolloutblock "github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
 const (
@@ -295,7 +296,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 		return shippererrors.NewUnrecoverableError(err)
 	}
 
-	rel, err := c.releaseLister.Releases(namespace).Get(name)
+	initialRel, err := c.releaseLister.Releases(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			klog.V(3).Infof("Release %q not found", key)
@@ -306,72 +307,26 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 			WithShipperKind("Release")
 	}
 
-	if releaseutil.HasEmptyEnvironment(rel) {
+	if releaseutil.HasEmptyEnvironment(initialRel) {
 		return nil
 	}
 
-	var initialRel *shipper.Release = rel.DeepCopy()
-
-	klog.V(4).Infof("Start processing Release %q", key)
-	scheduler := NewScheduler(
-		c.clientset,
-		c.clusterLister,
-		c.installationTargetLister,
-		c.capacityTargetLister,
-		c.trafficTargetLister,
-		c.rolloutBlockLister,
-		c.chartFetcher,
-		c.recorder,
-	)
-
-	if !releaseHasClusters(rel) {
-		shouldForce := false
-		rel, err = scheduler.ChooseClusters(rel.DeepCopy(), shouldForce)
-		if err != nil {
-			return err
-		}
-		c.recorder.Eventf(
-			rel,
-			corev1.EventTypeNormal,
-			"ClustersSelected",
-			"Set clusters for %q to %v",
-			controller.MetaKey(rel),
-			rel.Annotations[shipper.ReleaseClustersAnnotation],
-		)
-	}
-
-	var scheduleErr error
-	rel, scheduleErr = scheduler.ScheduleRelease(rel.DeepCopy())
-	if scheduleErr != nil {
-		if shippererrors.ShouldBroadcast(err) {
-			c.recorder.Eventf(
-				initialRel,
-				corev1.EventTypeWarning,
-				"FailedReleaseScheduling",
-				scheduleErr.Error(),
-			)
-		}
-		reason := reasonForReleaseCondition(scheduleErr)
-		condition := releaseutil.NewReleaseCondition(
-			shipper.ReleaseConditionTypeScheduled,
-			corev1.ConditionFalse,
-			reason,
-			scheduleErr.Error(),
-		)
-		releaseutil.SetReleaseCondition(&initialRel.Status, *condition)
-		if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Update(initialRel); err != nil {
-			return shippererrors.NewKubeclientUpdateError(initialRel, err)
-		}
-		return scheduleErr
-	}
+	rel, err := c.scheduleRelease(initialRel.DeepCopy())
 
 	if !reflect.DeepEqual(initialRel, rel) {
+		if err != nil && shippererrors.ShouldBroadcast(err) {
+			c.recorder.Eventf(
+				rel,
+				corev1.EventTypeWarning,
+				"FailedReleaseScheduling",
+				err.Error(),
+			)
+		}
+
 		if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); err != nil {
 			return shippererrors.NewKubeclientUpdateError(rel, err)
 		}
 	}
-
-	klog.V(4).Infof("Release %q has been successfully scheduled", key)
 
 	appKey, err := c.getAssociatedApplicationKey(rel)
 	if err != nil {
@@ -386,6 +341,81 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 	klog.V(4).Infof("Done processing Release %q", key)
 
 	return nil
+}
+
+func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, error) {
+	scheduler := NewScheduler(
+		c.clientset,
+		c.clusterLister,
+		c.installationTargetLister,
+		c.capacityTargetLister,
+		c.trafficTargetLister,
+		c.rolloutBlockLister,
+		c.chartFetcher,
+		c.recorder,
+	)
+
+	initialRel := rel.DeepCopy()
+
+	rolloutBlocked, events, err := rolloutblock.BlocksRollout(c.rolloutBlockLister, rel)
+	for _, ev := range events {
+		c.recorder.Event(rel, ev.Type, ev.Reason, ev.Message)
+	}
+	if rolloutBlocked {
+		condition := releaseutil.NewReleaseCondition(
+			shipper.ReleaseConditionTypeBlocked,
+			corev1.ConditionTrue,
+			shipper.RolloutBlockReason,
+			err.Error(),
+		)
+		releaseutil.SetReleaseCondition(&rel.Status, *condition)
+
+		return rel, err
+	}
+
+	condition := releaseutil.NewReleaseCondition(
+		shipper.ReleaseConditionTypeBlocked,
+		corev1.ConditionFalse,
+		"",
+		"",
+	)
+	releaseutil.SetReleaseCondition(&rel.Status, *condition)
+
+	if !releaseHasClusters(rel) {
+		shouldForce := false
+		rel, err = scheduler.ChooseClusters(rel, shouldForce)
+
+		if err != nil {
+			return initialRel, err
+		}
+
+		c.recorder.Eventf(
+			rel,
+			corev1.EventTypeNormal,
+			"ClustersSelected",
+			"Set clusters for %q to %v",
+			controller.MetaKey(rel),
+			rel.Annotations[shipper.ReleaseClustersAnnotation],
+		)
+	}
+
+	rel, err = scheduler.ScheduleRelease(rel.DeepCopy())
+	if err != nil {
+		reason := reasonForReleaseCondition(err)
+		condition := releaseutil.NewReleaseCondition(
+			shipper.ReleaseConditionTypeScheduled,
+			corev1.ConditionFalse,
+			reason,
+			err.Error(),
+		)
+		releaseutil.SetReleaseCondition(&initialRel.Status, *condition)
+
+		return initialRel, err
+	}
+
+	klog.V(4).Infof("Release %q has been successfully scheduled", controller.MetaKey(rel))
+
+	return rel, nil
 }
 
 // getAssociatedApplicationKey returns an application key in the format:
