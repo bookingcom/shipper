@@ -31,23 +31,25 @@ var applyCmd = &cobra.Command{
 
 // Parameters
 var (
-	configFile                  string
-	kubeConfigFile              string
+	configFile     string
+	kubeConfigFile string
+
 	shipperSystemNamespace      string
 	globalRolloutBlockNamespace string
+
+	shipperManagementClusterServiceAccountName  string
+	shipperApplicationClusterServiceAccountName string
 )
 
 // Name constants
 const (
-	level1Padding                              = "    "
-	shipperManagementServiceName               = "shipper-validating-webhook"
-	shipperManagementClusterServiceAccountName = "shipper-management-cluster"
-	shipperManagementClusterRoleName           = "shipper:management-cluster"
-	shipperManagementClusterRoleBindingName    = "shipper:management-cluster"
+	level1Padding                           = "    "
+	shipperManagementServiceName            = "shipper-validating-webhook"
+	shipperManagementClusterRoleName        = "shipper:management-cluster"
+	shipperManagementClusterRoleBindingName = "shipper:management-cluster"
 
-	shipperApplicationClusterServiceAccountName = "shipper-application-cluster"
-	shipperApplicationClusterRoleName           = "cluster-admin" // needs to be able to install any kind of Helm chart
-	shipperApplicationClusterRoleBindingName    = "shipper:application-cluster"
+	shipperApplicationClusterRoleName        = "cluster-admin" // needs to be able to install any kind of Helm chart
+	shipperApplicationClusterRoleBindingName = "shipper:application-cluster"
 )
 
 func init() {
@@ -57,6 +59,9 @@ func init() {
 	applyCmd.Flags().StringVar(&kubeConfigFile, kubeConfigFlagName, "~/.kube/config", "the path to the Kubernetes configuration file")
 	applyCmd.Flags().StringVarP(&shipperSystemNamespace, "shipper-system-namespace", "n", shipper.ShipperNamespace, "the namespace where Shipper is running")
 	applyCmd.Flags().StringVarP(&globalRolloutBlockNamespace, "rollout-blocks-global-namespace", "g", shipper.GlobalRolloutBlockNamespace, "the namespace where Global RolloutBlocks are running")
+
+	applyCmd.Flags().StringVar(&shipperManagementClusterServiceAccountName, "shipper-management-cluster-service-account", shipper.ShipperManagementServiceAccount, "the name of the service account Shipper will use for the management cluster")
+	applyCmd.Flags().StringVar(&shipperApplicationClusterServiceAccountName, "shipper-application-cluster-service-account", shipper.ShipperApplicationServiceAccount, "the name of the service account Shipper will use for the application cluster")
 
 	err := applyCmd.MarkFlagFilename(fileFlagName, "yaml")
 	if err != nil {
