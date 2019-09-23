@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -497,71 +496,4 @@ func TestInstallNoOverride(t *testing.T) {
 	expectedActions := []kubetesting.Action{}
 	shippertesting.ShallowCheckActions(expectedActions, clusterPair.fakeDynamicClient.Actions(), t)
 	shippertesting.ShallowCheckActions(expectedActions, clusterPair.fakeClient.Actions(), t)
-}
-
-func TestInstallWithoutChart(t *testing.T) {
-	cluster := buildCluster("minikube-a")
-	appName := "reviews-api"
-	testNs := "test-namespace"
-	chart := buildChart(appName, "0.0.1", repoUrl)
-
-	rel := buildRelease(testNs, appName, chart)
-	app := &shipper.Application{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      appName,
-			Namespace: testNs,
-		},
-		Status: shipper.ApplicationStatus{
-			History: []string{rel.Name},
-		},
-	}
-
-	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, nil)
-	it.ObjectMeta.OwnerReferences = []metav1.OwnerReference{
-		{
-			APIVersion: shipper.SchemeGroupVersion.String(),
-			Kind:       "Release",
-			Name:       rel.GetName(),
-			UID:        rel.GetUID(),
-		},
-	}
-
-	shipperObjects := []runtime.Object{cluster, app, rel, it}
-	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, shipperObjects,
-			objectsPerClusterMap{cluster.Name: []runtime.Object{}})
-
-	fakeClientProvider := &FakeClientProvider{
-		clientsPerCluster: clientsPerCluster,
-		restConfig:        &rest.Config{},
-	}
-
-	fakeRecorder := record.NewFakeRecorder(42)
-
-	c := newController(shipperclientset, shipperInformerFactory,
-		fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
-
-	if !c.processNextWorkItem() {
-		t.Fatal("Could not process work item")
-	}
-
-	var filteredActions []kubetesting.Action
-	for _, a := range shipperclientset.Actions() {
-		if a.GetVerb() == "update" {
-			filteredActions = append(filteredActions, a)
-		}
-	}
-
-	it = it.DeepCopy()
-	it.Spec.CanOverride = true
-	it.Spec.Chart = &chart
-
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(schema.GroupVersionResource{
-			Resource: "installationtargets",
-			Version:  shipper.SchemeGroupVersion.Version,
-			Group:    shipper.SchemeGroupVersion.Group,
-		}, testNs, it),
-	}
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }

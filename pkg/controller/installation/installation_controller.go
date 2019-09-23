@@ -216,54 +216,6 @@ func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 // processInstallation attempts to install the related InstallationTarget on
 // all target clusters.
 func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
-	// If an InstallationTarget was created before we introduced
-	// self-contained InstallationTargets, it will not contain a chart,
-	// values, nor a reliable CanOverride, so it will need to be migrated.
-	// We do so by looking at the associated release, and the current
-	// contender.
-	// Note that this is temporary. After this code gets released, it can
-	// safely be dropped in the next version.
-	if it.Spec.Chart == nil {
-		relNamespaceLister := c.releaseLister.Releases(it.Namespace)
-
-		release, err := relNamespaceLister.ReleaseForInstallationTarget(it)
-		if err != nil {
-			return shippererrors.NewUnrecoverableError(fmt.Errorf(
-				"InstallationTarget %q is missing Chart, and the owning release cannot be found: %s", shippercontroller.MetaKey(it), err))
-		}
-
-		appName, ok := release.GetLabels()[shipper.AppLabel]
-		if !ok {
-			return shippererrors.NewUnrecoverableError(fmt.Errorf(
-				"Release for InstallationTarget %q is missing label %q", shippercontroller.MetaKey(it), shipper.AppLabel))
-		}
-
-		contenderRel, err := relNamespaceLister.ContenderForApplication(appName)
-		if err != nil {
-			return err
-		}
-
-		if contenderRel.Name == release.Name {
-			it.Spec.CanOverride = true
-		}
-
-		it.Spec.Chart = release.Spec.Environment.Chart.DeepCopy()
-
-		if release.Spec.Environment.Values != nil {
-			values := release.Spec.Environment.Values.DeepCopy()
-			it.Spec.Values = &values
-		}
-
-		_, err = c.shipperclientset.ShipperV1alpha1().InstallationTargets(it.Namespace).Update(it)
-		if err != nil {
-			return shippererrors.NewKubeclientUpdateError(it, err).
-				WithShipperKind("InstallationTarget")
-		}
-
-		return nil
-
-	}
-
 	if !it.Spec.CanOverride {
 		klog.V(3).Infof("InstallationTarget %q is not allowed to override, skipping", shippercontroller.MetaKey(it))
 		return nil

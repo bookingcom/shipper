@@ -11,7 +11,6 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
 	fakediscovery "k8s.io/client-go/discovery/fake"
@@ -198,27 +197,5 @@ func buildChart(appName, version, repoUrl string) shipper.Chart {
 		Name:    appName,
 		Version: version,
 		RepoURL: repoUrl,
-	}
-}
-
-func buildRelease(namespace, name string, chart shipper.Chart) *shipper.Release {
-	return &shipper.Release{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			UID:       types.UID("foobar"),
-			Labels: map[string]string{
-				shipper.AppLabel:     name,
-				shipper.ReleaseLabel: name,
-			},
-			Annotations: map[string]string{
-				shipper.ReleaseGenerationAnnotation: "0",
-			},
-		},
-		Spec: shipper.ReleaseSpec{
-			Environment: shipper.ReleaseEnvironment{
-				Chart: chart,
-			},
-		},
 	}
 }
