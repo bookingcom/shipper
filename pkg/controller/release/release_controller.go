@@ -362,11 +362,16 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 		c.recorder.Event(rel, ev.Type, ev.Reason, ev.Message)
 	}
 	if rolloutBlocked {
+		var msg string
+		if err != nil {
+			msg = err.Error()
+		}
+
 		condition := releaseutil.NewReleaseCondition(
 			shipper.ReleaseConditionTypeBlocked,
 			corev1.ConditionTrue,
 			shipper.RolloutBlockReason,
-			err.Error(),
+			msg,
 		)
 		releaseutil.SetReleaseCondition(&rel.Status, *condition)
 
