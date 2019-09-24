@@ -31,6 +31,13 @@ var (
 		nil,
 	)
 
+	relsPerClusterDesc = prometheus.NewDesc(
+		fqn("releases_per_cluster"),
+		"Number of Release objects per cluster",
+		[]string{"cluster"},
+		nil,
+	)
+
 	relDurationDesc = prometheus.NewDesc(
 		fqn("release_durations"),
 		"Duration of release objects",
@@ -156,17 +163,24 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 	now := time.Now()
 	relAgesByCondition := make(map[string][]float64)
 
-	breakdown := make(map[string]float64)
+	releasesPerCluster := make(map[string]float64)
+	releasesPerCondition := make(map[string]float64)
 	conditions := []shipper.ReleaseConditionType{
 		shipper.ReleaseConditionTypeScheduled,
 		shipper.ReleaseConditionTypeComplete,
 	}
+
 	for _, rel := range rels {
 		var appName string
 		if len(rel.OwnerReferences) == 1 {
 			appName = rel.OwnerReferences[0].Name
 		} else {
 			appName = "unknown"
+		}
+
+		clusters := strings.Split(rel.Annotations[shipper.ReleaseClustersAnnotation], ",")
+		for _, cluster := range clusters {
+			releasesPerCluster[cluster]++
 		}
 
 		for _, c := range conditions {
@@ -187,7 +201,7 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 			}
 
 			// it's either this or map[string]map[string]map[string]map[string]float64
-			breakdown[key(rel.Namespace, appName, string(c), status, reason)]++
+			releasesPerCondition[key(rel.Namespace, appName, string(c), status, reason)]++
 		}
 
 		// We're only interested in incomplete releases, as this metric
@@ -208,10 +222,12 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 
 	}
 
-	klog.V(4).Infof("releases: %v", breakdown)
-
-	for k, v := range breakdown {
+	for k, v := range releasesPerCondition {
 		ch <- prometheus.MustNewConstMetric(relsDesc, prometheus.GaugeValue, v, unkey(k)...)
+	}
+
+	for cluster, v := range releasesPerCluster {
+		ch <- prometheus.MustNewConstMetric(relsPerClusterDesc, prometheus.GaugeValue, v, cluster)
 	}
 
 	for condition, ages := range relAgesByCondition {
