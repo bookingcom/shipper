@@ -377,7 +377,7 @@ func createValidatingWebhookConfiguration(cmd *cobra.Command, configurator *conf
 		return err
 	}
 
-	if err := configurator.CreateValidatingWebhookConfiguration(caBundle, shipperSystemNamespace); err != nil {
+	if err := configurator.CreateOrUpdateValidatingWebhookConfiguration(caBundle, shipperSystemNamespace); err != nil {
 		if errors.IsAlreadyExists(err) {
 			cmd.Println("already exists. Skipping")
 			return nil
@@ -392,7 +392,7 @@ func createValidatingWebhookConfiguration(cmd *cobra.Command, configurator *conf
 
 func createValidatingWebhookService(cmd *cobra.Command, configurator *configurator.Cluster) error {
 	cmd.Print("Creating a Service object for the validating webhook... ")
-	if err := configurator.CreateValidatingWebhookService(shipperSystemNamespace); err != nil {
+	if err := configurator.CreateOrUpdateValidatingWebhookService(shipperSystemNamespace); err != nil {
 		if errors.IsAlreadyExists(err) {
 			cmd.Println("already exists. Skipping")
 			return nil

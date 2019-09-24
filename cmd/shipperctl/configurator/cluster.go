@@ -39,9 +39,9 @@ const (
 )
 
 type Cluster struct {
-	KubeClient         *kubernetes.Clientset
-	ShipperClient      *shipperclientset.Clientset
-	ApiExtensionClient *apiextensionclientset.Clientset
+	KubeClient         kubernetes.Interface
+	ShipperClient      shipperclientset.Interface
+	ApiExtensionClient apiextensionclientset.Interface
 	Host               string
 }
 
@@ -422,7 +422,7 @@ func (c *Cluster) FetchKubernetesCABundle() ([]byte, error) {
 	return []byte(caBundle), nil
 }
 
-func (c *Cluster) CreateValidatingWebhookConfiguration(caBundle []byte, namespace string) error {
+func (c *Cluster) CreateOrUpdateValidatingWebhookConfiguration(caBundle []byte, namespace string) error {
 	path := shipperValidatingWebhookServicePath
 	validatingWebhookConfiguration := &admissionregistrationv1beta1.ValidatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
@@ -456,15 +456,22 @@ func (c *Cluster) CreateValidatingWebhookConfiguration(caBundle []byte, namespac
 		},
 	}
 
-	_, err := c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Create(validatingWebhookConfiguration)
+	existingConfig, err := c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Get(shipperValidatingWebhookName, metav1.GetOptions{})
 	if err != nil {
-		return err
+		if errors.IsNotFound(err) {
+			_, err = c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Create(validatingWebhookConfiguration)
+			return err
+		} else {
+			return err
+		}
 	}
 
-	return nil
+	existingConfig.Webhooks = validatingWebhookConfiguration.Webhooks
+	_, err = c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Update(existingConfig)
+	return err
 }
 
-func (c *Cluster) CreateValidatingWebhookService(namespace string) error {
+func (c *Cluster) CreateOrUpdateValidatingWebhookService(namespace string) error {
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      shipperValidatingWebhookServiceName,
@@ -483,6 +490,18 @@ func (c *Cluster) CreateValidatingWebhookService(namespace string) error {
 		},
 	}
 
-	_, err := c.KubeClient.CoreV1().Services(namespace).Create(service)
+	existingSerivce, err := c.KubeClient.CoreV1().Services(namespace).Get(shipperValidatingWebhookServiceName, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			_, err = c.KubeClient.CoreV1().Services(namespace).Create(service)
+			return err
+		} else {
+			return err
+		}
+	}
+
+	existingSerivce.Spec.Selector = service.Spec.Selector
+	existingSerivce.Spec.Ports = service.Spec.Ports
+	_, err = c.KubeClient.CoreV1().Services(namespace).Update(existingSerivce)
 	return err
 }
