@@ -398,11 +398,16 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		c.recorder.Event(app, ev.Type, ev.Reason, ev.Message)
 	}
 	if rolloutBlocked {
+		var msg string
+		if err != nil {
+			msg = err.Error()
+		}
+
 		condition := apputil.NewApplicationCondition(
 			shipper.ApplicationConditionTypeBlocked,
 			corev1.ConditionTrue,
 			shipper.RolloutBlockReason,
-			err.Error(),
+			msg,
 		)
 		apputil.SetApplicationCondition(&app.Status, *condition)
 
