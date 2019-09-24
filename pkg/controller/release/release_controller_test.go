@@ -1779,7 +1779,7 @@ func TestContenderCapacityShouldIncreaseWithRolloutBlockOverride(t *testing.T) {
 	ct := contender.capacityTarget.DeepCopy()
 	r := contender.release.DeepCopy()
 	f.expectCapacityStatusPatch(ct, r, 50, uint(totalReplicaCount), Contender)
-	overrideEvent := fmt.Sprintf("%s RolloutBlockOverriden %s", corev1.EventTypeNormal, rolloutBlockKey)
+	overrideEvent := fmt.Sprintf("%s RolloutBlockOverridden %s", corev1.EventTypeNormal, rolloutBlockKey)
 	f.expectedEvents = append(f.expectedEvents, overrideEvent)
 	f.run()
 }
@@ -1826,7 +1826,7 @@ func TestContenderCapacityShouldNotIncreaseWithRolloutBlock(t *testing.T) {
 		expectedContender)
 	f.actions = append(f.actions, action)
 
-	rolloutBlockExistsEvent := fmt.Sprintf("%s RolloutBlock %s", corev1.EventTypeWarning, rolloutBlockKey)
+	rolloutBlockExistsEvent := fmt.Sprintf("%s RolloutBlocked %s", corev1.EventTypeWarning, rolloutBlockKey)
 	broadcastEvent := fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage)
 	f.expectedEvents = append(f.expectedEvents, rolloutBlockExistsEvent, broadcastEvent)
 	f.run()
@@ -1914,7 +1914,7 @@ func TestContenderTrafficShouldIncreaseWithRolloutBlockOverride(t *testing.T) {
 	tt := contender.trafficTarget.DeepCopy()
 	r := contender.release.DeepCopy()
 	f.expectTrafficStatusPatch(tt, r, 50, Contender)
-	overrideEvent := fmt.Sprintf("%s RolloutBlockOverriden %s", corev1.EventTypeNormal, rolloutBlockKey)
+	overrideEvent := fmt.Sprintf("%s RolloutBlockOverridden %s", corev1.EventTypeNormal, rolloutBlockKey)
 	f.expectedEvents = append(f.expectedEvents, overrideEvent)
 	f.run()
 }
@@ -1963,7 +1963,7 @@ func TestContenderTrafficShouldNotIncreaseWithRolloutBlock(t *testing.T) {
 		expectedContender)
 	f.actions = append(f.actions, action)
 
-	rolloutBlockExistsEvent := fmt.Sprintf("%s RolloutBlock %s", corev1.EventTypeWarning, rolloutBlockKey)
+	rolloutBlockExistsEvent := fmt.Sprintf("%s RolloutBlocked %s", corev1.EventTypeWarning, rolloutBlockKey)
 	broadcastEvent := fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage)
 	f.expectedEvents = append(f.expectedEvents, rolloutBlockExistsEvent, broadcastEvent)
 	f.run()
@@ -2055,7 +2055,7 @@ func TestIncumbentTrafficShouldDecreaseWithRolloutBlockOverride(t *testing.T) {
 	tt := incumbent.trafficTarget.DeepCopy()
 	r := contender.release.DeepCopy()
 	f.expectTrafficStatusPatch(tt, r, 50, Incumbent)
-	overrideEvent := fmt.Sprintf("%s RolloutBlockOverriden %s", corev1.EventTypeNormal, rolloutBlockKey)
+	overrideEvent := fmt.Sprintf("%s RolloutBlockOverridden %s", corev1.EventTypeNormal, rolloutBlockKey)
 	f.expectedEvents = append(f.expectedEvents, overrideEvent)
 	f.run()
 }
@@ -2106,7 +2106,7 @@ func TestIncumbentTrafficShouldNotDecreaseWithRolloutBlock(t *testing.T) {
 		expectedContender)
 	f.actions = append(f.actions, action)
 
-	rolloutBlockExistsEvent := fmt.Sprintf("%s RolloutBlock %s", corev1.EventTypeWarning, rolloutBlockKey)
+	rolloutBlockExistsEvent := fmt.Sprintf("%s RolloutBlocked %s", corev1.EventTypeWarning, rolloutBlockKey)
 	broadcastEvent := fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage)
 	f.expectedEvents = append(f.expectedEvents, rolloutBlockExistsEvent, broadcastEvent)
 	f.run()
@@ -2204,7 +2204,7 @@ func TestIncumbentCapacityShouldDecreaseWithRolloutBlockOverride(t *testing.T) {
 	tt := incumbent.capacityTarget.DeepCopy()
 	r := contender.release.DeepCopy()
 	f.expectCapacityStatusPatch(tt, r, 50, uint(totalReplicaCount), Incumbent)
-	overrideEvent := fmt.Sprintf("%s RolloutBlockOverriden %s", corev1.EventTypeNormal, rolloutBlockKey)
+	overrideEvent := fmt.Sprintf("%s RolloutBlockOverridden %s", corev1.EventTypeNormal, rolloutBlockKey)
 	f.expectedEvents = append(f.expectedEvents, overrideEvent)
 	f.run()
 }
@@ -2256,7 +2256,7 @@ func TestIncumbentCapacityShouldNotDecreaseWithRolloutBlock(t *testing.T) {
 		expectedContender)
 	f.actions = append(f.actions, action)
 
-	rolloutBlockExistsEvent := fmt.Sprintf("%s RolloutBlock %s", corev1.EventTypeWarning, rolloutBlockKey)
+	rolloutBlockExistsEvent := fmt.Sprintf("%s RolloutBlocked %s", corev1.EventTypeWarning, rolloutBlockKey)
 	broadcastEvent := fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage)
 	f.expectedEvents = append(f.expectedEvents, rolloutBlockExistsEvent, broadcastEvent)
 	f.run()
