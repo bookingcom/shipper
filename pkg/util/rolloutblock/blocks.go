@@ -41,7 +41,7 @@ func BlocksRollout(rolloutBlockLister shipperlisters.RolloutBlockLister, obj met
 		annotations[shipper.RolloutBlocksOverrideAnnotation] = overrides.String()
 		events = append(events, RolloutBlockEvent{
 			corev1.EventTypeWarning,
-			"Non Existing RolloutBlock",
+			"OverriddenRolloutBlockNotFound",
 			obsoleteBlocks.String()})
 	}
 
@@ -53,7 +53,7 @@ func BlocksRollout(rolloutBlockLister shipperlisters.RolloutBlockLister, obj met
 		if len(overrides) > 0 {
 			events = append(events, RolloutBlockEvent{
 				corev1.EventTypeNormal,
-				"RolloutBlockOverriden",
+				"RolloutBlockOverridden",
 				overrides.String()})
 		}
 
@@ -61,7 +61,7 @@ func BlocksRollout(rolloutBlockLister shipperlisters.RolloutBlockLister, obj met
 	} else {
 		events = append(events, RolloutBlockEvent{
 			corev1.EventTypeWarning,
-			"RolloutBlock",
+			"RolloutBlocked",
 			effectiveBlocks.String()})
 		return true, events, shippererrors.NewRolloutBlockError(effectiveBlocks.String())
 	}
