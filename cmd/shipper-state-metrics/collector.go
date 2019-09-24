@@ -160,7 +160,9 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 	conditions := []shipper.ReleaseConditionType{
 		shipper.ReleaseConditionTypeScheduled,
 		shipper.ReleaseConditionTypeComplete,
+		shipper.ReleaseConditionTypeBlocked,
 	}
+
 	for _, rel := range rels {
 		var appName string
 		if len(rel.OwnerReferences) == 1 {
