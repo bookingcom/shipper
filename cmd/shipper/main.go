@@ -132,7 +132,7 @@ func main() {
 	stopCh := setupSignalHandler()
 	metricsReadyCh := make(chan struct{})
 
-	kubeInformerFactory := informers.NewSharedInformerFactory(informerKubeClient, *resync)
+	kubeInformerFactory := informers.NewSharedInformerFactory(informerKubeClient, 0*time.Second)
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(informerShipperClient, *resync)
 
 	shipperscheme.AddToScheme(scheme.Scheme)
@@ -161,7 +161,6 @@ func main() {
 		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
 		*ns,
 		restTimeout,
-		resync,
 	)
 
 	wg.Add(1)
