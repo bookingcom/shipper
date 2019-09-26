@@ -49,7 +49,6 @@ type Controller struct {
 	releasesLister          listers.ReleaseLister
 	releasesListerSynced    cache.InformerSynced
 	capacityTargetWorkqueue workqueue.RateLimitingInterface
-	deploymentWorkqueue     workqueue.RateLimitingInterface
 	recorder                record.EventRecorder
 }
 
@@ -72,7 +71,6 @@ func NewController(
 		releasesLister:          releaseInformer.Lister(),
 		releasesListerSynced:    releaseInformer.Informer().HasSynced,
 		capacityTargetWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "capacity_controller_capacitytargets"),
-		deploymentWorkqueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "capacity_controller_deployments"),
 		recorder:                recorder,
 		clusterClientStore:      store,
 	}
@@ -85,8 +83,8 @@ func NewController(
 		},
 	})
 
-	store.AddSubscriptionCallback(controller.subscribe)
-	store.AddEventHandlerCallback(controller.registerEventHandlers)
+	store.AddSubscriptionCallback(controller.subscribeToDeployments)
+	store.AddEventHandlerCallback(controller.registerDeploymentEventHandlers)
 
 	return controller
 }
@@ -98,7 +96,6 @@ func NewController(
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.capacityTargetWorkqueue.ShutDown()
-	defer c.deploymentWorkqueue.ShutDown()
 
 	klog.V(2).Info("Starting Capacity controller")
 	defer klog.V(2).Info("Shutting down Capacity controller")
@@ -110,7 +107,6 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.runCapacityTargetWorker, time.Second, stopCh)
-		go wait.Until(c.runDeploymentWorker, time.Second, stopCh)
 	}
 
 	klog.V(4).Info("Started Capacity controller")
@@ -299,11 +295,11 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 	c.capacityTargetWorkqueue.Add(key)
 }
 
-func (c *Controller) registerEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
+func (c *Controller) registerDeploymentEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
 	informerFactory.Apps().V1().Deployments().Informer().AddEventHandler(c.NewDeploymentResourceEventHandler(clusterName))
 }
 
-func (c *Controller) subscribe(informerFactory kubeinformers.SharedInformerFactory) {
+func (c *Controller) subscribeToDeployments(informerFactory kubeinformers.SharedInformerFactory) {
 	informerFactory.Apps().V1().Deployments().Informer()
 	informerFactory.Core().V1().Pods().Informer()
 }
