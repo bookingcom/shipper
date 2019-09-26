@@ -407,8 +407,7 @@ func (c *Controller) findTargetDeploymentForClusterSpec(clusterSpec shipper.Clus
 	}
 
 	if l := len(deploymentsList); l != 1 {
-		err = fmt.Errorf(
-			"expected exactly 1 deployment on cluster %s, namespace %s, with label %s, but %d deployments exist",
+		err = shippererrors.NewTargetDeploymentCountError(
 			clusterSpec.Name, targetNamespace, selector.String(), l)
 
 		clusterStatus.Conditions = conditions.SetCapacityCondition(
@@ -419,7 +418,7 @@ func (c *Controller) findTargetDeploymentForClusterSpec(clusterSpec shipper.Clus
 			err.Error(),
 		)
 
-		return nil, shippererrors.NewRecoverableError(err)
+		return nil, err
 	}
 
 	targetDeployment := deploymentsList[0]
