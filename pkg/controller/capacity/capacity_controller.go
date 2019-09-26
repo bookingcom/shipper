@@ -212,51 +212,60 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		targetDeployment, err := c.findTargetDeploymentForClusterSpec(clusterSpec, targetNamespace, selector, &clusterStatus)
 		if err != nil {
 			clusterErrors.Append(err)
-			continue
 		}
 
-		// Get the requested percentage of replicas from the capacity object. This is
-		// only set by the scheduler.
-		replicaCount := int32(replicas.CalculateDesiredReplicaCount(uint(clusterSpec.TotalReplicaCount), float64(clusterSpec.Percent)))
+		var availableReplicas, achievedPercent int32
 
-		// Patch the deployment if it doesn't match the cluster spec.
-		if targetDeployment.Spec.Replicas == nil || replicaCount != *targetDeployment.Spec.Replicas {
-			_, err = c.patchDeploymentWithReplicaCount(targetDeployment, clusterSpec.Name, replicaCount, &clusterStatus)
+		if targetDeployment != nil {
+			// Get the requested percentage of replicas from the capacity object. This is
+			// only set by the scheduler.
+			replicaCount := int32(replicas.CalculateDesiredReplicaCount(uint(clusterSpec.TotalReplicaCount), float64(clusterSpec.Percent)))
+
+			// Patch the deployment if it doesn't match the cluster spec.
+			if targetDeployment.Spec.Replicas == nil || replicaCount != *targetDeployment.Spec.Replicas {
+				_, err = c.patchDeploymentWithReplicaCount(targetDeployment, clusterSpec.Name, replicaCount, &clusterStatus)
+				if err != nil {
+					clusterErrors.Append(err)
+				}
+			}
+
+			availableReplicas = targetDeployment.Status.AvailableReplicas
+			achievedPercent = c.calculatePercentageFromAmount(
+				clusterSpec.TotalReplicaCount,
+				availableReplicas,
+			)
+
+			report, err := c.getReport(targetDeployment, &clusterStatus)
 			if err != nil {
 				clusterErrors.Append(err)
+			} else {
+				clusterStatus.Reports = []shipper.ClusterCapacityReport{*report}
+			}
+
+			sadPods, clusterOk, err := c.getSadPods(targetDeployment, &clusterStatus)
+			if err != nil {
+				clusterErrors.Append(err)
+			} else {
+				clusterStatus.SadPods = sadPods
+			}
+
+			if clusterOk {
+				clusterStatus.Conditions = conditions.SetCapacityCondition(
+					clusterStatus.Conditions,
+					shipper.ClusterConditionTypeReady,
+					corev1.ConditionTrue,
+					"", "")
+				clusterStatus.Conditions = conditions.SetCapacityCondition(
+					clusterStatus.Conditions,
+					shipper.ClusterConditionTypeOperational,
+					corev1.ConditionTrue,
+					"",
+					"")
 			}
 		}
 
-		clusterStatus.AvailableReplicas = targetDeployment.Status.AvailableReplicas
-		clusterStatus.AchievedPercent = c.calculatePercentageFromAmount(clusterSpec.TotalReplicaCount, clusterStatus.AvailableReplicas)
-
-		report, err := c.getReport(targetDeployment, &clusterStatus)
-		if err != nil {
-			clusterErrors.Append(err)
-		} else {
-			clusterStatus.Reports = []shipper.ClusterCapacityReport{*report}
-		}
-
-		sadPods, clusterOk, err := c.getSadPods(targetDeployment, &clusterStatus)
-		if err != nil {
-			clusterErrors.Append(err)
-		} else {
-			clusterStatus.SadPods = sadPods
-		}
-
-		if clusterOk {
-			clusterStatus.Conditions = conditions.SetCapacityCondition(
-				clusterStatus.Conditions,
-				shipper.ClusterConditionTypeReady,
-				corev1.ConditionTrue,
-				"", "")
-			clusterStatus.Conditions = conditions.SetCapacityCondition(
-				clusterStatus.Conditions,
-				shipper.ClusterConditionTypeOperational,
-				corev1.ConditionTrue,
-				"",
-				"")
-		}
+		clusterStatus.AvailableReplicas = availableReplicas
+		clusterStatus.AchievedPercent = achievedPercent
 
 		newClusterStatuses = append(newClusterStatuses, clusterStatus)
 	}
