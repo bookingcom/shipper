@@ -17,79 +17,6 @@ import (
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
-type deploymentWorkqueueItem struct {
-	Key         string
-	ClusterName string
-}
-
-func (c *Controller) runDeploymentWorker() {
-	for c.processNextDeploymentWorkItem() {
-	}
-}
-
-func (c *Controller) processNextDeploymentWorkItem() bool {
-	obj, shutdown := c.deploymentWorkqueue.Get()
-	if shutdown {
-		return false
-	}
-
-	defer c.deploymentWorkqueue.Done(obj)
-
-	var (
-		key deploymentWorkqueueItem
-		ok  bool
-	)
-
-	if key, ok = obj.(deploymentWorkqueueItem); !ok {
-		c.deploymentWorkqueue.Forget(obj)
-		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
-		return true
-	}
-
-	shouldRetry := false
-	err := c.deploymentSyncHandler(key)
-
-	if err != nil {
-		shouldRetry = shippererrors.ShouldRetry(err)
-		runtime.HandleError(fmt.Errorf("error syncing Deployment %q (will retry: %t): %s", key, shouldRetry, err))
-	}
-
-	if shouldRetry {
-		if c.deploymentWorkqueue.NumRequeues(key) >= maxRetries {
-			// Drop the Deployment's key out of the workqueue and thus reset its
-			// backoff. This limits the time a "broken" object can hog a worker.
-			klog.Warningf("Deployment %q has been retried too many times, dropping from the queue", key.Key)
-			c.deploymentWorkqueue.Forget(key)
-
-			return true
-		}
-
-		c.deploymentWorkqueue.AddRateLimited(key)
-
-		return true
-	}
-
-	klog.V(4).Infof("Successfully synced Deployment %q", key.Key)
-	c.deploymentWorkqueue.Forget(key)
-
-	return true
-}
-
-func (c *Controller) enqueueDeployment(obj interface{}, clusterName string) {
-	key, err := cache.MetaNamespaceKeyFunc(obj)
-	if err != nil {
-		runtime.HandleError(err)
-		return
-	}
-
-	item := deploymentWorkqueueItem{
-		Key:         key,
-		ClusterName: clusterName,
-	}
-
-	c.deploymentWorkqueue.Add(item)
-}
-
 func (c Controller) NewDeploymentResourceEventHandler(clusterName string) cache.ResourceEventHandler {
 	return cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
@@ -105,30 +32,23 @@ func (c Controller) NewDeploymentResourceEventHandler(clusterName string) cache.
 		},
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				c.enqueueDeployment(obj, clusterName)
+				c.enqueueCapacityTargetFromDeployment(obj, clusterName)
 			},
 			UpdateFunc: func(old, new interface{}) {
-				c.enqueueDeployment(new, clusterName)
+				c.enqueueCapacityTargetFromDeployment(new, clusterName)
+			},
+			DeleteFunc: func(obj interface{}) {
+				c.enqueueCapacityTargetFromDeployment(obj, clusterName)
 			},
 		},
 	}
 }
 
-func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
-	namespace, name, err := cache.SplitMetaNamespaceKey(item.Key)
-	if err != nil {
-		return shippererrors.NewUnrecoverableError(err)
-	}
-
-	informerFactory, err := c.clusterClientStore.GetInformerFactory(item.ClusterName)
-	if err != nil {
-		return err
-	}
-
-	targetDeployment, err := informerFactory.Apps().V1().Deployments().Lister().Deployments(namespace).Get(name)
-	if err != nil {
-		return shippererrors.NewKubeclientGetError(namespace, name, err).
-			WithShipperKind("Application")
+func (c *Controller) enqueueCapacityTargetFromDeployment(obj interface{}, clusterName string) {
+	deployment, ok := obj.(*appsv1.Deployment)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a Deployment: %#v", obj))
+		return
 	}
 
 	// Using ReleaseLabel here instead of the full set of Deployment labels because
@@ -137,15 +57,14 @@ func (c *Controller) deploymentSyncHandler(item deploymentWorkqueueItem) error {
 	// Also not using ObjectReference here because it would go over cluster
 	// boundaries. While technically it's probably ok, I feel like it'd be abusing
 	// the feature.
-	release := targetDeployment.GetLabels()[shipper.ReleaseLabel]
-	capacityTarget, err := c.getCapacityTargetForReleaseAndNamespace(release, namespace)
+	rel := deployment.GetLabels()[shipper.ReleaseLabel]
+	ct, err := c.getCapacityTargetForReleaseAndNamespace(rel, deployment.GetNamespace())
 	if err != nil {
-		return err
+		runtime.HandleError(fmt.Errorf("cannot get capacity target for release '%s/%s': %#v", rel, deployment.GetNamespace(), obj))
+		return
 	}
 
-	c.enqueueCapacityTarget(capacityTarget)
-
-	return nil
+	c.enqueueCapacityTarget(ct)
 }
 
 func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace string) (*shipper.CapacityTarget, error) {
