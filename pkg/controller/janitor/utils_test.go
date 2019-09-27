@@ -1,16 +1,14 @@
 package janitor
 
 import (
-	"fmt"
 	"io/ioutil"
 	"path/filepath"
 	"time"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
@@ -19,6 +17,10 @@ import (
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
+)
+
+const (
+	clusterName string = "minikube-a"
 )
 
 // setup returns some objects that are used in several tests, basically to
@@ -37,32 +39,6 @@ func setup(
 	shipperclientset := shipperfake.NewSimpleClientset(shipperObjects...)
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(shipperclientset, time.Second*0)
 	return kubeclientset, shipperclientset, shipperInformerFactory, kubeInformerFactory
-}
-
-type FakeClusterClientStore struct {
-	fakeClient            kubernetes.Interface
-	sharedInformerFactory kubeinformers.SharedInformerFactory
-	getClientShouldFail   bool
-}
-
-func (*FakeClusterClientStore) AddSubscriptionCallback(clusterclientstore.SubscriptionRegisterFunc) {
-	// No-op.
-}
-
-func (*FakeClusterClientStore) AddEventHandlerCallback(clusterclientstore.EventHandlerRegisterFunc) {
-	// No-op.
-}
-
-func (f *FakeClusterClientStore) GetClient(clusterName string, ua string) (kubernetes.Interface, error) {
-	if f.getClientShouldFail {
-		return nil, fmt.Errorf("Could not get client for cluster %q", clusterName)
-	} else {
-		return f.fakeClient, nil
-	}
-}
-
-func (f *FakeClusterClientStore) GetInformerFactory(string) (kubeinformers.SharedInformerFactory, error) {
-	return f.sharedInformerFactory, nil
 }
 
 // newController returns a janitor.Controller after it has started and

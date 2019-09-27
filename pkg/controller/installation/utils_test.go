@@ -16,7 +16,6 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/dynamic"
 	fakedynamic "k8s.io/client-go/dynamic/fake"
-	"k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -26,33 +25,8 @@ import (
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
-	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
-
-// FakeClientProvider implements clusterclientstore.ClientProvider.
-type FakeClientProvider struct {
-	clientsPerCluster   clientsPerClusterMap
-	restConfig          *rest.Config
-	getClientShouldFail bool
-	getConfigShouldFail bool
-}
-
-func (f *FakeClientProvider) GetClient(clusterName string, ua string) (kubernetes.Interface, error) {
-	if f.getClientShouldFail {
-		return nil, shippererrors.NewClusterNotReadyError(clusterName)
-	} else {
-		fakePair := f.clientsPerCluster[clusterName]
-		return fakePair.fakeClient, nil
-	}
-}
-
-func (f *FakeClientProvider) GetConfig(clusterName string) (*rest.Config, error) {
-	if f.getConfigShouldFail {
-		return nil, shippererrors.NewClusterNotReadyError(clusterName)
-	} else {
-		return f.restConfig, nil
-	}
-}
 
 func loadService(variant string) *corev1.Service {
 	service := &corev1.Service{}
@@ -99,32 +73,30 @@ func populateFakeDiscovery(discovery discovery.DiscoveryInterface, apiResourceLi
 }
 
 type objectsPerClusterMap map[string][]runtime.Object
-type fakePair struct {
-	fakeClient        *kubefake.Clientset
-	fakeDynamicClient *fakedynamic.FakeDynamicClient
-}
-type clientsPerClusterMap map[string]fakePair
 
 // initializeClients returns some objects that are used in several tests,
 // basically to reduce boilerplate.
 func initializeClients(apiResourceList []*v1.APIResourceList, shipperObjects []runtime.Object, kubeObjectsPerCluster objectsPerClusterMap) (
-	clientsPerClusterMap,
+	map[string]shippertesting.FakeClientPair,
 	*shipperfake.Clientset,
 	DynamicClientBuilderFunc,
 	shipperinformers.SharedInformerFactory,
 ) {
-	clientsPerCluster := make(clientsPerClusterMap)
+	clientsPerCluster := make(map[string]shippertesting.FakeClientPair)
 
 	for clusterName, objs := range kubeObjectsPerCluster {
 		fakeClient := kubefake.NewSimpleClientset(objs...)
 		populateFakeDiscovery(fakeClient.Discovery(), apiResourceList)
 		fakeDynamicClient := fakedynamic.NewSimpleDynamicClient(scheme.Scheme, objs...)
-		clientsPerCluster[clusterName] = fakePair{fakeClient: fakeClient, fakeDynamicClient: fakeDynamicClient}
+		clientsPerCluster[clusterName] = shippertesting.FakeClientPair{
+			Client:        fakeClient,
+			DynamicClient: fakeDynamicClient,
+		}
 	}
 
 	fakeDynamicClientBuilder := func(kind *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipper.Cluster) dynamic.Interface {
 		if fdc, ok := clientsPerCluster[cluster.Name]; ok {
-			return fdc.fakeDynamicClient
+			return fdc.DynamicClient
 		}
 		panic(fmt.Sprintf(`couldn't find client for %q`, cluster.Name))
 	}
@@ -141,7 +113,7 @@ func initializeClients(apiResourceList []*v1.APIResourceList, shipperObjects []r
 func newController(
 	shipperclientset *shipperfake.Clientset,
 	shipperInformerFactory shipperinformers.SharedInformerFactory,
-	fakeClientProvider clusterclientstore.ClientProvider,
+	fakeClientProvider clusterclientstore.Interface,
 	fakeDynamicClientBuilder DynamicClientBuilderFunc,
 	fakeRecorder record.EventRecorder,
 ) *Controller {

@@ -144,15 +144,15 @@ func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObject
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, nil),
 	}
 
-	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeClient.Actions(), t)
-	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.fakeDynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.Client.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.DynamicClient.Actions(), t)
 
-	filteredActions := filterActions(fakePair.fakeClient.Actions(), "create")
-	filteredActions = append(filteredActions, filterActions(fakePair.fakeDynamicClient.Actions(), "create")...)
+	filteredActions := filterActions(fakePair.Client.Actions(), "create")
+	filteredActions = append(filteredActions, filterActions(fakePair.DynamicClient.Actions(), "create")...)
 
 	validateAction(t, filteredActions[0], "ConfigMap")
 	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
@@ -276,7 +276,7 @@ func TestInstallerBrokenChartTarball(t *testing.T) {
 	fakePair := clientsPerCluster[cluster.Name]
 
 	restConfig := &rest.Config{}
-	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
+	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err == nil {
 		t.Fatal("installRelease should fail, invalid tarball")
 	}
 }
@@ -300,7 +300,7 @@ func TestInstallerChartTarballBrokenService(t *testing.T) {
 	fakePair := clientsPerCluster[cluster.Name]
 
 	restConfig := &rest.Config{}
-	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
+	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err == nil {
 		t.Fatal("installRelease should fail, invalid tarball")
 	}
 }
@@ -326,7 +326,7 @@ func TestInstallerChartTarballInvalidDeploymentName(t *testing.T) {
 
 	restConfig := &rest.Config{}
 
-	err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder)
+	err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder)
 	if err == nil {
 		t.Fatal("installRelease should fail, invalid deployment name")
 	}
@@ -355,7 +355,7 @@ func TestInstallerBrokenChartContents(t *testing.T) {
 	fakePair := clientsPerCluster[cluster.Name]
 
 	restConfig := &rest.Config{}
-	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err == nil {
+	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err == nil {
 		t.Fatal("installRelease should fail, invalid k8s objects")
 	}
 }
@@ -396,15 +396,15 @@ func TestInstallerSingleServiceNoLB(t *testing.T) {
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
 
-	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.fakeDynamicClient.Actions(), t)
-	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.DynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.Client.Actions(), t)
 
-	filteredActions := filterActions(fakePair.fakeClient.Actions(), "create")
-	filteredActions = append(filteredActions, filterActions(fakePair.fakeDynamicClient.Actions(), "create")...)
+	filteredActions := filterActions(fakePair.Client.Actions(), "create")
+	filteredActions = append(filteredActions, filterActions(fakePair.DynamicClient.Actions(), "create")...)
 
 	validateAction(t, filteredActions[0], "ConfigMap")
 	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
@@ -447,15 +447,15 @@ func TestInstallerSingleServiceWithLB(t *testing.T) {
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
 
-	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.fakeDynamicClient.Actions(), t)
-	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.DynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.Client.Actions(), t)
 
-	filteredActions := filterActions(fakePair.fakeClient.Actions(), "create")
-	filteredActions = append(filteredActions, filterActions(fakePair.fakeDynamicClient.Actions(), "create")...)
+	filteredActions := filterActions(fakePair.Client.Actions(), "create")
+	filteredActions = append(filteredActions, filterActions(fakePair.DynamicClient.Actions(), "create")...)
 
 	validateAction(t, filteredActions[0], "ConfigMap")
 	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
@@ -484,7 +484,7 @@ func TestInstallerMultiServiceNoLB(t *testing.T) {
 
 	restConfig := &rest.Config{}
 
-	err = installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder)
+	err = installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder)
 	if err == nil {
 		t.Fatal("Expected an error, none raised")
 	}
@@ -534,15 +534,15 @@ func TestInstallerMultiServiceWithLB(t *testing.T) {
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
 
-	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.fakeDynamicClient.Actions(), t)
-	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.DynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.Client.Actions(), t)
 
-	filteredActions := filterActions(fakePair.fakeClient.Actions(), "create")
-	filteredActions = append(filteredActions, filterActions(fakePair.fakeDynamicClient.Actions(), "create")...)
+	filteredActions := filterActions(fakePair.Client.Actions(), "create")
+	filteredActions = append(filteredActions, filterActions(fakePair.DynamicClient.Actions(), "create")...)
 
 	validateAction(t, filteredActions[0], "ConfigMap")
 	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
@@ -591,15 +591,15 @@ func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
 
-	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeClient.Actions(), t)
-	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.fakeDynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.Client.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.DynamicClient.Actions(), t)
 
-	filteredActions := filterActions(fakePair.fakeClient.Actions(), "create")
-	filteredActions = append(filteredActions, filterActions(fakePair.fakeDynamicClient.Actions(), "create")...)
+	filteredActions := filterActions(fakePair.Client.Actions(), "create")
+	filteredActions = append(filteredActions, filterActions(fakePair.DynamicClient.Actions(), "create")...)
 	validateAction(t, filteredActions[0], "ConfigMap")
 	validateServiceCreateAction(t, primarySvc, validateAction(t, filteredActions[1], "Service"))
 	validateServiceCreateAction(t, secondarySvc, validateAction(t, filteredActions[2], "Service"))
@@ -632,7 +632,7 @@ func TestInstallerServiceWithReleaseNoWorkaround(t *testing.T) {
 
 	restConfig := &rest.Config{}
 
-	err = installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder)
+	err = installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder)
 	if err == nil {
 		t.Fatal("Expected error, none raised")
 	}
@@ -686,10 +686,10 @@ func TestInstallerNoOverride(t *testing.T) {
 	installer := newInstaller(it)
 	fakePair := clientsPerCluster[cluster.Name]
 	restConfig := &rest.Config{}
-	if err := installer.install(cluster, fakePair.fakeClient, restConfig, fakeDynamicClientBuilder); err != nil {
+	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeClient.Actions(), t)
-	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.fakeDynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakePair.Client.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.DynamicClient.Actions(), t)
 }

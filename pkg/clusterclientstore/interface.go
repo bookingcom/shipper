@@ -6,14 +6,10 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-type ClientProvider interface {
+type Interface interface {
+	AddEventHandlerCallback(EventHandlerRegisterFunc)
+	AddSubscriptionCallback(SubscriptionRegisterFunc)
 	GetClient(clusterName string, ua string) (kubernetes.Interface, error)
 	GetConfig(clusterName string) (*rest.Config, error)
-}
-
-type Interface interface {
-	AddSubscriptionCallback(SubscriptionRegisterFunc)
-	AddEventHandlerCallback(EventHandlerRegisterFunc)
-	GetClient(clusterName string, ua string) (kubernetes.Interface, error)
 	GetInformerFactory(string) (kubeinformers.SharedInformerFactory, error)
 }

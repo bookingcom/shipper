@@ -30,11 +30,7 @@ func TestSuccessfulDeleteInstallationTarget(t *testing.T) {
 
 	// Setup cluster client store that'll be used by the controller to contact
 	// application clusters to perform the anchor removal.
-	fakeClusterClientStore := &FakeClusterClientStore{
-		fakeClient:            kubeFakeClientset,
-		sharedInformerFactory: kubeInformerFactory,
-	}
-
+	fakeClusterClientStore := shippertesting.NewSimpleFakeClusterClientStore(kubeFakeClientset, kubeInformerFactory, []string{clusterName})
 	fakeRecorder := record.NewFakeRecorder(42)
 
 	// Create the controller without waiting until the work queue is populated.
@@ -107,11 +103,7 @@ func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
 
 	// Setup cluster client store that'll be used by the controller to contact
 	// application clusters to perform the anchor removal.
-	fakeClusterClientStore := &FakeClusterClientStore{
-		fakeClient:            kubeFakeClientset,
-		sharedInformerFactory: kubeInformerFactory,
-	}
-
+	fakeClusterClientStore := shippertesting.NewSimpleFakeClusterClientStore(kubeFakeClientset, kubeInformerFactory, []string{clusterName})
 	fakeRecorder := record.NewFakeRecorder(42)
 
 	// Create the controller without waiting until the work queue is populated.
@@ -134,10 +126,10 @@ func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
 	item := &AnchorWorkItem{
 		ClusterName:           cluster.Name,
 		InstallationTargetUID: configMap.Data[InstallationTargetUID],
-		Key:         key,
-		Name:        configMap.Name,
-		Namespace:   configMap.GetNamespace(),
-		ReleaseName: configMap.GetLabels()[shipper.ReleaseLabel],
+		Key:                   key,
+		Name:                  configMap.Name,
+		Namespace:             configMap.GetNamespace(),
+		ReleaseName:           configMap.GetLabels()[shipper.ReleaseLabel],
 	}
 
 	// Execute c.syncAnchor() here since I couldn't find an API to trigger the
@@ -178,11 +170,7 @@ func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
 
 	// Setup cluster client store that'll be used by the controller to contact
 	// application clusters to perform the anchor removal.
-	fakeClusterClientStore := &FakeClusterClientStore{
-		fakeClient:            kubeFakeClientset,
-		sharedInformerFactory: kubeInformerFactory,
-	}
-
+	fakeClusterClientStore := shippertesting.NewSimpleFakeClusterClientStore(kubeFakeClientset, kubeInformerFactory, []string{clusterName})
 	fakeRecorder := record.NewFakeRecorder(42)
 
 	// Create the controller without waiting until the work queue is populated.
@@ -205,10 +193,10 @@ func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
 	item := &AnchorWorkItem{
 		ClusterName:           cluster.GetName(),
 		InstallationTargetUID: configMap.Data[InstallationTargetUID],
-		Key:         key,
-		Name:        configMap.GetName(),
-		Namespace:   configMap.GetNamespace(),
-		ReleaseName: configMap.GetLabels()[shipper.ReleaseLabel],
+		Key:                   key,
+		Name:                  configMap.GetName(),
+		Namespace:             configMap.GetNamespace(),
+		ReleaseName:           configMap.GetLabels()[shipper.ReleaseLabel],
 	}
 
 	// Execute c.syncAnchor() here since I couldn't find an API to trigger the
@@ -249,11 +237,7 @@ func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
 
 	// Setup cluster client store that'll be used by the controller to contact
 	// application clusters to perform the anchor removal.
-	fakeClusterClientStore := &FakeClusterClientStore{
-		fakeClient:            kubeFakeClientset,
-		sharedInformerFactory: kubeInformerFactory,
-	}
-
+	fakeClusterClientStore := shippertesting.NewSimpleFakeClusterClientStore(kubeFakeClientset, kubeInformerFactory, []string{clusterName})
 	fakeRecorder := record.NewFakeRecorder(42)
 
 	// Create the controller without waiting until the work queue is populated.
@@ -276,10 +260,10 @@ func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
 	item := &AnchorWorkItem{
 		ClusterName:           cluster.GetName(),
 		InstallationTargetUID: configMap.Data[InstallationTargetUID],
-		Key:         key,
-		Name:        configMap.Name,
-		Namespace:   configMap.GetNamespace(),
-		ReleaseName: configMap.GetLabels()[shipper.ReleaseLabel],
+		Key:                   key,
+		Name:                  configMap.Name,
+		Namespace:             configMap.GetNamespace(),
+		ReleaseName:           configMap.GetLabels()[shipper.ReleaseLabel],
 	}
 
 	// Execute c.syncAnchor() here since I couldn't find an API to trigger the

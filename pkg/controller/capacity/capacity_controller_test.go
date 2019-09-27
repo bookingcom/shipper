@@ -654,7 +654,7 @@ func (f *fixture) initializeFixture() {
 	for i := int32(0); i < numClus; i++ {
 		clusterNames = append(clusterNames, fmt.Sprintf("cluster_%d", i))
 	}
-	f.store = shippertesting.NewFakeClusterClientStore(f.targetClusterClientset, f.targetClusterInformerFactory, clusterNames)
+	f.store = shippertesting.NewSimpleFakeClusterClientStore(f.targetClusterClientset, f.targetClusterInformerFactory, clusterNames)
 }
 
 func (f *fixture) newController() *Controller {
