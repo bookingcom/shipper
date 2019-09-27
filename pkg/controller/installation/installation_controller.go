@@ -44,7 +44,7 @@ const (
 // objects.
 type Controller struct {
 	shipperclientset   shipperclient.Interface
-	clusterClientStore clusterclientstore.ClientProvider
+	clusterClientStore clusterclientstore.Interface
 
 	workqueue workqueue.RateLimitingInterface
 
@@ -67,7 +67,7 @@ type Controller struct {
 func NewController(
 	shipperclientset shipperclient.Interface,
 	shipperInformerFactory shipperinformers.SharedInformerFactory,
-	store clusterclientstore.ClientProvider,
+	store clusterclientstore.Interface,
 	dynamicClientBuilderFunc DynamicClientBuilderFunc,
 	chartFetcher shipperrepo.ChartFetcher,
 	recorder record.EventRecorder,

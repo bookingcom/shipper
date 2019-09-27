@@ -8,7 +8,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	runtimeutil "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 
@@ -39,12 +38,9 @@ func TestInstallOneCluster(t *testing.T) {
 		initializeClients(apiResourceList, []runtime.Object{cluster, installationTarget}, objectsPerClusterMap{cluster.Name: []runtime.Object{}})
 
 	clusterPair := clientsPerCluster[cluster.Name]
-	fakeClientProvider := &FakeClientProvider{
-		clientsPerCluster: clientsPerCluster,
-		restConfig:        &rest.Config{},
-	}
 
 	fakeRecorder := record.NewFakeRecorder(42)
+	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster, nil)
 
 	c := newController(
 		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
@@ -66,7 +62,7 @@ func TestInstallOneCluster(t *testing.T) {
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, "0.0.1-reviews-api"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, nil),
 	}
-	shippertesting.ShallowCheckActions(expectedDynamicActions, clusterPair.fakeDynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, clusterPair.DynamicClient.Actions(), t)
 
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "0.0.1-anchor"),
@@ -74,7 +70,7 @@ func TestInstallOneCluster(t *testing.T) {
 		shippertesting.NewDiscoveryAction("services"),
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
-	shippertesting.ShallowCheckActions(expectedActions, clusterPair.fakeClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, clusterPair.Client.Actions(), t)
 
 	// We are interested only in "update" actions here.
 	var filteredActions []kubetesting.Action
@@ -128,11 +124,7 @@ func TestInstallMultipleClusters(t *testing.T) {
 		})
 
 	fakeRecorder := record.NewFakeRecorder(42)
-
-	fakeClientProvider := &FakeClientProvider{
-		clientsPerCluster: clientsPerCluster,
-		restConfig:        &rest.Config{},
-	}
+	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster, nil)
 
 	c := newController(
 		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
@@ -163,8 +155,8 @@ func TestInstallMultipleClusters(t *testing.T) {
 	}
 
 	for _, fakePair := range clientsPerCluster {
-		shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.fakeDynamicClient.Actions(), t)
-		shippertesting.ShallowCheckActions(expectedActions, fakePair.fakeClient.Actions(), t)
+		shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.DynamicClient.Actions(), t)
+		shippertesting.ShallowCheckActions(expectedActions, fakePair.Client.Actions(), t)
 	}
 
 	// We are interested only in "update" actions here.
@@ -234,15 +226,11 @@ func TestClientError(t *testing.T) {
 	chart := buildChart(appName, "0.0.1", repoUrl)
 	installationTarget := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 
-	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
+	_, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
 		initializeClients(apiResourceList, []runtime.Object{cluster, installationTarget}, nil)
 
-	fakeClientProvider := &FakeClientProvider{
-		clientsPerCluster:   clientsPerCluster,
-		restConfig:          &rest.Config{},
-		getClientShouldFail: true,
-	}
 	fakeRecorder := record.NewFakeRecorder(42)
+	fakeClientProvider := shippertesting.NewFailingFakeClusterClientStore()
 
 	c := newController(
 		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
@@ -320,11 +308,8 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
 		initializeClients([]*v1.APIResourceList{}, []runtime.Object{cluster, installationTarget}, objectsPerClusterMap{cluster.Name: nil})
 
-	fakeClientProvider := &FakeClientProvider{
-		clientsPerCluster: clientsPerCluster,
-		restConfig:        &rest.Config{},
-	}
 	fakeRecorder := record.NewFakeRecorder(42)
+	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster, nil)
 
 	c := newController(
 		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
@@ -399,11 +384,8 @@ func TestManagementServerMissesCluster(t *testing.T) {
 	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
 		initializeClients(apiResourceList, []runtime.Object{installationTarget}, nil)
 
-	fakeClientProvider := &FakeClientProvider{
-		clientsPerCluster: clientsPerCluster,
-		restConfig:        &rest.Config{},
-	}
 	fakeRecorder := record.NewFakeRecorder(42)
+	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster, nil)
 
 	c := newController(
 		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
@@ -479,12 +461,9 @@ func TestInstallNoOverride(t *testing.T) {
 			objectsPerClusterMap{cluster.Name: []runtime.Object{}})
 
 	clusterPair := clientsPerCluster[cluster.Name]
-	fakeClientProvider := &FakeClientProvider{
-		clientsPerCluster: clientsPerCluster,
-		restConfig:        &rest.Config{},
-	}
 
 	fakeRecorder := record.NewFakeRecorder(42)
+	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster, nil)
 
 	c := newController(shipperclientset, shipperInformerFactory,
 		fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
@@ -494,6 +473,6 @@ func TestInstallNoOverride(t *testing.T) {
 	}
 
 	expectedActions := []kubetesting.Action{}
-	shippertesting.ShallowCheckActions(expectedActions, clusterPair.fakeDynamicClient.Actions(), t)
-	shippertesting.ShallowCheckActions(expectedActions, clusterPair.fakeClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, clusterPair.DynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, clusterPair.Client.Actions(), t)
 }

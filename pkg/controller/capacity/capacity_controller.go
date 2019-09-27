@@ -13,7 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -43,7 +42,7 @@ const (
 // Controller is the controller implementation for CapacityTarget resources
 type Controller struct {
 	shipperclientset        clientset.Interface
-	clusterClientStore      clusterClientStoreInterface
+	clusterClientStore      clusterclientstore.Interface
 	capacityTargetsLister   listers.CapacityTargetLister
 	capacityTargetsSynced   cache.InformerSynced
 	releasesLister          listers.ReleaseLister
@@ -56,7 +55,7 @@ type Controller struct {
 func NewController(
 	shipperclientset clientset.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
-	store clusterClientStoreInterface,
+	store clusterclientstore.Interface,
 	recorder record.EventRecorder,
 ) *Controller {
 
@@ -311,13 +310,6 @@ func (c *Controller) registerDeploymentEventHandlers(informerFactory kubeinforme
 func (c *Controller) subscribeToDeployments(informerFactory kubeinformers.SharedInformerFactory) {
 	informerFactory.Apps().V1().Deployments().Informer()
 	informerFactory.Core().V1().Pods().Informer()
-}
-
-type clusterClientStoreInterface interface {
-	AddSubscriptionCallback(clusterclientstore.SubscriptionRegisterFunc)
-	AddEventHandlerCallback(clusterclientstore.EventHandlerRegisterFunc)
-	GetClient(string, string) (kubernetes.Interface, error)
-	GetInformerFactory(string) (kubeinformers.SharedInformerFactory, error)
 }
 
 func (c *Controller) getSadPods(targetDeployment *appsv1.Deployment, clusterStatus *shipper.ClusterCapacityStatus) ([]shipper.PodStatus, bool, error) {
