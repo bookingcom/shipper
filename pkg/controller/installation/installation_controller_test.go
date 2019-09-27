@@ -1,10 +1,12 @@
 package installation
 
 import (
+	"fmt"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	runtimeutil "k8s.io/apimachinery/pkg/util/runtime"
@@ -306,7 +308,7 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 	installationTarget := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 
 	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients([]*v1.APIResourceList{}, []runtime.Object{cluster, installationTarget}, objectsPerClusterMap{cluster.Name: nil})
+		initializeClients([]*metav1.APIResourceList{}, []runtime.Object{cluster, installationTarget}, objectsPerClusterMap{cluster.Name: nil})
 
 	fakeRecorder := record.NewFakeRecorder(42)
 	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster, nil)
@@ -446,7 +448,7 @@ func TestManagementServerMissesCluster(t *testing.T) {
 }
 
 // TestInstallNoOverride verifies that an InstallationTarget with disabled
-// overrides does not get processed.
+// overrides does not update any existing objects.
 func TestInstallNoOverride(t *testing.T) {
 	cluster := buildCluster("minikube-a")
 	appName := "reviews-api"
@@ -456,9 +458,20 @@ func TestInstallNoOverride(t *testing.T) {
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	it.Spec.CanOverride = false
 
+	labels := map[string]string{shipper.InstallationTargetOwnerLabel: appName}
+	meta := metav1.ObjectMeta{
+		Namespace: testNs,
+		Name:      fmt.Sprintf("%s-%s", appName, appName),
+		Labels:    labels,
+	}
+
+	existingObjs := objectsPerClusterMap{cluster.Name: []runtime.Object{
+		&appsv1.Deployment{ObjectMeta: meta},
+		&corev1.Service{ObjectMeta: meta},
+	}}
+
 	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, []runtime.Object{cluster, it},
-			objectsPerClusterMap{cluster.Name: []runtime.Object{}})
+		initializeClients(apiResourceList, []runtime.Object{cluster, it}, existingObjs)
 
 	clusterPair := clientsPerCluster[cluster.Name]
 
@@ -472,7 +485,17 @@ func TestInstallNoOverride(t *testing.T) {
 		t.Fatal("Could not process work item")
 	}
 
-	expectedActions := []kubetesting.Action{}
-	shippertesting.ShallowCheckActions(expectedActions, clusterPair.DynamicClient.Actions(), t)
+	expectedDynamicActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.0.1-reviews-api"),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, "0.0.1-reviews-api"),
+	}
+	shippertesting.ShallowCheckActions(expectedDynamicActions, clusterPair.DynamicClient.Actions(), t)
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, nil),
+		shippertesting.NewDiscoveryAction("services"),
+		shippertesting.NewDiscoveryAction("deployments"),
+	}
 	shippertesting.ShallowCheckActions(expectedActions, clusterPair.Client.Actions(), t)
 }

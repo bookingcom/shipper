@@ -2,8 +2,40 @@ package errors
 
 import (
 	"fmt"
+
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 )
+
+type UnexpectedObjectCountFromSelectorError struct {
+	selector labels.Selector
+	gvk      schema.GroupVersionKind
+	expected int
+	got      int
+}
+
+func (e UnexpectedObjectCountFromSelectorError) Error() string {
+	return fmt.Sprintf("expected %d %s for selector %q, got %d instead",
+		e.expected, e.gvk.String(), e.selector.String(), e.got)
+}
+
+func NewUnexpectedObjectCountFromSelectorError(
+	selector labels.Selector,
+	gvk schema.GroupVersionKind,
+	expected, got int,
+) UnexpectedObjectCountFromSelectorError {
+	return UnexpectedObjectCountFromSelectorError{
+		selector: selector,
+		gvk:      gvk,
+		expected: expected,
+		got:      got,
+	}
+}
+
+func (e UnexpectedObjectCountFromSelectorError) ShouldRetry() bool {
+	return false
+}
 
 type MultipleOwnerReferencesError string
 

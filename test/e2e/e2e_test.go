@@ -1348,6 +1348,57 @@ func TestNewGlobalRolloutBlockRemoveRelease(t *testing.T) {
 	)
 }
 
+// TestDeletedDeploymentsAreReinstalled test that shipper reinstalls the relevant deployments if they're deleted.
+func TestDeletedDeploymentsAreReinstalled(t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+	t.Parallel()
+
+	targetReplicas := 4
+	ns, err := setupNamespace(t.Name())
+	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(ns.GetName())
+	}()
+
+	newApp := newApplication(ns.GetName(), appName, &allIn)
+	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Chart.Name = "test-nginx"
+	newApp.Spec.Template.Chart.Version = "0.0.1"
+
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
+	if err != nil {
+		t.Fatalf("could not create application %q: %q", appName, err)
+	}
+
+	t.Logf("waiting for a new release for new application %q", appName)
+	rel := f.waitForRelease(appName, 0)
+	relName := rel.GetName()
+	t.Logf("waiting for release %q to complete", relName)
+	f.waitForComplete(rel.GetName())
+
+	deploymentName := fmt.Sprintf("%s-%s", rel.GetName(), newApp.Spec.Template.Chart.Name)
+	t.Logf("deleting deployment %q", deploymentName)
+	err = kubeClient.AppsV1().Deployments(ns.GetName()).Delete(deploymentName, nil)
+	if err != nil {
+		t.Fatalf("could not delete deployment %q: %q", deploymentName, err)
+	}
+
+	f.waitForReleaseStrategyState("capacity", rel.GetName(), 0)
+
+	t.Logf("waiting for release %q to complete again", relName)
+	f.waitForReleaseStrategyState("none", rel.GetName(), 0)
+	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
+	f.checkPods(relName, targetReplicas)
+}
+
 // TODO(btyler): cover a variety of broken chart cases as soon as we report
 // those outcomes somewhere other than stderr.
 
