@@ -7,8 +7,11 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
@@ -102,7 +105,22 @@ func NewController(
 		},
 	})
 
+	store.AddSubscriptionCallback(controller.subscribeToAppClusterEvents)
+	store.AddEventHandlerCallback(controller.registerAppClusterEventHandlers)
+
 	return controller
+}
+
+func (c *Controller) registerAppClusterEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
+	handler := shippercontroller.NewAppClusterEventHandler(c.enqueueInstallationTargetFromObject)
+
+	informerFactory.Apps().V1().Deployments().Informer().AddEventHandler(handler)
+	informerFactory.Core().V1().Services().Informer().AddEventHandler(handler)
+}
+
+func (c *Controller) subscribeToAppClusterEvents(informerFactory kubeinformers.SharedInformerFactory) {
+	informerFactory.Apps().V1().Deployments().Informer()
+	informerFactory.Core().V1().Services().Informer()
 }
 
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
@@ -213,14 +231,50 @@ func (c *Controller) enqueueInstallationTarget(obj interface{}) {
 	c.workqueue.Add(key)
 }
 
+func (c *Controller) enqueueInstallationTargetFromObject(obj interface{}) {
+	kubeobj, ok := obj.(metav1.Object)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a metav1.Object: %#v", obj))
+		return
+	}
+
+	// Using ReleaseLabel here instead of the full set of labels because we
+	// can't guarantee that there isn't extra stuff there that was put
+	// directly in the chart.
+	// Also not using ObjectReference here because it would go over cluster
+	// boundaries. While technically it's probably ok, I feel like it'd be
+	// abusing the feature.
+	rel := kubeobj.GetLabels()[shipper.ReleaseLabel]
+	tt, err := c.getInstallationTargetForReleaseAndNamespace(rel, kubeobj.GetNamespace())
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("cannot get installation target for release '%s/%s': %#v", rel, kubeobj.GetNamespace(), err))
+		return
+	}
+
+	c.enqueueInstallationTarget(tt)
+}
+
+func (c *Controller) getInstallationTargetForReleaseAndNamespace(release, namespace string) (*shipper.InstallationTarget, error) {
+	selector := labels.Set{shipper.ReleaseLabel: release}.AsSelector()
+	gvk := shipper.SchemeGroupVersion.WithKind("InstallationTarget")
+
+	installationTargets, err := c.installationTargetsLister.InstallationTargets(namespace).List(selector)
+	if err != nil {
+		return nil, shippererrors.NewKubeclientListError(gvk, namespace, selector, err)
+	}
+
+	expected := 1
+	if got := len(installationTargets); got != 1 {
+		return nil, shippererrors.NewUnexpectedObjectCountFromSelectorError(
+			selector, gvk, expected, got)
+	}
+
+	return installationTargets[0], nil
+}
+
 // processInstallation attempts to install the related InstallationTarget on
 // all target clusters.
 func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
-	if !it.Spec.CanOverride {
-		klog.V(3).Infof("InstallationTarget %q is not allowed to override, skipping", shippercontroller.MetaKey(it))
-		return nil
-	}
-
 	// Build .status over based on the current .spec.clusters.
 	newClusterStatuses := make([]*shipper.ClusterInstallationStatus, 0, len(it.Spec.Clusters))
 

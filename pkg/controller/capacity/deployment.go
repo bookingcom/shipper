@@ -10,41 +10,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
-func (c Controller) NewDeploymentResourceEventHandler(clusterName string) cache.ResourceEventHandler {
-	return cache.FilteringResourceEventHandler{
-		FilterFunc: func(obj interface{}) bool {
-			deploy, ok := obj.(*appsv1.Deployment)
-			if !ok {
-				klog.Warningf("Received something that's not a appsv1/Deployment: %v", obj)
-				return false
-			}
-
-			_, ok = deploy.GetLabels()[shipper.ReleaseLabel]
-
-			return ok
-		},
-		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				c.enqueueCapacityTargetFromDeployment(obj, clusterName)
-			},
-			UpdateFunc: func(old, new interface{}) {
-				c.enqueueCapacityTargetFromDeployment(new, clusterName)
-			},
-			DeleteFunc: func(obj interface{}) {
-				c.enqueueCapacityTargetFromDeployment(obj, clusterName)
-			},
-		},
-	}
-}
-
-func (c *Controller) enqueueCapacityTargetFromDeployment(obj interface{}, clusterName string) {
+func (c *Controller) enqueueCapacityTargetFromDeployment(obj interface{}) {
 	deployment, ok := obj.(*appsv1.Deployment)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a Deployment: %#v", obj))
@@ -60,7 +31,7 @@ func (c *Controller) enqueueCapacityTargetFromDeployment(obj interface{}, cluste
 	rel := deployment.GetLabels()[shipper.ReleaseLabel]
 	ct, err := c.getCapacityTargetForReleaseAndNamespace(rel, deployment.GetNamespace())
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("cannot get capacity target for release '%s/%s': %#v", rel, deployment.GetNamespace(), obj))
+		runtime.HandleError(fmt.Errorf("cannot get capacity target for release '%s/%s': %#v", rel, deployment.GetNamespace(), err))
 		return
 	}
 
@@ -69,15 +40,17 @@ func (c *Controller) enqueueCapacityTargetFromDeployment(obj interface{}, cluste
 
 func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace string) (*shipper.CapacityTarget, error) {
 	selector := labels.Set{shipper.ReleaseLabel: release}.AsSelector()
+	gvk := shipper.SchemeGroupVersion.WithKind("CapacityTarget")
+
 	capacityTargets, err := c.capacityTargetsLister.CapacityTargets(namespace).List(selector)
 	if err != nil {
-		return nil, shippererrors.NewKubeclientListError(
-			shipper.SchemeGroupVersion.WithKind("CapacityTarget"),
-			namespace, selector, err)
+		return nil, shippererrors.NewKubeclientListError(gvk, namespace, selector, err)
 	}
 
-	if l := len(capacityTargets); l != 1 {
-		return nil, shippererrors.NewInvalidCapacityTargetError(release, l)
+	expected := 1
+	if got := len(capacityTargets); got != 1 {
+		return nil, shippererrors.NewUnexpectedObjectCountFromSelectorError(
+			selector, gvk, expected, got)
 	}
 
 	return capacityTargets[0], nil
