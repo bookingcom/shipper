@@ -148,32 +148,17 @@ func NewController(
 			DeleteFunc: controller.enqueueAppFromRelease,
 		})
 
-	installationTargetInformer.Informer().AddEventHandler(
-		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.enqueueInstallationTarget,
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueInstallationTarget(newObj)
-			},
-			DeleteFunc: controller.enqueueInstallationTarget,
-		})
+	eventHandler := cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.enqueueReleaseFromAssociatedObject,
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			controller.enqueueReleaseFromAssociatedObject(newObj)
+		},
+		DeleteFunc: controller.enqueueReleaseFromAssociatedObject,
+	}
 
-	capacityTargetInformer.Informer().AddEventHandler(
-		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.enqueueCapacityTarget,
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueCapacityTarget(newObj)
-			},
-			DeleteFunc: controller.enqueueCapacityTarget,
-		})
-
-	trafficTargetInformer.Informer().AddEventHandler(
-		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.enqueueTrafficTarget,
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueTrafficTarget(newObj)
-			},
-			DeleteFunc: controller.enqueueTrafficTarget,
-		})
+	installationTargetInformer.Informer().AddEventHandler(eventHandler)
+	capacityTargetInformer.Informer().AddEventHandler(eventHandler)
+	trafficTargetInformer.Informer().AddEventHandler(eventHandler)
 
 	return controller
 }
@@ -397,14 +382,15 @@ func (c *Controller) getAssociatedApplicationKey(rel *shipper.Release) (string, 
 // getAssociatedReleaseKey returns an owner reference release name for an
 // associated object in the format:
 // <namespace> / <release name>
-func (c *Controller) getAssociatedReleaseKey(obj *metav1.ObjectMeta) (string, error) {
-	if n := len(obj.OwnerReferences); n != 1 {
-		return "", shippererrors.NewMultipleOwnerReferencesError(obj.Name, n)
+func (c *Controller) getAssociatedReleaseKey(obj metav1.Object) (string, error) {
+	references := obj.GetOwnerReferences()
+	if n := len(references); n != 1 {
+		return "", shippererrors.NewMultipleOwnerReferencesError(obj.GetName(), n)
 	}
 
-	owner := obj.OwnerReferences[0]
+	owner := references[0]
 
-	return fmt.Sprintf("%s/%s", obj.Namespace, owner.Name), nil
+	return fmt.Sprintf("%s/%s", obj.GetNamespace(), owner.Name), nil
 }
 
 // buildReleaseInfo returns a release and it's associated objects fetched from
@@ -488,46 +474,14 @@ func (c *Controller) enqueueAppFromRelease(obj interface{}) {
 	c.applicationWorkqueue.Add(appName)
 }
 
-func (c *Controller) enqueueInstallationTarget(obj interface{}) {
-	it, ok := obj.(*shipper.InstallationTarget)
+func (c *Controller) enqueueReleaseFromAssociatedObject(obj interface{}) {
+	kubeobj, ok := obj.(metav1.Object)
 	if !ok {
-		runtime.HandleError(fmt.Errorf("not a shipper.InstallationTarget: %#v", obj))
+		runtime.HandleError(fmt.Errorf("not a metav1.Object: %#v", obj))
 		return
 	}
 
-	releaseKey, err := c.getAssociatedReleaseKey(&it.ObjectMeta)
-	if err != nil {
-		runtime.HandleError(err)
-		return
-	}
-
-	c.releaseWorkqueue.Add(releaseKey)
-}
-
-func (c *Controller) enqueueCapacityTarget(obj interface{}) {
-	ct, ok := obj.(*shipper.CapacityTarget)
-	if !ok {
-		runtime.HandleError(fmt.Errorf("not a shipper.CapacityTarget: %#v", obj))
-		return
-	}
-
-	releaseKey, err := c.getAssociatedReleaseKey(&ct.ObjectMeta)
-	if err != nil {
-		runtime.HandleError(err)
-		return
-	}
-
-	c.releaseWorkqueue.Add(releaseKey)
-}
-
-func (c *Controller) enqueueTrafficTarget(obj interface{}) {
-	tt, ok := obj.(*shipper.TrafficTarget)
-	if !ok {
-		runtime.HandleError(fmt.Errorf("not a shipper.TrafficTarget: %#v", obj))
-		return
-	}
-
-	releaseKey, err := c.getAssociatedReleaseKey(&tt.ObjectMeta)
+	releaseKey, err := c.getAssociatedReleaseKey(kubeobj)
 	if err != nil {
 		runtime.HandleError(err)
 		return
