@@ -25,16 +25,11 @@ import (
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
 )
 
-const AgentName = "traffic-controller"
-
 const (
-	// maxRetries is the number of times a TrafficTarget will be retried before we
-	// drop it out of the workqueue. The number is chosen with the default rate
-	// limiter in mind. This results in the following backoff times: 5ms, 10ms,
-	// 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s.
-	maxRetries = 11
+	AgentName = "traffic-controller"
 )
 
 // Controller is the controller implementation for TrafficTarget resources.
@@ -64,7 +59,7 @@ func NewController(
 
 		trafficTargetsLister: trafficTargetInformer.Lister(),
 		trafficTargetsSynced: trafficTargetInformer.Informer().HasSynced,
-		workqueue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "traffic_controller_traffictargets"),
+		workqueue:            workqueue.NewNamedRateLimitingQueue(shipperworkqueue.NewDefaultControllerRateLimiter(), "traffic_controller_traffictargets"),
 		recorder:             recorder,
 	}
 
@@ -144,15 +139,6 @@ func (c *Controller) processNextWorkItem() bool {
 	}
 
 	if shouldRetry {
-		if c.workqueue.NumRequeues(key) >= maxRetries {
-			// Drop the TrafficTarget's key out of the workqueue and thus reset its
-			// backoff. This limits the time a "broken" object can hog a worker.
-			klog.Warningf("TrafficTarget %q has been retried too many times, dropping from the queue", key)
-			c.workqueue.Forget(key)
-
-			return true
-		}
-
 		c.workqueue.AddRateLimited(key)
 
 		return true

@@ -18,17 +18,11 @@ import (
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
+	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
 )
 
 const (
 	AgentName = "rolloutblock-controller"
-
-	// maxRetries is the number of times an RolloutBlock will be retried before
-	// we drop it out of the rolloutblock workqueue. The number is chosen with
-	// the default rate limiter in mind. This results in the following backoff
-	// times: 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s,
-	// 5.1s, 10.2s.
-	maxRetries = 11
 )
 
 // Controller is a Kubernetes controller that updates rolloutblock objects.
@@ -81,15 +75,15 @@ func NewController(
 		rolloutBlockSynced: rolloutBlockInformer.Informer().HasSynced,
 
 		rolloutblockWorkqueue: workqueue.NewNamedRateLimitingQueue(
-			workqueue.DefaultControllerRateLimiter(),
+			shipperworkqueue.NewDefaultControllerRateLimiter(),
 			"rolloutblock_controller_rolloutblocks",
 		),
 		releaseWorkqueue: workqueue.NewNamedRateLimitingQueue(
-			workqueue.DefaultControllerRateLimiter(),
+			shipperworkqueue.NewDefaultControllerRateLimiter(),
 			"rolloutblock_controller_releases",
 		),
 		applicationWorkqueue: workqueue.NewNamedRateLimitingQueue(
-			workqueue.DefaultControllerRateLimiter(),
+			shipperworkqueue.NewDefaultControllerRateLimiter(),
 			"rolloutblock_controller_applications",
 		),
 	}
@@ -286,15 +280,6 @@ func (c *Controller) processNextApplicationWorkItem() bool {
 	}
 
 	if shouldRetry {
-		if c.applicationWorkqueue.NumRequeues(key) >= maxRetries {
-			// Drop this update out of the workqueue and thus reset its
-			// backoff. This limits the time a "broken" object can hog a worker.
-			klog.Warningf("Update %q for Application has been retried too many times, dropping from the queue", key)
-			c.applicationWorkqueue.Forget(key)
-
-			return true
-		}
-
 		c.applicationWorkqueue.AddRateLimited(key)
 
 		return true
@@ -334,15 +319,6 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 	}
 
 	if shouldRetry {
-		if c.releaseWorkqueue.NumRequeues(key) >= maxRetries {
-			// Drop this update out of the workqueue and thus reset its
-			// backoff. This limits the time a "broken" object can hog a worker.
-			klog.Warningf("Update %q for Release has been retried too many times, dropping from the queue", key)
-			c.releaseWorkqueue.Forget(key)
-
-			return true
-		}
-
 		c.releaseWorkqueue.AddRateLimited(key)
 
 		return true
@@ -382,15 +358,6 @@ func (c *Controller) processNextRolloutBlockWorkItem() bool {
 	}
 
 	if shouldRetry {
-		if c.rolloutblockWorkqueue.NumRequeues(key) >= maxRetries {
-			// Drop this update out of the workqueue and thus reset its
-			// backoff. This limits the time a "broken" object can hog a worker.
-			klog.Warningf("Update %q for RolloutBlock has been retried too many times, dropping from the queue", key)
-			c.rolloutblockWorkqueue.Forget(key)
-
-			return true
-		}
-
 		c.rolloutblockWorkqueue.AddRateLimited(key)
 
 		return true

@@ -25,6 +25,7 @@ import (
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
+	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
 )
 
 const (
@@ -32,12 +33,6 @@ const (
 	DefaultRevisionHistoryLimit = 20
 	MinRevisionHistoryLimit     = 1
 	MaxRevisionHistoryLimit     = 1000
-
-	// maxRetries is the number of times an Application will be retried before we
-	// drop it out of the app workqueue. The number is chosen with the default rate
-	// limiter in mind. This results in the following backoff times: 5ms, 10ms,
-	// 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s.
-	maxRetries = 11
 )
 
 // Controller is a Kubernetes controller that creates Releases from
@@ -45,9 +40,9 @@ const (
 type Controller struct {
 	shipperClientset clientset.Interface
 
-	appLister    listers.ApplicationLister
-	appSynced    cache.InformerSynced
-	appWorkqueue workqueue.RateLimitingInterface
+	appLister listers.ApplicationLister
+	appSynced cache.InformerSynced
+	workqueue workqueue.RateLimitingInterface
 
 	relLister listers.ReleaseLister
 	relSynced cache.InformerSynced
@@ -74,9 +69,9 @@ func NewController(
 	c := &Controller{
 		shipperClientset: shipperClientset,
 
-		appLister:    appInformer.Lister(),
-		appSynced:    appInformer.Informer().HasSynced,
-		appWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "application_controller_applications"),
+		appLister: appInformer.Lister(),
+		appSynced: appInformer.Informer().HasSynced,
+		workqueue: workqueue.NewNamedRateLimitingQueue(shipperworkqueue.NewDefaultControllerRateLimiter(), "application_controller_applications"),
 
 		relLister: relInformer.Lister(),
 		relSynced: relInformer.Informer().HasSynced,
@@ -118,7 +113,7 @@ func NewController(
 // closed.
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
-	defer c.appWorkqueue.ShutDown()
+	defer c.workqueue.ShutDown()
 
 	klog.V(2).Info("Starting Application controller")
 	defer klog.V(2).Info("Shutting down Application controller")
@@ -143,12 +138,12 @@ func (c *Controller) applicationWorker() {
 }
 
 func (c *Controller) processNextWorkItem() bool {
-	obj, shutdown := c.appWorkqueue.Get()
+	obj, shutdown := c.workqueue.Get()
 	if shutdown {
 		return false
 	}
 
-	defer c.appWorkqueue.Done(obj)
+	defer c.workqueue.Done(obj)
 
 	var (
 		key string
@@ -156,7 +151,7 @@ func (c *Controller) processNextWorkItem() bool {
 	)
 
 	if key, ok = obj.(string); !ok {
-		c.appWorkqueue.Forget(obj)
+		c.workqueue.Forget(obj)
 		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
 		return true
 	}
@@ -170,22 +165,13 @@ func (c *Controller) processNextWorkItem() bool {
 	}
 
 	if shouldRetry {
-		if c.appWorkqueue.NumRequeues(key) >= maxRetries {
-			// Drop the Application's key out of the workqueue and thus reset its
-			// backoff. This limits the time a "broken" object can hog a worker.
-			klog.Warningf("Application %q has been retried too many times, dropping from the queue", key)
-			c.appWorkqueue.Forget(key)
-
-			return true
-		}
-
-		c.appWorkqueue.AddRateLimited(key)
+		c.workqueue.AddRateLimited(key)
 
 		return true
 	}
 
 	klog.V(4).Infof("Successfully synced Application %q", key)
-	c.appWorkqueue.Forget(obj)
+	c.workqueue.Forget(obj)
 
 	return true
 }
@@ -210,7 +196,7 @@ func (c *Controller) enqueueRel(obj interface{}) {
 
 	owner := rel.OwnerReferences[0]
 
-	c.appWorkqueue.Add(fmt.Sprintf("%s/%s", rel.Namespace, owner.Name))
+	c.workqueue.Add(fmt.Sprintf("%s/%s", rel.Namespace, owner.Name))
 }
 
 func (c *Controller) enqueueApp(obj interface{}) {
@@ -220,7 +206,7 @@ func (c *Controller) enqueueApp(obj interface{}) {
 		return
 	}
 
-	c.appWorkqueue.Add(key)
+	c.workqueue.Add(key)
 }
 
 func (c *Controller) syncApplication(key string) error {

@@ -27,29 +27,24 @@ import (
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
+	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
 )
 
 const (
 	AgentName   = "capacity-controller"
 	SadPodLimit = 5
-
-	// maxRetries is the number of times a CapacityTarget will be retried before we
-	// drop it out of the workqueue. The number is chosen with the default rate
-	// limiter in mind. This results in the following backoff times: 5ms, 10ms,
-	// 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s.
-	maxRetries = 11
 )
 
 // Controller is the controller implementation for CapacityTarget resources
 type Controller struct {
-	shipperclientset        clientset.Interface
-	clusterClientStore      clusterclientstore.Interface
-	capacityTargetsLister   listers.CapacityTargetLister
-	capacityTargetsSynced   cache.InformerSynced
-	releasesLister          listers.ReleaseLister
-	releasesListerSynced    cache.InformerSynced
-	capacityTargetWorkqueue workqueue.RateLimitingInterface
-	recorder                record.EventRecorder
+	shipperclientset      clientset.Interface
+	clusterClientStore    clusterclientstore.Interface
+	capacityTargetsLister listers.CapacityTargetLister
+	capacityTargetsSynced cache.InformerSynced
+	releasesLister        listers.ReleaseLister
+	releasesListerSynced  cache.InformerSynced
+	workqueue             workqueue.RateLimitingInterface
+	recorder              record.EventRecorder
 }
 
 // NewController returns a new CapacityTarget controller.
@@ -65,14 +60,14 @@ func NewController(
 	releaseInformer := shipperInformerFactory.Shipper().V1alpha1().Releases()
 
 	controller := &Controller{
-		shipperclientset:        shipperclientset,
-		capacityTargetsLister:   capacityTargetInformer.Lister(),
-		capacityTargetsSynced:   capacityTargetInformer.Informer().HasSynced,
-		releasesLister:          releaseInformer.Lister(),
-		releasesListerSynced:    releaseInformer.Informer().HasSynced,
-		capacityTargetWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "capacity_controller_capacitytargets"),
-		recorder:                recorder,
-		clusterClientStore:      store,
+		shipperclientset:      shipperclientset,
+		capacityTargetsLister: capacityTargetInformer.Lister(),
+		capacityTargetsSynced: capacityTargetInformer.Informer().HasSynced,
+		releasesLister:        releaseInformer.Lister(),
+		releasesListerSynced:  releaseInformer.Informer().HasSynced,
+		workqueue:             workqueue.NewNamedRateLimitingQueue(shipperworkqueue.NewDefaultControllerRateLimiter(), "capacity_controller_capacitytargets"),
+		recorder:              recorder,
+		clusterClientStore:    store,
 	}
 
 	klog.Info("Setting up event handlers")
@@ -95,7 +90,7 @@ func NewController(
 // workers to finish processing their current work items.
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
-	defer c.capacityTargetWorkqueue.ShutDown()
+	defer c.workqueue.ShutDown()
 
 	klog.V(2).Info("Starting Capacity controller")
 	defer klog.V(2).Info("Shutting down Capacity controller")
@@ -120,12 +115,12 @@ func (c *Controller) runCapacityTargetWorker() {
 }
 
 func (c *Controller) processNextCapacityTargetWorkItem() bool {
-	obj, shutdown := c.capacityTargetWorkqueue.Get()
+	obj, shutdown := c.workqueue.Get()
 	if shutdown {
 		return false
 	}
 
-	defer c.capacityTargetWorkqueue.Done(obj)
+	defer c.workqueue.Done(obj)
 
 	var (
 		key string
@@ -133,7 +128,7 @@ func (c *Controller) processNextCapacityTargetWorkItem() bool {
 	)
 
 	if key, ok = obj.(string); !ok {
-		c.capacityTargetWorkqueue.Forget(obj)
+		c.workqueue.Forget(obj)
 		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
 		return true
 	}
@@ -147,22 +142,13 @@ func (c *Controller) processNextCapacityTargetWorkItem() bool {
 	}
 
 	if shouldRetry {
-		if c.capacityTargetWorkqueue.NumRequeues(key) >= maxRetries {
-			// Drop the CapacityTarget's key out of the workqueue and thus reset its
-			// backoff. This limits the time a "broken" object can hog a worker.
-			klog.Warningf("CapacityTarget %q has been retried too many times, dropping from the queue", key)
-			c.capacityTargetWorkqueue.Forget(key)
-
-			return true
-		}
-
-		c.capacityTargetWorkqueue.AddRateLimited(key)
+		c.workqueue.AddRateLimited(key)
 
 		return true
 	}
 
 	klog.V(4).Infof("Successfully synced CapacityTarget %q", key)
-	c.capacityTargetWorkqueue.Forget(obj)
+	c.workqueue.Forget(obj)
 
 	return true
 }
@@ -301,7 +287,7 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 		return
 	}
 
-	c.capacityTargetWorkqueue.Add(key)
+	c.workqueue.Add(key)
 }
 
 func (c *Controller) registerDeploymentEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {

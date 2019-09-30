@@ -29,18 +29,13 @@ import (
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
 )
 
 type ChartFetcher func(i *Installer, name, version string) (*chart.Chart, error)
 
 const (
 	AgentName = "installation-controller"
-
-	// maxRetries is the number of times an InstallationTarget will be retried
-	// before we drop it out of the workqueue. The number is chosen with the
-	// default rate limiter in mind. This results in the following backoff times:
-	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s.
-	maxRetries = 11
 )
 
 // Controller is a Kubernetes controller that processes InstallationTarget
@@ -93,7 +88,7 @@ func NewController(
 		installationTargetsLister: installationTargetInformer.Lister(),
 		installationTargetsSynced: installationTargetInformer.Informer().HasSynced,
 		dynamicClientBuilderFunc:  dynamicClientBuilderFunc,
-		workqueue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "installation_controller_installationtargets"),
+		workqueue:                 workqueue.NewNamedRateLimitingQueue(shipperworkqueue.NewDefaultControllerRateLimiter(), "installation_controller_installationtargets"),
 		chartFetcher:              chartFetcher,
 		recorder:                  recorder,
 	}
@@ -177,15 +172,6 @@ func (c *Controller) processNextWorkItem() bool {
 	}
 
 	if shouldRetry {
-		if c.workqueue.NumRequeues(key) >= maxRetries {
-			// Drop the InstallationTarget's key out of the workqueue and thus reset its
-			// backoff. This limits the time a "broken" object can hog a worker.
-			klog.Warningf("InstallationTarget %q has been retried too many times, dropping from the queue", key)
-			c.workqueue.Forget(key)
-
-			return true
-		}
-
 		c.workqueue.AddRateLimited(key)
 
 		return true
