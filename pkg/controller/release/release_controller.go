@@ -24,12 +24,11 @@ import (
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	rolloutblock "github.com/bookingcom/shipper/pkg/util/rolloutblock"
+	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
 )
 
 const (
 	AgentName = "release-controller"
-
-	maxRetries = 11
 )
 
 // Controller is a Kubernetes controller whose role is to pick up a newly created
@@ -125,11 +124,11 @@ func NewController(
 		rolloutBlockSynced: rolloutBlockInformer.Informer().HasSynced,
 
 		releaseWorkqueue: workqueue.NewNamedRateLimitingQueue(
-			workqueue.DefaultControllerRateLimiter(),
+			shipperworkqueue.NewDefaultControllerRateLimiter(),
 			"release_controller_releases",
 		),
 		applicationWorkqueue: workqueue.NewNamedRateLimitingQueue(
-			workqueue.DefaultControllerRateLimiter(),
+			shipperworkqueue.NewDefaultControllerRateLimiter(),
 			"release_controller_applications",
 		),
 
@@ -144,23 +143,6 @@ func NewController(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: controller.enqueueRelease,
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				oldRel, ok := oldObj.(*shipper.Release)
-				if !ok {
-					runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", oldObj))
-					return
-				}
-
-				newRel, ok := newObj.(*shipper.Release)
-				if !ok {
-					runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", newObj))
-					return
-				}
-
-				if oldRel.GetResourceVersion() == newRel.GetResourceVersion() {
-					controller.enqueueReleaseRateLimited(newObj)
-					return
-				}
-
 				controller.enqueueRelease(newObj)
 			},
 			DeleteFunc: controller.enqueueAppFromRelease,
@@ -270,12 +252,6 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 	}
 
 	if shouldRetry {
-		if c.releaseWorkqueue.NumRequeues(key) >= maxRetries {
-			klog.Warningf("Release %q has been retried too many times, droppping from the queue", key)
-			c.releaseWorkqueue.Forget(key)
-			return true
-		}
-
 		c.releaseWorkqueue.AddRateLimited(key)
 
 		return true

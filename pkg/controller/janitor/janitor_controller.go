@@ -29,12 +29,6 @@ const (
 	AgentName             = "janitor-controller"
 	AnchorSuffix          = "-anchor"
 	InstallationTargetUID = "InstallationTargetUID"
-
-	// maxRetries is the number of times a WorkItem will be retried before we
-	// drop it out of the workqueue. The number is chosen with the default rate
-	// limiter in mind. This results in the following backoff times: 5ms, 10ms,
-	// 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s.
-	maxRetries = 11
 )
 
 type Controller struct {
@@ -58,7 +52,7 @@ func NewController(
 
 	controller := &Controller{
 		recorder:           recorder,
-		workqueue:          workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		workqueue:          workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "janitor_controller_installationtargets"),
 		clusterClientStore: store,
 		shipperClientset:   shipperclientset,
 		itLister:           itInformer.Lister(),
@@ -251,15 +245,6 @@ func (c *Controller) processNextWorkItem() bool {
 		}
 
 		if shouldRetry {
-			if c.workqueue.NumRequeues(obj) >= maxRetries {
-				// Drop the CapacityTarget's key out of the workqueue and thus reset its
-				// backoff. This limits the time a "broken" object can hog a worker.
-				klog.Warningf("WorkItem %q has been retried too many times, dropping from the queue", key)
-				c.workqueue.Forget(obj)
-
-				return true
-			}
-
 			c.workqueue.AddRateLimited(obj)
 
 			return true

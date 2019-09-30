@@ -50,13 +50,6 @@ func (c *Controller) processNextAppWorkItem() bool {
 	}
 
 	if shouldRetry {
-		if c.applicationWorkqueue.NumRequeues(key) >= maxRetries {
-			klog.Warningf("Application %q has been retried too many times, droppping from the queue", key)
-			c.applicationWorkqueue.Forget(key)
-
-			return true
-		}
-
 		c.applicationWorkqueue.AddRateLimited(key)
 
 		return true

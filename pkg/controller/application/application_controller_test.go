@@ -1154,7 +1154,7 @@ func (f *fixture) run() {
 
 	wait.PollUntil(
 		10*time.Millisecond,
-		func() (bool, error) { return c.appWorkqueue.Len() >= 1, nil },
+		func() (bool, error) { return c.workqueue.Len() >= 1, nil },
 		stopCh,
 	)
 
