@@ -352,21 +352,18 @@ func TestSchedule(t *testing.T) {
 	expected := release.DeepCopy()
 	expected.Annotations[shipper.ReleaseClustersAnnotation] = clusterA.GetName() + "," + clusterB.GetName()
 
-	relWithConditions := expected.DeepCopy()
+	c, _ := newScheduler(fixtures)
 
-	// release should be marked as Scheduled
-	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
-	releaseutil.SetReleaseCondition(&relWithConditions.Status, *condition)
-
-	expectedActions := []kubetesting.Action{}
-
-	c, clientset := newScheduler(fixtures)
-	if _, err := c.ChooseClusters(release.DeepCopy(), false); err != nil {
+	got, err := c.ChooseClusters(release.DeepCopy())
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	filteredActions := filterActions(clientset.Actions(), []string{"update"}, []string{"releases"})
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
+	if expected.Annotations[shipper.ReleaseClustersAnnotation] != got.Annotations[shipper.ReleaseClustersAnnotation] {
+		t.Errorf("expected release to have clusters %q, got %q",
+			expected.Annotations[shipper.ReleaseClustersAnnotation],
+			got.Annotations[shipper.ReleaseClustersAnnotation])
+	}
 }
 
 // TestScheduleSkipsUnschedulable tests the first part of the cluster
@@ -391,15 +388,18 @@ func TestScheduleSkipsUnschedulable(t *testing.T) {
 	condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 	releaseutil.SetReleaseCondition(&relWithConditions.Status, *condition)
 
-	expectedActions := []kubetesting.Action{}
+	c, _ := newScheduler(fixtures)
 
-	c, clientset := newScheduler(fixtures)
-	if _, err := c.ChooseClusters(release.DeepCopy(), false); err != nil {
+	got, err := c.ChooseClusters(release.DeepCopy())
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	filteredActions := filterActions(clientset.Actions(), []string{"update"}, []string{"releases"})
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
+	if expected.Annotations[shipper.ReleaseClustersAnnotation] != got.Annotations[shipper.ReleaseClustersAnnotation] {
+		t.Errorf("expected release to have clusters %q, got %q",
+			expected.Annotations[shipper.ReleaseClustersAnnotation],
+			got.Annotations[shipper.ReleaseClustersAnnotation])
+	}
 }
 
 // TestCreateAssociatedObjects checks whether the associated object set is being

@@ -63,9 +63,9 @@ func NewScheduler(
 	}
 }
 
-func (s *Scheduler) ChooseClusters(rel *shipper.Release, force bool) (*shipper.Release, error) {
+func (s *Scheduler) ChooseClusters(rel *shipper.Release) (*shipper.Release, error) {
 	metaKey := controller.MetaKey(rel)
-	if !force && releaseHasClusters(rel) {
+	if releaseHasClusters(rel) {
 		return nil, shippererrors.NewUnrecoverableError(fmt.Errorf("release %q has already been assigned to clusters", metaKey))
 	}
 	klog.Infof("Choosing clusters for release %q", metaKey)
@@ -93,7 +93,19 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 	defer klog.Infof("Finished processing %q", metaKey)
 
 	if !releaseHasClusters(rel) {
-		return nil, shippererrors.NewUnrecoverableError(fmt.Errorf("release %q clusters have not been chosen yet", metaKey))
+		rel, err := s.ChooseClusters(rel)
+		if err != nil {
+			return nil, err
+		}
+
+		s.recorder.Eventf(
+			rel,
+			corev1.EventTypeNormal,
+			"ClustersSelected",
+			"Set clusters for %q to %v",
+			controller.MetaKey(rel),
+			rel.Annotations[shipper.ReleaseClustersAnnotation],
+		)
 	}
 
 	replicaCount, err := s.fetchChartAndExtractReplicaCount(rel)
