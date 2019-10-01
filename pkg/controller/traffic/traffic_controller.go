@@ -24,6 +24,7 @@ import (
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/conditions"
+	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
@@ -79,11 +80,19 @@ func NewController(
 		DeleteFunc: controller.enqueueTrafficTarget,
 	})
 
-	store.AddSubscriptionCallback(func(informerFactory kubeinformers.SharedInformerFactory) {
-		informerFactory.Core().V1().Pods().Informer()
-	})
+	store.AddSubscriptionCallback(controller.subscribeToPodEvents)
+	store.AddEventHandlerCallback(controller.registerPodEventHandlers)
 
 	return controller
+}
+
+func (c *Controller) registerPodEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
+	handler := shippercontroller.NewAppClusterEventHandler(c.enqueueTrafficTargetFromPod)
+	informerFactory.Core().V1().Pods().Informer().AddEventHandler(handler)
+}
+
+func (c *Controller) subscribeToPodEvents(informerFactory kubeinformers.SharedInformerFactory) {
+	informerFactory.Core().V1().Pods().Informer()
 }
 
 // Run will set up the event handlers for types we are interested in, as well as
@@ -381,4 +390,45 @@ func (c *Controller) enqueueTrafficTarget(obj interface{}) {
 	}
 
 	c.workqueue.Add(key)
+}
+
+func (c *Controller) enqueueTrafficTargetFromPod(obj interface{}) {
+	pod, ok := obj.(*corev1.Pod)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a corev1.Pod: %#v", obj))
+		return
+	}
+
+	// Using ReleaseLabel here instead of the full set of labels because we
+	// can't guarantee that there isn't extra stuff there that was put
+	// directly in the chart.
+	// Also not using ObjectReference here because it would go over cluster
+	// boundaries. While technically it's probably ok, I feel like it'd be
+	// abusing the feature.
+	rel := pod.GetLabels()[shipper.ReleaseLabel]
+	tt, err := c.getTrafficTargetForReleaseAndNamespace(rel, pod.GetNamespace())
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("cannot get traffic target for release '%s/%s': %#v", rel, pod.GetNamespace(), err))
+		return
+	}
+
+	c.enqueueTrafficTarget(tt)
+}
+
+func (c *Controller) getTrafficTargetForReleaseAndNamespace(release, namespace string) (*shipper.TrafficTarget, error) {
+	selector := labels.Set{shipper.ReleaseLabel: release}.AsSelector()
+	gvk := shipper.SchemeGroupVersion.WithKind("TrafficTarget")
+
+	trafficTargets, err := c.trafficTargetsLister.TrafficTargets(namespace).List(selector)
+	if err != nil {
+		return nil, shippererrors.NewKubeclientListError(gvk, namespace, selector, err)
+	}
+
+	expected := 1
+	if got := len(trafficTargets); got != 1 {
+		return nil, shippererrors.NewUnexpectedObjectCountFromSelectorError(
+			selector, gvk, expected, got)
+	}
+
+	return trafficTargets[0], nil
 }
