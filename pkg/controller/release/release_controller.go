@@ -386,24 +386,6 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 	)
 	releaseutil.SetReleaseCondition(&rel.Status, *condition)
 
-	if !releaseHasClusters(rel) {
-		shouldForce := false
-		rel, err = scheduler.ChooseClusters(rel, shouldForce)
-
-		if err != nil {
-			return initialRel, err
-		}
-
-		c.recorder.Eventf(
-			rel,
-			corev1.EventTypeNormal,
-			"ClustersSelected",
-			"Set clusters for %q to %v",
-			controller.MetaKey(rel),
-			rel.Annotations[shipper.ReleaseClustersAnnotation],
-		)
-	}
-
 	rel, err = scheduler.ScheduleRelease(rel.DeepCopy())
 	if err != nil {
 		reason := reasonForReleaseCondition(err)
