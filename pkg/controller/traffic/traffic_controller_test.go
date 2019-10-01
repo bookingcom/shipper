@@ -186,6 +186,9 @@ func (f *fixture) run() {
 		},
 	}
 
+	informer.Start(stopCh)
+	informer.WaitForCacheSync(stopCh)
+
 	go store.Run(stopCh)
 
 	wait.PollUntil(
@@ -202,9 +205,6 @@ func (f *fixture) run() {
 		},
 		stopCh,
 	)
-
-	informer.Start(stopCh)
-	informer.WaitForCacheSync(stopCh)
 
 	wait.PollUntil(
 		10*time.Millisecond,

@@ -245,13 +245,13 @@ func (c *Controller) enqueueInstallationTargetFromObject(obj interface{}) {
 	// boundaries. While technically it's probably ok, I feel like it'd be
 	// abusing the feature.
 	rel := kubeobj.GetLabels()[shipper.ReleaseLabel]
-	tt, err := c.getInstallationTargetForReleaseAndNamespace(rel, kubeobj.GetNamespace())
+	it, err := c.getInstallationTargetForReleaseAndNamespace(rel, kubeobj.GetNamespace())
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("cannot get installation target for release '%s/%s': %#v", rel, kubeobj.GetNamespace(), err))
 		return
 	}
 
-	c.enqueueInstallationTarget(tt)
+	c.enqueueInstallationTarget(it)
 }
 
 func (c *Controller) getInstallationTargetForReleaseAndNamespace(release, namespace string) (*shipper.InstallationTarget, error) {
