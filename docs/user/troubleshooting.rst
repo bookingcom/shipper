@@ -209,9 +209,20 @@ think happen more often than others:
     * - Failure
       - Description
     * - | Can't pull Docker image
-      - Strategy condition ``ContenderAchievedCapacity`` is false, InstallationTarget's ``Ready`` condition is false and the message is something like "Back-off pulling image "nginx:boom""
+      - Strategy condition ``ContenderAchievedCapacity`` is false,
+        InstallationTarget's ``Ready`` condition is false and the message is
+        something like "Back-off pulling image "nginx:boom""
+    * - Previous release is unhealthy
+      - Release condition ``IncumbentAchievedCapacity`` is false and the
+        message is something like "incumbent capacity is unhealthy in clusters:
+        [minikube]". In this case, you can try describing the CapacityTarget
+        from the previous release to find out what's wrong. If you're doing a
+        rollout to fix that previous release, though, you can opt for
+        proceeding to the next step in your strategy, as Shipper does not
+        require a step to be completed before moving on to the next.
     * - Can't fetch Helm chart
-      - Release condition ``Scheduled`` is false and the message is something like "download https://charts.example.com/charts/nginx-0.1.42.tgz: 404"
+      - Release condition ``Scheduled`` is false and the message is something
+        like "download https://charts.example.com/charts/nginx-0.1.42.tgz: 404"
 
 Make sure you're on the right cluster!
 --------------------------------------
