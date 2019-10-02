@@ -57,7 +57,7 @@ var controllers = []string{
 }
 
 const defaultRESTTimeout time.Duration = 10 * time.Second
-const defaultResync time.Duration = 30 * time.Second
+const defaultResync time.Duration = 0 * time.Second
 
 var (
 	masterURL           = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
