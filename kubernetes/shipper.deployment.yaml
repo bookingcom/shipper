@@ -32,8 +32,6 @@ spec:
           - "/etc/webhook/certs/tls.key"
           - "-webhook-port"
           - "9443"
-          - "-resync"
-          - "10m"
           - "-v"
           - "4"
           - "-logtostderr"
