@@ -1,6 +1,8 @@
 package rolloutblock
 
 import (
+	"regexp"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -35,14 +37,8 @@ func BlocksRollout(rolloutBlockLister shipperlisters.RolloutBlockLister, obj met
 	obsoleteBlocks := overrides.Diff(existingBlocks)
 
 	if len(obsoleteBlocks) > 0 {
-		for o := range obsoleteBlocks {
-			overrides.Delete(o)
-		}
-		annotations[shipper.RolloutBlocksOverrideAnnotation] = overrides.String()
-		events = append(events, RolloutBlockEvent{
-			corev1.EventTypeWarning,
-			"OverriddenRolloutBlockNotFound",
-			obsoleteBlocks.String()})
+		err := shippererrors.NewInvalidRolloutBlockOverrideError(obsoleteBlocks.String())
+		return true, events, err
 	}
 
 	obj.SetAnnotations(annotations)
@@ -65,4 +61,20 @@ func BlocksRollout(rolloutBlockLister shipperlisters.RolloutBlockLister, obj met
 			effectiveBlocks.String()})
 		return true, events, shippererrors.NewRolloutBlockError(effectiveBlocks.String())
 	}
+}
+
+func ValidateOverrides(overrides ObjectNameList) error {
+	if len(overrides) == 0 {
+		return nil
+	}
+
+	re := regexp.MustCompile("^[a-zA-Z0-9/-]+/[a-zA-Z0-9/-]+$")
+
+	for item := range overrides {
+		if !re.MatchString(item) {
+			return shippererrors.NewInvalidRolloutBlockOverrideError(item)
+		}
+	}
+
+	return nil
 }
