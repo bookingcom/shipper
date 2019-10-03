@@ -24,6 +24,10 @@ import (
 	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
+const (
+	AgentName = "webhook"
+)
+
 type Webhook struct {
 	shipperClientset    clientset.Interface
 	rolloutBlocksLister listers.RolloutBlockLister
