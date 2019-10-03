@@ -5,14 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"k8s.io/apimachinery/pkg/labels"
 	"mime"
 	"net/http"
 	"reflect"
 	"regexp"
 
-	admission_v1beta1 "k8s.io/api/admission/v1beta1"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	admission "k8s.io/api/admission/v1beta1"
+	kubeclient "k8s.io/api/admission/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/klog"
@@ -21,7 +22,6 @@ import (
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
-	kubeclient "k8s.io/api/admission/v1beta1"
 )
 
 type Webhook struct {
@@ -88,7 +88,7 @@ func (c *Webhook) initializeHandlers() *http.ServeMux {
 }
 
 // adaptHandler wraps an admission review function to be consumed through HTTP.
-func adaptHandler(handler func(*admission_v1beta1.AdmissionReview) *admission_v1beta1.AdmissionResponse) func(http.ResponseWriter, *http.Request) {
+func adaptHandler(handler func(*admission.AdmissionReview) *admission.AdmissionResponse) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body []byte
 		if r.Body != nil {
@@ -113,11 +113,11 @@ func adaptHandler(handler func(*admission_v1beta1.AdmissionReview) *admission_v1
 			return
 		}
 
-		var admissionResponse *admission_v1beta1.AdmissionResponse
-		ar := admission_v1beta1.AdmissionReview{}
+		var admissionResponse *admission.AdmissionResponse
+		ar := admission.AdmissionReview{}
 		if _, _, err := deserializer.Decode(body, nil, &ar); err != nil {
-			admissionResponse = &admission_v1beta1.AdmissionResponse{
-				Result: &meta_v1.Status{
+			admissionResponse = &admission.AdmissionResponse{
+				Result: &metav1.Status{
 					Message: err.Error(),
 				},
 			}
@@ -125,7 +125,7 @@ func adaptHandler(handler func(*admission_v1beta1.AdmissionReview) *admission_v1
 			admissionResponse = handler(&ar)
 		}
 
-		admissionReview := admission_v1beta1.AdmissionReview{}
+		admissionReview := admission.AdmissionReview{}
 		if admissionResponse != nil {
 			admissionReview.Response = admissionResponse
 			if ar.Request != nil {
@@ -146,7 +146,7 @@ func adaptHandler(handler func(*admission_v1beta1.AdmissionReview) *admission_v1
 	}
 }
 
-func (c *Webhook) validateHandlerFunc(review *admission_v1beta1.AdmissionReview) *admission_v1beta1.AdmissionResponse {
+func (c *Webhook) validateHandlerFunc(review *admission.AdmissionReview) *admission.AdmissionResponse {
 	request := review.Request
 	var err error
 
@@ -181,19 +181,19 @@ func (c *Webhook) validateHandlerFunc(review *admission_v1beta1.AdmissionReview)
 	}
 
 	if err != nil {
-		return &admission_v1beta1.AdmissionResponse{
-			Result: &meta_v1.Status{
+		return &admission.AdmissionResponse{
+			Result: &metav1.Status{
 				Message: err.Error(),
 			},
 		}
 	}
 
-	return &admission_v1beta1.AdmissionResponse{
+	return &admission.AdmissionResponse{
 		Allowed: true,
 	}
 }
 
-func (c *Webhook) validateRelease(request *admission_v1beta1.AdmissionRequest, release shipper.Release) error {
+func (c *Webhook) validateRelease(request *admission.AdmissionRequest, release shipper.Release) error {
 	var err error
 	overrideRBs := rolloutblock.NewObjectNameList(release.Annotations[shipper.RolloutBlocksOverrideAnnotation])
 	err = c.validateOverrideRolloutBlockAnnotation(overrideRBs, release.Namespace)
@@ -219,7 +219,7 @@ func (c *Webhook) validateRelease(request *admission_v1beta1.AdmissionRequest, r
 	return err
 }
 
-func (c *Webhook) validateApplication(request *admission_v1beta1.AdmissionRequest, application shipper.Application) error {
+func (c *Webhook) validateApplication(request *admission.AdmissionRequest, application shipper.Application) error {
 	var err error
 	overrideRBs := rolloutblock.NewObjectNameList(application.Annotations[shipper.RolloutBlocksOverrideAnnotation])
 	err = c.validateOverrideRolloutBlockAnnotation(overrideRBs, application.Namespace)
@@ -268,7 +268,7 @@ func (c *Webhook) existingRolloutBlocks(namespace string) ([]*shipper.RolloutBlo
 		err                error
 	)
 
-	if nsRBList, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(namespace).List(meta_v1.ListOptions{}); err != nil {
+	if nsRBList, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(namespace).List(metav1.ListOptions{}); err != nil {
 		return nil, shippererrors.NewKubeclientListError(
 			shipper.SchemeGroupVersion.WithKind("RolloutBlocks"),
 			namespace, labels.Nothing(), err)
@@ -276,7 +276,7 @@ func (c *Webhook) existingRolloutBlocks(namespace string) ([]*shipper.RolloutBlo
 	for _, item := range nsRBList.Items {
 		rbs = append(rbs, &item)
 	}
-	if gbRBList, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(shipper.GlobalRolloutBlockNamespace).List(meta_v1.ListOptions{}); err != nil {
+	if gbRBList, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(shipper.GlobalRolloutBlockNamespace).List(metav1.ListOptions{}); err != nil {
 		return nil, shippererrors.NewKubeclientListError(
 			shipper.SchemeGroupVersion.WithKind("RolloutBlocks"),
 			namespace, labels.Nothing(), err)
