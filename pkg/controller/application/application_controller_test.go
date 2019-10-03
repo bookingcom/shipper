@@ -256,16 +256,12 @@ func TestCreateFirstReleaseWithNonExistingRolloutBlockOverride(t *testing.T) {
 	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", shippertesting.TestNamespace, "test-non-existing-rolloutblock")
 
 	f.objects = append(f.objects, app)
+
 	expectedApp := app.DeepCopy()
-	expectedApp.Annotations[shipper.AppHighestObservedGenerationAnnotation] = "0"
 	apputil.UpdateChartNameAnnotation(expectedApp, "simple")
 	apputil.UpdateChartVersionRawAnnotation(expectedApp, "0.0.1")
 	apputil.UpdateChartVersionResolvedAnnotation(expectedApp, "0.0.1")
 	expectedApp.Spec.Template.Chart.Version = "0.0.1"
-	expectedApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = ""
-
-	envHash := hashReleaseEnvironment(expectedApp.Spec.Template)
-	expectedRelName := fmt.Sprintf("%s-%s-0", testAppName, envHash)
 
 	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
 		{
@@ -273,8 +269,10 @@ func TestCreateFirstReleaseWithNonExistingRolloutBlockOverride(t *testing.T) {
 			Status: corev1.ConditionFalse,
 		},
 		{
-			Type:   shipper.ApplicationConditionTypeBlocked,
-			Status: corev1.ConditionFalse,
+			Type:    shipper.ApplicationConditionTypeBlocked,
+			Status:  corev1.ConditionTrue,
+			Reason:  shipper.RolloutBlockReason,
+			Message: "rollout block with name test-namespace/test-non-existing-rolloutblock does not exist",
 		},
 		{
 			Type:   shipper.ApplicationConditionTypeReleaseSynced,
@@ -282,26 +280,15 @@ func TestCreateFirstReleaseWithNonExistingRolloutBlockOverride(t *testing.T) {
 		},
 		{
 			Type:    shipper.ApplicationConditionTypeRollingOut,
-			Status:  corev1.ConditionTrue,
-			Message: fmt.Sprintf(InitialReleaseMessageFormat, expectedRelName),
+			Status:  corev1.ConditionUnknown,
+			Message: shippererrors.NewContenderNotFoundError(testAppName).Error(),
 		},
 		{
 			Type:   shipper.ApplicationConditionTypeValidHistory,
 			Status: corev1.ConditionTrue,
 		},
 	}
-	expectedApp.Status.History = []string{expectedRelName}
 
-	// We do not expect entries in the history or 'RollingOut: true' in the state
-	// because the testing client does not update listers after Create actions.
-
-	expectedRelease := newRelease(expectedRelName, expectedApp)
-	expectedRelease.Labels[shipper.ReleaseEnvironmentHashLabel] = envHash
-	expectedRelease.Annotations[shipper.ReleaseTemplateIterationAnnotation] = "0"
-	expectedRelease.Annotations[shipper.ReleaseGenerationAnnotation] = "0"
-	expectedRelease.Annotations[shipper.RolloutBlocksOverrideAnnotation] = ""
-
-	f.expectReleaseCreate(expectedRelease)
 	f.expectApplicationUpdate(expectedApp)
 	f.run()
 }

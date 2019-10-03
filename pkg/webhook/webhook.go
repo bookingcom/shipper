@@ -8,26 +8,29 @@ import (
 	"mime"
 	"net/http"
 	"reflect"
-	"regexp"
 
 	admission "k8s.io/api/admission/v1beta1"
 	kubeclient "k8s.io/api/admission/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
 type Webhook struct {
-	shipperClientset clientset.Interface
-	bindAddr         string
-	bindPort         string
+	shipperClientset    clientset.Interface
+	rolloutBlocksLister listers.RolloutBlockLister
+	rolloutBlocksSynced cache.InformerSynced
+
+	bindAddr string
+	bindPort string
 
 	tlsCertFile       string
 	tlsPrivateKeyFile string
@@ -39,11 +42,21 @@ var (
 	deserializer  = codecs.UniversalDeserializer()
 )
 
-func NewWebhook(bindAddr, bindPort, tlsPrivateKeyFile, tlsCertFile string, shipperClientset clientset.Interface) *Webhook {
+func NewWebhook(
+	bindAddr, bindPort, tlsPrivateKeyFile, tlsCertFile string,
+	shipperClientset clientset.Interface,
+	shipperInformerFactory informers.SharedInformerFactory,
+) *Webhook {
+	rolloutBlocksInformer := shipperInformerFactory.Shipper().V1alpha1().RolloutBlocks()
+
 	return &Webhook{
-		shipperClientset:  shipperClientset,
-		bindAddr:          bindAddr,
-		bindPort:          bindPort,
+		shipperClientset:    shipperClientset,
+		rolloutBlocksLister: rolloutBlocksInformer.Lister(),
+		rolloutBlocksSynced: rolloutBlocksInformer.Informer().HasSynced,
+
+		bindAddr: bindAddr,
+		bindPort: bindPort,
+
 		tlsPrivateKeyFile: tlsPrivateKeyFile,
 		tlsCertFile:       tlsCertFile,
 	}
@@ -55,6 +68,11 @@ func (c *Webhook) Run(stopCh <-chan struct{}) {
 	server := &http.Server{
 		Addr:    addr,
 		Handler: mux,
+	}
+
+	if !cache.WaitForCacheSync(stopCh, c.rolloutBlocksSynced) {
+		klog.Fatalf("failed to wait for caches to sync")
+		return
 	}
 
 	go func() {
@@ -195,25 +213,19 @@ func (c *Webhook) validateHandlerFunc(review *admission.AdmissionReview) *admiss
 
 func (c *Webhook) validateRelease(request *admission.AdmissionRequest, release shipper.Release) error {
 	var err error
-	overrideRBs := rolloutblock.NewObjectNameList(release.Annotations[shipper.RolloutBlocksOverrideAnnotation])
-	err = c.validateOverrideRolloutBlockAnnotation(overrideRBs, release.Namespace)
-	if err != nil {
-		return err
-	}
-
 	switch request.Operation {
 	case kubeclient.Create:
-		err = c.processRolloutBlocks(release.Namespace, overrideRBs)
+		_, _, err = rolloutblock.BlocksRollout(c.rolloutBlocksLister, &release)
 	case kubeclient.Update:
 		var oldRelease shipper.Release
 		err = json.Unmarshal(request.OldObject.Raw, &oldRelease)
 		if err != nil {
 			return err
 		}
+
 		if !reflect.DeepEqual(release.Spec, oldRelease.Spec) {
-			err = c.processRolloutBlocks(release.Namespace, overrideRBs)
+			_, _, err = rolloutblock.BlocksRollout(c.rolloutBlocksLister, &release)
 		}
-	default:
 	}
 
 	return err
@@ -221,96 +233,20 @@ func (c *Webhook) validateRelease(request *admission.AdmissionRequest, release s
 
 func (c *Webhook) validateApplication(request *admission.AdmissionRequest, application shipper.Application) error {
 	var err error
-	overrideRBs := rolloutblock.NewObjectNameList(application.Annotations[shipper.RolloutBlocksOverrideAnnotation])
-	err = c.validateOverrideRolloutBlockAnnotation(overrideRBs, application.Namespace)
-	if err != nil {
-		return err
-	}
-
 	switch request.Operation {
 	case kubeclient.Create:
-		err = c.processRolloutBlocks(application.Namespace, overrideRBs)
+		_, _, err = rolloutblock.BlocksRollout(c.rolloutBlocksLister, &application)
 	case kubeclient.Update:
 		var oldApp shipper.Application
 		err = json.Unmarshal(request.OldObject.Raw, &oldApp)
 		if err != nil {
 			return err
 		}
+
 		if !reflect.DeepEqual(application.Spec, oldApp.Spec) {
-			err = c.processRolloutBlocks(application.Namespace, overrideRBs)
+			_, _, err = rolloutblock.BlocksRollout(c.rolloutBlocksLister, &application)
 		}
-	default:
 	}
 
 	return err
-}
-
-func (c *Webhook) processRolloutBlocks(namespace string, overrideRBs rolloutblock.ObjectNameList) error {
-	existingRolloutBlocks, err := c.existingRolloutBlocks(namespace)
-	if err != nil {
-		return err
-	}
-
-	existingRBsList := rolloutblock.NewObjectNameListFromRolloutBlocksList(existingRolloutBlocks)
-
-	nonOverriddenRBs := existingRBsList.Diff(overrideRBs)
-	if len(nonOverriddenRBs) > 0 {
-		return shippererrors.NewRolloutBlockError(nonOverriddenRBs.String())
-	}
-
-	return nil
-}
-
-func (c *Webhook) existingRolloutBlocks(namespace string) ([]*shipper.RolloutBlock, error) {
-	var (
-		rbs                []*shipper.RolloutBlock
-		nsRBList, gbRBList *shipper.RolloutBlockList
-		err                error
-	)
-
-	if nsRBList, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(namespace).List(metav1.ListOptions{}); err != nil {
-		return nil, shippererrors.NewKubeclientListError(
-			shipper.SchemeGroupVersion.WithKind("RolloutBlocks"),
-			namespace, labels.Nothing(), err)
-	}
-	for _, item := range nsRBList.Items {
-		rbs = append(rbs, &item)
-	}
-	if gbRBList, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(shipper.GlobalRolloutBlockNamespace).List(metav1.ListOptions{}); err != nil {
-		return nil, shippererrors.NewKubeclientListError(
-			shipper.SchemeGroupVersion.WithKind("RolloutBlocks"),
-			namespace, labels.Nothing(), err)
-	}
-	for _, item := range gbRBList.Items {
-		rbs = append(rbs, &item)
-	}
-	return rbs, nil
-}
-
-func (c *Webhook) validateOverrideRolloutBlockAnnotation(overrideRbs rolloutblock.ObjectNameList, namespace string) error {
-	if len(overrideRbs) == 0 {
-		return nil
-	}
-
-	re := regexp.MustCompile("^[a-zA-Z0-9/-]+/[a-zA-Z0-9/-]+$")
-
-	for item := range overrideRbs {
-		if !re.MatchString(item) {
-			return shippererrors.NewInvalidRolloutBlockOverrideError(item)
-		}
-	}
-
-	existingRolloutBlocks, err := c.existingRolloutBlocks(namespace)
-	if err != nil {
-		return err
-	}
-
-	existingRbsList := rolloutblock.NewObjectNameListFromRolloutBlocksList(existingRolloutBlocks)
-	nonExistingRbs := overrideRbs.Diff(existingRbsList)
-
-	if len(nonExistingRbs) > 0 {
-		return shippererrors.NewInvalidRolloutBlockOverrideError(nonExistingRbs.String())
-	}
-
-	return nil
 }
