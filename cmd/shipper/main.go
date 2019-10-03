@@ -518,7 +518,7 @@ func startWebhook(cfg *cfg) (bool, error) {
 		cfg.webhookBindPort,
 		cfg.webhookKeyPath,
 		cfg.webhookCertPath,
-		client.NewShipperClientOrDie(cfg.restCfg, rolloutblock.AgentName, cfg.restTimeout),
+		client.NewShipperClientOrDie(cfg.restCfg, webhook.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory)
 
 	cfg.wg.Add(1)
