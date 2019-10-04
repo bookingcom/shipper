@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/bookingcom/shipper/cmd/shipperctl/cmd/admin"
 )
 
 var rootCmd = &cobra.Command{
@@ -15,7 +17,7 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(adminCmd)
+	rootCmd.AddCommand(admin.Command)
 }
 
 func Execute() {
