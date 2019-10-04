@@ -6,7 +6,6 @@ import (
 	"hash/crc32"
 	"time"
 
-	homedir "github.com/mitchellh/go-homedir"
 	certificatesv1beta1 "k8s.io/api/certificates/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -17,10 +16,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/config"
+	"github.com/bookingcom/shipper/cmd/shipperctl/kubeconfig"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	client "github.com/bookingcom/shipper/pkg/client"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
@@ -268,7 +266,12 @@ func NewClusterConfigurator(clusterConfiguration *config.ClusterConfiguration, k
 		context = clusterConfiguration.Name
 	}
 
-	restConfig, err := loadKubeConfig(context, kubeConfigFile)
+	kubeConfig, err := kubeconfig.Load(context, kubeConfigFile)
+	if err != nil {
+		return nil, err
+	}
+
+	restConfig, err := kubeConfig.ClientConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -296,20 +299,6 @@ func NewClusterConfigurator(clusterConfiguration *config.ClusterConfiguration, k
 	}
 
 	return configurator, nil
-}
-
-func loadKubeConfig(context, kubeConfigFile string) (*rest.Config, error) {
-	kubeConfigFilePath, err := homedir.Expand(kubeConfigFile)
-	if err != nil {
-		return nil, err
-	}
-
-	clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeConfigFilePath},
-		&clientcmd.ConfigOverrides{CurrentContext: context},
-	)
-
-	return clientConfig.ClientConfig()
 }
 
 func (c *Cluster) CreateCertificateSigningRequest(csr []byte) error {

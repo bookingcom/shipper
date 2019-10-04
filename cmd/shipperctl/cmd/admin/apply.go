@@ -18,6 +18,7 @@ import (
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
+	"github.com/bookingcom/shipper/cmd/shipperctl/kubeconfig"
 	"github.com/bookingcom/shipper/cmd/shipperctl/tls"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/crds"
@@ -54,9 +55,9 @@ const (
 
 func init() {
 	fileFlagName := "file"
-	kubeConfigFlagName := "kube-config"
+
+	kubeconfig.RegisterFlag(applyCmd.Flags(), &kubeConfigFile)
 	applyCmd.Flags().StringVarP(&configFile, fileFlagName, "f", "clusters.yaml", "config file")
-	applyCmd.Flags().StringVar(&kubeConfigFile, kubeConfigFlagName, "~/.kube/config", "the path to the Kubernetes configuration file")
 	applyCmd.Flags().StringVarP(&shipperSystemNamespace, "shipper-system-namespace", "n", shipper.ShipperNamespace, "the namespace where Shipper is running")
 	applyCmd.Flags().StringVarP(&globalRolloutBlockNamespace, "rollout-blocks-global-namespace", "g", shipper.GlobalRolloutBlockNamespace, "the namespace where Global RolloutBlocks are running")
 
@@ -66,10 +67,6 @@ func init() {
 	err := applyCmd.MarkFlagFilename(fileFlagName, "yaml")
 	if err != nil {
 		applyCmd.Printf("warning: could not mark %q for filename autocompletion: %s\n", fileFlagName, err)
-	}
-	err = applyCmd.MarkFlagFilename(kubeConfigFlagName, "yaml")
-	if err != nil {
-		applyCmd.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
 	}
 }
 
