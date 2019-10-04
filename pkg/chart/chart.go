@@ -2,6 +2,7 @@ package chart
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -53,15 +54,7 @@ func Render(chart *helmchart.Chart, name, ns string, shipperValues *shipper.Char
 		return nil, fmt.Errorf("could not render the chart: %s", err)
 	}
 
-	objects := make([]string, 0, len(rendered))
-	for n, o := range rendered {
-		// It's annoying to ensure that your template doesn't render spurious
-		// newlines.
-		o = strings.TrimSpace(o)
-		if len(o) > 0 && (strings.HasSuffix(n, ".yaml") || strings.HasSuffix(n, ".yml")) {
-			objects = append(objects, o)
-		}
-	}
+	objects := CollectObjects(rendered)
 
 	ks, err := newKindSorter(objects, InstallOrder)
 	if err != nil {
@@ -70,4 +63,29 @@ func Render(chart *helmchart.Chart, name, ns string, shipperValues *shipper.Char
 	sort.Sort(ks)
 
 	return ks.Manifests(), nil
+}
+
+var sep = regexp.MustCompile("(?:^|\\s*\n)---\\s*")
+
+func CollectObjects(rendered map[string]string) []string {
+	objects := make([]string, 0, len(rendered))
+
+	for n, o := range rendered {
+		if !strings.HasSuffix(n, ".yaml") && !strings.HasSuffix(n, ".yml") {
+			continue
+		}
+
+		// Making sure that any extra whitespace in YAML stream doesn't
+		// interfere in splitting documents correctly.
+		objs := sep.Split(strings.TrimSpace(o), -1)
+
+		for _, o := range objs {
+			o = strings.TrimSpace(o)
+			if len(o) > 0 {
+				objects = append(objects, o)
+			}
+		}
+	}
+
+	return objects
 }
