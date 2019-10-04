@@ -3,6 +3,7 @@ package chart
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"k8s.io/helm/pkg/chartutil"
@@ -43,54 +44,27 @@ func TestRender(t *testing.T) {
 	}
 }
 
-func TestRenderZeroByteTemplates(t *testing.T) {
-	cwd, _ := filepath.Abs(".")
-	chartFile, err := os.Open(filepath.Join(cwd, "testdata", "my-complex-app-0.2.0.tgz"))
-	if err != nil {
-		t.Fatal(err)
+func TestCollectObjects(t *testing.T) {
+	testCases := []map[string]string{
+		map[string]string{"foo.yaml": ""},
+		map[string]string{"foo.yaml": "\n"},
+		map[string]string{"foo.yaml": "   \n   \n\t"},
+		map[string]string{"foo.yaml": "apiVersion: v1\nkind: Service"},
+		map[string]string{"foo.yaml": "apiVersion: v1\nkind: Service\n---\napiVersion: v1\nkind: Pod"},
 	}
 
-	testCases := []string{
-		"",
-		"\n",
-		"   \n   \n\t",
-		"apiVersion: v1\nkind: Service",
-	}
-
-	expected := []string{
-		"",
-		"",
-		"",
-		"apiVersion: v1\nkind: Service",
+	expected := [][]string{
+		[]string{},
+		[]string{},
+		[]string{},
+		[]string{"apiVersion: v1\nkind: Service"},
+		[]string{"apiVersion: v1\nkind: Service", "apiVersion: v1\nkind: Pod"},
 	}
 
 	for i, testCase := range testCases {
-		// need to reset the file position to 0 to reload
-		chartFile.Seek(0, 0)
-		chart, err := chartutil.LoadArchive(chartFile)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		for _, template := range chart.Templates {
-			if template.Name == "templates/service.yaml" {
-				template.Data = []byte(testCase)
-			}
-		}
-
-		rendered, err := Render(chart, "my-complex-app", "my-complex-app", &shipper.ChartValues{})
-		if err != nil {
-			t.Fatalf("failed to render test case %q: %s", testCase, err)
-		}
-
-		if expected[i] == "" {
-			if len(rendered) != 1 {
-				t.Fatalf("expected chart.Render to strip out an object with contents %q, but it did not. rendered stuff: %v", testCase, rendered)
-			}
-		} else {
-			if len(rendered) == 1 {
-				t.Fatalf("chart.Render stripped out an object it should not have: contents %q", testCase)
-			}
+		got := CollectObjects(testCase)
+		if !reflect.DeepEqual(expected[i], got) {
+			t.Fatalf("expected %q to produce %q, but got %q", testCase, expected[i], got)
 		}
 	}
 }
