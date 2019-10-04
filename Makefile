@@ -158,13 +158,13 @@ build-all: $(foreach os,$(OS),build/shipperctl.$(os)-amd64.tar.gz) build/sha256s
 build:
 	mkdir -p build
 
-build/shipper-state-metrics.%-amd64: cmd/shipper-state-metrics/*.go $(PKG)
+build/shipper-state-metrics.%-amd64: $(PKG) cmd/shipper-state-metrics/* 
 	GOOS=$* GOARCH=amd64 go build $(LDFLAGS) -o build/shipper-state-metrics.$*-amd64 cmd/shipper-state-metrics/*.go
 
-build/shipper.%-amd64: cmd/shipper/*.go $(PKG)
+build/shipper.%-amd64: $(PKG) cmd/shipper/*
 	GOOS=$* GOARCH=amd64 go build $(LDFLAGS) -o build/shipper.$*-amd64 cmd/shipper/*.go
 
-build/shipperctl.%-amd64: cmd/shipperctl/*.go $(PKG)
+build/shipperctl.%-amd64: $(PKG) cmd/shipperctl/**/*
 	GOOS=$* GOARCH=amd64 go build $(LDFLAGS) -o build/shipperctl.$*-amd64 cmd/shipperctl/*.go
 
 build/e2e.test: $(PKG) test/e2e/*
