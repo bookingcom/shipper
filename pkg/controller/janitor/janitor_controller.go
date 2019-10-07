@@ -23,6 +23,7 @@ import (
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
 )
 
 const (
@@ -52,7 +53,7 @@ func NewController(
 
 	controller := &Controller{
 		recorder:           recorder,
-		workqueue:          workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "janitor_controller_installationtargets"),
+		workqueue:          workqueue.NewNamedRateLimitingQueue(shipperworkqueue.NewDefaultControllerRateLimiter(), "janitor_controller_installationtargets"),
 		clusterClientStore: store,
 		shipperClientset:   shipperclientset,
 		itLister:           itInformer.Lister(),
