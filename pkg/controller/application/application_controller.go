@@ -298,11 +298,17 @@ func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels 
 	rels = releaseutil.SortByGenerationDescending(rels)
 
 	abortingCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeAborting, corev1.ConditionFalse, "", "")
-	apputil.SetApplicationCondition(&app.Status, *abortingCond)
+	if diff := apputil.SetApplicationCondition(&app.Status, *abortingCond); !diff.IsEmpty() {
+		c.reportApplicationConditionChange(app, diff)
+	}
 	validHistoryCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeValidHistory, corev1.ConditionTrue, "", "")
-	apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
+	if diff := apputil.SetApplicationCondition(&app.Status, *validHistoryCond); !diff.IsEmpty() {
+		c.reportApplicationConditionChange(app, diff)
+	}
 	releaseSyncedCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeReleaseSynced, corev1.ConditionTrue, "", "")
-	apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
+	if diff := apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond); !diff.IsEmpty() {
+		c.reportApplicationConditionChange(app, diff)
+	}
 	rollingOutCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRollingOut, corev1.ConditionUnknown, "", "")
 
 	if contenderRel, err = apputil.GetContender(app.Name, rels); err != nil {
@@ -331,9 +337,20 @@ func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels 
 	}
 
 End:
-	apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
+	if diff := apputil.SetApplicationCondition(&app.Status, *rollingOutCond); !diff.IsEmpty() {
+		c.reportApplicationConditionChange(app, diff)
+	}
 
 	return nil
+}
+
+func (c *Controller) reportApplicationConditionChange(app *shipper.Application, diff *apputil.ApplicationConditionDiff) {
+	c.recorder.Event(
+		app,
+		corev1.EventTypeNormal,
+		"ApplicationConditionChanged",
+		diff.String(),
+	)
 }
 
 /*
@@ -371,7 +388,11 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 				conditions.ChartVersionResolutionFailed,
 				err.Error(),
 			)
-			apputil.SetApplicationCondition(&app.Status, *cond)
+
+			if diff := apputil.SetApplicationCondition(&app.Status, *cond); !diff.IsEmpty() {
+				c.reportApplicationConditionChange(app, diff)
+			}
+
 			if _, updErr := c.shipperClientset.ShipperV1alpha1().Applications(app.Namespace).Update(app); updErr != nil {
 				return shippererrors.NewKubeclientUpdateError(app, updErr).WithShipperKind("Application")
 			}
@@ -395,7 +416,9 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 			shipper.RolloutBlockReason,
 			msg,
 		)
-		apputil.SetApplicationCondition(&app.Status, *condition)
+		if diff := apputil.SetApplicationCondition(&app.Status, *condition); !diff.IsEmpty() {
+			c.reportApplicationConditionChange(app, diff)
+		}
 
 		return c.wrapUpApplicationConditions(app, appReleases)
 	}
@@ -406,7 +429,9 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		"",
 		"",
 	)
-	apputil.SetApplicationCondition(&app.Status, *condition)
+	if diff := apputil.SetApplicationCondition(&app.Status, *condition); !diff.IsEmpty() {
+		c.reportApplicationConditionChange(app, diff)
+	}
 
 	if contender, err = apputil.GetContender(app.Name, appReleases); err != nil {
 		// Anything else rather than not found err is an abort case
@@ -424,7 +449,9 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 				corev1.ConditionFalse,
 				conditions.CreateReleaseFailed,
 				fmt.Sprintf("could not create a new release: %q", err))
-			apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
+			if diff := apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond); !diff.IsEmpty() {
+				c.reportApplicationConditionChange(app, diff)
+			}
 			return err
 		} else {
 			appReleases = append(appReleases, rel)
@@ -444,13 +471,17 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 
 	if generation, err = releaseutil.GetGeneration(contender); err != nil {
 		validHistoryCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeValidHistory, corev1.ConditionFalse, conditions.BrokenReleaseGeneration, err.Error())
-		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
+		if diff := apputil.SetApplicationCondition(&app.Status, *validHistoryCond); !diff.IsEmpty() {
+			c.reportApplicationConditionChange(app, diff)
+		}
 		return err
 	}
 
 	if highestObserved, err = apputil.GetHighestObservedGeneration(app); err != nil {
 		validHistoryCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeValidHistory, corev1.ConditionFalse, conditions.BrokenApplicationObservedGeneration, err.Error())
-		apputil.SetApplicationCondition(&app.Status, *validHistoryCond)
+		if diff := apputil.SetApplicationCondition(&app.Status, *validHistoryCond); !diff.IsEmpty() {
+			c.reportApplicationConditionChange(app, diff)
+		}
 		return err
 	}
 
@@ -464,9 +495,13 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		apputil.UpdateChartVersionResolvedAnnotation(app, contender.Spec.Environment.Chart.Version)
 		apputil.SetHighestObservedGeneration(app, generation)
 		abortingCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeAborting, corev1.ConditionTrue, "", fmt.Sprintf("abort in progress, returning state to release %q", contender.Name))
-		apputil.SetApplicationCondition(&app.Status, *abortingCond)
+		if diff := apputil.SetApplicationCondition(&app.Status, *abortingCond); !diff.IsEmpty() {
+			c.reportApplicationConditionChange(app, diff)
+		}
 		rollingOutCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
-		apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
+		if diff := apputil.SetApplicationCondition(&app.Status, *rollingOutCond); !diff.IsEmpty() {
+			c.reportApplicationConditionChange(app, diff)
+		}
 
 		app.Status.History = apputil.ReleasesToApplicationHistory(appReleases)
 		return c.cleanUpReleasesForApplication(app, appReleases)
@@ -491,9 +526,13 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 			return err
 		} else if rel, err := c.createReleaseForApplication(app, releaseName, iteration, highestObserved); err != nil {
 			releaseSyncedCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeReleaseSynced, corev1.ConditionFalse, conditions.CreateReleaseFailed, err.Error())
-			apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
+			if diff := apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond); !diff.IsEmpty() {
+				c.reportApplicationConditionChange(app, diff)
+			}
 			rollingOutCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRollingOut, corev1.ConditionFalse, conditions.CreateReleaseFailed, err.Error())
-			apputil.SetApplicationCondition(&app.Status, *rollingOutCond)
+			if diff := apputil.SetApplicationCondition(&app.Status, *rollingOutCond); !diff.IsEmpty() {
+				c.reportApplicationConditionChange(app, diff)
+			}
 			return err
 		} else {
 			appReleases = append(appReleases, rel)
