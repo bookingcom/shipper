@@ -23,6 +23,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
+	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
 	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
@@ -297,7 +298,7 @@ func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels 
 	// Required by GetContender() and GetIncumbent() below.
 	rels = releaseutil.SortByGenerationDescending(rels)
 
-	diff := new(apputil.MultiDiff)
+	diff := new(diffutil.MultiDiff)
 	defer func() {
 		if !diff.IsEmpty() {
 			c.reportApplicationConditionChange(app, diff)
@@ -346,7 +347,7 @@ End:
 	return nil
 }
 
-func (c *Controller) reportApplicationConditionChange(app *shipper.Application, diff apputil.Diff) {
+func (c *Controller) reportApplicationConditionChange(app *shipper.Application, diff diffutil.Diff) {
 	c.recorder.Event(app, corev1.EventTypeNormal, "ApplicationConditionChanged", diff.String())
 }
 
@@ -370,7 +371,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		return err
 	}
 
-	diff := new(apputil.MultiDiff)
+	diff := new(diffutil.MultiDiff)
 	defer func() {
 		if !diff.IsEmpty() {
 			c.reportApplicationConditionChange(app, diff)
