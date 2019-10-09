@@ -296,19 +296,17 @@ func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels 
 
 	// Required by GetContender() and GetIncumbent() below.
 	rels = releaseutil.SortByGenerationDescending(rels)
+	diff := new(apputil.MultiDiff)
 
 	abortingCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeAborting, corev1.ConditionFalse, "", "")
-	if diff := apputil.SetApplicationCondition(&app.Status, *abortingCond); !diff.IsEmpty() {
-		c.reportApplicationConditionChange(app, diff)
-	}
+	diff.Append(apputil.SetApplicationCondition(&app.Status, *abortingCond))
+
 	validHistoryCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeValidHistory, corev1.ConditionTrue, "", "")
-	if diff := apputil.SetApplicationCondition(&app.Status, *validHistoryCond); !diff.IsEmpty() {
-		c.reportApplicationConditionChange(app, diff)
-	}
+	diff.Append(apputil.SetApplicationCondition(&app.Status, *validHistoryCond))
+
 	releaseSyncedCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeReleaseSynced, corev1.ConditionTrue, "", "")
-	if diff := apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond); !diff.IsEmpty() {
-		c.reportApplicationConditionChange(app, diff)
-	}
+	diff.Append(apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond))
+
 	rollingOutCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRollingOut, corev1.ConditionUnknown, "", "")
 
 	if contenderRel, err = apputil.GetContender(app.Name, rels); err != nil {
@@ -337,20 +335,17 @@ func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels 
 	}
 
 End:
-	if diff := apputil.SetApplicationCondition(&app.Status, *rollingOutCond); !diff.IsEmpty() {
+	diff.Append(apputil.SetApplicationCondition(&app.Status, *rollingOutCond))
+
+	if !diff.IsEmpty() {
 		c.reportApplicationConditionChange(app, diff)
 	}
 
 	return nil
 }
 
-func (c *Controller) reportApplicationConditionChange(app *shipper.Application, diff *apputil.ApplicationConditionDiff) {
-	c.recorder.Event(
-		app,
-		corev1.EventTypeNormal,
-		"ApplicationConditionChanged",
-		diff.String(),
-	)
+func (c *Controller) reportApplicationConditionChange(app *shipper.Application, diff apputil.Diff) {
+	c.recorder.Event(app, corev1.EventTypeNormal, "ApplicationConditionChanged", diff.String())
 }
 
 /*
@@ -495,11 +490,11 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		apputil.UpdateChartVersionResolvedAnnotation(app, contender.Spec.Environment.Chart.Version)
 		apputil.SetHighestObservedGeneration(app, generation)
 		abortingCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeAborting, corev1.ConditionTrue, "", fmt.Sprintf("abort in progress, returning state to release %q", contender.Name))
-		if diff := apputil.SetApplicationCondition(&app.Status, *abortingCond); !diff.IsEmpty() {
-			c.reportApplicationConditionChange(app, diff)
-		}
+		diff := new(apputil.MultiDiff)
+		diff.Append(apputil.SetApplicationCondition(&app.Status, *abortingCond))
 		rollingOutCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeRollingOut, corev1.ConditionTrue, "", "")
-		if diff := apputil.SetApplicationCondition(&app.Status, *rollingOutCond); !diff.IsEmpty() {
+		diff.Append(apputil.SetApplicationCondition(&app.Status, *rollingOutCond))
+		if !diff.IsEmpty() {
 			c.reportApplicationConditionChange(app, diff)
 		}
 

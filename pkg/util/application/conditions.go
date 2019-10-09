@@ -2,7 +2,6 @@ package application
 
 import (
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 
@@ -12,81 +11,95 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
-type Diff struct {
-	Original interface{}
-	Updated  interface{}
+type Diff interface {
+	IsEmpty() bool
+	String() string
 }
 
-func (d *Diff) IsEmpty() bool {
-	return d == nil || reflect.DeepEqual(d.Original, d.Updated)
-}
+type MultiDiff []Diff
 
-func (d *Diff) String() string {
-	if d.IsEmpty() {
-		return ""
-	}
-	return fmt.Sprintf("[%+v] -> [%+v]", d.Original, d.Updated)
-}
+var _ Diff = (MultiDiff)(nil)
 
-func ComputeConditionDiff(cond1, cond2 *shipper.ApplicationCondition) *ApplicationConditionDiff {
-	var typeDiff, statusDiff, reasonDiff, messageDiff Diff
-	if cond1 != nil {
-		typeDiff.Original = cond1.Type
-		statusDiff.Original = cond1.Status
-		reasonDiff.Original = cond1.Reason
-		messageDiff.Original = cond1.Message
+func (md MultiDiff) IsEmpty() bool {
+	if len(md) == 0 {
+		return true
 	}
-	if cond2 != nil {
-		typeDiff.Updated = cond2.Type
-		statusDiff.Updated = cond2.Status
-		reasonDiff.Updated = cond2.Reason
-		messageDiff.Updated = cond2.Message
-	}
-	diff := &ApplicationConditionDiff{}
-	if !typeDiff.IsEmpty() {
-		diff.TypeDiff = &typeDiff
-	}
-	if !statusDiff.IsEmpty() {
-		diff.StatusDiff = &statusDiff
-	}
-	if !reasonDiff.IsEmpty() {
-		diff.ReasonDiff = &reasonDiff
-	}
-	if !messageDiff.IsEmpty() {
-		diff.MessageDiff = &messageDiff
-	}
-	if diff.IsEmpty() {
-		return nil
-	}
-	return diff
-}
-
-type ApplicationConditionDiff struct {
-	TypeDiff    *Diff
-	StatusDiff  *Diff
-	ReasonDiff  *Diff
-	MessageDiff *Diff
-}
-
-func (d *ApplicationConditionDiff) IsEmpty() bool {
-	return d == nil ||
-		(d.TypeDiff.IsEmpty() &&
-			d.StatusDiff.IsEmpty() &&
-			d.ReasonDiff.IsEmpty() &&
-			d.MessageDiff.IsEmpty())
-}
-
-func (d *ApplicationConditionDiff) String() string {
-	if d.IsEmpty() {
-		return ""
-	}
-	b := make([]string, 0, 4)
-	for _, d := range []*Diff{d.TypeDiff, d.StatusDiff, d.ReasonDiff, d.MessageDiff} {
+	for _, d := range md {
 		if !d.IsEmpty() {
-			b = append(b, d.String())
+			return false
+		}
+	}
+	return true
+}
+
+func (md MultiDiff) String() string {
+	if md.IsEmpty() {
+		return ""
+	}
+	b := make([]string, 0, len(md))
+	for _, d := range md {
+		if s := d.String(); s != "" {
+			b = append(b, s)
 		}
 	}
 	return strings.Join(b, ", ")
+}
+
+func (md *MultiDiff) Append(d Diff) {
+	*md = append(*md, d)
+}
+
+type ConditionDiff struct {
+	cond1, cond2 *shipper.ApplicationCondition
+}
+
+var _ Diff = (*ConditionDiff)(nil)
+
+func NewConditionDiff(cond1, cond2 *shipper.ApplicationCondition) *ConditionDiff {
+	return &ConditionDiff{cond1: cond1, cond2: cond2}
+}
+
+func (d *ConditionDiff) IsEmpty() bool {
+	if d == nil || (d.cond1 == nil && d.cond2 == nil) {
+		return true
+	}
+	if d.cond1 != nil && d.cond2 != nil {
+		return d.cond1.Type == d.cond2.Type &&
+			d.cond1.Message == d.cond2.Message &&
+			d.cond1.Reason == d.cond2.Reason &&
+			d.cond1.Status == d.cond2.Status
+	}
+	return false
+}
+
+func condToString(cond *shipper.ApplicationCondition) string {
+	if cond == nil {
+		return ""
+	}
+	b := strings.Builder{}
+	b.WriteString(fmt.Sprintf("%v", cond.Type))
+	b.WriteString(fmt.Sprintf(" %v", cond.Status))
+	if cond.Reason != "" {
+		b.WriteString(fmt.Sprintf(" %q", cond.Reason))
+	}
+	if cond.Message != "" {
+		b.WriteString(fmt.Sprintf(" %q", cond.Message))
+	}
+	return b.String()
+}
+
+func (d *ConditionDiff) String() string {
+	if d.IsEmpty() {
+		return ""
+	}
+	var cond1str, cond2str string
+	if d.cond1 != nil {
+		cond1str = condToString(d.cond1)
+	}
+	if d.cond2 != nil {
+		cond2str = condToString(d.cond2)
+	}
+	return fmt.Sprintf("[%s] -> [%s]", cond1str, cond2str)
 }
 
 var ConditionsShouldDiscardTimestamps = false
@@ -105,10 +118,10 @@ func NewApplicationCondition(condType shipper.ApplicationConditionType, status c
 	}
 }
 
-func SetApplicationCondition(status *shipper.ApplicationStatus, condition shipper.ApplicationCondition) *ApplicationConditionDiff {
+func SetApplicationCondition(status *shipper.ApplicationStatus, condition shipper.ApplicationCondition) *ConditionDiff {
 	currentCond := GetApplicationCondition(*status, condition.Type)
 
-	diff := ComputeConditionDiff(currentCond, &condition)
+	diff := NewConditionDiff(currentCond, &condition)
 	if diff.IsEmpty() {
 		return nil
 	}
