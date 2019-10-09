@@ -9,51 +9,14 @@ import (
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
 )
-
-type Diff interface {
-	IsEmpty() bool
-	String() string
-}
-
-type MultiDiff []Diff
-
-var _ Diff = (MultiDiff)(nil)
-
-func (md MultiDiff) IsEmpty() bool {
-	if len(md) == 0 {
-		return true
-	}
-	for _, d := range md {
-		if !d.IsEmpty() {
-			return false
-		}
-	}
-	return true
-}
-
-func (md MultiDiff) String() string {
-	if md.IsEmpty() {
-		return ""
-	}
-	b := make([]string, 0, len(md))
-	for _, d := range md {
-		if s := d.String(); s != "" {
-			b = append(b, s)
-		}
-	}
-	return strings.Join(b, ", ")
-}
-
-func (md *MultiDiff) Append(d Diff) {
-	*md = append(*md, d)
-}
 
 type ConditionDiff struct {
 	cond1, cond2 *shipper.ApplicationCondition
 }
 
-var _ Diff = (*ConditionDiff)(nil)
+var _ diffutil.Diff = (*ConditionDiff)(nil)
 
 func NewConditionDiff(cond1, cond2 *shipper.ApplicationCondition) *ConditionDiff {
 	return &ConditionDiff{cond1: cond1, cond2: cond2}
@@ -118,7 +81,7 @@ func NewApplicationCondition(condType shipper.ApplicationConditionType, status c
 	}
 }
 
-func SetApplicationCondition(status *shipper.ApplicationStatus, condition shipper.ApplicationCondition) *ConditionDiff {
+func SetApplicationCondition(status *shipper.ApplicationStatus, condition shipper.ApplicationCondition) diffutil.Diff {
 	currentCond := GetApplicationCondition(*status, condition.Type)
 
 	diff := NewConditionDiff(currentCond, &condition)
