@@ -244,7 +244,14 @@ func (c *Controller) enqueueInstallationTargetFromObject(obj interface{}) {
 	// Also not using ObjectReference here because it would go over cluster
 	// boundaries. While technically it's probably ok, I feel like it'd be
 	// abusing the feature.
-	rel := kubeobj.GetLabels()[shipper.ReleaseLabel]
+	rel, ok := kubeobj.GetLabels()[shipper.ReleaseLabel]
+	if !ok {
+		runtime.HandleError(fmt.Errorf(
+			"object %q does not have label %s. FilterFunc not working?",
+			shippercontroller.MetaKey(kubeobj), shipper.ReleaseLabel))
+		return
+	}
+
 	it, err := c.getInstallationTargetForReleaseAndNamespace(rel, kubeobj.GetNamespace())
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("cannot get installation target for release '%s/%s': %#v", rel, kubeobj.GetNamespace(), err))

@@ -405,7 +405,14 @@ func (c *Controller) enqueueTrafficTargetFromPod(obj interface{}) {
 	// Also not using ObjectReference here because it would go over cluster
 	// boundaries. While technically it's probably ok, I feel like it'd be
 	// abusing the feature.
-	rel := pod.GetLabels()[shipper.ReleaseLabel]
+	rel, ok := pod.GetLabels()[shipper.ReleaseLabel]
+	if !ok {
+		runtime.HandleError(fmt.Errorf(
+			"object %q does not have label %s. FilterFunc not working?",
+			shippercontroller.MetaKey(pod), shipper.ReleaseLabel))
+		return
+	}
+
 	tt, err := c.getTrafficTargetForReleaseAndNamespace(rel, pod.GetNamespace())
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("cannot get traffic target for release '%s/%s': %#v", rel, pod.GetNamespace(), err))
