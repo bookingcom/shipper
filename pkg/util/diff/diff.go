@@ -16,7 +16,9 @@ func (md MultiDiff) IsEmpty() bool {
 		return true
 	}
 	for _, d := range md {
-		if !d.IsEmpty() {
+		// Explicit nil-check is mandatory as it's an interface type
+		// and a nil-receiver only works for struct pointers.
+		if d != nil && !d.IsEmpty() {
 			return false
 		}
 	}
@@ -29,6 +31,11 @@ func (md MultiDiff) String() string {
 	}
 	b := make([]string, 0, len(md))
 	for _, d := range md {
+		// Explicit nil-check is mandatory as it's an interface type
+		// and a nil-receiver only works for struct pointers.
+		if d == nil || d.IsEmpty() {
+			continue
+		}
 		if s := d.String(); s != "" {
 			b = append(b, s)
 		}

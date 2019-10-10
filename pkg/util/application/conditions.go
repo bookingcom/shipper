@@ -35,6 +35,20 @@ func (d *ConditionDiff) IsEmpty() bool {
 	return false
 }
 
+func (d *ConditionDiff) String() string {
+	if d.IsEmpty() {
+		return ""
+	}
+	var cond1str, cond2str string
+	if d.cond1 != nil {
+		cond1str = condToString(d.cond1)
+	}
+	if d.cond2 != nil {
+		cond2str = condToString(d.cond2)
+	}
+	return fmt.Sprintf("[%s] -> [%s]", cond1str, cond2str)
+}
+
 func condToString(cond *shipper.ApplicationCondition) string {
 	if cond == nil {
 		return ""
@@ -49,20 +63,6 @@ func condToString(cond *shipper.ApplicationCondition) string {
 		b.WriteString(fmt.Sprintf(" %q", cond.Message))
 	}
 	return b.String()
-}
-
-func (d *ConditionDiff) String() string {
-	if d.IsEmpty() {
-		return ""
-	}
-	var cond1str, cond2str string
-	if d.cond1 != nil {
-		cond1str = condToString(d.cond1)
-	}
-	if d.cond2 != nil {
-		cond2str = condToString(d.cond2)
-	}
-	return fmt.Sprintf("[%s] -> [%s]", cond1str, cond2str)
 }
 
 var ConditionsShouldDiscardTimestamps = false
