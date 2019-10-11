@@ -133,7 +133,7 @@ func TestCreateFirstRelease(t *testing.T) {
 	f.expectApplicationUpdate(expectedApp)
 
 	f.expectedEvents = []string{
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut True "Rolling out initial release \"%s\""]`, expectedRelease.Name),
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut True Rolling out initial release "%s"]`, expectedRelease.Name),
 		"Normal ApplicationConditionChanged [] -> [Blocked False]",
 	}
 
@@ -195,7 +195,7 @@ func TestCreateFirstReleaseWithChartVersionResolve(t *testing.T) {
 	f.expectApplicationUpdate(expectedApp)
 
 	f.expectedEvents = []string{
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut True "Rolling out initial release \"%s\""]`, expectedRelease.Name),
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut True Rolling out initial release "%s"]`, expectedRelease.Name),
 		"Normal ApplicationConditionChanged [] -> [Blocked False]",
 	}
 
@@ -262,7 +262,7 @@ func TestCreateFirstReleaseWithRolloutBlockOverride(t *testing.T) {
 
 	f.expectedEvents = []string{
 		fmt.Sprintf("Normal RolloutBlockOverridden %s/%s", rolloutblock.Namespace, rolloutblock.Name),
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut True "Rolling out initial release \"%s\""]`, expectedRelease.Name),
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut True Rolling out initial release "%s"]`, expectedRelease.Name),
 		"Normal ApplicationConditionChanged [] -> [Blocked False]",
 	}
 
@@ -311,8 +311,8 @@ func TestCreateFirstReleaseWithNonExistingRolloutBlockOverride(t *testing.T) {
 	f.expectApplicationUpdate(expectedApp)
 
 	f.expectedEvents = []string{
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut Unknown "no contender release found for application \"%s\""]`, app.Name),
-		`Normal ApplicationConditionChanged [] -> [Blocked True "RolloutsBlocked" "rollout block with name test-namespace/test-non-existing-rolloutblock does not exist"]`,
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut Unknown no contender release found for application "%s"]`, app.Name),
+		`Normal ApplicationConditionChanged [] -> [Blocked True RolloutsBlocked rollout block with name test-namespace/test-non-existing-rolloutblock does not exist]`,
 	}
 
 	f.run()
@@ -362,8 +362,8 @@ func TestBlockApplication(t *testing.T) {
 
 	f.expectedEvents = []string{
 		fmt.Sprintf("Warning RolloutBlocked %s/%s", rolloutblock.Namespace, rolloutblock.Name),
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut Unknown "no contender release found for application \"%s\""]`, app.Name),
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Blocked True "RolloutsBlocked" "rollout block(s) with name(s) %s/%s exist"]`, rolloutblock.Namespace, rolloutblock.Name),
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut Unknown no contender release found for application "%s"]`, app.Name),
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Blocked True RolloutsBlocked rollout block(s) with name(s) %s/%s exist]`, rolloutblock.Namespace, rolloutblock.Name),
 	}
 
 	f.run()
@@ -440,7 +440,7 @@ func TestStatusStableState(t *testing.T) {
 	f.expectApplicationUpdate(expectedApp)
 
 	f.expectedEvents = []string{
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut False "Release \"%s\" is active"]`, releaseB.Name),
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut False Release "%s" is active]`, releaseB.Name),
 		"Normal ApplicationConditionChanged [] -> [Blocked False]",
 	}
 
@@ -523,7 +523,7 @@ func TestRevisionHistoryLimit(t *testing.T) {
 	f.expectApplicationUpdate(expectedApp)
 
 	f.expectedEvents = []string{
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut False "Release \"%s\" is active"]`, releaseBaz.Name),
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut False Release "%s" is active]`, releaseBaz.Name),
 		"Normal ApplicationConditionChanged [] -> [Blocked False]",
 	}
 
@@ -613,7 +613,7 @@ func TestCreateThirdRelease(t *testing.T) {
 	f.expectApplicationUpdate(expectedApp)
 
 	f.expectedEvents = []string{
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut True "Transitioning from \"%s\" to \"%s\""]`, incumbentRelName, expectedContenderRelName),
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut True Transitioning from "%s" to "%s"]`, incumbentRelName, expectedContenderRelName),
 		"Normal ApplicationConditionChanged [] -> [Blocked False]",
 	}
 
@@ -695,7 +695,7 @@ func TestCreateSecondRelease(t *testing.T) {
 	f.expectApplicationUpdate(expectedApp)
 
 	f.expectedEvents = []string{
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut True "Transitioning from \"%s\" to \"%s\""]`, incumbentRelName, contenderRelName),
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut True Transitioning from "%s" to "%s"]`, incumbentRelName, contenderRelName),
 		"Normal ApplicationConditionChanged [] -> [Blocked False]",
 	}
 
@@ -799,7 +799,7 @@ func TestCreateSecondReleaseWithUpdatedChartVersionResolve(t *testing.T) {
 	f.expectApplicationUpdate(expectedApp)
 
 	f.expectedEvents = []string{
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut True "Transitioning from \"%s\" to \"%s\""]`, incumbentRelName, contenderRelName),
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut True Transitioning from "%s" to "%s"]`, incumbentRelName, contenderRelName),
 		"Normal ApplicationConditionChanged [] -> [Blocked False]",
 	}
 
@@ -870,7 +870,7 @@ func TestAbort(t *testing.T) {
 	f.expectApplicationUpdate(expectedApp)
 
 	f.expectedEvents = []string{
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Blocked False], [] -> [Aborting True "abort in progress, returning state to release \"%s\""], [] -> [RollingOut True]`, release.Name),
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Blocked False], [] -> [Aborting True abort in progress, returning state to release "%s"], [] -> [RollingOut True]`, release.Name),
 	}
 
 	f.run()
@@ -942,7 +942,7 @@ func TestAbortWithChartVerisonResolve(t *testing.T) {
 	f.expectApplicationUpdate(expectedApp)
 
 	f.expectedEvents = []string{
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Blocked False], [] -> [Aborting True "abort in progress, returning state to release \"%s\""], [] -> [RollingOut True]`, release.Name),
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Blocked False], [] -> [Aborting True abort in progress, returning state to release "%s"], [] -> [RollingOut True]`, release.Name),
 	}
 
 	f.run()
@@ -1012,7 +1012,7 @@ func TestStateRollingOut(t *testing.T) {
 	f.expectApplicationUpdate(appRollingOut)
 
 	f.expectedEvents = []string{
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut True "Transitioning from \"%s\" to \"%s\""]`, incumbentName, contenderName),
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut True Transitioning from "%s" to "%s"]`, incumbentName, contenderName),
 		"Normal ApplicationConditionChanged [] -> [Blocked False]",
 	}
 
@@ -1076,7 +1076,7 @@ func TestDeletingAbortedReleases(t *testing.T) {
 	f.expectApplicationUpdate(expectedApp)
 
 	f.expectedEvents = []string{
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut False "Release \"%s\" is active"]`, releaseBar.Name),
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut False Release "%s" is active]`, releaseBar.Name),
 		"Normal ApplicationConditionChanged [] -> [Blocked False]",
 	}
 
@@ -1115,7 +1115,7 @@ func TestHandleChartNotFound(t *testing.T) {
 	f.expectApplicationUpdate(expectedApp)
 
 	f.expectedEvents = []string{
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [RollingOut False "ChartVersionResolutionFailed" "failed to resolve chart version [name: \"%s\", version: \"%s\", repo: \"\"]: no chart version found"]`, app.Spec.Template.Chart.Name, app.Spec.Template.Chart.Version),
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [RollingOut False ChartVersionResolutionFailed failed to resolve chart version [name: "%s", version: "%s", repo: ""]: no chart version found]`, app.Spec.Template.Chart.Name, app.Spec.Template.Chart.Version),
 		fmt.Sprintf(`Warning FailedApplication failed to resolve chart version [name: "%s", version: "%s", repo: ""]: no chart version found`, app.Spec.Template.Chart.Name, app.Spec.Template.Chart.Version),
 	}
 

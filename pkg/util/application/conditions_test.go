@@ -8,6 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	condutil "github.com/bookingcom/shipper/pkg/util/condition"
 )
 
 func TestConditionDiffIsEmpty(t *testing.T) {
@@ -62,7 +63,7 @@ func TestConditionDiffIsEmpty(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
-			d := NewConditionDiff(tt.Cond1, tt.Cond2)
+			d := condutil.NewConditionDiff(tt.Cond1, tt.Cond2)
 			isEmpty := d.IsEmpty()
 			if isEmpty != tt.Expected {
 				t.Errorf("Unexpected result returned by IsEmpty: (diff: %#v): got: %t, want: %t", d, isEmpty, tt.Expected)
