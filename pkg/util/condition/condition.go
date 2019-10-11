@@ -88,7 +88,7 @@ func condEqual(c1, c2 Condition) bool {
 	case *shipper.ClusterTrafficCondition:
 		if c2t, ok := c2.(*shipper.ClusterTrafficCondition); ok {
 			return c1t.Type == c2t.Type &&
-				c2t.Status == c2t.Status &&
+				c1t.Status == c2t.Status &&
 				c1t.Reason == c2t.Reason &&
 				c1t.Message == c2t.Message
 		}
