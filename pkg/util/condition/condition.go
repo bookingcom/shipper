@@ -25,10 +25,10 @@ func NewConditionDiff(c1, c2 Condition) *ConditionDiff {
 }
 
 func (cd *ConditionDiff) IsEmpty() bool {
-	if cd == nil || (reflect.ValueOf(cd.c1).IsNil() && reflect.ValueOf(cd.c2).IsNil()) {
+	if cd == nil || (condIsNil(cd.c1) && condIsNil(cd.c2)) {
 		return true
 	}
-	if reflect.ValueOf(cd.c1).IsNil() || reflect.ValueOf(cd.c2).IsNil() {
+	if condIsNil(cd.c1) || condIsNil(cd.c2) {
 		return false
 	}
 	return condEqual(cd.c1, cd.c2)
@@ -49,10 +49,10 @@ func (cd *ConditionDiff) String() string {
 }
 
 func condEqual(c1, c2 Condition) bool {
-	if reflect.ValueOf(c1).IsNil() && reflect.ValueOf(c2).IsNil() {
+	if condIsNil(c1) && condIsNil(c2) {
 		return true
 	}
-	if reflect.ValueOf(c1).IsNil() || reflect.ValueOf(c2).IsNil() {
+	if condIsNil(c1) || condIsNil(c2) {
 		return false
 	}
 	// Clumsy :-(
@@ -105,7 +105,7 @@ func condEqual(c1, c2 Condition) bool {
 }
 
 func condStr(c Condition) string {
-	if reflect.ValueOf(c).IsNil() {
+	if condIsNil(c) {
 		return ""
 	}
 	var chunks []string
@@ -165,4 +165,8 @@ func condStr(c Condition) string {
 		}
 	}
 	return b.String()
+}
+
+func condIsNil(c Condition) bool {
+	return c == nil || reflect.ValueOf(c).IsNil()
 }
