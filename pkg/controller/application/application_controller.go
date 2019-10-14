@@ -298,7 +298,7 @@ func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels 
 	// Required by GetContender() and GetIncumbent() below.
 	rels = releaseutil.SortByGenerationDescending(rels)
 
-	diff := new(diffutil.MultiDiff)
+	diff := diffutil.NewMultiDiff()
 	defer func() {
 		if !diff.IsEmpty() {
 			c.reportApplicationConditionChange(app, diff)
@@ -371,7 +371,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 		return err
 	}
 
-	diff := new(diffutil.MultiDiff)
+	diff := diffutil.NewMultiDiff()
 	defer func() {
 		if !diff.IsEmpty() {
 			c.reportApplicationConditionChange(app, diff)

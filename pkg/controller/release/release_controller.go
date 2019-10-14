@@ -321,7 +321,7 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 		c.recorder,
 	)
 
-	diff := new(diffutil.MultiDiff)
+	diff := diffutil.NewMultiDiff()
 	defer func() {
 		if !diff.IsEmpty() {
 			c.reportReleaseConditionChange(rel, diff)

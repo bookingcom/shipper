@@ -11,6 +11,10 @@ type MultiDiff []Diff
 
 var _ Diff = (MultiDiff)(nil)
 
+func NewMultiDiff() *MultiDiff {
+	return new(MultiDiff)
+}
+
 func (md MultiDiff) IsEmpty() bool {
 	if len(md) == 0 {
 		return true
