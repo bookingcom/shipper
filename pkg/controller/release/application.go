@@ -111,11 +111,14 @@ func (c *Controller) syncOneApplicationHandler(key string) error {
 			conditions.StrategyExecutionFailed,
 			fmt.Sprintf("failed to execute application strategy: %q", err),
 		)
-		apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
+		diff := apputil.SetApplicationCondition(&app.Status, *releaseSyncedCond)
 		_, err = c.clientset.ShipperV1alpha1().Applications(app.Namespace).Update(app)
 		if err != nil {
 			return shippererrors.NewKubeclientUpdateError(app, err).
 				WithShipperKind("Application")
+		}
+		if !diff.IsEmpty() {
+			c.recorder.Eventf(app, corev1.EventTypeNormal, "ApplicationConditionChanged", diff.String())
 		}
 		return err
 	}

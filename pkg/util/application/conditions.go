@@ -1,17 +1,52 @@
 package application
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 
 	coreV1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	condutil "github.com/bookingcom/shipper/pkg/util/condition"
 	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
 )
 
 var ConditionsShouldDiscardTimestamps = false
+
+type ApplicationConditionDiff struct {
+	c1, c2 *shipper.ApplicationCondition
+}
+
+var _ diffutil.Diff = (*ApplicationConditionDiff)(nil)
+
+func NewApplicationConditionDiff(c1, c2 *shipper.ApplicationCondition) *ApplicationConditionDiff {
+	return &ApplicationConditionDiff{
+		c1: c1,
+		c2: c2,
+	}
+}
+
+func (d *ApplicationConditionDiff) IsEmpty() bool {
+	if d.c1 == nil && d.c2 == nil {
+		return true
+	}
+	if d.c1 == nil || d.c2 == nil {
+		return false
+	}
+	return d.c1.Type == d.c2.Type &&
+		d.c1.Status == d.c2.Status &&
+		d.c1.Reason == d.c2.Reason &&
+		d.c1.Message == d.c2.Message
+}
+
+func (d *ApplicationConditionDiff) String() string {
+	if d.IsEmpty() {
+		return ""
+	}
+	c1str, c2str := condStr(d.c1), condStr(d.c2)
+	return fmt.Sprintf("[%s] -> [%s]", c1str, c2str)
+}
 
 func NewApplicationCondition(condType shipper.ApplicationConditionType, status coreV1.ConditionStatus, reason, message string) *shipper.ApplicationCondition {
 	now := metaV1.Now()
@@ -30,7 +65,7 @@ func NewApplicationCondition(condType shipper.ApplicationConditionType, status c
 func SetApplicationCondition(status *shipper.ApplicationStatus, condition shipper.ApplicationCondition) diffutil.Diff {
 	currentCond := GetApplicationCondition(*status, condition.Type)
 
-	diff := condutil.NewConditionDiff(currentCond, &condition)
+	diff := NewApplicationConditionDiff(currentCond, &condition)
 	if diff.IsEmpty() {
 		return nil
 	}
@@ -65,4 +100,26 @@ func filterOutCondition(conditions []shipper.ApplicationCondition, condType ship
 		newConditions = append(newConditions, c)
 	}
 	return newConditions
+}
+
+func condStr(c *shipper.ApplicationCondition) string {
+	if c == nil {
+		return ""
+	}
+	chunks := []string{
+		fmt.Sprintf("%v", c.Type),
+		fmt.Sprintf("%v", c.Status),
+		c.Reason,
+		c.Message,
+	}
+	b := strings.Builder{}
+	for _, ch := range chunks {
+		if len(ch) > 0 {
+			if b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			b.WriteString(ch)
+		}
+	}
+	return b.String()
 }

@@ -331,7 +331,13 @@ func (s *Executor) Execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 
 		if targetStep == lastStepIndex {
 			condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", "")
-			releaseutil.SetReleaseCondition(contenderStatus, *condition)
+			if diff := releaseutil.SetReleaseCondition(contenderStatus, *condition); !diff.IsEmpty() {
+				s.recorder.Eventf(
+					s.contender.release,
+					corev1.EventTypeNormal,
+					"ReleaseConditionChanged",
+					diff.String())
+			}
 		}
 
 		releasePatches = append(releasePatches, &ReleaseUpdateResult{

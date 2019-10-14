@@ -22,6 +22,7 @@ import (
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	rolloutblock "github.com/bookingcom/shipper/pkg/util/rolloutblock"
 	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
@@ -316,6 +317,13 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 		c.recorder,
 	)
 
+	diff := new(diffutil.MultiDiff)
+	defer func() {
+		if !diff.IsEmpty() {
+			c.reportReleaseConditionChange(rel, diff)
+		}
+	}()
+
 	initialRel := rel.DeepCopy()
 
 	rolloutBlocked, events, err := rolloutblock.BlocksRollout(c.rolloutBlockLister, rel)
@@ -334,7 +342,7 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 			shipper.RolloutBlockReason,
 			msg,
 		)
-		releaseutil.SetReleaseCondition(&rel.Status, *condition)
+		diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
 		return rel, err
 	}
@@ -345,7 +353,7 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 		"",
 		"",
 	)
-	releaseutil.SetReleaseCondition(&rel.Status, *condition)
+	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
 	rel, err = scheduler.ScheduleRelease(rel.DeepCopy())
 	if err != nil {
@@ -356,7 +364,7 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 			reason,
 			err.Error(),
 		)
-		releaseutil.SetReleaseCondition(&initialRel.Status, *condition)
+		diff.Append(releaseutil.SetReleaseCondition(&initialRel.Status, *condition))
 
 		return initialRel, err
 	}
@@ -488,6 +496,10 @@ func (c *Controller) enqueueReleaseFromAssociatedObject(obj interface{}) {
 	}
 
 	c.releaseWorkqueue.Add(releaseKey)
+}
+
+func (c *Controller) reportReleaseConditionChange(rel *shipper.Release, diff diffutil.Diff) {
+	c.recorder.Event(rel, corev1.EventTypeNormal, "ReleaseConditionChanged", diff.String())
 }
 
 func reasonForReleaseCondition(err error) string {
