@@ -26,10 +26,10 @@ import (
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
-	"github.com/bookingcom/shipper/pkg/conditions"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	"github.com/bookingcom/shipper/pkg/util/filters"
+	installationutil "github.com/bookingcom/shipper/pkg/util/installation"
 	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
 )
 
@@ -37,6 +37,13 @@ type ChartFetcher func(i *Installer, name, version string) (*chart.Chart, error)
 
 const (
 	AgentName = "installation-controller"
+)
+
+const (
+	ChartError               = "ChartError"
+	ServerError              = "ServerError"
+	TargetClusterClientError = "TargetClusterClientError"
+	UnknownError             = "UnknownError"
 )
 
 // Controller is a Kubernetes controller that processes InstallationTarget
@@ -314,14 +321,14 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 			clusterErrors.Append(err)
 			status.Status = shipper.InstallationStatusFailed
 			status.Message = err.Error()
-			status.Conditions = conditions.SetInstallationCondition(
+			status.Conditions = installationutil.SetInstallationCondition(
 				status.Conditions,
 				shipper.ClusterConditionTypeOperational,
 				corev1.ConditionFalse,
 				reasonForOperationalCondition(err),
 				err.Error())
 
-			status.Conditions = conditions.SetInstallationCondition(
+			status.Conditions = installationutil.SetInstallationCondition(
 				status.Conditions,
 				shipper.ClusterConditionTypeReady,
 				corev1.ConditionUnknown,
@@ -338,25 +345,25 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 			clusterErrors.Append(err)
 			status.Status = shipper.InstallationStatusFailed
 			status.Message = err.Error()
-			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeOperational, corev1.ConditionFalse, reasonForOperationalCondition(err), err.Error())
-			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeReady, corev1.ConditionUnknown, reasonForReadyCondition(err), err.Error())
+			status.Conditions = installationutil.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeOperational, corev1.ConditionFalse, reasonForOperationalCondition(err), err.Error())
+			status.Conditions = installationutil.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeReady, corev1.ConditionUnknown, reasonForReadyCondition(err), err.Error())
 			continue
 		}
 
 		// At this point, we got a hold in a connection to the target cluster,
 		// so we assume it's operational until some other signal saying
 		// otherwise arrives.
-		status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeOperational, corev1.ConditionTrue, "", "")
+		status.Conditions = installationutil.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeOperational, corev1.ConditionTrue, "", "")
 
 		if err = installer.install(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
 			clusterErrors.Append(err)
 			status.Status = shipper.InstallationStatusFailed
 			status.Message = err.Error()
-			status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeReady, corev1.ConditionFalse, reasonForReadyCondition(err), err.Error())
+			status.Conditions = installationutil.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeReady, corev1.ConditionFalse, reasonForReadyCondition(err), err.Error())
 			continue
 		}
 
-		status.Conditions = conditions.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeReady, corev1.ConditionTrue, "", "")
+		status.Conditions = installationutil.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeReady, corev1.ConditionTrue, "", "")
 		status.Status = shipper.InstallationStatusInstalled
 	}
 
@@ -436,23 +443,23 @@ func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interfa
 
 func reasonForOperationalCondition(err error) string {
 	if shippererrors.IsClusterClientStoreError(err) {
-		return conditions.TargetClusterClientError
+		return TargetClusterClientError
 	}
-	return conditions.ServerError
+	return ServerError
 }
 
 func reasonForReadyCondition(err error) string {
 	if shippererrors.IsKubeclientError(err) {
-		return conditions.ServerError
+		return ServerError
 	}
 
 	if shippererrors.IsDecodeManifestError(err) || shippererrors.IsConvertUnstructuredError(err) || shippererrors.IsInvalidChartError(err) {
-		return conditions.ChartError
+		return ChartError
 	}
 
 	if shippererrors.IsClusterClientStoreError(err) {
-		return conditions.TargetClusterClientError
+		return TargetClusterClientError
 	}
 
-	return conditions.UnknownError
+	return UnknownError
 }

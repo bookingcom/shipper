@@ -21,15 +21,24 @@ import (
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
-	"github.com/bookingcom/shipper/pkg/conditions"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	"github.com/bookingcom/shipper/pkg/util/filters"
+	conditions "github.com/bookingcom/shipper/pkg/util/traffic"
+	trafficutil "github.com/bookingcom/shipper/pkg/util/traffic"
 	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
 )
 
 const (
 	AgentName = "traffic-controller"
+)
+
+const (
+	ServerError    = "ServerError"
+	MissingService = "MissingService"
+	InternalError  = "InternalError"
+	UnknownError   = "UnknownError"
+	PodsNotReady   = "PodsNotReady"
 )
 
 // Controller is the controller implementation for TrafficTarget resources.
@@ -235,17 +244,17 @@ func (c *Controller) syncHandler(key string) error {
 
 		clientset, err = c.clusterClientStore.GetClient(cluster, AgentName)
 		if err == nil {
-			clusterStatus.Conditions = conditions.SetTrafficCondition(
+			clusterStatus.Conditions = trafficutil.SetTrafficCondition(
 				clusterStatus.Conditions,
 				shipper.ClusterConditionTypeOperational,
 				corev1.ConditionTrue,
 				"", "")
 		} else {
-			clusterStatus.Conditions = conditions.SetTrafficCondition(
+			clusterStatus.Conditions = trafficutil.SetTrafficCondition(
 				clusterStatus.Conditions,
 				shipper.ClusterConditionTypeOperational,
 				corev1.ConditionFalse,
-				conditions.ServerError,
+				ServerError,
 				err.Error())
 
 			clusterStatus.Status = err.Error()
@@ -255,18 +264,18 @@ func (c *Controller) syncHandler(key string) error {
 
 		informerFactory, err = c.clusterClientStore.GetInformerFactory(cluster)
 		if err == nil {
-			clusterStatus.Conditions = conditions.SetTrafficCondition(
+			clusterStatus.Conditions = trafficutil.SetTrafficCondition(
 				clusterStatus.Conditions,
 				shipper.ClusterConditionTypeOperational,
 				corev1.ConditionTrue,
 				"", "")
 
 		} else {
-			clusterStatus.Conditions = conditions.SetTrafficCondition(
+			clusterStatus.Conditions = trafficutil.SetTrafficCondition(
 				clusterStatus.Conditions,
 				shipper.ClusterConditionTypeOperational,
 				corev1.ConditionFalse,
-				conditions.ServerError,
+				ServerError,
 				err.Error())
 
 			clusterStatus.Status = err.Error()
@@ -283,28 +292,28 @@ func (c *Controller) syncHandler(key string) error {
 					clusterStatus.Conditions,
 					shipper.ClusterConditionTypeReady,
 					corev1.ConditionFalse,
-					conditions.MissingService,
+					MissingService,
 					err.Error())
 			case shippererrors.KubeclientError:
-				clusterStatus.Conditions = conditions.SetTrafficCondition(
+				clusterStatus.Conditions = trafficutil.SetTrafficCondition(
 					clusterStatus.Conditions,
 					shipper.ClusterConditionTypeReady,
 					corev1.ConditionFalse,
-					conditions.ServerError,
+					ServerError,
 					err.Error())
 			case shippererrors.TargetClusterMathError:
-				clusterStatus.Conditions = conditions.SetTrafficCondition(
+				clusterStatus.Conditions = trafficutil.SetTrafficCondition(
 					clusterStatus.Conditions,
 					shipper.ClusterConditionTypeReady,
 					corev1.ConditionFalse,
-					conditions.InternalError,
+					InternalError,
 					err.Error())
 			default:
-				clusterStatus.Conditions = conditions.SetTrafficCondition(
+				clusterStatus.Conditions = trafficutil.SetTrafficCondition(
 					clusterStatus.Conditions,
 					shipper.ClusterConditionTypeReady,
 					corev1.ConditionFalse,
-					conditions.UnknownError,
+					UnknownError,
 					err.Error())
 			}
 

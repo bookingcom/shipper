@@ -1,4 +1,4 @@
-package conditions
+package installation
 
 import (
 	"sort"

@@ -17,10 +17,11 @@ import (
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	installationutil "github.com/bookingcom/shipper/pkg/util/installation"
 )
 
 func init() {
-	conditions.InstallationConditionsShouldDiscardTimestamps = true
+	installationutil.InstallationConditionsShouldDiscardTimestamps = true
 }
 
 const (
