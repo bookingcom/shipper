@@ -929,6 +929,7 @@ func (f *fixture) expectAssociatedObjectsCreated(release *shipper.Release, clust
 			"Normal ReleaseScheduled Created CapacityTarget \"%s\"",
 			relKey,
 		),
+		"Normal ReleaseConditionChanged [] -> [Scheduled True]",
 	)
 }
 
@@ -1203,6 +1204,7 @@ func (f *fixture) expectReleaseReleased(rel *shipper.Release, targetStep int32) 
 	f.actions = append(f.actions, action)
 
 	f.expectedEvents = []string{
+		"Normal ReleaseConditionChanged [] -> [Complete True]",
 		fmt.Sprintf("Normal StrategyApplied step [%d] finished", targetStep),
 		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForCapacity" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
 		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForCommand" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
@@ -1826,9 +1828,10 @@ func TestContenderCapacityShouldNotIncreaseWithRolloutBlock(t *testing.T) {
 		expectedContender)
 	f.actions = append(f.actions, action)
 
-	rolloutBlockExistsEvent := fmt.Sprintf("%s RolloutBlocked %s", corev1.EventTypeWarning, rolloutBlockKey)
-	broadcastEvent := fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage)
-	f.expectedEvents = append(f.expectedEvents, rolloutBlockExistsEvent, broadcastEvent)
+	f.expectedEvents = append(f.expectedEvents,
+		fmt.Sprintf("%s RolloutBlocked %s", corev1.EventTypeWarning, rolloutBlockKey),
+		fmt.Sprintf("Normal ReleaseConditionChanged [Blocked False] -> [Blocked True RolloutsBlocked %s]", rolloutBlockMessage),
+		fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage))
 	f.run()
 }
 
@@ -1963,9 +1966,10 @@ func TestContenderTrafficShouldNotIncreaseWithRolloutBlock(t *testing.T) {
 		expectedContender)
 	f.actions = append(f.actions, action)
 
-	rolloutBlockExistsEvent := fmt.Sprintf("%s RolloutBlocked %s", corev1.EventTypeWarning, rolloutBlockKey)
-	broadcastEvent := fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage)
-	f.expectedEvents = append(f.expectedEvents, rolloutBlockExistsEvent, broadcastEvent)
+	f.expectedEvents = append(f.expectedEvents,
+		fmt.Sprintf("%s RolloutBlocked %s", corev1.EventTypeWarning, rolloutBlockKey),
+		fmt.Sprintf("Normal ReleaseConditionChanged [Blocked False] -> [Blocked True RolloutsBlocked %s]", rolloutBlockMessage),
+		fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage))
 	f.run()
 }
 
@@ -2106,9 +2110,10 @@ func TestIncumbentTrafficShouldNotDecreaseWithRolloutBlock(t *testing.T) {
 		expectedContender)
 	f.actions = append(f.actions, action)
 
-	rolloutBlockExistsEvent := fmt.Sprintf("%s RolloutBlocked %s", corev1.EventTypeWarning, rolloutBlockKey)
-	broadcastEvent := fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage)
-	f.expectedEvents = append(f.expectedEvents, rolloutBlockExistsEvent, broadcastEvent)
+	f.expectedEvents = append(f.expectedEvents,
+		fmt.Sprintf("%s RolloutBlocked %s", corev1.EventTypeWarning, rolloutBlockKey),
+		fmt.Sprintf("Normal ReleaseConditionChanged [Blocked False] -> [Blocked True RolloutsBlocked %s]", rolloutBlockMessage),
+		fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage))
 	f.run()
 }
 
@@ -2256,9 +2261,10 @@ func TestIncumbentCapacityShouldNotDecreaseWithRolloutBlock(t *testing.T) {
 		expectedContender)
 	f.actions = append(f.actions, action)
 
-	rolloutBlockExistsEvent := fmt.Sprintf("%s RolloutBlocked %s", corev1.EventTypeWarning, rolloutBlockKey)
-	broadcastEvent := fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage)
-	f.expectedEvents = append(f.expectedEvents, rolloutBlockExistsEvent, broadcastEvent)
+	f.expectedEvents = append(f.expectedEvents,
+		fmt.Sprintf("%s RolloutBlocked %s", corev1.EventTypeWarning, rolloutBlockKey),
+		fmt.Sprintf("Normal ReleaseConditionChanged [Blocked False] -> [Blocked True RolloutsBlocked %s]", rolloutBlockMessage),
+		fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage))
 	f.run()
 }
 
@@ -2370,13 +2376,15 @@ func TestApplicationExposesStrategyFailure(t *testing.T) {
 	contender := f.buildContender(namespace, contenderName, totalReplicaCount)
 	incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
 
+	noStep2Message := fmt.Sprintf("failed to execute application strategy: \"no step 2 in strategy for Release \\\"%s/%s\\\"\"", contender.release.Namespace, contender.release.Name)
+
 	expectedApp := app.DeepCopy()
 	expectedApp.Status.Conditions = []shipper.ApplicationCondition{
 		{
 			Type:    shipper.ApplicationConditionTypeReleaseSynced,
 			Status:  corev1.ConditionFalse,
 			Reason:  conditions.StrategyExecutionFailed,
-			Message: fmt.Sprintf("failed to execute application strategy: \"no step 2 in strategy for Release \\\"%s/%s\\\"\"", contender.release.Namespace, contender.release.Name),
+			Message: noStep2Message,
 		},
 	}
 
@@ -2424,6 +2432,8 @@ func TestApplicationExposesStrategyFailure(t *testing.T) {
 		[]string{"update"},
 		[]string{"applications"},
 	})
+	f.expectedEvents = append(f.expectedEvents,
+		fmt.Sprintf("Normal ApplicationConditionChanged [] -> [ReleaseSynced False StrategyExecutionFailed %s]", noStep2Message))
 
 	f.run()
 }
@@ -2714,6 +2724,7 @@ func TestControllerChooseClusters(t *testing.T) {
 			"Normal ReleaseScheduled Created CapacityTarget \"%s\"",
 			relKey,
 		),
+		"Normal ReleaseConditionChanged [Scheduled False] -> [Scheduled True]",
 	)
 
 	f.run()
@@ -2765,6 +2776,7 @@ func TestControllerChooseClustersSkipsUnschedulable(t *testing.T) {
 			"Normal ReleaseScheduled Created CapacityTarget \"%s\"",
 			relKey,
 		),
+		"Normal ReleaseConditionChanged [Scheduled False] -> [Scheduled True]",
 	)
 
 	f.run()
