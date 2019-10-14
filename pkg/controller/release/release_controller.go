@@ -32,6 +32,10 @@ const (
 	AgentName = "release-controller"
 )
 
+const (
+	ClustersNotReady = "ClustersNotReady"
+)
+
 // Controller is a Kubernetes controller whose role is to pick up a newly created
 // release and progress it forward by scheduling the release on a set of
 // selected clusters, creating a set of associated objects and executing the

@@ -18,8 +18,8 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	trafficutil "github.com/bookingcom/shipper/pkg/util/traffic"
 )
 
 const (
@@ -28,7 +28,7 @@ const (
 )
 
 func init() {
-	conditions.TrafficConditionsShouldDiscardTimestamps = true
+	trafficutil.TrafficConditionsShouldDiscardTimestamps = true
 }
 
 func TestSingleCluster(t *testing.T) {

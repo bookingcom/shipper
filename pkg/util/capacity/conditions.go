@@ -1,4 +1,4 @@
-package conditions
+package capacity
 
 import (
 	"sort"
@@ -10,19 +10,19 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
-var TrafficConditionsShouldDiscardTimestamps = false
+var CapacityConditionsShouldDiscardTimestamps = false
 
-func SetTrafficCondition(
-	conditions []shipper.ClusterTrafficCondition,
+func SetCapacityCondition(
+	conditions []shipper.ClusterCapacityCondition,
 	typ shipper.ClusterConditionType,
 	status corev1.ConditionStatus,
 	reason string,
 	message string,
-) []shipper.ClusterTrafficCondition {
+) []shipper.ClusterCapacityCondition {
 
 	conditionIndex := -1
-	for i, e := range conditions {
-		if e.Type == typ {
+	for i := range conditions {
+		if conditions[i].Type == typ {
 			conditionIndex = i
 			break
 		}
@@ -30,10 +30,10 @@ func SetTrafficCondition(
 
 	if conditionIndex == -1 {
 		lastTransitionTime := metav1.Time{}
-		if !TrafficConditionsShouldDiscardTimestamps {
+		if !CapacityConditionsShouldDiscardTimestamps {
 			lastTransitionTime = metav1.NewTime(time.Now())
 		}
-		aCondition := shipper.ClusterTrafficCondition{
+		aCondition := shipper.ClusterCapacityCondition{
 			Type:               typ,
 			Status:             status,
 			LastTransitionTime: lastTransitionTime,
@@ -47,7 +47,7 @@ func SetTrafficCondition(
 	} else {
 		aCondition := &conditions[conditionIndex]
 		if aCondition.Status != status {
-			if TrafficConditionsShouldDiscardTimestamps {
+			if CapacityConditionsShouldDiscardTimestamps {
 				aCondition.LastTransitionTime = metav1.Time{}
 			} else {
 				aCondition.LastTransitionTime = metav1.NewTime(time.Now())

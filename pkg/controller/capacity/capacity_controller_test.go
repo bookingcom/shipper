@@ -20,9 +20,9 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	"github.com/bookingcom/shipper/pkg/conditions"
 	"github.com/bookingcom/shipper/pkg/controller/capacity/builder"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	capacityutil "github.com/bookingcom/shipper/pkg/util/capacity"
 )
 
 var (
@@ -32,7 +32,7 @@ var (
 func init() {
 	rand.Seed(time.Now().UTC().UnixNano())
 	numClus = 1 + rand.Int31n(5)
-	conditions.CapacityConditionsShouldDiscardTimestamps = true
+	capacityutil.CapacityConditionsShouldDiscardTimestamps = true
 }
 
 func TestUpdatingCapacityTargetUpdatesDeployment(t *testing.T) {
@@ -533,7 +533,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePodsWithDiffer
 			AchievedPercent:   100,
 			AvailableReplicas: 3,
 			Conditions: []shipper.ClusterCapacityCondition{
-				{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionFalse, Reason: conditions.PodsNotReady, Message: "there are 3 sad pods"},
+				{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionFalse, Reason: PodsNotReady, Message: "there are 3 sad pods"},
 			},
 			SadPods: sadPodsStatuses,
 		})
@@ -574,7 +574,7 @@ func TestUpdatingDeploymentsUpdatesTheCapacityTargetStatus(t *testing.T) {
 		{
 			Type:    shipper.ClusterConditionTypeReady,
 			Status:  corev1.ConditionFalse,
-			Reason:  conditions.WrongPodCount,
+			Reason:  WrongPodCount,
 			Message: "expected 5 replicas but have 0",
 		},
 	}
@@ -601,7 +601,7 @@ func TestSadPodsAreReflectedInCapacityTargetStatus(t *testing.T) {
 		{
 			Type:    shipper.ClusterConditionTypeReady,
 			Status:  corev1.ConditionFalse,
-			Reason:  conditions.PodsNotReady,
+			Reason:  PodsNotReady,
 			Message: "there are 1 sad pods",
 		},
 	}

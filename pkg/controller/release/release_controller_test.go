@@ -998,7 +998,7 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipp
 				Type:    shipper.StrategyConditionContenderAchievedCapacity,
 				Status:  corev1.ConditionFalse,
 				Step:    step,
-				Reason:  conditions.ClustersNotReady,
+				Reason:  ClustersNotReady,
 				Message: fmt.Sprintf("clusters pending capacity adjustments: [minikube]. for more details, try `kubectl describe ct %s`", ct.Name),
 			},
 		)
@@ -1028,7 +1028,7 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipp
 				Type:    shipper.StrategyConditionIncumbentAchievedCapacity,
 				Status:  corev1.ConditionFalse,
 				Step:    step,
-				Reason:  conditions.ClustersNotReady,
+				Reason:  ClustersNotReady,
 				Message: fmt.Sprintf("incumbent capacity is unhealthy in clusters: [minikube]. for more details, try `kubectl describe ct %s`", ct.Name),
 			},
 		)
@@ -1091,7 +1091,7 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipper.TrafficTarget, r *shipper
 				Type:    shipper.StrategyConditionContenderAchievedTraffic,
 				Status:  corev1.ConditionFalse,
 				Step:    step,
-				Reason:  conditions.ClustersNotReady,
+				Reason:  ClustersNotReady,
 				Message: fmt.Sprintf("clusters pending traffic adjustments: [minikube]. for more details, try `kubectl describe tt %s`", tt.Name),
 			},
 		)
@@ -1116,7 +1116,7 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipper.TrafficTarget, r *shipper
 				Type:    shipper.StrategyConditionIncumbentAchievedTraffic,
 				Status:  corev1.ConditionFalse,
 				Step:    step,
-				Reason:  conditions.ClustersNotReady,
+				Reason:  ClustersNotReady,
 				Message: fmt.Sprintf("incumbent traffic is unhealthy in clusters: [minikube]. for more details, try `kubectl describe tt %s`", tt.Name),
 			},
 		)
@@ -1249,7 +1249,7 @@ func (f *fixture) expectInstallationNotReady(rel *shipper.Release, achievedStepI
 					{
 						Type:    shipper.StrategyConditionContenderAchievedInstallation,
 						Status:  corev1.ConditionFalse,
-						Reason:  conditions.ClustersNotReady,
+						Reason:  ClustersNotReady,
 						Step:    targetStepIndex,
 						Message: fmt.Sprintf("clusters pending installation: [broken-installation-cluster]. for more details, try `kubectl describe it %s`", rel.Name),
 					},
@@ -1299,7 +1299,7 @@ func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, ac
 						{
 							Type:    shipper.StrategyConditionContenderAchievedCapacity,
 							Status:  corev1.ConditionFalse,
-							Reason:  conditions.ClustersNotReady,
+							Reason:  ClustersNotReady,
 							Message: fmt.Sprintf("clusters pending capacity adjustments: [%s]. for more details, try `kubectl describe ct %s`", brokenClusterName, relpair.contender.capacityTarget.Name),
 							Step:    targetStep,
 						},
@@ -1346,7 +1346,7 @@ func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, ac
 						{
 							Type:    shipper.StrategyConditionIncumbentAchievedCapacity,
 							Status:  corev1.ConditionFalse,
-							Reason:  conditions.ClustersNotReady,
+							Reason:  ClustersNotReady,
 							Step:    targetStep,
 							Message: fmt.Sprintf("incumbent capacity is unhealthy in clusters: [%s]. for more details, try `kubectl describe ct %s`", brokenClusterName, relpair.incumbent.capacityTarget.Name),
 						},
@@ -1411,7 +1411,7 @@ func (f *fixture) expectTrafficNotReady(relpair releaseInfoPair, targetStep, ach
 						{
 							Type:    shipper.StrategyConditionContenderAchievedTraffic,
 							Status:  corev1.ConditionFalse,
-							Reason:  conditions.ClustersNotReady,
+							Reason:  ClustersNotReady,
 							Message: fmt.Sprintf("clusters pending traffic adjustments: [%s]. for more details, try `kubectl describe tt %s`", brokenClusterName, relpair.contender.trafficTarget.Name),
 							Step:    targetStep,
 						},
@@ -1453,7 +1453,7 @@ func (f *fixture) expectTrafficNotReady(relpair releaseInfoPair, targetStep, ach
 						{
 							Type:    shipper.StrategyConditionIncumbentAchievedTraffic,
 							Status:  corev1.ConditionFalse,
-							Reason:  conditions.ClustersNotReady,
+							Reason:  ClustersNotReady,
 							Message: fmt.Sprintf("incumbent traffic is unhealthy in clusters: [%s]. for more details, try `kubectl describe tt %s`", brokenClusterName, relpair.incumbent.trafficTarget.Name),
 							Step:    targetStep,
 						},

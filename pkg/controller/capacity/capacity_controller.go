@@ -23,8 +23,8 @@ import (
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
-	"github.com/bookingcom/shipper/pkg/conditions"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	capacityutil "github.com/bookingcom/shipper/pkg/util/capacity"
 	"github.com/bookingcom/shipper/pkg/util/filters"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
 	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
@@ -33,6 +33,13 @@ import (
 const (
 	AgentName   = "capacity-controller"
 	SadPodLimit = 5
+)
+
+const (
+	ServerError       = "ServerError"
+	WrongPodCount     = "WrongPodCount"
+	PodsNotReady      = "PodsNotReady"
+	MissingDeployment = "MissingDeployment"
 )
 
 // Controller is the controller implementation for CapacityTarget resources
@@ -236,12 +243,12 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 			}
 
 			if clusterOk {
-				clusterStatus.Conditions = conditions.SetCapacityCondition(
+				clusterStatus.Conditions = capacityutil.SetCapacityCondition(
 					clusterStatus.Conditions,
 					shipper.ClusterConditionTypeReady,
 					corev1.ConditionTrue,
 					"", "")
-				clusterStatus.Conditions = conditions.SetCapacityCondition(
+				clusterStatus.Conditions = capacityutil.SetCapacityCondition(
 					clusterStatus.Conditions,
 					shipper.ClusterConditionTypeOperational,
 					corev1.ConditionTrue,
@@ -312,33 +319,33 @@ func (c *Controller) subscribeToDeployments(informerFactory kubeinformers.Shared
 func (c *Controller) getSadPods(targetDeployment *appsv1.Deployment, clusterStatus *shipper.ClusterCapacityStatus) ([]shipper.PodStatus, bool, error) {
 	podCount, sadPodsCount, sadPods, err := c.getSadPodsForDeploymentOnCluster(targetDeployment, clusterStatus.Name)
 	if err != nil {
-		clusterStatus.Conditions = conditions.SetCapacityCondition(
+		clusterStatus.Conditions = capacityutil.SetCapacityCondition(
 			clusterStatus.Conditions,
 			shipper.ClusterConditionTypeOperational,
 			corev1.ConditionFalse,
-			conditions.ServerError,
+			ServerError,
 			err.Error())
 
 		return nil, false, err
 	}
 
 	if targetDeployment.Spec.Replicas == nil || int(*targetDeployment.Spec.Replicas) != podCount {
-		clusterStatus.Conditions = conditions.SetCapacityCondition(
+		clusterStatus.Conditions = capacityutil.SetCapacityCondition(
 			clusterStatus.Conditions,
 			shipper.ClusterConditionTypeReady,
 			corev1.ConditionFalse,
-			conditions.WrongPodCount,
+			WrongPodCount,
 			fmt.Sprintf("expected %d replicas but have %d", *targetDeployment.Spec.Replicas, int32(podCount)))
 
 		return sadPods, false, nil
 	}
 
 	if sadPodsCount > 0 {
-		clusterStatus.Conditions = conditions.SetCapacityCondition(
+		clusterStatus.Conditions = capacityutil.SetCapacityCondition(
 			clusterStatus.Conditions,
 			shipper.ClusterConditionTypeReady,
 			corev1.ConditionFalse,
-			conditions.PodsNotReady,
+			PodsNotReady,
 			fmt.Sprintf("there are %d sad pods", sadPodsCount))
 	}
 
@@ -369,11 +376,11 @@ func (c *Controller) getReport(targetDeployment *appsv1.Deployment, clusterStatu
 func (c *Controller) findTargetDeploymentForClusterSpec(clusterSpec shipper.ClusterCapacityTarget, targetNamespace string, selector labels.Selector, clusterStatus *shipper.ClusterCapacityStatus) (*appsv1.Deployment, error) {
 	targetClusterInformer, err := c.clusterClientStore.GetInformerFactory(clusterSpec.Name)
 	if err != nil {
-		clusterStatus.Conditions = conditions.SetCapacityCondition(
+		clusterStatus.Conditions = capacityutil.SetCapacityCondition(
 			clusterStatus.Conditions,
 			shipper.ClusterConditionTypeOperational,
 			corev1.ConditionFalse,
-			conditions.ServerError,
+			ServerError,
 			err.Error(),
 		)
 
@@ -382,11 +389,11 @@ func (c *Controller) findTargetDeploymentForClusterSpec(clusterSpec shipper.Clus
 
 	deploymentsList, err := targetClusterInformer.Apps().V1().Deployments().Lister().Deployments(targetNamespace).List(selector)
 	if err != nil {
-		clusterStatus.Conditions = conditions.SetCapacityCondition(
+		clusterStatus.Conditions = capacityutil.SetCapacityCondition(
 			clusterStatus.Conditions,
 			shipper.ClusterConditionTypeOperational,
 			corev1.ConditionFalse,
-			conditions.ServerError,
+			ServerError,
 			err.Error(),
 		)
 
@@ -399,11 +406,11 @@ func (c *Controller) findTargetDeploymentForClusterSpec(clusterSpec shipper.Clus
 		err = shippererrors.NewTargetDeploymentCountError(
 			clusterSpec.Name, targetNamespace, selector.String(), l)
 
-		clusterStatus.Conditions = conditions.SetCapacityCondition(
+		clusterStatus.Conditions = capacityutil.SetCapacityCondition(
 			clusterStatus.Conditions,
 			shipper.ClusterConditionTypeReady,
 			corev1.ConditionFalse,
-			conditions.MissingDeployment,
+			MissingDeployment,
 			err.Error(),
 		)
 
@@ -418,11 +425,11 @@ func (c *Controller) findTargetDeploymentForClusterSpec(clusterSpec shipper.Clus
 func (c *Controller) patchDeploymentWithReplicaCount(targetDeployment *appsv1.Deployment, clusterName string, replicaCount int32, clusterStatus *shipper.ClusterCapacityStatus) (*appsv1.Deployment, error) {
 	targetClusterClient, err := c.clusterClientStore.GetClient(clusterName, AgentName)
 	if err != nil {
-		clusterStatus.Conditions = conditions.SetCapacityCondition(
+		clusterStatus.Conditions = capacityutil.SetCapacityCondition(
 			clusterStatus.Conditions,
 			shipper.ClusterConditionTypeOperational,
 			corev1.ConditionFalse,
-			conditions.ServerError,
+			ServerError,
 			err.Error(),
 		)
 
@@ -433,11 +440,11 @@ func (c *Controller) patchDeploymentWithReplicaCount(targetDeployment *appsv1.De
 
 	updatedDeployment, err := targetClusterClient.AppsV1().Deployments(targetDeployment.Namespace).Patch(targetDeployment.Name, types.StrategicMergePatchType, []byte(patchString))
 	if err != nil {
-		clusterStatus.Conditions = conditions.SetCapacityCondition(
+		clusterStatus.Conditions = capacityutil.SetCapacityCondition(
 			clusterStatus.Conditions,
 			shipper.ClusterConditionTypeOperational,
 			corev1.ConditionFalse,
-			conditions.ServerError,
+			ServerError,
 			err.Error(),
 		)
 

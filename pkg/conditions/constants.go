@@ -30,4 +30,6 @@ const (
 
 	ChartError  = "ChartError"
 	ClientError = "ClientError"
+
+	ClustersNotReady = "ClustersNotReady"
 )
