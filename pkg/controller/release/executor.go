@@ -331,7 +331,7 @@ func (s *Executor) Execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 
 		if targetStep == lastStepIndex {
 			condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeComplete, corev1.ConditionTrue, "", "")
-			if diff := releaseutil.SetReleaseCondition(contenderStatus, *condition); !diff.IsEmpty() {
+			if diff := releaseutil.SetReleaseCondition(contenderStatus, *condition); diff != nil && !diff.IsEmpty() {
 				s.recorder.Eventf(
 					s.contender.release,
 					corev1.EventTypeNormal,
