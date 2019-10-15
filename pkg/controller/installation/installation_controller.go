@@ -107,7 +107,8 @@ func NewController(
 }
 
 func (c *Controller) registerAppClusterEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
-	handler := shippercontroller.NewAppClusterEventHandler(c.enqueueInstallationTargetFromObject)
+	filterLabel := shipper.ReleaseLabel
+	handler := shippercontroller.NewAppClusterEventHandler(filterLabel, c.enqueueInstallationTargetFromObject)
 
 	informerFactory.Apps().V1().Deployments().Informer().AddEventHandler(handler)
 	informerFactory.Core().V1().Services().Informer().AddEventHandler(handler)

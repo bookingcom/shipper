@@ -2,8 +2,6 @@ package traffic
 
 import (
 	"fmt"
-	"sort"
-	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -75,18 +73,19 @@ func NewController(
 		DeleteFunc: controller.enqueueTrafficTarget,
 	})
 
-	store.AddSubscriptionCallback(controller.subscribeToPodEvents)
-	store.AddEventHandlerCallback(controller.registerPodEventHandlers)
+	store.AddSubscriptionCallback(controller.subscribeToAppClusterEvents)
+	store.AddEventHandlerCallback(controller.registerAppClusterEventHandlers)
 
 	return controller
 }
 
-func (c *Controller) registerPodEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
-	handler := shippercontroller.NewAppClusterEventHandler(c.enqueueTrafficTargetFromPod)
+func (c *Controller) registerAppClusterEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
+	filterLabel := shipper.AppLabel
+	handler := shippercontroller.NewAppClusterEventHandler(filterLabel, c.enqueueTrafficTargetsFromPod)
 	informerFactory.Core().V1().Pods().Informer().AddEventHandler(handler)
 }
 
-func (c *Controller) subscribeToPodEvents(informerFactory kubeinformers.SharedInformerFactory) {
+func (c *Controller) subscribeToAppClusterEvents(informerFactory kubeinformers.SharedInformerFactory) {
 	informerFactory.Core().V1().Pods().Informer()
 }
 
@@ -202,13 +201,13 @@ func (c *Controller) syncHandler(key string) error {
 		return err
 	}
 
+	clusterErrors := shippererrors.NewMultiError()
+
 	var statuses []*shipper.ClusterTrafficStatus
 	for _, cluster := range shifter.Clusters() {
 		var achievedReleaseWeight uint32
-		var achievedWeights map[string]uint32
 		var clientset kubernetes.Interface
 		var clusterConditions []shipper.ClusterTrafficCondition
-		var errs []error
 		var informerFactory kubeinformers.SharedInformerFactory
 
 		for _, e := range syncingTT.Status.Clusters {
@@ -240,8 +239,10 @@ func (c *Controller) syncHandler(key string) error {
 				err.Error())
 
 			clusterStatus.Status = err.Error()
+			clusterErrors.Append(err)
 			continue
 		}
+
 		informerFactory, err = c.clusterClientStore.GetInformerFactory(cluster)
 		if err == nil {
 			clusterStatus.Conditions = conditions.SetTrafficCondition(
@@ -259,11 +260,12 @@ func (c *Controller) syncHandler(key string) error {
 				err.Error())
 
 			clusterStatus.Status = err.Error()
+			clusterErrors.Append(err)
 			continue
 		}
 
-		achievedWeights, errs, err =
-			shifter.SyncCluster(cluster, clientset, informerFactory.Core().V1().Pods())
+		achievedReleaseWeight, err =
+			shifter.SyncCluster(cluster, syncingReleaseName, clientset, informerFactory.Core().V1().Pods())
 
 		if err != nil {
 			switch err.(type) {
@@ -296,33 +298,29 @@ func (c *Controller) syncHandler(key string) error {
 					conditions.UnknownError,
 					err.Error())
 			}
-		} else {
-			// If the resulting map is missing the release we're working on, there's a
-			// significant bug in our code.
-			achievedReleaseWeight = achievedWeights[syncingReleaseName]
-			clusterStatus.AchievedTraffic = achievedReleaseWeight
-			if len(errs) == 0 {
-				clusterStatus.Conditions = conditions.SetTrafficCondition(
-					clusterStatus.Conditions,
-					shipper.ClusterConditionTypeReady,
-					corev1.ConditionTrue,
-					"", "")
 
-				clusterStatus.Status = "Synced"
-			} else {
-				results := make([]string, 0, len(errs))
-				for _, err := range errs {
-					results = append(results, err.Error())
-				}
-				sort.Strings(results)
-				clusterStatus.Status = strings.Join(results, ",")
+			clusterErrors.Append(err)
+			continue
+		}
 
-				clusterStatus.Conditions = conditions.SetTrafficCondition(
-					clusterStatus.Conditions,
-					shipper.ClusterConditionTypeReady,
-					corev1.ConditionFalse,
-					conditions.PodsNotReady,
-					clusterStatus.Status)
+		clusterStatus.AchievedTraffic = achievedReleaseWeight
+		clusterStatus.Conditions = conditions.SetTrafficCondition(
+			clusterStatus.Conditions,
+			shipper.ClusterConditionTypeReady,
+			corev1.ConditionTrue,
+			"", "")
+
+		clusterStatus.Status = "Synced"
+	}
+
+	if clusterErrors.Any() {
+		for _, err := range clusterErrors.Errors {
+			if shippererrors.ShouldBroadcast(err) {
+				c.recorder.Event(
+					syncingTT,
+					corev1.EventTypeWarning,
+					"FailedTrafficChange",
+					err.Error())
 			}
 		}
 	}
@@ -353,14 +351,19 @@ func (c *Controller) syncHandler(key string) error {
 
 	_, err = c.shipperclientset.ShipperV1alpha1().TrafficTargets(namespace).Update(ttCopy)
 	if err != nil {
-		return shippererrors.NewKubeclientUpdateError(ttCopy, err).
-			WithShipperKind("TrafficTarget")
+		clusterErrors.Append(shippererrors.NewKubeclientUpdateError(ttCopy, err).
+			WithShipperKind("TrafficTarget"))
 	}
 
-	// TODO(btyler): don't record "success" if it wasn't a total success: this
-	// should include some information about how many clusters worked and how many
-	// did not.
-	c.recorder.Event(syncingTT, corev1.EventTypeNormal, "Synced", "TrafficTarget synced successfully")
+	if clusterErrors.Any() {
+		return clusterErrors.Flatten()
+	}
+
+	c.recorder.Event(
+		syncingTT,
+		corev1.EventTypeNormal,
+		"Synced",
+		"TrafficTarget synced successfully")
 
 	return nil
 }
@@ -378,50 +381,34 @@ func (c *Controller) enqueueTrafficTarget(obj interface{}) {
 	c.workqueue.Add(key)
 }
 
-func (c *Controller) enqueueTrafficTargetFromPod(obj interface{}) {
+func (c *Controller) enqueueTrafficTargetsFromPod(obj interface{}) {
 	pod, ok := obj.(*corev1.Pod)
 	if !ok {
 		runtime.HandleError(fmt.Errorf("not a corev1.Pod: %#v", obj))
 		return
 	}
 
-	// Using ReleaseLabel here instead of the full set of labels because we
-	// can't guarantee that there isn't extra stuff there that was put
-	// directly in the chart.
-	// Also not using ObjectReference here because it would go over cluster
-	// boundaries. While technically it's probably ok, I feel like it'd be
-	// abusing the feature.
-	rel, ok := pod.GetLabels()[shipper.ReleaseLabel]
+	app, ok := pod.GetLabels()[shipper.AppLabel]
 	if !ok {
 		runtime.HandleError(fmt.Errorf(
 			"object %q does not have label %s. FilterFunc not working?",
-			shippercontroller.MetaKey(pod), shipper.ReleaseLabel))
+			shippercontroller.MetaKey(pod), shipper.AppLabel))
 		return
 	}
 
-	tt, err := c.getTrafficTargetForReleaseAndNamespace(rel, pod.GetNamespace())
-	if err != nil {
-		runtime.HandleError(fmt.Errorf("cannot get traffic target for release '%s/%s': %#v", rel, pod.GetNamespace(), err))
-		return
-	}
-
-	c.enqueueTrafficTarget(tt)
-}
-
-func (c *Controller) getTrafficTargetForReleaseAndNamespace(release, namespace string) (*shipper.TrafficTarget, error) {
-	selector := labels.Set{shipper.ReleaseLabel: release}.AsSelector()
-	gvk := shipper.SchemeGroupVersion.WithKind("TrafficTarget")
-
+	namespace := pod.Namespace
+	selector := labels.Set{shipper.AppLabel: app}.AsSelector()
 	trafficTargets, err := c.trafficTargetsLister.TrafficTargets(namespace).List(selector)
 	if err != nil {
-		return nil, shippererrors.NewKubeclientListError(gvk, namespace, selector, err)
+		err = shippererrors.NewKubeclientListError(
+			shipper.SchemeGroupVersion.WithKind("TrafficTarget"),
+			namespace, selector, err)
+		runtime.HandleError(fmt.Errorf(
+			"cannot list traffic targets for app '%s/%s': %s",
+			namespace, app, err))
 	}
 
-	expected := 1
-	if got := len(trafficTargets); got != 1 {
-		return nil, shippererrors.NewUnexpectedObjectCountFromSelectorError(
-			selector, gvk, expected, got)
+	for _, tt := range trafficTargets {
+		c.enqueueTrafficTarget(tt)
 	}
-
-	return trafficTargets[0], nil
 }

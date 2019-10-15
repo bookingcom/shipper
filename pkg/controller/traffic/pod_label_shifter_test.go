@@ -1,18 +1,18 @@
 package traffic
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
-	"encoding/json"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeinformers "k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
-	kubetesting "k8s.io/client-go/testing"
 	clienttesting "k8s.io/client-go/testing"
+	kubetesting "k8s.io/client-go/testing"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
@@ -392,16 +392,18 @@ func (f *podLabelShifterFixture) run(expectedWeights map[string]uint32) bool {
 		return false
 	}
 
-	achievedWeights, errs, _ :=
-		shifter.SyncCluster(testClusterName, f.client, informers.Core().V1().Pods())
+	achievedWeights := make(map[string]uint32)
 
-	for _, err := range errs {
-		f.Errorf("failed to sync cluster: %s", err.Error())
-	}
+	for release, _ := range expectedWeights {
+		achieved, err :=
+			shifter.SyncCluster(testClusterName, release, f.client, informers.Core().V1().Pods())
 
-	// No point inspecting anything else.
-	if len(errs) > 0 {
-		return false
+		if err != nil {
+			f.Errorf("failed to sync cluster: %s", err.Error())
+			return false
+		}
+
+		achievedWeights[release] = achieved
 	}
 
 	keepTesting := true

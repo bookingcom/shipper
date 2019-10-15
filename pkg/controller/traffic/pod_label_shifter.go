@@ -62,12 +62,13 @@ func (p *podLabelShifter) Clusters() []string {
 
 func (p *podLabelShifter) SyncCluster(
 	cluster string,
+	release string,
 	clientset kubernetes.Interface,
 	informer corev1informer.PodInformer,
-) (map[string]uint32, []error, error) {
+) (uint32, error) {
 	releaseWeights, ok := p.clusterReleaseWeights[cluster]
 	if !ok {
-		return nil, nil, shippererrors.NewMissingTrafficWeightsForClusterError(
+		return 0, shippererrors.NewMissingTrafficWeightsForClusterError(
 			p.namespace, p.appName, cluster)
 	}
 
@@ -76,21 +77,19 @@ func (p *podLabelShifter) SyncCluster(
 
 	svcList, err := servicesClient.List(metav1.ListOptions{LabelSelector: p.serviceSelector.String()})
 	if err != nil {
-		return nil, nil, shippererrors.NewKubeclientListError(
+		return 0, shippererrors.NewKubeclientListError(
 			corev1.SchemeGroupVersion.WithKind("Service"),
 			p.namespace, p.serviceSelector, err)
 	} else if n := len(svcList.Items); n != 1 {
-		return nil, nil,
-			shippererrors.NewTargetClusterWrongServiceCountError(
-				cluster, p.serviceSelector, p.namespace, n)
+		return 0, shippererrors.NewTargetClusterWrongServiceCountError(
+			cluster, p.serviceSelector, p.namespace, n)
 	}
 
 	prodSvc := svcList.Items[0]
 	trafficSelector := prodSvc.Spec.Selector
 	if trafficSelector == nil {
-		return nil, nil,
-			shippererrors.NewTargetClusterServiceMissesSelectorError(
-				cluster, p.namespace, prodSvc.Name)
+		return 0, shippererrors.NewTargetClusterServiceMissesSelectorError(
+			cluster, p.namespace, prodSvc.Name)
 	}
 
 	nsPodLister := informer.Lister().Pods(p.namespace)
@@ -98,7 +97,7 @@ func (p *podLabelShifter) SyncCluster(
 	appSelector := labels.Set{shipper.AppLabel: p.appName}.AsSelector()
 	pods, err := nsPodLister.List(appSelector)
 	if err != nil {
-		return nil, nil, shippererrors.NewKubeclientListError(
+		return 0, shippererrors.NewKubeclientListError(
 			corev1.SchemeGroupVersion.WithKind("Pod"),
 			p.namespace, appSelector, err)
 	}
@@ -109,93 +108,86 @@ func (p *podLabelShifter) SyncCluster(
 		totalWeight += weight
 	}
 
-	achievedWeights := map[string]uint32{}
-	errors := []error{}
-	for release, weight := range releaseWeights {
+	weight := releaseWeights[release]
 
-		releaseSelector := labels.Set{shipper.ReleaseLabel: release}.AsSelector()
-		releasePods, err := nsPodLister.List(releaseSelector)
-		if err != nil {
-			return nil, nil, shippererrors.NewKubeclientListError(
-				shipper.SchemeGroupVersion.WithKind("Release"),
-				p.namespace, releaseSelector, err)
-		}
+	releaseSelector := labels.Set{shipper.ReleaseLabel: release}.AsSelector()
+	releasePods, err := nsPodLister.List(releaseSelector)
+	if err != nil {
+		return 0, shippererrors.NewKubeclientListError(
+			shipper.SchemeGroupVersion.WithKind("Release"),
+			p.namespace, releaseSelector, err)
+	}
 
-		targetPods := calculateReleasePodTarget(len(releasePods), weight, totalPods, totalWeight)
+	targetPods := calculateReleasePodTarget(len(releasePods), weight, totalPods, totalWeight)
 
-		var trafficPods []*corev1.Pod
-		var idlePods []*corev1.Pod
-		for _, pod := range releasePods {
-			if getsTraffic(pod, trafficSelector) {
-				trafficPods = append(trafficPods, pod)
-				continue
-			}
-			idlePods = append(idlePods, pod)
-		}
-
-		// everything is fine, nothing to do
-		if len(trafficPods) == targetPods {
-			achievedWeights[release] = weight
+	var trafficPods []*corev1.Pod
+	var idlePods []*corev1.Pod
+	for _, pod := range releasePods {
+		if getsTraffic(pod, trafficSelector) {
+			trafficPods = append(trafficPods, pod)
 			continue
 		}
+		idlePods = append(idlePods, pod)
+	}
 
-		if len(trafficPods) > targetPods {
-			excess := len(trafficPods) - targetPods
-			removedFromLB := 0
-			for i := 0; i < excess; i++ {
-				pod := trafficPods[i].DeepCopy()
+	// traffic achieved, no patches to apply.
+	if len(trafficPods) == targetPods {
+		return weight, nil
+	}
 
-				if value, ok := pod.Labels[shipper.PodTrafficStatusLabel]; !ok || value == shipper.Enabled {
-					patch := patchPodTrafficStatusLabel(pod, shipper.Disabled)
-					_, err := podsClient.Patch(pod.Name, types.JSONPatchType, patch)
-					if err != nil {
-						err = shippererrors.NewKubeclientPatchError(p.namespace, pod.Name, err).
-							WithCoreV1Kind("Pod")
-						errors = append(errors, err)
-						continue
-					}
-				}
+	var delta int
+	patches := make(map[string][]byte)
 
-				removedFromLB++
+	if len(trafficPods) > targetPods {
+		excess := len(trafficPods) - targetPods
+
+		for i := 0; i < excess; i++ {
+			pod := trafficPods[i].DeepCopy()
+
+			value, ok := pod.Labels[shipper.PodTrafficStatusLabel]
+			if !ok || value == shipper.Enabled {
+				patches[pod.Name] = patchPodTrafficStatusLabel(pod, shipper.Disabled)
 			}
-			finalTrafficPods := len(trafficPods) - removedFromLB
-			proportion := float64(finalTrafficPods) / float64(totalPods)
-			achievedWeights[release] = uint32(round(proportion * float64(totalWeight)))
-			continue
+
+			delta--
+		}
+	} else {
+		missing := targetPods - len(trafficPods)
+
+		if missing > len(idlePods) {
+			return 0, shippererrors.NewTargetClusterMathError(release, len(idlePods), missing)
 		}
 
-		if len(trafficPods) < targetPods {
-			missing := targetPods - len(trafficPods)
-			addedToLB := 0
-			if missing > len(idlePods) {
-				errors = append(errors,
-					shippererrors.NewTargetClusterMathError(release, len(idlePods), missing))
-				continue
+		for i := 0; i < missing; i++ {
+			pod := idlePods[i].DeepCopy()
+
+			value, ok := pod.Labels[shipper.PodTrafficStatusLabel]
+			if !ok || ok && value == shipper.Disabled {
+				patches[pod.Name] = patchPodTrafficStatusLabel(pod, shipper.Enabled)
 			}
 
-			for i := 0; i < missing; i++ {
-				pod := idlePods[i].DeepCopy()
-
-				if value, ok := pod.Labels[shipper.PodTrafficStatusLabel]; !ok || ok && value == shipper.Disabled {
-					patch := patchPodTrafficStatusLabel(pod, shipper.Enabled)
-					_, err := podsClient.Patch(pod.Name, types.JSONPatchType, patch)
-					if err != nil {
-						err = shippererrors.NewKubeclientPatchError(p.namespace, pod.Name, err).
-							WithCoreV1Kind("Pod")
-						errors = append(errors, err)
-						continue
-					}
-				}
-
-				addedToLB++
-			}
-			finalTrafficPods := len(trafficPods) + addedToLB
-			proportion := float64(finalTrafficPods) / float64(totalPods)
-			achievedWeights[release] = uint32(round(proportion * float64(totalWeight)))
+			delta++
 		}
 	}
 
-	return achievedWeights, errors, nil
+	for podName, patch := range patches {
+		_, err := podsClient.Patch(podName, types.JSONPatchType, patch)
+		if err != nil {
+			return 0, shippererrors.
+				NewKubeclientPatchError(p.namespace, podName, err).
+				WithCoreV1Kind("Pod")
+		}
+	}
+
+	// NOTE(jgreff): we assume that the patches will actually succeed in
+	// making pods satisfy traffic requirements. that's the wrong thing to
+	// do, and we should just return `len(trafficPods)`, and let the next
+	// sync calculate what actually happened.
+	finalTrafficPods := len(trafficPods) + delta
+	proportion := float64(finalTrafficPods) / float64(totalPods)
+	achievedWeight := uint32(round(proportion * float64(totalWeight)))
+
+	return achievedWeight, nil
 }
 
 func getsTraffic(pod *corev1.Pod, trafficSelectors map[string]string) bool {

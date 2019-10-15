@@ -291,9 +291,10 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 }
 
 func (c *Controller) registerDeploymentEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
-	informerFactory.Apps().V1().Deployments().Informer().AddEventHandler(
-		shippercontroller.NewAppClusterEventHandler(c.enqueueCapacityTargetFromDeployment),
-	)
+	filterLabel := shipper.ReleaseLabel
+	handler := shippercontroller.NewAppClusterEventHandler(filterLabel, c.enqueueCapacityTargetFromDeployment)
+
+	informerFactory.Apps().V1().Deployments().Informer().AddEventHandler(handler)
 }
 
 func (c *Controller) subscribeToDeployments(informerFactory kubeinformers.SharedInformerFactory) {
