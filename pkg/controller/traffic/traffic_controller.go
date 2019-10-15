@@ -87,6 +87,7 @@ func (c *Controller) registerAppClusterEventHandlers(informerFactory kubeinforme
 
 func (c *Controller) subscribeToAppClusterEvents(informerFactory kubeinformers.SharedInformerFactory) {
 	informerFactory.Core().V1().Pods().Informer()
+	informerFactory.Core().V1().Services().Informer()
 }
 
 // Run will set up the event handlers for types we are interested in, as well as
@@ -264,12 +265,11 @@ func (c *Controller) syncHandler(key string) error {
 			continue
 		}
 
-		achievedReleaseWeight, err =
-			shifter.SyncCluster(cluster, syncingReleaseName, clientset, informerFactory.Core().V1().Pods())
+		achievedReleaseWeight, err = shifter.SyncCluster(cluster, syncingReleaseName, clientset, informerFactory)
 
 		if err != nil {
 			switch err.(type) {
-			case shippererrors.TargetClusterServiceError:
+			case shippererrors.UnexpectedObjectCountFromSelectorError:
 				clusterStatus.Conditions = conditions.SetTrafficCondition(
 					clusterStatus.Conditions,
 					shipper.ClusterConditionTypeReady,
