@@ -7,10 +7,9 @@ import (
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-	corev1informer "k8s.io/client-go/informers/core/v1"
+	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -64,7 +63,7 @@ func (p *podLabelShifter) SyncCluster(
 	cluster string,
 	release string,
 	clientset kubernetes.Interface,
-	informer corev1informer.PodInformer,
+	informerFactory kubeinformers.SharedInformerFactory,
 ) (uint32, error) {
 	releaseWeights, ok := p.clusterReleaseWeights[cluster]
 	if !ok {
@@ -72,53 +71,36 @@ func (p *podLabelShifter) SyncCluster(
 			p.namespace, p.appName, cluster)
 	}
 
-	podsClient := clientset.CoreV1().Pods(p.namespace)
-	servicesClient := clientset.CoreV1().Services(p.namespace)
-
-	svcList, err := servicesClient.List(metav1.ListOptions{LabelSelector: p.serviceSelector.String()})
-	if err != nil {
-		return 0, shippererrors.NewKubeclientListError(
-			corev1.SchemeGroupVersion.WithKind("Service"),
-			p.namespace, p.serviceSelector, err)
-	} else if n := len(svcList.Items); n != 1 {
-		return 0, shippererrors.NewTargetClusterWrongServiceCountError(
-			cluster, p.serviceSelector, p.namespace, n)
-	}
-
-	prodSvc := svcList.Items[0]
-	trafficSelector := prodSvc.Spec.Selector
-	if trafficSelector == nil {
-		return 0, shippererrors.NewTargetClusterServiceMissesSelectorError(
-			cluster, p.namespace, prodSvc.Name)
-	}
-
-	nsPodLister := informer.Lister().Pods(p.namespace)
-
 	appSelector := labels.Set{shipper.AppLabel: p.appName}.AsSelector()
-	pods, err := nsPodLister.List(appSelector)
+	releaseSelector := labels.Set{shipper.ReleaseLabel: release}.AsSelector()
+	trafficSelector, err := p.getTrafficSelector(cluster, informerFactory)
 	if err != nil {
-		return 0, shippererrors.NewKubeclientListError(
-			corev1.SchemeGroupVersion.WithKind("Pod"),
-			p.namespace, appSelector, err)
+		return 0, err
 	}
 
-	totalPods := len(pods)
+	podLister := informerFactory.Core().V1().Pods().Lister().Pods(p.namespace)
+	podGVK := corev1.SchemeGroupVersion.WithKind("Pod")
+
+	appPods, err := podLister.List(appSelector)
+	if err != nil {
+		return 0, shippererrors.NewKubeclientListError(
+			podGVK, p.namespace, appSelector, err)
+	}
+
+	releasePods, err := podLister.List(releaseSelector)
+	if err != nil {
+		return 0, shippererrors.NewKubeclientListError(
+			podGVK, p.namespace, releaseSelector, err)
+	}
+
 	var totalWeight uint32 = 0
 	for _, weight := range releaseWeights {
 		totalWeight += weight
 	}
 
-	weight := releaseWeights[release]
-
-	releaseSelector := labels.Set{shipper.ReleaseLabel: release}.AsSelector()
-	releasePods, err := nsPodLister.List(releaseSelector)
-	if err != nil {
-		return 0, shippererrors.NewKubeclientListError(
-			shipper.SchemeGroupVersion.WithKind("Release"),
-			p.namespace, releaseSelector, err)
-	}
-
-	targetPods := calculateReleasePodTarget(len(releasePods), weight, totalPods, totalWeight)
+	targetWeight := releaseWeights[release]
+	targetPods := calculateReleasePodTarget(
+		len(releasePods), targetWeight, len(appPods), totalWeight)
 
 	var trafficPods []*corev1.Pod
 	var idlePods []*corev1.Pod
@@ -132,7 +114,7 @@ func (p *podLabelShifter) SyncCluster(
 
 	// traffic achieved, no patches to apply.
 	if len(trafficPods) == targetPods {
-		return weight, nil
+		return targetWeight, nil
 	}
 
 	var delta int
@@ -170,6 +152,7 @@ func (p *podLabelShifter) SyncCluster(
 		}
 	}
 
+	podsClient := clientset.CoreV1().Pods(p.namespace)
 	for podName, patch := range patches {
 		_, err := podsClient.Patch(podName, types.JSONPatchType, patch)
 		if err != nil {
@@ -184,7 +167,7 @@ func (p *podLabelShifter) SyncCluster(
 	// do, and we should just return `len(trafficPods)`, and let the next
 	// sync calculate what actually happened.
 	finalTrafficPods := len(trafficPods) + delta
-	proportion := float64(finalTrafficPods) / float64(totalPods)
+	proportion := float64(finalTrafficPods) / float64(len(appPods))
 	achievedWeight := uint32(round(proportion * float64(totalWeight)))
 
 	return achievedWeight, nil
@@ -310,4 +293,31 @@ func round(num float64) int {
 		return int(num - 0.5)
 	}
 	return int(num + 0.5)
+}
+
+func (p *podLabelShifter) getTrafficSelector(
+	cluster string,
+	informerFactory kubeinformers.SharedInformerFactory,
+) (map[string]string, error) {
+	gvk := corev1.SchemeGroupVersion.WithKind("Service")
+	services, err := informerFactory.Core().V1().Services().Lister().
+		Services(p.namespace).List(p.serviceSelector)
+	if err != nil {
+		return nil, shippererrors.NewKubeclientListError(
+			gvk, p.namespace, p.serviceSelector, err)
+	}
+
+	if n := len(services); n != 1 {
+		return nil, shippererrors.NewUnexpectedObjectCountFromSelectorError(
+			p.serviceSelector, gvk, 1, n)
+	}
+
+	prodSvc := services[0]
+	trafficSelector := prodSvc.Spec.Selector
+	if trafficSelector == nil {
+		return nil, shippererrors.NewTargetClusterServiceMissesSelectorError(
+			cluster, p.namespace, prodSvc.Name)
+	}
+
+	return trafficSelector, nil
 }

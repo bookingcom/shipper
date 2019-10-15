@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -368,8 +367,7 @@ func (f *podLabelShifterFixture) run(expectedWeights map[string]uint32) bool {
 	clientset := kubefake.NewSimpleClientset(f.objects...)
 	f.client = clientset
 
-	const noResyncPeriod time.Duration = 0
-	informers := kubeinformers.NewSharedInformerFactory(f.client, noResyncPeriod)
+	informers := kubeinformers.NewSharedInformerFactory(f.client, shippertesting.NoResyncPeriod)
 	f.informers = informers
 
 	// fake.Clientset default object tracker's Reactor doesn't support "patch"
@@ -377,9 +375,12 @@ func (f *podLabelShifterFixture) run(expectedWeights map[string]uint32) bool {
 	// specific and somehow naive way.
 	clientset.Fake.PrependReactor("patch", "pods", buildPodPatchReactionFunc(informers))
 
-	for _, pod := range f.pods {
-		informers.Core().V1().Pods().Informer().GetIndexer().Add(pod)
-	}
+	// Let's get all the informers started and synced
+	stopCh := make(<-chan struct{})
+	informers.Core().V1().Pods().Informer()
+	informers.Core().V1().Services().Informer()
+	informers.Start(stopCh)
+	informers.WaitForCacheSync(stopCh)
 
 	shifter, err := newPodLabelShifter(
 		testApplicationName,
@@ -396,7 +397,7 @@ func (f *podLabelShifterFixture) run(expectedWeights map[string]uint32) bool {
 
 	for release, _ := range expectedWeights {
 		achieved, err :=
-			shifter.SyncCluster(testClusterName, release, f.client, informers.Core().V1().Pods())
+			shifter.SyncCluster(testClusterName, release, f.client, informers)
 
 		if err != nil {
 			f.Errorf("failed to sync cluster: %s", err.Error())

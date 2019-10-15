@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	"k8s.io/apimachinery/pkg/labels"
 )
 
 type MissingShipperLabelError struct {
@@ -49,31 +48,6 @@ func NewMissingTrafficWeightsForClusterError(ns, appName, clusterName string) Mi
 		ns:          ns,
 		appName:     appName,
 		clusterName: clusterName,
-	}
-}
-
-type TargetClusterServiceError struct {
-	clusterName  string
-	selector     labels.Selector
-	ns           string
-	serviceCount int
-}
-
-func (e TargetClusterServiceError) Error() string {
-	return fmt.Sprintf("cluster error (%q): expected exactly one Service in namespace %q matching %q, but got %d",
-		e.clusterName, e.ns, e.selector.String(), e.serviceCount)
-}
-
-func (e TargetClusterServiceError) ShouldRetry() bool {
-	return true
-}
-
-func NewTargetClusterWrongServiceCountError(clusterName string, selector labels.Selector, ns string, serviceCount int) TargetClusterServiceError {
-	return TargetClusterServiceError{
-		clusterName:  clusterName,
-		selector:     selector,
-		ns:           ns,
-		serviceCount: serviceCount,
 	}
 }
 
