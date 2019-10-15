@@ -28,6 +28,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
 	"github.com/bookingcom/shipper/pkg/util/filters"
 	installationutil "github.com/bookingcom/shipper/pkg/util/installation"
 	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
@@ -300,6 +301,11 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 	installer := NewInstaller(c.chartFetcher, it)
 	clusterErrors := shippererrors.NewMultiError()
 
+	diff := diffutil.NewMultiDiff()
+	defer func() {
+		c.reportClusterInstallationConditionChange(it, diff)
+	}()
+
 	for _, name := range it.Spec.Clusters {
 
 		// IMPORTANT: Since we keep existing conditions from previous syncing
@@ -321,20 +327,22 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 			clusterErrors.Append(err)
 			status.Status = shipper.InstallationStatusFailed
 			status.Message = err.Error()
-			status.Conditions = installationutil.SetInstallationCondition(
-				status.Conditions,
+
+			condOperational := installationutil.NewClusterInstallationCondition(
 				shipper.ClusterConditionTypeOperational,
 				corev1.ConditionFalse,
 				reasonForOperationalCondition(err),
-				err.Error())
+				err.Error(),
+			)
+			diff.Append(installationutil.SetClusterInstallationCondition(status, *condOperational))
 
-			status.Conditions = installationutil.SetInstallationCondition(
-				status.Conditions,
+			condReady := installationutil.NewClusterInstallationCondition(
 				shipper.ClusterConditionTypeReady,
 				corev1.ConditionUnknown,
 				reasonForReadyCondition(err),
-				err.Error())
-
+				err.Error(),
+			)
+			diff.Append(installationutil.SetClusterInstallationCondition(status, *condReady))
 			continue
 		}
 
@@ -345,25 +353,58 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 			clusterErrors.Append(err)
 			status.Status = shipper.InstallationStatusFailed
 			status.Message = err.Error()
-			status.Conditions = installationutil.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeOperational, corev1.ConditionFalse, reasonForOperationalCondition(err), err.Error())
-			status.Conditions = installationutil.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeReady, corev1.ConditionUnknown, reasonForReadyCondition(err), err.Error())
+
+			condOperational := installationutil.NewClusterInstallationCondition(
+				shipper.ClusterConditionTypeOperational,
+				corev1.ConditionFalse,
+				reasonForOperationalCondition(err),
+				err.Error(),
+			)
+			diff.Append(installationutil.SetClusterInstallationCondition(status, *condOperational))
+
+			condReady := installationutil.NewClusterInstallationCondition(
+				shipper.ClusterConditionTypeReady,
+				corev1.ConditionUnknown,
+				reasonForReadyCondition(err),
+				err.Error(),
+			)
+			diff.Append(installationutil.SetClusterInstallationCondition(status, *condReady))
 			continue
 		}
 
 		// At this point, we got a hold in a connection to the target cluster,
 		// so we assume it's operational until some other signal saying
 		// otherwise arrives.
-		status.Conditions = installationutil.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeOperational, corev1.ConditionTrue, "", "")
+		condOperational := installationutil.NewClusterInstallationCondition(
+			shipper.ClusterConditionTypeOperational,
+			corev1.ConditionTrue,
+			"",
+			"",
+		)
+		diff.Append(installationutil.SetClusterInstallationCondition(status, *condOperational))
 
 		if err = installer.install(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
 			clusterErrors.Append(err)
 			status.Status = shipper.InstallationStatusFailed
 			status.Message = err.Error()
-			status.Conditions = installationutil.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeReady, corev1.ConditionFalse, reasonForReadyCondition(err), err.Error())
+
+			condReady := installationutil.NewClusterInstallationCondition(
+				shipper.ClusterConditionTypeReady,
+				corev1.ConditionFalse,
+				reasonForReadyCondition(err),
+				err.Error(),
+			)
+			diff.Append(installationutil.SetClusterInstallationCondition(status, *condReady))
 			continue
 		}
 
-		status.Conditions = installationutil.SetInstallationCondition(status.Conditions, shipper.ClusterConditionTypeReady, corev1.ConditionTrue, "", "")
+		condReady := installationutil.NewClusterInstallationCondition(
+			shipper.ClusterConditionTypeReady,
+			corev1.ConditionTrue,
+			"",
+			"",
+		)
+		diff.Append(installationutil.SetClusterInstallationCondition(status, *condReady))
 		status.Status = shipper.InstallationStatusInstalled
 	}
 
@@ -462,4 +503,10 @@ func reasonForReadyCondition(err error) string {
 	}
 
 	return UnknownError
+}
+
+func (c *Controller) reportClusterInstallationConditionChange(ct *shipper.InstallationTarget, diff diffutil.Diff) {
+	if !diff.IsEmpty() {
+		c.recorder.Event(ct, corev1.EventTypeNormal, "ClusterInstallationConditionChanged", diff.String())
+	}
 }

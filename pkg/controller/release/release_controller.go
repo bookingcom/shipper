@@ -321,14 +321,12 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 		c.recorder,
 	)
 
+	initialRel := rel.DeepCopy()
+
 	diff := diffutil.NewMultiDiff()
 	defer func() {
-		if !diff.IsEmpty() {
-			c.reportReleaseConditionChange(rel, diff)
-		}
+		c.reportReleaseConditionChange(initialRel, diff)
 	}()
-
-	initialRel := rel.DeepCopy()
 
 	rolloutBlocked, events, err := rolloutblock.BlocksRollout(c.rolloutBlockLister, rel)
 	for _, ev := range events {
@@ -503,7 +501,9 @@ func (c *Controller) enqueueReleaseFromAssociatedObject(obj interface{}) {
 }
 
 func (c *Controller) reportReleaseConditionChange(rel *shipper.Release, diff diffutil.Diff) {
-	c.recorder.Event(rel, corev1.EventTypeNormal, "ReleaseConditionChanged", diff.String())
+	if !diff.IsEmpty() {
+		c.recorder.Event(rel, corev1.EventTypeNormal, "ReleaseConditionChanged", diff.String())
+	}
 }
 
 func reasonForReleaseCondition(err error) string {

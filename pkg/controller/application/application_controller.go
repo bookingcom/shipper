@@ -300,9 +300,7 @@ func (c *Controller) wrapUpApplicationConditions(app *shipper.Application, rels 
 
 	diff := diffutil.NewMultiDiff()
 	defer func() {
-		if !diff.IsEmpty() {
-			c.reportApplicationConditionChange(app, diff)
-		}
+		c.reportApplicationConditionChange(app, diff)
 	}()
 
 	abortingCond := apputil.NewApplicationCondition(shipper.ApplicationConditionTypeAborting, corev1.ConditionFalse, "", "")
@@ -348,7 +346,9 @@ End:
 }
 
 func (c *Controller) reportApplicationConditionChange(app *shipper.Application, diff diffutil.Diff) {
-	c.recorder.Event(app, corev1.EventTypeNormal, "ApplicationConditionChanged", diff.String())
+	if !diff.IsEmpty() {
+		c.recorder.Event(app, corev1.EventTypeNormal, "ApplicationConditionChanged", diff.String())
+	}
 }
 
 /*
@@ -373,9 +373,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 
 	diff := diffutil.NewMultiDiff()
 	defer func() {
-		if !diff.IsEmpty() {
-			c.reportApplicationConditionChange(app, diff)
-		}
+		c.reportApplicationConditionChange(app, diff)
 	}()
 
 	// Required by subsequent calls to GetContender and GetIncumbent.
