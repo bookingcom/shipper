@@ -30,7 +30,10 @@ func TestSuccessfulDeleteInstallationTarget(t *testing.T) {
 
 	// Setup cluster client store that'll be used by the controller to contact
 	// application clusters to perform the anchor removal.
-	fakeClusterClientStore := shippertesting.NewSimpleFakeClusterClientStore(kubeFakeClientset, kubeInformerFactory, []string{clusterName})
+	fakeClusterClientStore := shippertesting.NewFakeClusterClientStore(map[string]*shippertesting.FakeCluster{
+		clusterName: shippertesting.NewFakeCluster(kubeFakeClientset, nil),
+	})
+
 	fakeRecorder := record.NewFakeRecorder(42)
 
 	// Create the controller without waiting until the work queue is populated.
@@ -103,7 +106,9 @@ func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
 
 	// Setup cluster client store that'll be used by the controller to contact
 	// application clusters to perform the anchor removal.
-	fakeClusterClientStore := shippertesting.NewSimpleFakeClusterClientStore(kubeFakeClientset, kubeInformerFactory, []string{clusterName})
+	fakeClusterClientStore := shippertesting.NewFakeClusterClientStore(map[string]*shippertesting.FakeCluster{
+		clusterName: shippertesting.NewFakeCluster(kubeFakeClientset, nil),
+	})
 	fakeRecorder := record.NewFakeRecorder(42)
 
 	// Create the controller without waiting until the work queue is populated.
@@ -170,7 +175,9 @@ func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
 
 	// Setup cluster client store that'll be used by the controller to contact
 	// application clusters to perform the anchor removal.
-	fakeClusterClientStore := shippertesting.NewSimpleFakeClusterClientStore(kubeFakeClientset, kubeInformerFactory, []string{clusterName})
+	fakeClusterClientStore := shippertesting.NewFakeClusterClientStore(map[string]*shippertesting.FakeCluster{
+		clusterName: shippertesting.NewFakeCluster(kubeFakeClientset, nil),
+	})
 	fakeRecorder := record.NewFakeRecorder(42)
 
 	// Create the controller without waiting until the work queue is populated.
@@ -237,7 +244,9 @@ func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
 
 	// Setup cluster client store that'll be used by the controller to contact
 	// application clusters to perform the anchor removal.
-	fakeClusterClientStore := shippertesting.NewSimpleFakeClusterClientStore(kubeFakeClientset, kubeInformerFactory, []string{clusterName})
+	fakeClusterClientStore := shippertesting.NewFakeClusterClientStore(map[string]*shippertesting.FakeCluster{
+		clusterName: shippertesting.NewFakeCluster(kubeFakeClientset, nil),
+	})
 	fakeRecorder := record.NewFakeRecorder(42)
 
 	// Create the controller without waiting until the work queue is populated.

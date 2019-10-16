@@ -1,82 +1,61 @@
 package testing
 
 import (
-	fakedynamic "k8s.io/client-go/dynamic/fake"
+	"fmt"
+
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/fake"
-	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
-type FakeClientPair struct {
-	Client        *kubefake.Clientset
-	DynamicClient *fakedynamic.FakeDynamicClient
-}
-
-func NewSimpleFakeClusterClientStore(
-	fakeClient *fake.Clientset,
-	informerFactory informers.SharedInformerFactory,
-	clusterNames []string,
-) *FakeClusterClientStore {
-	clientsPerCluster := make(map[string]FakeClientPair)
-	for _, clusterName := range clusterNames {
-		clientsPerCluster[clusterName] = FakeClientPair{Client: fakeClient}
-	}
-
-	return NewFakeClusterClientStore(clientsPerCluster, informerFactory)
-}
-
-func NewFakeClusterClientStore(
-	clientsPerCluster map[string]FakeClientPair,
-	informerFactory informers.SharedInformerFactory,
-) *FakeClusterClientStore {
-	return &FakeClusterClientStore{
-		clientsPerCluster: clientsPerCluster,
-		informerFactory:   informerFactory,
-	}
-}
-
-// FakeClusterClientStore stores one clientset per cluster, but only one
-// informer, that gets returned no matter the cluster./ It also supports
-// callbacks, meaning that when it's passed into a controller, the controller
-// can register callback and be notified when the Run() method on
-// FakeClusterClientstore is called.
+// FakeClusterClientStore is a fake implementation of a ClusterClientStore,
+// allowing you to provide your own clientsets.
 type FakeClusterClientStore struct {
-	clientsPerCluster map[string]FakeClientPair
-
-	restConfig      *rest.Config
-	informerFactory informers.SharedInformerFactory
+	clusters map[string]*FakeCluster
 
 	subscriptionCallbacks []clusterclientstore.SubscriptionRegisterFunc
 	eventHandlerCallbacks []clusterclientstore.EventHandlerRegisterFunc
 }
 
-func (s *FakeClusterClientStore) AddSubscriptionCallback(subscriptionCallback clusterclientstore.SubscriptionRegisterFunc) {
-	s.subscriptionCallbacks = append(s.subscriptionCallbacks, subscriptionCallback)
+func NewFakeClusterClientStore(clusters map[string]*FakeCluster) *FakeClusterClientStore {
+	return &FakeClusterClientStore{clusters: clusters}
 }
 
-func (s *FakeClusterClientStore) AddEventHandlerCallback(eventHandlerCallback clusterclientstore.EventHandlerRegisterFunc) {
-	s.eventHandlerCallbacks = append(s.eventHandlerCallbacks, eventHandlerCallback)
+func (s *FakeClusterClientStore) AddSubscriptionCallback(c clusterclientstore.SubscriptionRegisterFunc) {
+	s.subscriptionCallbacks = append(s.subscriptionCallbacks, c)
+}
+
+func (s *FakeClusterClientStore) AddEventHandlerCallback(c clusterclientstore.EventHandlerRegisterFunc) {
+	s.eventHandlerCallbacks = append(s.eventHandlerCallbacks, c)
 }
 
 func (s *FakeClusterClientStore) Run(stopCh <-chan struct{}) {
-	for _, subscriptionCallback := range s.subscriptionCallbacks {
-		subscriptionCallback(s.informerFactory)
-	}
+	for name, cluster := range s.clusters {
+		informerFactory := cluster.InformerFactory
 
-	for _, eventHandlerCallback := range s.eventHandlerCallbacks {
-		for clusName, _ := range s.clientsPerCluster {
-			eventHandlerCallback(s.informerFactory, clusName)
+		for _, subscriptionCallback := range s.subscriptionCallbacks {
+			subscriptionCallback(informerFactory)
 		}
+
+		for _, eventHandlerCallback := range s.eventHandlerCallbacks {
+			eventHandlerCallback(informerFactory, name)
+		}
+
+		informerFactory.Start(stopCh)
+		informerFactory.WaitForCacheSync(stopCh)
 	}
 }
 
 func (s *FakeClusterClientStore) GetClient(clusterName string, ua string) (kubernetes.Interface, error) {
-	return s.clientsPerCluster[clusterName].Client, nil
+	cluster, ok := s.clusters[clusterName]
+	if !ok {
+		return nil, fmt.Errorf("no client for cluster %q", clusterName)
+	}
+
+	return cluster.Client, nil
 }
 
 func (s *FakeClusterClientStore) GetConfig(clusterName string) (*rest.Config, error) {
@@ -84,7 +63,7 @@ func (s *FakeClusterClientStore) GetConfig(clusterName string) (*rest.Config, er
 }
 
 func (s *FakeClusterClientStore) GetInformerFactory(clusterName string) (informers.SharedInformerFactory, error) {
-	return s.informerFactory, nil
+	return s.clusters[clusterName].InformerFactory, nil
 }
 
 func NewFailingFakeClusterClientStore() clusterclientstore.Interface {

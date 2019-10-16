@@ -42,7 +42,7 @@ func TestInstallOneCluster(t *testing.T) {
 	clusterPair := clientsPerCluster[cluster.Name]
 
 	fakeRecorder := record.NewFakeRecorder(42)
-	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster, nil)
+	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster)
 
 	c := newController(
 		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
@@ -126,7 +126,7 @@ func TestInstallMultipleClusters(t *testing.T) {
 		})
 
 	fakeRecorder := record.NewFakeRecorder(42)
-	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster, nil)
+	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster)
 
 	c := newController(
 		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
@@ -311,7 +311,7 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 		initializeClients([]*metav1.APIResourceList{}, []runtime.Object{cluster, installationTarget}, objectsPerClusterMap{cluster.Name: nil})
 
 	fakeRecorder := record.NewFakeRecorder(42)
-	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster, nil)
+	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster)
 
 	c := newController(
 		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
@@ -387,7 +387,7 @@ func TestManagementServerMissesCluster(t *testing.T) {
 		initializeClients(apiResourceList, []runtime.Object{installationTarget}, nil)
 
 	fakeRecorder := record.NewFakeRecorder(42)
-	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster, nil)
+	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster)
 
 	c := newController(
 		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
@@ -476,7 +476,7 @@ func TestInstallNoOverride(t *testing.T) {
 	clusterPair := clientsPerCluster[cluster.Name]
 
 	fakeRecorder := record.NewFakeRecorder(42)
-	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster, nil)
+	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster)
 
 	c := newController(shipperclientset, shipperInformerFactory,
 		fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
