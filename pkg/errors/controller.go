@@ -20,6 +20,10 @@ func (e UnexpectedObjectCountFromSelectorError) Error() string {
 		e.expected, e.gvk.String(), e.selector.String(), e.got)
 }
 
+func (e UnexpectedObjectCountFromSelectorError) ShouldRetry() bool {
+	return false
+}
+
 func NewUnexpectedObjectCountFromSelectorError(
 	selector labels.Selector,
 	gvk schema.GroupVersionKind,
@@ -31,10 +35,6 @@ func NewUnexpectedObjectCountFromSelectorError(
 		expected: expected,
 		got:      got,
 	}
-}
-
-func (e UnexpectedObjectCountFromSelectorError) ShouldRetry() bool {
-	return false
 }
 
 type MultipleOwnerReferencesError string
