@@ -241,7 +241,7 @@ func (c *Controller) enqueueInstallationTargetFromObject(obj interface{}) {
 
 	it, err := c.getInstallationTargetForReleaseAndNamespace(rel, kubeobj.GetNamespace())
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("cannot get installation target for release '%s/%s': %#v", rel, kubeobj.GetNamespace(), err))
+		runtime.HandleError(fmt.Errorf("cannot get installation target for release '%s/%s': %#v", kubeobj.GetNamespace(), rel, err))
 		return
 	}
 
