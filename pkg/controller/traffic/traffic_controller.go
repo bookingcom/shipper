@@ -45,7 +45,7 @@ type Controller struct {
 func NewController(
 	shipperclientset shipperclient.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
-	store *clusterclientstore.Store,
+	store clusterclientstore.Interface,
 	recorder record.EventRecorder,
 ) *Controller {
 

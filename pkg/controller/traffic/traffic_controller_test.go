@@ -11,16 +11,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	runtimeutil "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
-	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
@@ -120,19 +117,24 @@ type fixture struct {
 	objects []runtime.Object
 	actions []kubetesting.Action
 
-	clusters []*shippertesting.ClusterFixture
+	clusters map[string]*shippertesting.FakeCluster
 }
 
 func newFixture(t *testing.T) *fixture {
 	return &fixture{
 		t: t,
+
+		clusters: make(map[string]*shippertesting.FakeCluster),
 	}
 }
 
-func (f *fixture) newCluster() *shippertesting.ClusterFixture {
-	name := fmt.Sprintf("cluster-%d", len(f.clusters))
-	cluster := shippertesting.NewClusterFixture(name)
-	f.clusters = append(f.clusters, cluster)
+func (f *fixture) newCluster() *shippertesting.FakeCluster {
+	cluster := shippertesting.NewNamedFakeCluster(
+		fmt.Sprintf("cluster-%d", len(f.clusters)),
+		kubefake.NewSimpleClientset(), nil)
+
+	f.clusters[cluster.Name] = cluster
+
 	return cluster
 }
 
@@ -141,37 +143,18 @@ func (f *fixture) newController(
 ) (
 	*shipperfake.Clientset,
 	*Controller,
-	*clusterclientstore.Store,
+	*shippertesting.FakeClusterClientStore,
 	shipperinformers.SharedInformerFactory,
 ) {
+	store := shippertesting.NewFakeClusterClientStore(f.clusters)
 
-	client := shipperfake.NewSimpleClientset(f.objects...)
-
-	clusterNames := make([]string, 0, len(f.clusters))
-	for _, cluster := range f.clusters {
-		clusterNames = append(clusterNames, cluster.Name)
-	}
-
-	store := shippertesting.ClusterClientStore(
-		stopCh,
-		clusterNames,
-		func(clusterName string, _ string, _ *rest.Config) (kubernetes.Interface, error) {
-			for _, cluster := range f.clusters {
-				if clusterName == cluster.Name {
-					return kubefake.NewSimpleClientset(cluster.Objects()...), nil
-				}
-			}
-			f.t.Fatalf("tried to build a client for a cluster %q which was not present in the test fixture. this is a bug in the tests", clusterName)
-			return nil, fmt.Errorf("no such cluster")
-		},
-	)
-
-	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(client, shippertesting.NoResyncPeriod)
+	shipperClient := shipperfake.NewSimpleClientset(f.objects...)
+	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(shipperClient, shippertesting.NoResyncPeriod)
 	c := NewController(
-		client, shipperInformerFactory, store, record.NewFakeRecorder(42),
+		shipperClient, shipperInformerFactory, store, record.NewFakeRecorder(42),
 	)
 
-	return client, c, store, shipperInformerFactory
+	return shipperClient, c, store, shipperInformerFactory
 }
 
 func (f *fixture) run() {
@@ -189,22 +172,7 @@ func (f *fixture) run() {
 	informer.Start(stopCh)
 	informer.WaitForCacheSync(stopCh)
 
-	go store.Run(stopCh)
-
-	wait.PollUntil(
-		10*time.Millisecond,
-		func() (bool, error) {
-			// poll until the clusters are prepared in the cluster store
-			for _, cluster := range f.clusters {
-				_, err := store.GetClient(cluster.Name, AgentName)
-				if err != nil {
-					return false, nil
-				}
-			}
-			return true, nil
-		},
-		stopCh,
-	)
+	store.Run(stopCh)
 
 	wait.PollUntil(
 		10*time.Millisecond,
@@ -219,7 +187,10 @@ func (f *fixture) run() {
 	actual := shippertesting.FilterActions(client.Actions())
 	shippertesting.CheckActions(f.actions, actual, f.t)
 
-	shippertesting.CheckClusterClientActions(store, f.clusters, AgentName, f.t)
+	for _, cluster := range f.clusters {
+		actual := shippertesting.FilterActions(cluster.Client.Actions())
+		shippertesting.CheckActions(cluster.ExpectedActions(), actual, f.t)
+	}
 }
 
 func (f *fixture) addTrafficTarget(tt *shipper.TrafficTarget) {

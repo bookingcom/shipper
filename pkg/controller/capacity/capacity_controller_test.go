@@ -13,7 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	kubeinformers "k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
@@ -45,8 +44,6 @@ func TestUpdatingCapacityTargetUpdatesDeployment(t *testing.T) {
 	deployment := newDeployment(0, 0)
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment)
 
-	f.ExpectDeploymentPatchWithReplicas(deployment, 5)
-
 	expectedClusterConditions := []shipper.ClusterCapacityCondition{
 		{
 			Type:   shipper.ClusterConditionTypeOperational,
@@ -61,6 +58,7 @@ func TestUpdatingCapacityTargetUpdatesDeployment(t *testing.T) {
 	f.expectCapacityTargetStatusUpdate(capacityTarget, 0, 0, expectedClusterConditions, []shipper.ClusterCapacityReport{*builder.NewReport("nginx").Build()})
 
 	f.runCapacityTargetSyncHandler()
+	f.checkDeploymentPatchWithReplicas(deployment, 5)
 }
 
 func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePod(t *testing.T) {
@@ -628,33 +626,29 @@ func NewFixture(t *testing.T) *fixture {
 type fixture struct {
 	t *testing.T
 
-	targetClusterClientset       *kubefake.Clientset
-	targetClusterInformerFactory kubeinformers.SharedInformerFactory
-	targetClusterObjects         []runtime.Object
+	targetClusterObjects []runtime.Object
 
 	managementClientset       *shipperfake.Clientset
 	managementInformerFactory shipperinformers.SharedInformerFactory
 	managementObjects         []runtime.Object
 
-	store *shippertesting.FakeClusterClientStore
+	store             *shippertesting.FakeClusterClientStore
+	clientsPerCluster map[string]*shippertesting.FakeCluster
 
-	targetClusterActions     []kubetesting.Action
 	managementClusterActions []kubetesting.Action
 }
 
 func (f *fixture) initializeFixture() {
-	f.targetClusterClientset = kubefake.NewSimpleClientset(f.targetClusterObjects...)
 	f.managementClientset = shipperfake.NewSimpleClientset(f.managementObjects...)
+	f.managementInformerFactory = shipperinformers.NewSharedInformerFactory(f.managementClientset, shippertesting.NoResyncPeriod)
 
-	const noResyncPeriod time.Duration = 0
-	f.targetClusterInformerFactory = kubeinformers.NewSharedInformerFactory(f.targetClusterClientset, noResyncPeriod)
-	f.managementInformerFactory = shipperinformers.NewSharedInformerFactory(f.managementClientset, noResyncPeriod)
-
-	clusterNames := make([]string, 0, numClus)
+	f.clientsPerCluster = make(map[string]*shippertesting.FakeCluster)
 	for i := int32(0); i < numClus; i++ {
-		clusterNames = append(clusterNames, fmt.Sprintf("cluster_%d", i))
+		clusterName := fmt.Sprintf("cluster_%d", i)
+		f.clientsPerCluster[clusterName] = shippertesting.NewFakeCluster(
+			kubefake.NewSimpleClientset(f.targetClusterObjects...), nil)
 	}
-	f.store = shippertesting.NewSimpleFakeClusterClientStore(f.targetClusterClientset, f.targetClusterInformerFactory, clusterNames)
+	f.store = shippertesting.NewFakeClusterClientStore(f.clientsPerCluster)
 }
 
 func (f *fixture) newController() *Controller {
@@ -679,10 +673,7 @@ func (f *fixture) runInternal() *Controller {
 	f.store.Run(stopCh)
 
 	f.managementInformerFactory.Start(stopCh)
-	f.targetClusterInformerFactory.Start(stopCh)
-
 	f.managementInformerFactory.WaitForCacheSync(stopCh)
-	f.targetClusterInformerFactory.WaitForCacheSync(stopCh)
 
 	return controller
 }
@@ -693,23 +684,22 @@ func (f *fixture) runCapacityTargetSyncHandler() {
 		f.t.Errorf("sync handler unexpectedly returned error: %v", err)
 	}
 
-	targetClusterActual := shippertesting.FilterActions(f.targetClusterClientset.Actions())
 	managementClusterActual := shippertesting.FilterActions(f.managementClientset.Actions())
-
-	shippertesting.CheckActions(f.targetClusterActions, targetClusterActual, f.t)
 	shippertesting.CheckActions(f.managementClusterActions, managementClusterActual, f.t)
 }
 
-func (f *fixture) ExpectDeploymentPatchWithReplicas(deployment *appsv1.Deployment, replicas int32) {
-	for i := int32(0); i < numClus; i++ {
-		patchAction := kubetesting.NewPatchSubresourceAction(
-			schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"},
-			deployment.GetNamespace(),
-			deployment.GetName(),
-			types.StrategicMergePatchType,
-			[]byte(fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicas)),
-		)
-		f.targetClusterActions = append(f.targetClusterActions, patchAction)
+func (f *fixture) checkDeploymentPatchWithReplicas(deployment *appsv1.Deployment, replicas int32) {
+	patchAction := kubetesting.NewPatchSubresourceAction(
+		schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"},
+		deployment.GetNamespace(),
+		deployment.GetName(),
+		types.StrategicMergePatchType,
+		[]byte(fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicas)),
+	)
+
+	for _, fakeCluster := range f.clientsPerCluster {
+		actualActions := shippertesting.FilterActions(fakeCluster.Client.Actions())
+		shippertesting.CheckActions([]kubetesting.Action{patchAction}, actualActions, f.t)
 	}
 }
 

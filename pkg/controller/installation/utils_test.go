@@ -77,21 +77,18 @@ type objectsPerClusterMap map[string][]runtime.Object
 // initializeClients returns some objects that are used in several tests,
 // basically to reduce boilerplate.
 func initializeClients(apiResourceList []*v1.APIResourceList, shipperObjects []runtime.Object, kubeObjectsPerCluster objectsPerClusterMap) (
-	map[string]shippertesting.FakeClientPair,
+	map[string]*shippertesting.FakeCluster,
 	*shipperfake.Clientset,
 	DynamicClientBuilderFunc,
 	shipperinformers.SharedInformerFactory,
 ) {
-	clientsPerCluster := make(map[string]shippertesting.FakeClientPair)
+	clientsPerCluster := make(map[string]*shippertesting.FakeCluster)
 
 	for clusterName, objs := range kubeObjectsPerCluster {
 		fakeClient := kubefake.NewSimpleClientset(objs...)
 		populateFakeDiscovery(fakeClient.Discovery(), apiResourceList)
 		fakeDynamicClient := fakedynamic.NewSimpleDynamicClient(scheme.Scheme, objs...)
-		clientsPerCluster[clusterName] = shippertesting.FakeClientPair{
-			Client:        fakeClient,
-			DynamicClient: fakeDynamicClient,
-		}
+		clientsPerCluster[clusterName] = shippertesting.NewFakeCluster(fakeClient, fakeDynamicClient)
 	}
 
 	fakeDynamicClientBuilder := func(kind *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipper.Cluster) dynamic.Interface {
