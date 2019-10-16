@@ -1,4 +1,4 @@
-FROM alpine/helm:2.15.0-rc.1
+FROM alpine/helm:2.15.0-rc.2
 
 ADD test/e2e/testdata /charts
 

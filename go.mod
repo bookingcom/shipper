@@ -49,7 +49,7 @@ require (
 	k8s.io/client-go v0.0.0-20190602130007-e65ca70987a6
 	k8s.io/code-generator v0.0.0-20190531131525-17d711082421
 	k8s.io/gengo v0.0.0-20190327210449-e17681d19d3a // indirect
-	k8s.io/helm v2.15.0-rc.1+incompatible
+	k8s.io/helm v2.15.0-rc.2+incompatible
 	k8s.io/klog v0.3.2
 	k8s.io/kube-openapi v0.0.0-20190603182131-db7b694dc208 // indirect
 	k8s.io/utils v0.0.0-20190529001817-6999998975a7 // indirect
