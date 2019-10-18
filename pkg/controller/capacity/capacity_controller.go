@@ -24,8 +24,8 @@ import (
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/conditions"
-	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	"github.com/bookingcom/shipper/pkg/util/filters"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
 	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
 )
@@ -291,9 +291,16 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 }
 
 func (c *Controller) registerDeploymentEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
-	filterLabel := shipper.ReleaseLabel
-	handler := shippercontroller.NewAppClusterEventHandler(filterLabel, c.enqueueCapacityTargetFromDeployment)
-
+	handler := cache.FilteringResourceEventHandler{
+		FilterFunc: filters.BelongsToRelease,
+		Handler: cache.ResourceEventHandlerFuncs{
+			AddFunc:    c.enqueueCapacityTargetFromDeployment,
+			DeleteFunc: c.enqueueCapacityTargetFromDeployment,
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				c.enqueueCapacityTargetFromDeployment(newObj)
+			},
+		},
+	}
 	informerFactory.Apps().V1().Deployments().Informer().AddEventHandler(handler)
 }
 
