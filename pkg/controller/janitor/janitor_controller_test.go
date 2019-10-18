@@ -12,6 +12,7 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	"github.com/bookingcom/shipper/pkg/util/anchor"
 )
 
 // TestSuccessfulDeleteInstallationTarget exercises syncInstallationTarget(),
@@ -48,18 +49,13 @@ func TestSuccessfulDeleteInstallationTarget(t *testing.T) {
 		fakeClusterClientStore,
 		fakeRecorder)
 
-	anchorName, err := CreateAnchorName(installationTarget)
+	key, err := cache.MetaNamespaceKeyFunc(installationTarget)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	var key string
-	if key, err = cache.MetaNamespaceKeyFunc(installationTarget); err != nil {
-		t.Fatal(err)
-	}
-
 	item := &InstallationTargetWorkItem{
-		AnchorName: anchorName,
+		AnchorName: anchor.CreateAnchorName(installationTarget),
 		Clusters:   installationTarget.Spec.Clusters,
 		Key:        key,
 		Name:       installationTarget.Name,
@@ -91,10 +87,7 @@ func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
 	installationTarget := loadInstallationTarget()
 
 	// Create a ConfigMap based on the existing installation target object.
-	configMap, err := CreateConfigMapAnchor(installationTarget)
-	if err != nil {
-		t.Fatal(err)
-	}
+	configMap := anchor.CreateConfigMapAnchor(installationTarget)
 
 	// Setup clients with only the existing installation target object, that
 	// will be retrieved and compared by syncAnchor() later on.
@@ -123,8 +116,8 @@ func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
 		fakeClusterClientStore,
 		fakeRecorder)
 
-	var key string
-	if key, err = cache.MetaNamespaceKeyFunc(configMap); err != nil {
+	key, err := cache.MetaNamespaceKeyFunc(configMap)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -158,10 +151,7 @@ func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
 	cluster := loadCluster("minikube-a")
 	installationTarget := loadInstallationTarget()
 
-	configMap, err := CreateConfigMapAnchor(installationTarget)
-	if err != nil {
-		t.Fatal(err)
-	}
+	configMap := anchor.CreateConfigMapAnchor(installationTarget)
 
 	// Change the installation target object's UID present in the config map.
 	configMap.Data[InstallationTargetUID] = "some-other-installation-target-uid"
@@ -192,8 +182,8 @@ func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
 		fakeClusterClientStore,
 		fakeRecorder)
 
-	var key string
-	if key, err = cache.MetaNamespaceKeyFunc(configMap); err != nil {
+	key, err := cache.MetaNamespaceKeyFunc(configMap)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -230,10 +220,7 @@ func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
 	cluster := loadCluster("minikube-a")
 	installationTarget := loadInstallationTarget()
 
-	configMap, err := CreateConfigMapAnchor(installationTarget)
-	if err != nil {
-		t.Fatal(err)
-	}
+	configMap := anchor.CreateConfigMapAnchor(installationTarget)
 
 	// Setup without any extra object in the cache.
 	kubeFakeClientset, shipperFakeClientset, shipperInformerFactory, kubeInformerFactory :=
@@ -261,8 +248,8 @@ func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
 		fakeClusterClientStore,
 		fakeRecorder)
 
-	var key string
-	if key, err = cache.MetaNamespaceKeyFunc(configMap); err != nil {
+	key, err := cache.MetaNamespaceKeyFunc(configMap)
+	if err != nil {
 		t.Fatal(err)
 	}
 
