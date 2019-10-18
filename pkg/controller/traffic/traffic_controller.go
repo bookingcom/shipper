@@ -24,6 +24,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/conditions"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	"github.com/bookingcom/shipper/pkg/util/filters"
 	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
 )
 
@@ -80,8 +81,16 @@ func NewController(
 }
 
 func (c *Controller) registerAppClusterEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
-	filterLabel := shipper.AppLabel
-	handler := shippercontroller.NewAppClusterEventHandler(filterLabel, c.enqueueTrafficTargetsFromPod)
+	handler := cache.FilteringResourceEventHandler{
+		FilterFunc: filters.BelongsToApp,
+		Handler: cache.ResourceEventHandlerFuncs{
+			AddFunc:    c.enqueueTrafficTargetsFromPod,
+			DeleteFunc: c.enqueueTrafficTargetsFromPod,
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				c.enqueueTrafficTargetsFromPod(newObj)
+			},
+		},
+	}
 	informerFactory.Core().V1().Pods().Informer().AddEventHandler(handler)
 }
 
