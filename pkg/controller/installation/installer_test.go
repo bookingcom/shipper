@@ -23,9 +23,9 @@ import (
 	"k8s.io/helm/pkg/proto/hapi/chart"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	"github.com/bookingcom/shipper/pkg/controller/janitor"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	"github.com/bookingcom/shipper/pkg/util/anchor"
 )
 
 var localFetchChart = func(chartspec *shipper.Chart) (*chart.Chart, error) {
@@ -116,13 +116,10 @@ func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObject
 	testNs := "test-namespace"
 	chart := buildChart(appName, "0.0.1", repoUrl)
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
-	if err != nil {
-		panic(err)
-	}
+	configMapAnchor := anchor.CreateConfigMapAnchor(it)
 	installer := newInstaller(it)
 	svc := loadService("baseline")
-	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
 	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, shipperObjects, objectsPerClusterMap{cluster.Name: kubeObjects})
 
@@ -368,13 +365,10 @@ func TestInstallerSingleServiceNoLB(t *testing.T) {
 	chart := buildChart(appName, "single-service-no-lb", repoUrl)
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
-	if err != nil {
-		panic(err)
-	}
+	configMapAnchor := anchor.CreateConfigMapAnchor(it)
 	installer := newInstaller(it)
 	svc := loadService("baseline")
-	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
 	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
 
@@ -419,13 +413,10 @@ func TestInstallerSingleServiceWithLB(t *testing.T) {
 	chart := buildChart(appName, "single-service-with-lb", repoUrl)
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
-	if err != nil {
-		panic(err)
-	}
+	configMapAnchor := anchor.CreateConfigMapAnchor(it)
 	installer := newInstaller(it)
 	svc := loadService("baseline")
-	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
 	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
 
@@ -470,13 +461,10 @@ func TestInstallerMultiServiceNoLB(t *testing.T) {
 	chart := buildChart(appName, "multi-service-no-lb", repoUrl)
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
-	if err != nil {
-		panic(err)
-	}
+	configMapAnchor := anchor.CreateConfigMapAnchor(it)
 	installer := newInstaller(it)
 	svc := loadService("baseline")
-	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
 	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
 
@@ -484,7 +472,7 @@ func TestInstallerMultiServiceNoLB(t *testing.T) {
 
 	restConfig := &rest.Config{}
 
-	err = installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder)
+	err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder)
 	if err == nil {
 		t.Fatal("Expected an error, none raised")
 	}
@@ -503,13 +491,10 @@ func TestInstallerMultiServiceWithLB(t *testing.T) {
 	chart := buildChart(appName, "multi-service-with-lb", repoUrl)
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
-	if err != nil {
-		panic(err)
-	}
+	configMapAnchor := anchor.CreateConfigMapAnchor(it)
 	installer := newInstaller(it)
 	svc := loadService("baseline")
-	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
 	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
 
@@ -558,15 +543,12 @@ func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
 
 	it := buildInstallationTarget("nginx", "nginx", []string{cluster.Name}, &chart)
 
-	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
-	if err != nil {
-		panic(err)
-	}
+	configMapAnchor := anchor.CreateConfigMapAnchor(it)
 	installer := newInstaller(it)
 	primarySvc := loadService("nginx-primary")
 	secondarySvc := loadService("nginx-secondary")
-	primarySvc.SetOwnerReferences(append(primarySvc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
-	secondarySvc.SetOwnerReferences(append(secondarySvc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+	primarySvc.SetOwnerReferences(append(primarySvc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+	secondarySvc.SetOwnerReferences(append(secondarySvc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
 	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
 
@@ -617,14 +599,11 @@ func TestInstallerServiceWithReleaseNoWorkaround(t *testing.T) {
 	// Disabling the helm workaround
 	delete(it.ObjectMeta.Labels, shipper.HelmWorkaroundLabel)
 
-	configMapAnchor, err := janitor.CreateConfigMapAnchor(it)
-	if err != nil {
-		panic(err)
-	}
+	configMapAnchor := anchor.CreateConfigMapAnchor(it)
 
 	installer := newInstaller(it)
 	svc := loadService("baseline")
-	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), janitor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
 	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
 
@@ -632,7 +611,7 @@ func TestInstallerServiceWithReleaseNoWorkaround(t *testing.T) {
 
 	restConfig := &rest.Config{}
 
-	err = installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder)
+	err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder)
 	if err == nil {
 		t.Fatal("Expected error, none raised")
 	}
