@@ -15,8 +15,8 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
-	"github.com/bookingcom/shipper/pkg/conditions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	"github.com/bookingcom/shipper/pkg/util/conditions"
 	installationutil "github.com/bookingcom/shipper/pkg/util/installation"
 )
 

@@ -9,7 +9,7 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	"github.com/bookingcom/shipper/pkg/conditions"
+	"github.com/bookingcom/shipper/pkg/util/conditions"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 

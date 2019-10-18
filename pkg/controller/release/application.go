@@ -11,10 +11,10 @@ import (
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	"github.com/bookingcom/shipper/pkg/conditions"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
+	"github.com/bookingcom/shipper/pkg/util/conditions"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	rolloutblock "github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
