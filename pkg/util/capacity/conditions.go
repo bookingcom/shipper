@@ -3,12 +3,12 @@ package capacity
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	"github.com/bookingcom/shipper/pkg/util/conditions"
 	"github.com/bookingcom/shipper/pkg/util/diff"
 )
 
@@ -44,7 +44,7 @@ func (d *ClusterCapacityConditionDiff) String() string {
 	if d.IsEmpty() {
 		return ""
 	}
-	c1str, c2str := condStr(d.c1), condStr(d.c2)
+	c1str, c2str := conditions.CondStr(d.c1), conditions.CondStr(d.c2)
 	return fmt.Sprintf("[%s] -> [%s]", c1str, c2str)
 }
 
@@ -66,19 +66,17 @@ func SetClusterCapacityCondition(status *shipper.ClusterCapacityStatus, conditio
 	currentCond := GetClusterCapacityCondition(*status, condition.Type)
 
 	diff := NewClusterCapacityConditionDiff(currentCond, &condition)
-	if diff.IsEmpty() {
-		return nil
-	}
+	if !diff.IsEmpty() {
+		if currentCond != nil && currentCond.Status == condition.Status {
+			condition.LastTransitionTime = currentCond.LastTransitionTime
+		}
 
-	if currentCond != nil && currentCond.Status == condition.Status {
-		condition.LastTransitionTime = currentCond.LastTransitionTime
+		newConditions := filterOutCondition(status.Conditions, condition.Type)
+		status.Conditions = append(newConditions, condition)
+		sort.Slice(status.Conditions, func(i, j int) bool {
+			return status.Conditions[i].Type < status.Conditions[j].Type
+		})
 	}
-
-	newConditions := filterOutCondition(status.Conditions, condition.Type)
-	status.Conditions = append(newConditions, condition)
-	sort.Slice(status.Conditions, func(i, j int) bool {
-		return status.Conditions[i].Type < status.Conditions[j].Type
-	})
 
 	return diff
 }
@@ -101,26 +99,4 @@ func filterOutCondition(conditions []shipper.ClusterCapacityCondition, condType 
 		newConditions = append(newConditions, c)
 	}
 	return newConditions
-}
-
-func condStr(c *shipper.ClusterCapacityCondition) string {
-	if c == nil {
-		return ""
-	}
-	chunks := []string{
-		fmt.Sprintf("%v", c.Type),
-		fmt.Sprintf("%v", c.Status),
-		c.Reason,
-		c.Message,
-	}
-	b := strings.Builder{}
-	for _, ch := range chunks {
-		if len(ch) > 0 {
-			if b.Len() > 0 {
-				b.WriteByte(' ')
-			}
-			b.WriteString(ch)
-		}
-	}
-	return b.String()
 }
