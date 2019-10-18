@@ -22,8 +22,8 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
 	shipperrepo "github.com/bookingcom/shipper/pkg/chart/repo"
-	"github.com/bookingcom/shipper/pkg/controller/janitor"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	"github.com/bookingcom/shipper/pkg/util/anchor"
 )
 
 type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipper.Cluster) dynamic.Interface
@@ -294,14 +294,14 @@ func (i *Installer) installManifests(
 
 	it := i.InstallationTarget
 
-	var configMap *corev1.ConfigMap
 	var createdConfigMap *corev1.ConfigMap
 	var existingConfigMap *corev1.ConfigMap
 	var err error
 
-	if configMap, err = janitor.CreateConfigMapAnchor(it); err != nil {
-		return err
-	} else if existingConfigMap, err = client.CoreV1().ConfigMaps(it.Namespace).Get(configMap.Name, metav1.GetOptions{}); err != nil && !errors.IsNotFound(err) {
+	configMap := anchor.CreateConfigMapAnchor(it)
+	// TODO(jgreff): use a lister insted of a bare client
+	existingConfigMap, err = client.CoreV1().ConfigMaps(it.Namespace).Get(configMap.Name, metav1.GetOptions{})
+	if err != nil && !errors.IsNotFound(err) {
 		return shippererrors.NewKubeclientGetError(it.Name, configMap.Name, err).
 			WithCoreV1Kind("ConfigMap")
 	} else if err != nil { // errors.IsNotFound(err) == true
@@ -314,7 +314,7 @@ func (i *Installer) installManifests(
 	}
 
 	// Create the OwnerReference for the manifest objects.
-	ownerReference := janitor.ConfigMapAnchorToOwnerReference(createdConfigMap)
+	ownerReference := anchor.ConfigMapAnchorToOwnerReference(createdConfigMap)
 
 	// We keep decoded objects and labels separately in order to perform
 	// some intermediate checks and decorate labels if needed before the

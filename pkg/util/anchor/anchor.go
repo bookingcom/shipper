@@ -1,13 +1,26 @@
-package janitor
+package anchor
 
 import (
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
+
+const (
+	AnchorSuffix          = "-anchor"
+	InstallationTargetUID = "InstallationTargetUID"
+)
+
+func BelongsToInstallationTarget(configMap *corev1.ConfigMap) bool {
+	hasAnchorSuffix := strings.HasSuffix(configMap.GetName(), AnchorSuffix)
+	_, hasUID := configMap.Data[InstallationTargetUID]
+
+	return hasAnchorSuffix && hasUID
+}
 
 func ConfigMapAnchorToOwnerReference(configMap *corev1.ConfigMap) metav1.OwnerReference {
 	ownerReference := metav1.OwnerReference{
@@ -19,18 +32,14 @@ func ConfigMapAnchorToOwnerReference(configMap *corev1.ConfigMap) metav1.OwnerRe
 	return ownerReference
 }
 
-func CreateConfigMapAnchor(it *shipper.InstallationTarget) (*corev1.ConfigMap, error) {
-	anchorName, err := CreateAnchorName(it)
-	if err != nil {
-		return nil, err
-	}
+func CreateConfigMapAnchor(it *shipper.InstallationTarget) *corev1.ConfigMap {
 	anchor := &corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
 			Kind:       "ConfigMap",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      anchorName,
+			Name:      CreateAnchorName(it),
 			Namespace: it.Namespace,
 			Labels:    it.Labels,
 		},
@@ -38,9 +47,9 @@ func CreateConfigMapAnchor(it *shipper.InstallationTarget) (*corev1.ConfigMap, e
 			InstallationTargetUID: string(it.UID),
 		},
 	}
-	return anchor, nil
+	return anchor
 }
 
-func CreateAnchorName(it *shipper.InstallationTarget) (string, error) {
-	return fmt.Sprintf("%s%s", it.Name, AnchorSuffix), nil
+func CreateAnchorName(it *shipper.InstallationTarget) string {
+	return fmt.Sprintf("%s%s", it.Name, AnchorSuffix)
 }

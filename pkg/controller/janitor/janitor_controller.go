@@ -3,7 +3,6 @@ package janitor
 import (
 	"fmt"
 	"reflect"
-	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -23,12 +22,13 @@ import (
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	"github.com/bookingcom/shipper/pkg/util/anchor"
+	"github.com/bookingcom/shipper/pkg/util/filters"
 	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
 )
 
 const (
 	AgentName             = "janitor-controller"
-	AnchorSuffix          = "-anchor"
 	InstallationTargetUID = "InstallationTargetUID"
 )
 
@@ -74,13 +74,12 @@ func NewController(
 				return
 			} else {
 				it := obj.(*shipper.InstallationTarget)
-				releaseName := it.GetLabels()[shipper.ReleaseLabel]
 				wi := &InstallationTargetWorkItem{
 					ObjectMeta: *it.ObjectMeta.DeepCopy(),
 					Key:        key,
 					Namespace:  namespace,
 					Name:       name,
-					AnchorName: fmt.Sprintf("%s%s", releaseName, AnchorSuffix),
+					AnchorName: anchor.CreateAnchorName(it),
 					Clusters:   it.Spec.Clusters,
 				}
 				controller.workqueue.Add(wi)
@@ -88,70 +87,27 @@ func NewController(
 		},
 	})
 
-	store.AddSubscriptionCallback(func(informerFactory kubeinformers.SharedInformerFactory) {
-		// Subscribe to receive notifications for events related to config maps
-		// from all the clusters available in the store. Config maps are used as
-		// anchor, since they're owner of all of the release related objects
-		// added to the application cluster by the installation target.
-		informerFactory.Core().V1().ConfigMaps().Informer()
-	})
-
-	store.AddEventHandlerCallback(func(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
-		informerFactory.Core().V1().ConfigMaps().Informer().AddEventHandler(
-			cache.FilteringResourceEventHandler{
-				// Anchor objects are basically config maps with the shipper.ReleaseLabel
-				// label, so we want to filter to this constraint. Additionally we check
-				// whether the config map's Data field has the InstallationTargetUID key,
-				// ignoring those config maps that don't have it.
-				FilterFunc: func(obj interface{}) bool {
-					cm := obj.(*corev1.ConfigMap)
-					hasRightName := strings.HasSuffix(cm.GetName(), AnchorSuffix)
-					_, hasReleaseLabel := cm.GetLabels()[shipper.ReleaseLabel]
-					_, hasUID := cm.Data[InstallationTargetUID]
-					if hasRightName && hasReleaseLabel && !hasUID {
-						controller.recorder.Eventf(cm,
-							corev1.EventTypeWarning,
-							"ConfigMapIncomplete",
-							"Anchor config map doesn't have %q key, skipping", InstallationTargetUID)
-					}
-					return hasRightName && hasReleaseLabel && hasUID
-				},
-				Handler: cache.ResourceEventHandlerFuncs{
-					// Enqueue all the config maps that have a shipper.ReleaseLabel,
-					// extracting all the information required for the worker to, well, work.
-					UpdateFunc: func(oldObj, newObj interface{}) {
-						cm := newObj.(*corev1.ConfigMap)
-						if key, err := cache.MetaNamespaceKeyFunc(cm); err != nil {
-							runtime.HandleError(err)
-							return
-						} else if namespace, name, err := cache.SplitMetaNamespaceKey(key); err != nil {
-							runtime.HandleError(err)
-							return
-						} else {
-							// In theory, if we are in this block it means that the
-							// object has a shipper.ReleaseLabel label *and* the
-							// InstallationTargetUID key in Data, so it should be
-							// fine to just get them both.
-							releaseName := cm.GetLabels()[shipper.ReleaseLabel]
-							uid := cm.Data[InstallationTargetUID]
-							wi := &AnchorWorkItem{
-								ObjectMeta:            *cm.ObjectMeta.DeepCopy(),
-								Namespace:             namespace,
-								Name:                  name,
-								ClusterName:           clusterName,
-								InstallationTargetUID: uid,
-								Key:                   key,
-								ReleaseName:           releaseName,
-							}
-							controller.workqueue.Add(wi)
-						}
-					},
-				},
-			},
-		)
-	})
+	store.AddSubscriptionCallback(controller.subscribeToAppClusterEvents)
+	store.AddEventHandlerCallback(controller.registerAppClusterEventHandlers)
 
 	return controller
+}
+
+func (c *Controller) registerAppClusterEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
+	handler := cache.FilteringResourceEventHandler{
+		FilterFunc: filters.BelongsToInstallationTarget,
+		Handler: cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(old, new interface{}) {
+				c.enqueueConfigMap(new, clusterName)
+			},
+		},
+	}
+
+	informerFactory.Core().V1().ConfigMaps().Informer().AddEventHandler(handler)
+}
+
+func (c *Controller) subscribeToAppClusterEvents(informerFactory kubeinformers.SharedInformerFactory) {
+	informerFactory.Core().V1().ConfigMaps().Informer()
 }
 
 type WorkItem interface {
@@ -310,6 +266,7 @@ func (c *Controller) removeAnchor(clusterName string, namespace string, name str
 	// removed by another external process.
 	return false, nil
 }
+
 func (c *Controller) syncInstallationTarget(item *InstallationTargetWorkItem) error {
 	for _, clusterName := range item.Clusters {
 		installationTarget := &shipper.InstallationTarget{ObjectMeta: item.ObjectMeta}
@@ -330,4 +287,35 @@ func (c *Controller) syncInstallationTarget(item *InstallationTargetWorkItem) er
 	}
 
 	return nil
+}
+
+func (c *Controller) enqueueConfigMap(obj interface{}, clusterName string) {
+	key, err := cache.MetaNamespaceKeyFunc(obj)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+
+	// In theory, if we are in this block it means that the object has a
+	// shipper.ReleaseLabel label *and* the InstallationTargetUID key in
+	// Data, so it should be fine to just get them both.
+	cm := obj.(*corev1.ConfigMap)
+	releaseName := cm.GetLabels()[shipper.ReleaseLabel]
+	uid := cm.Data[InstallationTargetUID]
+	wi := &AnchorWorkItem{
+		ObjectMeta:            *cm.ObjectMeta.DeepCopy(),
+		Namespace:             namespace,
+		Name:                  name,
+		ClusterName:           clusterName,
+		InstallationTargetUID: uid,
+		Key:                   key,
+		ReleaseName:           releaseName,
+	}
+	c.workqueue.Add(wi)
 }

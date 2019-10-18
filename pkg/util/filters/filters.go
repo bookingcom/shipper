@@ -1,10 +1,12 @@
 package filters
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	"github.com/bookingcom/shipper/pkg/util/anchor"
 )
 
 func BelongsToRelease(obj interface{}) bool {
@@ -29,4 +31,14 @@ func BelongsToApp(obj interface{}) bool {
 	_, ok = kubeobj.GetLabels()[shipper.AppLabel]
 
 	return ok
+}
+
+func BelongsToInstallationTarget(obj interface{}) bool {
+	cm, ok := obj.(*corev1.ConfigMap)
+	if !ok {
+		klog.Warningf("Received something that's not a corev1/ConfigMap: %v", obj)
+		return false
+	}
+
+	return BelongsToRelease(cm) && anchor.BelongsToInstallationTarget(cm)
 }
