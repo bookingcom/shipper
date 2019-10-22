@@ -95,14 +95,7 @@ func NewController(
 	relInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: c.enqueueRel,
 		UpdateFunc: func(old, new interface{}) {
-			oldRel, oldOk := old.(*shipper.Release)
-			newRel, newOk := new.(*shipper.Release)
-			if oldOk && newOk && oldRel.ResourceVersion == newRel.ResourceVersion {
-				klog.V(4).Info("Received Release re-sync Update")
-				return
-			}
-
-			c.enqueueRel(newRel)
+			c.enqueueRel(new)
 		},
 		DeleteFunc: c.enqueueRel,
 	})
