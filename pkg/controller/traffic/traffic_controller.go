@@ -2,6 +2,7 @@ package traffic
 
 import (
 	"fmt"
+	"reflect"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -10,7 +11,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -178,63 +178,72 @@ func (c *Controller) processNextWorkItem() bool {
 }
 
 func (c *Controller) syncHandler(key string) error {
-	namespace, ttName, err := cache.SplitMetaNamespaceKey(key)
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return shippererrors.NewUnrecoverableError(err)
 	}
 
-	syncingTT, err := c.trafficTargetsLister.TrafficTargets(namespace).Get(ttName)
+	initialTT, err := c.trafficTargetsLister.TrafficTargets(namespace).Get(name)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			klog.V(3).Infof("TrafficTarget %q has been deleted", key)
 			return nil
 		}
 
-		return shippererrors.NewKubeclientGetError(namespace, ttName, err).
+		return shippererrors.NewKubeclientGetError(namespace, name, err).
 			WithShipperKind("TrafficTarget")
 	}
 
-	syncingReleaseName, ok := syncingTT.Labels[shipper.ReleaseLabel]
-	if !ok {
-		// TODO(asurikov): log an event.
-		return shippererrors.NewMissingShipperLabelError(syncingTT, shipper.ReleaseLabel)
+	tt, err := c.processTrafficTarget(initialTT.DeepCopy())
+
+	if !reflect.DeepEqual(initialTT, tt) {
+		if _, err := c.shipperclientset.ShipperV1alpha1().TrafficTargets(namespace).Update(tt); err != nil {
+			return shippererrors.NewKubeclientUpdateError(tt, err).
+				WithShipperKind("TrafficTarget")
+		}
 	}
 
-	appName, ok := syncingTT.Labels[shipper.AppLabel]
+	return err
+}
+
+func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.TrafficTarget, error) {
+	// TODO(jgreff): top-level errors on a TrafficTarget are not reported
+	// to the user. We should introduce a condition to expose them.
+
+	syncingReleaseName, ok := tt.Labels[shipper.ReleaseLabel]
 	if !ok {
-		// TODO(asurikov): log an event.
-		return shippererrors.NewMissingShipperLabelError(syncingTT, shipper.AppLabel)
+		return tt, shippererrors.NewMissingShipperLabelError(tt, shipper.ReleaseLabel)
 	}
 
+	appName, ok := tt.Labels[shipper.AppLabel]
+	if !ok {
+		return tt, shippererrors.NewMissingShipperLabelError(tt, shipper.AppLabel)
+	}
+
+	namespace := tt.Namespace
 	appSelector := labels.Set{shipper.AppLabel: appName}.AsSelector()
 	list, err := c.trafficTargetsLister.TrafficTargets(namespace).List(appSelector)
 	if err != nil {
-		return shippererrors.NewKubeclientListError(
+		return tt, shippererrors.NewKubeclientListError(
 			shipper.SchemeGroupVersion.WithKind("TrafficTarget"),
 			namespace, appSelector, err)
 	}
 
 	shifter, err := newPodLabelShifter(appName, namespace, list)
 	if err != nil {
-		// TODO(asurikov): log an event.
-		return err
+		return tt, err
 	}
-
-	clusterErrors := shippererrors.NewMultiError()
 
 	diff := diffutil.NewMultiDiff()
 	defer func() {
-		c.reportTrafficConditionChange(syncingTT, diff)
+		c.reportTrafficConditionChange(tt, diff)
 	}()
 
 	var statuses []*shipper.ClusterTrafficStatus
+	clusterErrors := shippererrors.NewMultiError()
 	for _, cluster := range shifter.Clusters() {
-		var achievedReleaseWeight uint32
-		var clientset kubernetes.Interface
 		var clusterConditions []shipper.ClusterTrafficCondition
-		var informerFactory kubeinformers.SharedInformerFactory
-
-		for _, e := range syncingTT.Status.Clusters {
+		for _, e := range tt.Status.Clusters {
 			if e.Name == cluster {
 				clusterConditions = e.Conditions
 			}
@@ -247,16 +256,8 @@ func (c *Controller) syncHandler(key string) error {
 
 		statuses = append(statuses, clusterStatus)
 
-		clientset, err = c.clusterClientStore.GetClient(cluster, AgentName)
-		if err == nil {
-			cond := trafficutil.NewClusterTrafficCondition(
-				shipper.ClusterConditionTypeOperational,
-				corev1.ConditionTrue,
-				"",
-				"",
-			)
-			diff.Append(trafficutil.SetClusterTrafficCondition(clusterStatus, *cond))
-		} else {
+		clientset, err := c.clusterClientStore.GetClient(cluster, AgentName)
+		if err != nil {
 			cond := trafficutil.NewClusterTrafficCondition(
 				shipper.ClusterConditionTypeOperational,
 				corev1.ConditionFalse,
@@ -269,16 +270,8 @@ func (c *Controller) syncHandler(key string) error {
 			continue
 		}
 
-		informerFactory, err = c.clusterClientStore.GetInformerFactory(cluster)
-		if err == nil {
-			cond := trafficutil.NewClusterTrafficCondition(
-				shipper.ClusterConditionTypeOperational,
-				corev1.ConditionTrue,
-				"",
-				"",
-			)
-			diff.Append(trafficutil.SetClusterTrafficCondition(clusterStatus, *cond))
-		} else {
+		informerFactory, err := c.clusterClientStore.GetInformerFactory(cluster)
+		if err != nil {
 			cond := trafficutil.NewClusterTrafficCondition(
 				shipper.ClusterConditionTypeOperational,
 				corev1.ConditionFalse,
@@ -291,8 +284,15 @@ func (c *Controller) syncHandler(key string) error {
 			continue
 		}
 
-		achievedReleaseWeight, err = shifter.SyncCluster(cluster, syncingReleaseName, clientset, informerFactory)
+		cond := trafficutil.NewClusterTrafficCondition(
+			shipper.ClusterConditionTypeOperational,
+			corev1.ConditionTrue,
+			"",
+			"",
+		)
+		diff.Append(trafficutil.SetClusterTrafficCondition(clusterStatus, *cond))
 
+		achievedReleaseWeight, err := shifter.SyncCluster(cluster, syncingReleaseName, clientset, informerFactory)
 		if err != nil {
 			var reason string
 
@@ -320,7 +320,7 @@ func (c *Controller) syncHandler(key string) error {
 		}
 
 		clusterStatus.AchievedTraffic = achievedReleaseWeight
-		cond := trafficutil.NewClusterTrafficCondition(
+		cond = trafficutil.NewClusterTrafficCondition(
 			shipper.ClusterConditionTypeReady,
 			corev1.ConditionTrue,
 			"",
@@ -334,11 +334,11 @@ func (c *Controller) syncHandler(key string) error {
 	// At this point 'statuses' has an entry for every cluster touched by any
 	// traffic target object for this application. This might be the same as the
 	// syncing TT, but it could also be a superset. If it's a superset, we don't
-	// want to put a bunch of extra statuses in the syncingTT status output; this
+	// want to put a bunch of extra statuses in the tt status output; this
 	// is confusing and breaks the strategy controller's checks (which guard
 	// against unexpected statuses).
 	specClusters := map[string]struct{}{}
-	for _, specCluster := range syncingTT.Spec.Clusters {
+	for _, specCluster := range tt.Spec.Clusters {
 		specClusters[specCluster.Name] = struct{}{}
 	}
 
@@ -350,18 +350,11 @@ func (c *Controller) syncHandler(key string) error {
 		}
 	}
 
-	ttCopy := syncingTT.DeepCopy()
-	ttCopy.Status = shipper.TrafficTargetStatus{
+	tt.Status = shipper.TrafficTargetStatus{
 		Clusters: filteredStatuses,
 	}
 
-	_, err = c.shipperclientset.ShipperV1alpha1().TrafficTargets(namespace).Update(ttCopy)
-	if err != nil {
-		clusterErrors.Append(shippererrors.NewKubeclientUpdateError(ttCopy, err).
-			WithShipperKind("TrafficTarget"))
-	}
-
-	return clusterErrors.Flatten()
+	return tt, clusterErrors.Flatten()
 }
 
 // enqueueTrafficTarget takes a TrafficTarget resource and converts it into a
