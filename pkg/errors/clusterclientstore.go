@@ -37,10 +37,6 @@ func (e ClusterNotReadyError) ShouldRetry() bool {
 	return true
 }
 
-func (e ClusterNotReadyError) ShouldBroadcast() bool {
-	return false
-}
-
 func NewClusterNotReadyError(clusterName string) error {
 	return ClusterNotReadyError{clusterName: clusterName}
 }

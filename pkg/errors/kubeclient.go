@@ -2,6 +2,7 @@ package errors
 
 import (
 	"fmt"
+
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -68,14 +69,6 @@ func (e KubeclientError) ShouldRetry() bool {
 	return true
 }
 
-// ShouldBroadcast implements the BroadcastAware interface.
-func (e KubeclientError) ShouldBroadcast() bool {
-	// We try to broadcast all client errors, except for optimistic locking
-	// conflicts. There's not a lot of value in showing them to users since
-	// it's a normal occurence in the system, and it confuses people.
-	return !kerrors.IsConflict(e.err)
-}
-
 // WithKind returns a new KubeclientError associated with a
 // gvk.GroupVersionKind. All KubeclientErrors are expected to have this
 // property set, so error messages can be generated with enough information.
@@ -137,7 +130,7 @@ func NewKubeclientCreateError(obj kubeobj, err error) KubeclientError {
 // KubeclientListError is a more specialized version of KubeclientError that
 // includes the selector used in a .List() call.
 type KubeclientListError struct {
-	// embed KubeclientError so we don't need a copy of ShouldRetry/ShouldBroadcast
+	// embed KubeclientError so we don't need a copy of ShouldRetry
 	KubeclientError
 	selector labels.Selector
 }
@@ -162,7 +155,7 @@ func NewKubeclientListError(gvk schema.GroupVersionKind, ns string, selector lab
 // KubeclientDiscoverError is a more specialized version of KubeclientError
 // that includes the schema.GroupVersion used in a .Discover() call.
 type KubeclientDiscoverError struct {
-	// embed KubeclientError so we don't need a copy of ShouldRetry/ShouldBroadcast
+	// embed KubeclientError so we don't need a copy of ShouldRetry
 	KubeclientError
 	gv schema.GroupVersion
 }
