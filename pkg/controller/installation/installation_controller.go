@@ -421,30 +421,7 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 			WithShipperKind("InstallationTarget")
 
 		clusterErrors.Append(err)
-
-		if shippererrors.ShouldBroadcast(err) {
-			c.recorder.Event(
-				it,
-				corev1.EventTypeWarning,
-				"FailedInstallationStatusChange",
-				err.Error(),
-			)
-		}
 	}
-
-	newClusterStatusesVal := make([]string, 0, len(newClusterStatuses))
-	for _, clusterStatus := range newClusterStatuses {
-		newClusterStatusesVal = append(newClusterStatusesVal, fmt.Sprintf("%s", *clusterStatus))
-	}
-
-	c.recorder.Eventf(
-		it,
-		corev1.EventTypeNormal,
-		"InstallationStatusChanged",
-		"Set %q status to %v",
-		shippercontroller.MetaKey(it),
-		newClusterStatusesVal,
-	)
 
 	return clusterErrors.Flatten()
 }

@@ -260,12 +260,6 @@ func (c *Controller) syncApplication(key string) error {
 	}
 
 	if err = c.processApplication(app); err != nil {
-		if shippererrors.ShouldBroadcast(err) {
-			c.recorder.Event(app,
-				corev1.EventTypeWarning,
-				"FailedApplication",
-				err.Error())
-		}
 		return err
 	}
 

@@ -304,18 +304,6 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		newClusterStatuses = append(newClusterStatuses, clusterStatus)
 	}
 
-	if clusterErrors.Any() {
-		for _, err := range clusterErrors.Errors {
-			if shippererrors.ShouldBroadcast(err) {
-				c.recorder.Event(
-					ct,
-					corev1.EventTypeWarning,
-					"FailedCapacityChange",
-					err.Error())
-			}
-		}
-	}
-
 	sort.Sort(byClusterName(newClusterStatuses))
 
 	ct.Status.Clusters = newClusterStatuses
