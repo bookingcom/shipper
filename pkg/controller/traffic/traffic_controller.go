@@ -331,18 +331,6 @@ func (c *Controller) syncHandler(key string) error {
 		clusterStatus.Status = "Synced"
 	}
 
-	if clusterErrors.Any() {
-		for _, err := range clusterErrors.Errors {
-			if shippererrors.ShouldBroadcast(err) {
-				c.recorder.Event(
-					syncingTT,
-					corev1.EventTypeWarning,
-					"FailedTrafficChange",
-					err.Error())
-			}
-		}
-	}
-
 	// At this point 'statuses' has an entry for every cluster touched by any
 	// traffic target object for this application. This might be the same as the
 	// syncing TT, but it could also be a superset. If it's a superset, we don't
@@ -373,17 +361,7 @@ func (c *Controller) syncHandler(key string) error {
 			WithShipperKind("TrafficTarget"))
 	}
 
-	if clusterErrors.Any() {
-		return clusterErrors.Flatten()
-	}
-
-	c.recorder.Event(
-		syncingTT,
-		corev1.EventTypeNormal,
-		"Synced",
-		"TrafficTarget synced successfully")
-
-	return nil
+	return clusterErrors.Flatten()
 }
 
 // enqueueTrafficTarget takes a TrafficTarget resource and converts it into a

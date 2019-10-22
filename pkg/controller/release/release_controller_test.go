@@ -1830,8 +1830,7 @@ func TestContenderCapacityShouldNotIncreaseWithRolloutBlock(t *testing.T) {
 
 	f.expectedEvents = append(f.expectedEvents,
 		fmt.Sprintf("%s RolloutBlocked %s", corev1.EventTypeWarning, rolloutBlockKey),
-		fmt.Sprintf("Normal ReleaseConditionChanged [Blocked False] -> [Blocked True RolloutsBlocked %s]", rolloutBlockMessage),
-		fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage))
+		fmt.Sprintf("Normal ReleaseConditionChanged [Blocked False] -> [Blocked True RolloutsBlocked %s]", rolloutBlockMessage))
 	f.run()
 }
 
@@ -1968,8 +1967,7 @@ func TestContenderTrafficShouldNotIncreaseWithRolloutBlock(t *testing.T) {
 
 	f.expectedEvents = append(f.expectedEvents,
 		fmt.Sprintf("%s RolloutBlocked %s", corev1.EventTypeWarning, rolloutBlockKey),
-		fmt.Sprintf("Normal ReleaseConditionChanged [Blocked False] -> [Blocked True RolloutsBlocked %s]", rolloutBlockMessage),
-		fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage))
+		fmt.Sprintf("Normal ReleaseConditionChanged [Blocked False] -> [Blocked True RolloutsBlocked %s]", rolloutBlockMessage))
 	f.run()
 }
 
@@ -2112,8 +2110,7 @@ func TestIncumbentTrafficShouldNotDecreaseWithRolloutBlock(t *testing.T) {
 
 	f.expectedEvents = append(f.expectedEvents,
 		fmt.Sprintf("%s RolloutBlocked %s", corev1.EventTypeWarning, rolloutBlockKey),
-		fmt.Sprintf("Normal ReleaseConditionChanged [Blocked False] -> [Blocked True RolloutsBlocked %s]", rolloutBlockMessage),
-		fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage))
+		fmt.Sprintf("Normal ReleaseConditionChanged [Blocked False] -> [Blocked True RolloutsBlocked %s]", rolloutBlockMessage))
 	f.run()
 }
 
@@ -2263,8 +2260,7 @@ func TestIncumbentCapacityShouldNotDecreaseWithRolloutBlock(t *testing.T) {
 
 	f.expectedEvents = append(f.expectedEvents,
 		fmt.Sprintf("%s RolloutBlocked %s", corev1.EventTypeWarning, rolloutBlockKey),
-		fmt.Sprintf("Normal ReleaseConditionChanged [Blocked False] -> [Blocked True RolloutsBlocked %s]", rolloutBlockMessage),
-		fmt.Sprintf("%s FailedReleaseScheduling %s", corev1.EventTypeWarning, rolloutBlockMessage))
+		fmt.Sprintf("Normal ReleaseConditionChanged [Blocked False] -> [Blocked True RolloutsBlocked %s]", rolloutBlockMessage))
 	f.run()
 }
 

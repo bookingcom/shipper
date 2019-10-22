@@ -280,18 +280,14 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 	rel, err := c.scheduleRelease(initialRel.DeepCopy())
 
 	if !reflect.DeepEqual(initialRel, rel) {
-		if err != nil && shippererrors.ShouldBroadcast(err) {
-			c.recorder.Eventf(
-				rel,
-				corev1.EventTypeWarning,
-				"FailedReleaseScheduling",
-				err.Error(),
-			)
-		}
-
 		if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); err != nil {
-			return shippererrors.NewKubeclientUpdateError(rel, err)
+			return shippererrors.NewKubeclientUpdateError(rel, err).
+				WithShipperKind("Release")
 		}
+	}
+
+	if err != nil {
+		return err
 	}
 
 	appKey, err := c.getAssociatedApplicationKey(rel)
@@ -357,7 +353,7 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 	)
 	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
-	rel, err = scheduler.ScheduleRelease(rel.DeepCopy())
+	scheduledRel, err := scheduler.ScheduleRelease(rel.DeepCopy())
 	if err != nil {
 		reason := reasonForReleaseCondition(err)
 		condition := releaseutil.NewReleaseCondition(
@@ -368,7 +364,9 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 		)
 		diff.Append(releaseutil.SetReleaseCondition(&initialRel.Status, *condition))
 
-		return initialRel, err
+		return rel, err
+	} else {
+		rel = scheduledRel
 	}
 
 	klog.V(4).Infof("Release %q has been successfully scheduled", controller.MetaKey(rel))

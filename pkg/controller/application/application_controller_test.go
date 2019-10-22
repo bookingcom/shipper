@@ -1116,7 +1116,6 @@ func TestHandleChartNotFound(t *testing.T) {
 
 	f.expectedEvents = []string{
 		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [RollingOut False ChartVersionResolutionFailed failed to resolve chart version [name: "%s", version: "%s", repo: ""]: no chart version found]`, app.Spec.Template.Chart.Name, app.Spec.Template.Chart.Version),
-		fmt.Sprintf(`Warning FailedApplication failed to resolve chart version [name: "%s", version: "%s", repo: ""]: no chart version found`, app.Spec.Template.Chart.Name, app.Spec.Template.Chart.Version),
 	}
 
 	f.run()
