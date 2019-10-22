@@ -2,20 +2,15 @@ package errors
 
 import (
 	"fmt"
-	"k8s.io/klog"
 	"strings"
+
+	"k8s.io/klog"
 )
 
 // RetryAware is an error that knows if the action that caused it should be
 // retried.
 type RetryAware interface {
 	ShouldRetry() bool
-}
-
-// BroadcastAware is an error that knows if the action that caused it should
-// be broadcasted to the outside world through Kubernetes events.
-type BroadcastAware interface {
-	ShouldBroadcast() bool
 }
 
 // ShouldRetry determines if err should be retried. It trusts err.ShouldRetry
@@ -33,22 +28,6 @@ func ShouldRetry(err error) bool {
 	return true
 }
 
-// ShouldBroadcast determines if err should be broadcasted through Kubernetes
-// events. It trusts err.ShouldBroadcast if err implements BroadcastAware, but
-// otherwise assumes that all errors should be broadcasted, under the
-// assumption that most errors are interesting enough to be broadcasted, and
-// we'll actively suppress the few that we don't want to expose.
-func ShouldBroadcast(err error) bool {
-	broadcastAware, ok := err.(BroadcastAware)
-	if ok {
-		return broadcastAware.ShouldBroadcast()
-	}
-
-	klog.V(8).Infof("Cannot determine if untagged error %#v is broadcastable, will assume it is", err)
-
-	return true
-}
-
 // RecoverableError is a generic error that will cause an action to be retried.
 // It mostly behaves like any other error that doesn't implement the RetryAware
 // interface, but by using it we signal that this is an error that we're
@@ -58,10 +37,6 @@ type RecoverableError struct {
 }
 
 func (e RecoverableError) ShouldRetry() bool {
-	return true
-}
-
-func (e RecoverableError) ShouldBroadcast() bool {
 	return true
 }
 
@@ -81,10 +56,6 @@ type UnrecoverableError struct {
 
 func (e UnrecoverableError) ShouldRetry() bool {
 	return false
-}
-
-func (e UnrecoverableError) ShouldBroadcast() bool {
-	return true
 }
 
 func (e UnrecoverableError) Error() string {
@@ -143,18 +114,6 @@ func (e *MultiError) Flatten() error {
 func (e *MultiError) ShouldRetry() bool {
 	for _, err := range e.Errors {
 		if ShouldRetry(err) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// ShouldBroadcast returns true when at least one error in the collection
-// should be broadcasted, and false otherwise.
-func (e *MultiError) ShouldBroadcast() bool {
-	for _, err := range e.Errors {
-		if ShouldBroadcast(err) {
 			return true
 		}
 	}
