@@ -3,6 +3,7 @@ package traffic
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -210,11 +211,6 @@ func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.T
 	// TODO(jgreff): top-level errors on a TrafficTarget are not reported
 	// to the user. We should introduce a condition to expose them.
 
-	syncingReleaseName, ok := tt.Labels[shipper.ReleaseLabel]
-	if !ok {
-		return tt, shippererrors.NewMissingShipperLabelError(tt, shipper.ReleaseLabel)
-	}
-
 	appName, ok := tt.Labels[shipper.AppLabel]
 	if !ok {
 		return tt, shippererrors.NewMissingShipperLabelError(tt, shipper.AppLabel)
@@ -234,127 +230,139 @@ func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.T
 		return tt, err
 	}
 
+	clusterErrors := shippererrors.NewMultiError()
+	newClusterStatuses := make([]*shipper.ClusterTrafficStatus, 0, len(tt.Spec.Clusters))
+
+	// This algorithm assumes cluster names are unique
+	curClusterStatuses := make(map[string]*shipper.ClusterTrafficStatus)
+	for _, clusterStatus := range tt.Status.Clusters {
+		curClusterStatuses[clusterStatus.Name] = clusterStatus
+	}
+
+	for _, clusterSpec := range tt.Spec.Clusters {
+		clusterStatus, ok := curClusterStatuses[clusterSpec.Name]
+		if !ok {
+			clusterStatus = &shipper.ClusterTrafficStatus{
+				Name: clusterSpec.Name,
+			}
+			curClusterStatuses[clusterSpec.Name] = clusterStatus
+		}
+
+		err := c.processTrafficTargetOnCluster(tt, &clusterSpec, clusterStatus, shifter)
+		if err != nil {
+			clusterErrors.Append(err)
+		}
+
+		newClusterStatuses = append(newClusterStatuses, clusterStatus)
+	}
+
+	sort.Sort(byClusterName(newClusterStatuses))
+
+	tt.Status.Clusters = newClusterStatuses
+
+	return tt, clusterErrors.Flatten()
+}
+
+func (c *Controller) processTrafficTargetOnCluster(
+	tt *shipper.TrafficTarget,
+	spec *shipper.ClusterTrafficTarget,
+	status *shipper.ClusterTrafficStatus,
+	shifter *podLabelShifter,
+) error {
 	diff := diffutil.NewMultiDiff()
 	defer func() {
 		c.reportTrafficConditionChange(tt, diff)
 	}()
 
-	var statuses []*shipper.ClusterTrafficStatus
-	clusterErrors := shippererrors.NewMultiError()
-	for _, cluster := range shifter.Clusters() {
-		var clusterConditions []shipper.ClusterTrafficCondition
-		for _, e := range tt.Status.Clusters {
-			if e.Name == cluster {
-				clusterConditions = e.Conditions
-			}
-		}
+	syncingReleaseName, ok := tt.Labels[shipper.ReleaseLabel]
+	if !ok {
+		err := shippererrors.NewMissingShipperLabelError(tt, shipper.ReleaseLabel)
+		cond := trafficutil.NewClusterTrafficCondition(
+			shipper.ClusterConditionTypeOperational,
+			corev1.ConditionFalse,
+			ServerError,
+			err.Error(),
+		)
+		diff.Append(trafficutil.SetClusterTrafficCondition(status, *cond))
+		status.Status = err.Error()
 
-		clusterStatus := &shipper.ClusterTrafficStatus{
-			Name:       cluster,
-			Conditions: clusterConditions,
-		}
+		return err
+	}
 
-		statuses = append(statuses, clusterStatus)
+	clientset, err := c.clusterClientStore.GetClient(spec.Name, AgentName)
+	if err != nil {
+		cond := trafficutil.NewClusterTrafficCondition(
+			shipper.ClusterConditionTypeOperational,
+			corev1.ConditionFalse,
+			ServerError,
+			err.Error(),
+		)
+		diff.Append(trafficutil.SetClusterTrafficCondition(status, *cond))
+		status.Status = err.Error()
 
-		clientset, err := c.clusterClientStore.GetClient(cluster, AgentName)
-		if err != nil {
-			cond := trafficutil.NewClusterTrafficCondition(
-				shipper.ClusterConditionTypeOperational,
-				corev1.ConditionFalse,
-				ServerError,
-				err.Error(),
-			)
-			diff.Append(trafficutil.SetClusterTrafficCondition(clusterStatus, *cond))
-			clusterStatus.Status = err.Error()
-			clusterErrors.Append(err)
-			continue
-		}
+		return err
+	}
 
-		informerFactory, err := c.clusterClientStore.GetInformerFactory(cluster)
-		if err != nil {
-			cond := trafficutil.NewClusterTrafficCondition(
-				shipper.ClusterConditionTypeOperational,
-				corev1.ConditionFalse,
-				ServerError,
-				err.Error(),
-			)
-			diff.Append(trafficutil.SetClusterTrafficCondition(clusterStatus, *cond))
-			clusterStatus.Status = err.Error()
-			clusterErrors.Append(err)
-			continue
+	informerFactory, err := c.clusterClientStore.GetInformerFactory(spec.Name)
+	if err != nil {
+		cond := trafficutil.NewClusterTrafficCondition(
+			shipper.ClusterConditionTypeOperational,
+			corev1.ConditionFalse,
+			ServerError,
+			err.Error(),
+		)
+		diff.Append(trafficutil.SetClusterTrafficCondition(status, *cond))
+		status.Status = err.Error()
+
+		return err
+	}
+
+	cond := trafficutil.NewClusterTrafficCondition(
+		shipper.ClusterConditionTypeOperational,
+		corev1.ConditionTrue,
+		"",
+		"",
+	)
+	diff.Append(trafficutil.SetClusterTrafficCondition(status, *cond))
+
+	achievedReleaseWeight, err := shifter.SyncCluster(spec.Name, syncingReleaseName, clientset, informerFactory)
+	if err != nil {
+		var reason string
+
+		switch err.(type) {
+		case shippererrors.UnexpectedObjectCountFromSelectorError:
+			reason = MissingService
+		case shippererrors.KubeclientError:
+			reason = ServerError
+		case shippererrors.TargetClusterMathError:
+			reason = InternalError
+		default:
+			reason = UnknownError
 		}
 
 		cond := trafficutil.NewClusterTrafficCondition(
-			shipper.ClusterConditionTypeOperational,
-			corev1.ConditionTrue,
-			"",
-			"",
-		)
-		diff.Append(trafficutil.SetClusterTrafficCondition(clusterStatus, *cond))
-
-		achievedReleaseWeight, err := shifter.SyncCluster(cluster, syncingReleaseName, clientset, informerFactory)
-		if err != nil {
-			var reason string
-
-			switch err.(type) {
-			case shippererrors.UnexpectedObjectCountFromSelectorError:
-				reason = MissingService
-			case shippererrors.KubeclientError:
-				reason = ServerError
-			case shippererrors.TargetClusterMathError:
-				reason = InternalError
-			default:
-				reason = UnknownError
-			}
-
-			cond := trafficutil.NewClusterTrafficCondition(
-				shipper.ClusterConditionTypeReady,
-				corev1.ConditionFalse,
-				reason,
-				err.Error(),
-			)
-			diff.Append(trafficutil.SetClusterTrafficCondition(clusterStatus, *cond))
-
-			clusterErrors.Append(err)
-			continue
-		}
-
-		clusterStatus.AchievedTraffic = achievedReleaseWeight
-		cond = trafficutil.NewClusterTrafficCondition(
 			shipper.ClusterConditionTypeReady,
-			corev1.ConditionTrue,
-			"",
-			"",
+			corev1.ConditionFalse,
+			reason,
+			err.Error(),
 		)
-		diff.Append(trafficutil.SetClusterTrafficCondition(clusterStatus, *cond))
+		diff.Append(trafficutil.SetClusterTrafficCondition(status, *cond))
 
-		clusterStatus.Status = "Synced"
+		return err
 	}
 
-	// At this point 'statuses' has an entry for every cluster touched by any
-	// traffic target object for this application. This might be the same as the
-	// syncing TT, but it could also be a superset. If it's a superset, we don't
-	// want to put a bunch of extra statuses in the tt status output; this
-	// is confusing and breaks the strategy controller's checks (which guard
-	// against unexpected statuses).
-	specClusters := map[string]struct{}{}
-	for _, specCluster := range tt.Spec.Clusters {
-		specClusters[specCluster.Name] = struct{}{}
-	}
+	status.AchievedTraffic = achievedReleaseWeight
+	cond = trafficutil.NewClusterTrafficCondition(
+		shipper.ClusterConditionTypeReady,
+		corev1.ConditionTrue,
+		"",
+		"",
+	)
+	diff.Append(trafficutil.SetClusterTrafficCondition(status, *cond))
 
-	filteredStatuses := make([]*shipper.ClusterTrafficStatus, 0, len(statuses))
-	for _, statusCluster := range statuses {
-		_, ok := specClusters[statusCluster.Name]
-		if ok {
-			filteredStatuses = append(filteredStatuses, statusCluster)
-		}
-	}
+	status.Status = "Synced"
 
-	tt.Status = shipper.TrafficTargetStatus{
-		Clusters: filteredStatuses,
-	}
-
-	return tt, clusterErrors.Flatten()
+	return nil
 }
 
 // enqueueTrafficTarget takes a TrafficTarget resource and converts it into a

@@ -162,7 +162,11 @@ func (c *Controller) processNextCapacityTargetWorkItem() bool {
 	return true
 }
 
-func (c *Controller) processCapacityTargetOnCluster(ct *shipper.CapacityTarget, spec *shipper.ClusterCapacityTarget, status *shipper.ClusterCapacityStatus) error {
+func (c *Controller) processCapacityTargetOnCluster(
+	ct *shipper.CapacityTarget,
+	spec *shipper.ClusterCapacityTarget,
+	status *shipper.ClusterCapacityStatus,
+) error {
 	diff := diffutil.NewMultiDiff()
 	defer func() {
 		c.reportClusterCapacityConditionChange(ct, diff)
@@ -327,7 +331,8 @@ func (c *Controller) processCapacityTarget(ct *shipper.CapacityTarget) (*shipper
 			curClusterStatuses[clusterSpec.Name] = clusterStatus
 		}
 
-		if err := c.processCapacityTargetOnCluster(ct, &clusterSpec, &clusterStatus); err != nil {
+		err := c.processCapacityTargetOnCluster(ct, &clusterSpec, &clusterStatus)
+		if err != nil {
 			clusterErrors.Append(err)
 		}
 
