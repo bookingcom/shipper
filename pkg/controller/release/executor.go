@@ -327,6 +327,7 @@ func (s *Executor) Execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 				Step: targetStep,
 				Name: targetStepName,
 			}
+			s.event(s.contender.release, "step %d finished", targetStep)
 		}
 
 		if targetStep == lastStepIndex {
@@ -345,7 +346,6 @@ func (s *Executor) Execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 			Name:      s.contender.release.Name,
 		})
 
-		s.event(s.contender.release, "step %d finished", targetStep)
 		return releasePatches, releaseStrategyStateTransitions, nil
 	}
 }
