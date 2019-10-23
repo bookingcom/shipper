@@ -365,9 +365,16 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 		diff.Append(releaseutil.SetReleaseCondition(&initialRel.Status, *condition))
 
 		return rel, err
-	} else {
-		rel = scheduledRel
 	}
+
+	rel = scheduledRel
+	condition = releaseutil.NewReleaseCondition(
+		shipper.ReleaseConditionTypeScheduled,
+		corev1.ConditionTrue,
+		"",
+		"",
+	)
+	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
 	klog.V(4).Infof("Release %q has been successfully scheduled", controller.MetaKey(rel))
 
