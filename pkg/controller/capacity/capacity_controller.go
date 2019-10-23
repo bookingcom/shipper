@@ -2,6 +2,7 @@ package capacity
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"time"
 
@@ -283,7 +284,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 		return shippererrors.NewUnrecoverableError(err)
 	}
 
-	ct, err := c.capacityTargetsLister.CapacityTargets(namespace).Get(name)
+	initialCT, err := c.capacityTargetsLister.CapacityTargets(namespace).Get(name)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			klog.V(3).Infof("CapacityTarget %q has been deleted", key)
@@ -294,7 +295,19 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 			WithShipperKind("CapacityTarget")
 	}
 
-	ct = ct.DeepCopy()
+	ct, err := c.processCapacityTarget(initialCT.DeepCopy())
+
+	if !reflect.DeepEqual(initialCT, ct) {
+		if _, err := c.shipperclientset.ShipperV1alpha1().CapacityTargets(namespace).Update(ct); err != nil {
+			return shippererrors.NewKubeclientUpdateError(ct, err).
+				WithShipperKind("CapacityTarget")
+		}
+	}
+
+	return err
+}
+
+func (c *Controller) processCapacityTarget(ct *shipper.CapacityTarget) (*shipper.CapacityTarget, error) {
 	clusterErrors := shippererrors.NewMultiError()
 	newClusterStatuses := make([]shipper.ClusterCapacityStatus, 0, len(ct.Spec.Clusters))
 
@@ -305,18 +318,17 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 	}
 
 	for _, clusterSpec := range ct.Spec.Clusters {
-		if _, ok := curClusterStatuses[clusterSpec.Name]; !ok {
-			curClusterStatuses[clusterSpec.Name] = shipper.ClusterCapacityStatus{
+		clusterStatus, ok := curClusterStatuses[clusterSpec.Name]
+		if !ok {
+			clusterStatus = shipper.ClusterCapacityStatus{
 				Name:    clusterSpec.Name,
 				Reports: []shipper.ClusterCapacityReport{},
 			}
+			curClusterStatuses[clusterSpec.Name] = clusterStatus
 		}
-
-		clusterStatus := curClusterStatuses[clusterSpec.Name]
 
 		if err := c.processCapacityTargetOnCluster(ct, &clusterSpec, &clusterStatus); err != nil {
 			clusterErrors.Append(err)
-			continue
 		}
 
 		newClusterStatuses = append(newClusterStatuses, clusterStatus)
@@ -326,12 +338,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 
 	ct.Status.Clusters = newClusterStatuses
 
-	_, err = c.shipperclientset.ShipperV1alpha1().CapacityTargets(namespace).Update(ct)
-	if err != nil {
-		clusterErrors.Append(shippererrors.NewKubeclientUpdateError(ct, err))
-	}
-
-	return clusterErrors.Flatten()
+	return ct, clusterErrors.Flatten()
 }
 
 func (c *Controller) enqueueCapacityTarget(obj interface{}) {
