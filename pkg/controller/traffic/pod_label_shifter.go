@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"sort"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -48,15 +47,6 @@ func newPodLabelShifter(
 		serviceSelector:       labels.Set(serviceSelector).AsSelector(),
 		clusterReleaseWeights: weights,
 	}, nil
-}
-
-func (p *podLabelShifter) Clusters() []string {
-	clusters := make([]string, 0, len(p.clusterReleaseWeights))
-	for cluster := range p.clusterReleaseWeights {
-		clusters = append(clusters, cluster)
-	}
-	sort.Strings(clusters)
-	return clusters
 }
 
 func (p *podLabelShifter) SyncCluster(
