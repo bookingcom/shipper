@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
+	kubeinformers "k8s.io/client-go/informers"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
@@ -56,26 +57,21 @@ func (c Controller) getCapacityTargetForReleaseAndNamespace(release, namespace s
 	return capacityTargets[0], nil
 }
 
-func (c Controller) getSadPodsForDeploymentOnCluster(deployment *appsv1.Deployment, clusterName string) (numberOfPods, numberOfSadPods int, sadPodConditions []shipper.PodStatus, err error) {
-	var sadPods []shipper.PodStatus
-
-	informer, err := c.clusterClientStore.GetInformerFactory(clusterName)
-	if err != nil {
-		return 0, 0, nil, err
-	}
-
+func (c Controller) getSadPodsForDeploymentOnCluster(informerFactory kubeinformers.SharedInformerFactory, deployment *appsv1.Deployment) (numberOfPods, numberOfSadPods int, sadPodConditions []shipper.PodStatus, err error) {
 	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
 	if err != nil {
 		return 0, 0, nil, shippererrors.NewUnrecoverableError(fmt.Errorf("failed to transform label selector %v into a selector: %s", deployment.Spec.Selector, err))
 	}
 
-	pods, err := informer.Core().V1().Pods().Lister().Pods(deployment.Namespace).List(selector)
+	pods, err := informerFactory.Core().V1().Pods().Lister().
+		Pods(deployment.Namespace).List(selector)
 	if err != nil {
 		return 0, 0, nil, shippererrors.NewKubeclientListError(
 			corev1.SchemeGroupVersion.WithKind("Pod"),
 			deployment.Namespace, selector, err)
 	}
 
+	var sadPods []shipper.PodStatus
 	for _, pod := range pods {
 		if len(sadPods) == SadPodLimit {
 			break

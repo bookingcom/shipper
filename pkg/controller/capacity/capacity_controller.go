@@ -162,10 +162,33 @@ func (c *Controller) processNextCapacityTargetWorkItem() bool {
 }
 
 func (c *Controller) processCapacityTargetOnCluster(ct *shipper.CapacityTarget, spec *shipper.ClusterCapacityTarget, status *shipper.ClusterCapacityStatus) error {
-	selector := labels.Set(ct.Labels).AsSelector()
+	diff := diffutil.NewMultiDiff()
+	defer func() {
+		c.reportClusterCapacityConditionChange(ct, diff)
+	}()
 
-	targetDeployment, err := c.findTargetDeploymentForClusterSpec(ct, *spec, ct.Namespace, selector, status)
+	informerFactory, err := c.clusterClientStore.GetInformerFactory(spec.Name)
 	if err != nil {
+		cond := capacityutil.NewClusterCapacityCondition(
+			shipper.ClusterConditionTypeOperational,
+			corev1.ConditionFalse,
+			ServerError,
+			err.Error())
+		diff.Append(capacityutil.SetClusterCapacityCondition(status, *cond))
+
+		return err
+	}
+
+	selector := labels.Set(ct.Labels).AsSelector()
+	targetDeployment, err := c.findTargetDeploymentForClusterSpec(informerFactory, *spec, ct.Namespace, selector, status)
+	if err != nil {
+		cond := capacityutil.NewClusterCapacityCondition(
+			shipper.ClusterConditionTypeReady,
+			corev1.ConditionFalse,
+			ServerError,
+			err.Error())
+		diff.Append(capacityutil.SetClusterCapacityCondition(status, *cond))
+
 		return err
 	}
 
@@ -173,11 +196,6 @@ func (c *Controller) processCapacityTargetOnCluster(ct *shipper.CapacityTarget, 
 	defer func() {
 		status.AchievedPercent = achievedPercent
 		status.AvailableReplicas = availableReplicas
-	}()
-
-	diff := diffutil.NewMultiDiff()
-	defer func() {
-		c.reportClusterCapacityConditionChange(ct, diff)
 	}()
 
 	if targetDeployment == nil {
@@ -205,7 +223,7 @@ func (c *Controller) processCapacityTargetOnCluster(ct *shipper.CapacityTarget, 
 	}
 	status.Reports = []shipper.ClusterCapacityReport{*report}
 
-	podCount, sadPodCount, sadPods, err := c.getSadPodsForDeploymentOnCluster(targetDeployment, status.Name)
+	podCount, sadPodCount, sadPods, err := c.getSadPodsForDeploymentOnCluster(informerFactory, targetDeployment)
 	if err != nil {
 		cond := capacityutil.NewClusterCapacityCondition(
 			shipper.ClusterConditionTypeOperational,
@@ -366,54 +384,21 @@ func (c *Controller) getReport(targetDeployment *appsv1.Deployment, clusterStatu
 	return report, nil
 }
 
-func (c *Controller) findTargetDeploymentForClusterSpec(ct *shipper.CapacityTarget, clusterSpec shipper.ClusterCapacityTarget, targetNamespace string, selector labels.Selector, clusterStatus *shipper.ClusterCapacityStatus) (*appsv1.Deployment, error) {
-	diff := diffutil.NewMultiDiff()
-	defer func() {
-		c.reportClusterCapacityConditionChange(ct, diff)
-	}()
-	targetClusterInformer, err := c.clusterClientStore.GetInformerFactory(clusterSpec.Name)
+func (c *Controller) findTargetDeploymentForClusterSpec(informerFactory kubeinformers.SharedInformerFactory, clusterSpec shipper.ClusterCapacityTarget, targetNamespace string, selector labels.Selector, clusterStatus *shipper.ClusterCapacityStatus) (*appsv1.Deployment, error) {
+	deploymentsList, err := informerFactory.Apps().V1().Deployments().
+		Lister().Deployments(targetNamespace).List(selector)
 	if err != nil {
-		cond := capacityutil.NewClusterCapacityCondition(
-			shipper.ClusterConditionTypeOperational,
-			corev1.ConditionFalse,
-			ServerError,
-			err.Error())
-		diff.Append(capacityutil.SetClusterCapacityCondition(clusterStatus, *cond))
-
-		return nil, err
-	}
-
-	deploymentsList, err := targetClusterInformer.Apps().V1().Deployments().Lister().Deployments(targetNamespace).List(selector)
-	if err != nil {
-		cond := capacityutil.NewClusterCapacityCondition(
-			shipper.ClusterConditionTypeOperational,
-			corev1.ConditionFalse,
-			ServerError,
-			err.Error())
-		diff.Append(capacityutil.SetClusterCapacityCondition(clusterStatus, *cond))
-
 		return nil, shippererrors.NewKubeclientListError(
 			appsv1.SchemeGroupVersion.WithKind("Deployment"),
 			targetNamespace, selector, err)
 	}
 
 	if l := len(deploymentsList); l != 1 {
-		err = shippererrors.NewTargetDeploymentCountError(
+		return nil, shippererrors.NewTargetDeploymentCountError(
 			clusterSpec.Name, targetNamespace, selector.String(), l)
-
-		cond := capacityutil.NewClusterCapacityCondition(
-			shipper.ClusterConditionTypeReady,
-			corev1.ConditionFalse,
-			MissingDeployment,
-			err.Error())
-		diff.Append(capacityutil.SetClusterCapacityCondition(clusterStatus, *cond))
-
-		return nil, err
 	}
 
-	targetDeployment := deploymentsList[0]
-
-	return targetDeployment, nil
+	return deploymentsList[0], nil
 }
 
 func (c *Controller) patchDeploymentWithReplicaCount(ct *shipper.CapacityTarget, targetDeployment *appsv1.Deployment, clusterName string, replicaCount int32, clusterStatus *shipper.ClusterCapacityStatus) (*appsv1.Deployment, error) {
