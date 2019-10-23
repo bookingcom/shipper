@@ -1204,8 +1204,8 @@ func (f *fixture) expectReleaseReleased(rel *shipper.Release, targetStep int32) 
 	f.actions = append(f.actions, action)
 
 	f.expectedEvents = []string{
-		"Normal ReleaseConditionChanged [] -> [Complete True]",
 		fmt.Sprintf("Normal StrategyApplied step [%d] finished", targetStep),
+		"Normal ReleaseConditionChanged [] -> [Complete True]",
 		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForCapacity" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
 		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForCommand" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
 		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForInstallation" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
