@@ -131,14 +131,6 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 		return nil, releaseErrors.Flatten()
 	}
 
-	if !releaseutil.ReleaseScheduled(rel) {
-		condition := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
-		if diff := releaseutil.SetReleaseCondition(&rel.Status, *condition); !diff.IsEmpty() {
-
-			s.recorder.Eventf(rel, corev1.EventTypeNormal, "ReleaseConditionChanged", diff.String())
-		}
-	}
-
 	return rel, nil
 }
 
