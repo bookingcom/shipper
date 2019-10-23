@@ -123,6 +123,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePod(t *testing.T
 
 	// Calling the sync handler again with the updated capacity target object should yield the same results.
 	f.managementObjects = []runtime.Object{capacityTarget.DeepCopy()}
+	f.managementClusterActions = []kubetesting.Action{}
 	f.runCapacityTargetSyncHandler()
 }
 
@@ -176,6 +177,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodCompletedCont
 
 	// Calling the sync handler again with the updated capacity target object should yield the same results.
 	f.managementObjects = []runtime.Object{capacityTarget.DeepCopy()}
+	f.managementClusterActions = []kubetesting.Action{}
 	f.runCapacityTargetSyncHandler()
 }
 
@@ -229,6 +231,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodTerminatedCon
 
 	// Calling the sync handler again with the updated capacity target object should yield the same results.
 	f.managementObjects = []runtime.Object{capacityTarget.DeepCopy()}
+	f.managementClusterActions = []kubetesting.Action{}
 	f.runCapacityTargetSyncHandler()
 }
 
@@ -282,6 +285,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodRestartedCont
 
 	// Calling the sync handler again with the updated capacity target object should yield the same results.
 	f.managementObjects = []runtime.Object{capacityTarget.DeepCopy()}
+	f.managementClusterActions = []kubetesting.Action{}
 	f.runCapacityTargetSyncHandler()
 }
 
@@ -335,6 +339,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithSinglePodRestartedCont
 
 	// Calling the sync handler again with the updated capacity target object should yield the same results.
 	f.managementObjects = []runtime.Object{capacityTarget.DeepCopy()}
+	f.managementClusterActions = []kubetesting.Action{}
 	f.runCapacityTargetSyncHandler()
 }
 
@@ -412,6 +417,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePods(t *testin
 
 	// Calling the sync handler again with the updated capacity target object should yield the same results.
 	f.managementObjects = []runtime.Object{capacityTarget.DeepCopy()}
+	f.managementClusterActions = []kubetesting.Action{}
 	f.runCapacityTargetSyncHandler()
 }
 
@@ -558,6 +564,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePodsWithDiffer
 
 	// Calling the sync handler again with the updated capacity target object should yield the same results.
 	f.managementObjects = []runtime.Object{capacityTarget.DeepCopy()}
+	f.managementClusterActions = []kubetesting.Action{}
 	f.runCapacityTargetSyncHandler()
 }
 
