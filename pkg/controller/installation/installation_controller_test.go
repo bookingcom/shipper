@@ -459,7 +459,9 @@ func TestInstallNoOverride(t *testing.T) {
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	it.Spec.CanOverride = false
 
-	labels := map[string]string{shipper.InstallationTargetOwnerLabel: appName}
+	labels := map[string]string{
+		shipper.AppLabel:                     appName,
+		shipper.InstallationTargetOwnerLabel: appName}
 	meta := metav1.ObjectMeta{
 		Namespace: testNs,
 		Name:      fmt.Sprintf("%s-%s", appName, appName),
