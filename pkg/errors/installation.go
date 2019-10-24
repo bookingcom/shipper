@@ -4,8 +4,6 @@ import (
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-
-	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 type DecodeManifestError struct {
@@ -50,23 +48,19 @@ func IsConvertUnstructuredError(err error) bool {
 	return ok
 }
 
-type MissingInstallationTargetOwnerLabelError struct {
+type InstallationTargetOwnershipError struct {
 	obj *unstructured.Unstructured
 }
 
-func NewMissingInstallationTargetOwnerLabelError(obj *unstructured.Unstructured) MissingInstallationTargetOwnerLabelError {
-	return MissingInstallationTargetOwnerLabelError{
-		obj: obj,
-	}
+func NewInstallationTargetOwnershipError(obj *unstructured.Unstructured) InstallationTargetOwnershipError {
+	return InstallationTargetOwnershipError{obj: obj}
 }
 
-func (e MissingInstallationTargetOwnerLabelError) Error() string {
-	return fmt.Sprintf(
-		`Object "%s/%s" is missing required label %q as it was not created by any InstallationTarget. Shipper doesn't know how to deal with this`,
-		e.obj.GetNamespace(), e.obj.GetName(),
-		shipper.InstallationTargetOwnerLabel)
+func (e InstallationTargetOwnershipError) Error() string {
+	msg := `%s "%s/%s" cannot be updated as it does not belong to the application. It may have been created by other means, and it conflicts with a matching object in the chart shipper is currently trying to install`
+	return fmt.Sprintf(msg, e.obj.GetKind(), e.obj.GetNamespace(), e.obj.GetName())
 }
 
-func (e MissingInstallationTargetOwnerLabelError) ShouldRetry() bool {
+func (e InstallationTargetOwnershipError) ShouldRetry() bool {
 	return false
 }

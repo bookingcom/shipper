@@ -634,15 +634,17 @@ func TestInstallerNoOverride(t *testing.T) {
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	it.Spec.CanOverride = false
 
+	labels := map[string]string{
+		shipper.AppLabel:                     appName,
+		shipper.InstallationTargetOwnerLabel: ownerLabel}
+
 	svc := loadService("baseline")
 	svc.ObjectMeta.Namespace = testNs
-	svc.ObjectMeta.SetLabels(map[string]string{
-		shipper.InstallationTargetOwnerLabel: ownerLabel})
+	svc.ObjectMeta.SetLabels(labels)
 
 	deployment := loadDeployment("baseline")
 	deployment.ObjectMeta.Namespace = testNs
-	deployment.ObjectMeta.SetLabels(map[string]string{
-		shipper.InstallationTargetOwnerLabel: ownerLabel})
+	deployment.ObjectMeta.SetLabels(labels)
 
 	kubeObjects := []runtime.Object{svc, deployment}
 

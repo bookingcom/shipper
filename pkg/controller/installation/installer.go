@@ -494,20 +494,10 @@ func (i *Installer) installManifests(
 			continue
 		}
 
-		labels := existingObj.GetLabels()
-		owner, ok := labels[shipper.InstallationTargetOwnerLabel]
-		if !ok {
-			return shippererrors.NewMissingInstallationTargetOwnerLabelError(existingObj)
-		}
-
-		// If the existing object is owned by the installation target,
-		// it doesn't need any installation, we don't want to update it
-		// because it's common practice for users and other controllers
-		// to patch objects, and expect that they'll remain changed.
-		//
-		// If it's owned by a different installation target, it'll be
-		// overwritten only if it.Spec.CanOverride == true.
-		if owner == it.Name || !it.Spec.CanOverride {
+		shouldUpdate, err := shouldUpdateObject(it, existingObj)
+		if err != nil {
+			return err
+		} else if !shouldUpdate {
 			continue
 		}
 
@@ -566,6 +556,48 @@ func (i *Installer) install(
 	}
 
 	return i.installManifests(cluster, client, restConfig, dynamicClientBuilder, renderedManifests)
+}
+
+// shouldUpdateObject detects whether the current iteration of the installer
+// should update an object in the application cluster.
+func shouldUpdateObject(it *shipper.InstallationTarget, obj *unstructured.Unstructured) (bool, error) {
+	labels := obj.GetLabels()
+
+	// If the InstallationTarget belongs to an app, we need to check that
+	// the object belongs to the same app, otherwise we run the risk of
+	// overwriting objects that this InstallationTarget is not responsible
+	// for managing.
+	app, itBelongsToApp := it.Labels[shipper.AppLabel]
+	if itBelongsToApp {
+		ownerApp, hasOwnerApp := labels[shipper.AppLabel]
+		if !hasOwnerApp || ownerApp != app {
+			err := shippererrors.NewInstallationTargetOwnershipError(obj)
+			return false, err
+		}
+	}
+
+	owner, ok := labels[shipper.InstallationTargetOwnerLabel]
+	if !ok && !itBelongsToApp {
+		// Object doesn't have an owner, so it might come from an older
+		// version of shipper that used ReleaseLabel to signify
+		// ownership instead. We bail out if it doesn't belong to an
+		// app either, because that clearly means it wasn't created by
+		// shipper at all.
+		return false, shippererrors.NewInstallationTargetOwnershipError(obj)
+	}
+
+	// If the existing object is owned by the installation target, it
+	// doesn't need any installation, and we don't want to update it
+	// because it's common practice for users and other controllers to
+	// patch objects, and expect that they'll remain changed.
+	//
+	// If it's owned by a different installation target, it'll be
+	// overwritten only if it.Spec.CanOverride == true.
+	if owner == it.Name || !it.Spec.CanOverride {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 // mergeLabels takes to sets of labels and merge them into another set.
