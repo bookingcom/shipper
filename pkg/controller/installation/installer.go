@@ -543,9 +543,9 @@ func (i *Installer) installManifests(
 		}
 		unstructured.SetNestedField(existingUnstructuredObj, newUnstructuredObj["spec"], "spec")
 		existingObj.SetUnstructuredContent(existingUnstructuredObj)
-		if _, clientErr := resourceClient.Update(existingObj, metav1.UpdateOptions{}); clientErr != nil {
-			return shippererrors.
-				NewKubeclientUpdateError(unstrObj, err).
+
+		if _, err := resourceClient.Update(existingObj, metav1.UpdateOptions{}); err != nil {
+			return shippererrors.NewKubeclientUpdateError(unstrObj, err).
 				WithKind(gvk)
 		}
 	}
