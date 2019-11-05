@@ -217,9 +217,16 @@ func (c *Webhook) validateHandlerFunc(review *admission.AdmissionReview) *admiss
 
 func (c *Webhook) validateRelease(request *admission.AdmissionRequest, release shipper.Release) error {
 	var err error
+	overrides, existingBlocks, err := rolloutblock.GetAllBlocks(c.rolloutBlocksLister, &release)
+	if err != nil {
+		return err
+	}
+	if err = rolloutblock.ValidateAnnotations(existingBlocks, overrides); err != nil {
+		return err
+	}
 	switch request.Operation {
 	case kubeclient.Create:
-		_, _, err = rolloutblock.BlocksRollout(c.rolloutBlocksLister, &release)
+		err = rolloutblock.ValidateBlocks(existingBlocks, overrides)
 	case kubeclient.Update:
 		var oldRelease shipper.Release
 		err = json.Unmarshal(request.OldObject.Raw, &oldRelease)
@@ -228,7 +235,7 @@ func (c *Webhook) validateRelease(request *admission.AdmissionRequest, release s
 		}
 
 		if !reflect.DeepEqual(release.Spec, oldRelease.Spec) {
-			_, _, err = rolloutblock.BlocksRollout(c.rolloutBlocksLister, &release)
+			err = rolloutblock.ValidateBlocks(existingBlocks, overrides)
 		}
 	}
 
@@ -237,9 +244,16 @@ func (c *Webhook) validateRelease(request *admission.AdmissionRequest, release s
 
 func (c *Webhook) validateApplication(request *admission.AdmissionRequest, application shipper.Application) error {
 	var err error
+	overrides, existingBlocks, err := rolloutblock.GetAllBlocks(c.rolloutBlocksLister, &application)
+	if err != nil {
+		return err
+	}
+	if err = rolloutblock.ValidateAnnotations(existingBlocks, overrides); err != nil {
+		return err
+	}
 	switch request.Operation {
 	case kubeclient.Create:
-		_, _, err = rolloutblock.BlocksRollout(c.rolloutBlocksLister, &application)
+		err = rolloutblock.ValidateBlocks(existingBlocks, overrides)
 	case kubeclient.Update:
 		var oldApp shipper.Application
 		err = json.Unmarshal(request.OldObject.Raw, &oldApp)
@@ -248,7 +262,7 @@ func (c *Webhook) validateApplication(request *admission.AdmissionRequest, appli
 		}
 
 		if !reflect.DeepEqual(application.Spec, oldApp.Spec) {
-			_, _, err = rolloutblock.BlocksRollout(c.rolloutBlocksLister, &application)
+			err = rolloutblock.ValidateBlocks(existingBlocks, overrides)
 		}
 	}
 

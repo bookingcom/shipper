@@ -217,6 +217,42 @@ func TestBlockNewAppWithRolloutBlock(t *testing.T) {
 	if err != nil {
 		t.Logf("successfully did not create application %q: %q", appName, err)
 		return
+	} else {
+		t.Fatalf("did not block application %q", appName)
+	}
+}
+
+func TestNewAppAllInWithRolloutBlockNonExisting(t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+	t.Parallel()
+
+	targetReplicas := 4
+	ns, err := setupNamespace(t.Name())
+	_ = newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(ns.GetName())
+	}()
+
+	newApp := newApplication(ns.GetName(), appName, &allIn)
+	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", ns.GetName(), rolloutBlockName)
+	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Chart.Name = "test-nginx"
+	newApp.Spec.Template.Chart.Version = "0.0.1"
+
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
+	if err != nil {
+		t.Logf("successfully did not create application %q: %q", appName, err)
+		return
+	} else {
+		t.Fatalf("created application %q with non-existing rollout block override", appName)
 	}
 }
 
