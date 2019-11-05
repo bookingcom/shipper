@@ -212,6 +212,7 @@ type ReleaseStatus struct {
 	AchievedStep *AchievedStep          `json:"achievedStep,omitempty"`
 	Strategy     *ReleaseStrategyStatus `json:"strategy,omitempty"`
 	Conditions   []ReleaseCondition     `json:"conditions,omitempty"`
+	Reports      []ReleaseClusterReport `json:"reports,omitempty"`
 }
 
 type AchievedStep struct {
@@ -233,6 +234,14 @@ type ReleaseCondition struct {
 	LastTransitionTime metav1.Time            `json:"lastTransitionTime,omitempty"`
 	Reason             string                 `json:"reason,omitempty"`
 	Message            string                 `json:"message,omitempty"`
+}
+
+type ReleaseClusterReport struct {
+	Cluster           string `json:"cluster,omitempty"`
+	AchievedPercent   int32  `json:"achievedPercent"`
+	AvailableReplicas int32  `json:"availableReplicas"`
+	Summary           string `json:"summary,omitempty"`
+	Problems          string `json:"problems,omitempty"`
 }
 
 type ReleaseEnvironment struct {

@@ -965,7 +965,7 @@ func (f *fixture) expectReleaseScheduled(release *shipper.Release, clusters []*s
 	)
 }
 
-func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipper.Release, value uint, totalReplicaCount uint, role role) {
+func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipper.Release, targetStep int32, value uint, totalReplicaCount uint, role role) {
 	f.filter = f.filter.Extend(actionfilter{
 		[]string{"patch"},
 		[]string{"releases", "capacitytargets"},
@@ -983,8 +983,6 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipp
 	action := kubetesting.NewPatchAction(gvr, ct.GetNamespace(), ct.GetName(), types.StrategicMergePatchType, patch)
 	f.actions = append(f.actions, action)
 
-	step := r.Spec.TargetStep
-
 	var strategyConditions conditions.StrategyConditionsMap
 
 	if role == Contender {
@@ -992,12 +990,12 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipp
 			shipper.ReleaseStrategyCondition{
 				Type:   shipper.StrategyConditionContenderAchievedInstallation,
 				Status: corev1.ConditionTrue,
-				Step:   step,
+				Step:   targetStep,
 			},
 			shipper.ReleaseStrategyCondition{
 				Type:    shipper.StrategyConditionContenderAchievedCapacity,
 				Status:  corev1.ConditionFalse,
-				Step:    step,
+				Step:    targetStep,
 				Reason:  ClustersNotReady,
 				Message: fmt.Sprintf("clusters pending capacity adjustments: [minikube]. for more details, try `kubectl describe ct %s`", ct.Name),
 			},
@@ -1007,27 +1005,27 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipp
 			shipper.ReleaseStrategyCondition{
 				Type:   shipper.StrategyConditionContenderAchievedInstallation,
 				Status: corev1.ConditionTrue,
-				Step:   step,
+				Step:   targetStep,
 			},
 			shipper.ReleaseStrategyCondition{
 				Type:   shipper.StrategyConditionContenderAchievedCapacity,
 				Status: corev1.ConditionTrue,
-				Step:   step,
+				Step:   targetStep,
 			},
 			shipper.ReleaseStrategyCondition{
 				Type:   shipper.StrategyConditionContenderAchievedTraffic,
 				Status: corev1.ConditionTrue,
-				Step:   step,
+				Step:   targetStep,
 			},
 			shipper.ReleaseStrategyCondition{
 				Type:   shipper.StrategyConditionIncumbentAchievedTraffic,
 				Status: corev1.ConditionTrue,
-				Step:   step,
+				Step:   targetStep,
 			},
 			shipper.ReleaseStrategyCondition{
 				Type:    shipper.StrategyConditionIncumbentAchievedCapacity,
 				Status:  corev1.ConditionFalse,
-				Step:    step,
+				Step:    targetStep,
 				Reason:  ClustersNotReady,
 				Message: fmt.Sprintf("incumbent capacity is unhealthy in clusters: [minikube]. for more details, try `kubectl describe ct %s`", ct.Name),
 			},
@@ -1036,8 +1034,9 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipp
 
 	r.Status.Strategy = &shipper.ReleaseStrategyStatus{
 		Conditions: strategyConditions.AsReleaseStrategyConditions(),
-		State:      strategyConditions.AsReleaseStrategyState(r.Spec.TargetStep, true, false),
+		State:      strategyConditions.AsReleaseStrategyState(targetStep, true, false),
 	}
+
 	newStatus := map[string]interface{}{
 		"status": r.Status,
 	}
@@ -1141,11 +1140,13 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipper.TrafficTarget, r *shipper
 	f.expectedEvents = []string{}
 }
 
-func (f *fixture) expectReleaseReleased(rel *shipper.Release, targetStep int32) {
+func (f *fixture) expectReleaseReleased(rel *shipper.Release, ct *shipper.CapacityTarget, targetStep int32) {
 	f.filter = f.filter.Extend(actionfilter{
 		[]string{"patch"},
 		[]string{"releases"},
 	})
+
+	reports := genContenderReports(ct.Status.Clusters)
 
 	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 	newStatus := map[string]interface{}{
@@ -1195,6 +1196,7 @@ func (f *fixture) expectReleaseReleased(rel *shipper.Release, targetStep int32) 
 					},
 				},
 			},
+			Reports: reports,
 		},
 	}
 
@@ -1255,6 +1257,18 @@ func (f *fixture) expectInstallationNotReady(rel *shipper.Release, achievedStepI
 					},
 				},
 			},
+			Reports: []shipper.ReleaseClusterReport{
+				{
+					Cluster:           "broken-installation-cluster",
+					AchievedPercent:   100,
+					AvailableReplicas: 0,
+				},
+				{
+					Cluster:           "minikube",
+					AchievedPercent:   100,
+					AvailableReplicas: 0,
+				},
+			},
 		},
 	}
 
@@ -1266,7 +1280,23 @@ func (f *fixture) expectInstallationNotReady(rel *shipper.Release, achievedStepI
 	f.expectedEvents = []string{}
 }
 
-func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, achievedStepIndex int32, role role, brokenClusterName string) {
+func genContenderReports(clusters []shipper.ClusterCapacityStatus) []shipper.ReleaseClusterReport {
+	reports := make([]shipper.ReleaseClusterReport, 0, len(clusters))
+	for _, cluster := range clusters {
+		reports = append(reports, shipper.ReleaseClusterReport{
+			Cluster:           cluster.Name,
+			AchievedPercent:   cluster.AchievedPercent,
+			AvailableReplicas: cluster.AvailableReplicas,
+		})
+	}
+	sort.Slice(reports, func(a, b int) bool {
+		return reports[a].Cluster < reports[b].Cluster
+	})
+
+	return reports
+}
+
+func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, achievedStepIndex int32, role role, healthyClusterName, brokenClusterName string) {
 	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 	rel := relpair.contender.release
 
@@ -1279,6 +1309,8 @@ func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, ac
 			Name: rel.Spec.Environment.Strategy.Steps[achievedStepIndex].Name,
 		}
 	}
+
+	reports := genContenderReports(relpair.contender.capacityTarget.Status.Clusters)
 
 	if role == Contender {
 		newStatus = map[string]interface{}{
@@ -1310,12 +1342,12 @@ func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, ac
 						},
 					},
 				},
+				Reports: reports,
 			},
 		}
 	} else {
 		newStatus = map[string]interface{}{
 			"status": shipper.ReleaseStatus{
-				AchievedStep: achievedStep,
 				Conditions: []shipper.ReleaseCondition{
 					{Type: shipper.ReleaseConditionTypeBlocked, Status: corev1.ConditionFalse},
 					{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
@@ -1357,6 +1389,7 @@ func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, ac
 						},
 					},
 				},
+				Reports: reports,
 			},
 		}
 	}
@@ -1381,6 +1414,8 @@ func (f *fixture) expectTrafficNotReady(relpair releaseInfoPair, targetStep, ach
 			Name: rel.Spec.Environment.Strategy.Steps[achievedStepIndex].Name,
 		}
 	}
+
+	reports := genContenderReports(relpair.contender.capacityTarget.Status.Clusters)
 
 	if role == Contender {
 		newStatus = map[string]interface{}{
@@ -1417,6 +1452,7 @@ func (f *fixture) expectTrafficNotReady(relpair releaseInfoPair, targetStep, ach
 						},
 					},
 				},
+				Reports: reports,
 			},
 		}
 	} else {
@@ -1459,6 +1495,7 @@ func (f *fixture) expectTrafficNotReady(relpair releaseInfoPair, targetStep, ach
 						},
 					},
 				},
+				Reports: reports,
 			},
 		}
 	}
@@ -1555,6 +1592,8 @@ func TestContenderDoNothingClusterInstallationNotReady(t *testing.T) {
 		// so we'll break one
 		contender.installationTarget.Status.Clusters[1].Status = shipper.InstallationStatusFailed
 
+		updateReports(contender)
+
 		f.addObjects(
 			contender.release.DeepCopy(),
 			contender.installationTarget.DeepCopy(),
@@ -1590,7 +1629,6 @@ func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
 		contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
 		cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 		releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
-
 		addCluster(contender, brokenCluster)
 
 		// We'll set cluster 0 to be all set, but make cluster 1 broken.
@@ -1610,12 +1648,16 @@ func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
 		contender.trafficTarget.Spec.Clusters[1].Weight = 50
 		contender.trafficTarget.Status.Clusters[1].AchievedTraffic = 50
 
+		updateReports(contender)
+
 		incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
 		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 		incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
 		incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
 		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
 		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+
+		updateReports(incumbent)
 
 		f.addObjects(
 			brokenCluster.DeepCopy(),
@@ -1635,7 +1677,7 @@ func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
 			contender: contender,
 			incumbent: incumbent,
 		}
-		f.expectCapacityNotReady(relpair, 1, 0, Contender, brokenCluster.Name)
+		f.expectCapacityNotReady(relpair, 1, 0, Contender, cluster.Name, brokenCluster.Name)
 		f.run()
 	}
 }
@@ -1678,12 +1720,16 @@ func TestContenderDoNothingClusterTrafficNotReady(t *testing.T) {
 		// No traffic yet.
 		contender.trafficTarget.Status.Clusters[1].AchievedTraffic = 0
 
+		updateReports(contender)
+
 		incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
 		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 		incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
 		incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
 		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
 		incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+
+		updateReports(incumbent)
 
 		f.addObjects(
 			contender.release.DeepCopy(),
@@ -1725,6 +1771,8 @@ func TestContenderCapacityShouldIncrease(t *testing.T) {
 
 		contender.release.Spec.TargetStep = 1
 
+		updateReports(contender)
+
 		f.addObjects(
 			contender.release.DeepCopy(),
 			contender.installationTarget.DeepCopy(),
@@ -1739,7 +1787,7 @@ func TestContenderCapacityShouldIncrease(t *testing.T) {
 
 		ct := contender.capacityTarget.DeepCopy()
 		r := contender.release.DeepCopy()
-		f.expectCapacityStatusPatch(ct, r, 50, uint(totalReplicaCount), Contender)
+		f.expectCapacityStatusPatch(ct, r, contender.release.Spec.TargetStep, 50, uint(totalReplicaCount), Contender)
 		f.run()
 	}
 }
@@ -1766,6 +1814,8 @@ func TestContenderCapacityShouldIncreaseWithRolloutBlockOverride(t *testing.T) {
 
 	contender.release.Spec.TargetStep = 1
 
+	updateReports(contender)
+
 	f.addObjects(
 		contender.release.DeepCopy(),
 		contender.installationTarget.DeepCopy(),
@@ -1780,7 +1830,7 @@ func TestContenderCapacityShouldIncreaseWithRolloutBlockOverride(t *testing.T) {
 
 	ct := contender.capacityTarget.DeepCopy()
 	r := contender.release.DeepCopy()
-	f.expectCapacityStatusPatch(ct, r, 50, uint(totalReplicaCount), Contender)
+	f.expectCapacityStatusPatch(ct, r, contender.release.Spec.TargetStep, 50, uint(totalReplicaCount), Contender)
 	overrideEvent := fmt.Sprintf("%s RolloutBlockOverridden %s", corev1.EventTypeNormal, rolloutBlockKey)
 	f.expectedEvents = append(f.expectedEvents, overrideEvent)
 	f.run()
@@ -1803,6 +1853,8 @@ func TestContenderCapacityShouldNotIncreaseWithRolloutBlock(t *testing.T) {
 	contender.release.Annotations[shipper.ReleaseClustersAnnotation] = cluster.GetName()
 	cond := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
 	releaseutil.SetReleaseCondition(&contender.release.Status, *cond)
+
+	updateReports(contender)
 
 	contender.release.Spec.TargetStep = 1
 
@@ -1856,6 +1908,8 @@ func TestContenderTrafficShouldIncrease(t *testing.T) {
 		contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
 		contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
 
+		updateReports(contender)
+
 		f.addObjects(
 			contender.release.DeepCopy(),
 			contender.installationTarget.DeepCopy(),
@@ -1901,6 +1955,8 @@ func TestContenderTrafficShouldIncreaseWithRolloutBlockOverride(t *testing.T) {
 	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
 	contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
 
+	updateReports(contender)
+
 	f.addObjects(
 		contender.release.DeepCopy(),
 		contender.installationTarget.DeepCopy(),
@@ -1942,6 +1998,8 @@ func TestContenderTrafficShouldNotIncreaseWithRolloutBlock(t *testing.T) {
 	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
 	contender.capacityTarget.Status.Clusters[0].AchievedPercent = 50
 	contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+
+	updateReports(contender)
 
 	f.addObjects(
 		contender.release.DeepCopy(),
@@ -1995,6 +2053,8 @@ func TestIncumbentTrafficShouldDecrease(t *testing.T) {
 		contender.trafficTarget.Spec.Clusters[0].Weight = 50
 		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
+		updateReports(contender)
+
 		f.addObjects(
 			contender.release.DeepCopy(),
 			contender.installationTarget.DeepCopy(),
@@ -2042,6 +2102,8 @@ func TestIncumbentTrafficShouldDecreaseWithRolloutBlockOverride(t *testing.T) {
 	contender.trafficTarget.Spec.Clusters[0].Weight = 50
 	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
+	updateReports(contender)
+
 	f.addObjects(
 		contender.release.DeepCopy(),
 		contender.installationTarget.DeepCopy(),
@@ -2085,6 +2147,8 @@ func TestIncumbentTrafficShouldNotDecreaseWithRolloutBlock(t *testing.T) {
 	contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
 	contender.trafficTarget.Spec.Clusters[0].Weight = 50
 	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+
+	updateReports(contender)
 
 	f.addObjects(
 		contender.release.DeepCopy(),
@@ -2138,8 +2202,14 @@ func TestIncumbentCapacityShouldDecrease(t *testing.T) {
 		contender.trafficTarget.Spec.Clusters[0].Weight = 50
 		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
+		updateReports(contender)
+
 		incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
 		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+		incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = totalReplicaCount - int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+
+		updateReports(incumbent)
 
 		f.addObjects(
 			contender.release.DeepCopy(),
@@ -2153,9 +2223,9 @@ func TestIncumbentCapacityShouldDecrease(t *testing.T) {
 			incumbent.trafficTarget.DeepCopy(),
 		)
 
-		tt := incumbent.capacityTarget.DeepCopy()
+		ct := incumbent.capacityTarget.DeepCopy()
 		r := contender.release.DeepCopy()
-		f.expectCapacityStatusPatch(tt, r, 50, uint(totalReplicaCount), Incumbent)
+		f.expectCapacityStatusPatch(ct, r, contender.release.Spec.TargetStep, 50, uint(totalReplicaCount), Incumbent)
 		f.run()
 	}
 }
@@ -2188,8 +2258,14 @@ func TestIncumbentCapacityShouldDecreaseWithRolloutBlockOverride(t *testing.T) {
 	contender.trafficTarget.Spec.Clusters[0].Weight = 50
 	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
+	updateReports(contender)
+
 	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
 	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+	incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = totalReplicaCount - int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
+	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+
+	updateReports(incumbent)
 
 	f.addObjects(
 		contender.release.DeepCopy(),
@@ -2203,9 +2279,9 @@ func TestIncumbentCapacityShouldDecreaseWithRolloutBlockOverride(t *testing.T) {
 		incumbent.trafficTarget.DeepCopy(),
 	)
 
-	tt := incumbent.capacityTarget.DeepCopy()
+	ct := incumbent.capacityTarget.DeepCopy()
 	r := contender.release.DeepCopy()
-	f.expectCapacityStatusPatch(tt, r, 50, uint(totalReplicaCount), Incumbent)
+	f.expectCapacityStatusPatch(ct, r, contender.release.Spec.TargetStep, 50, uint(totalReplicaCount), Incumbent)
 	overrideEvent := fmt.Sprintf("%s RolloutBlockOverridden %s", corev1.EventTypeNormal, rolloutBlockKey)
 	f.expectedEvents = append(f.expectedEvents, overrideEvent)
 	f.run()
@@ -2235,6 +2311,8 @@ func TestIncumbentCapacityShouldNotDecreaseWithRolloutBlock(t *testing.T) {
 	contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
 	contender.trafficTarget.Spec.Clusters[0].Weight = 50
 	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
+
+	updateReports(contender)
 
 	f.addObjects(
 		contender.release.DeepCopy(),
@@ -2335,11 +2413,15 @@ func TestContenderReleaseIsInstalled(t *testing.T) {
 		contender.trafficTarget.Spec.Clusters[0].Weight = 100
 		contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 100
 
+		updateReports(contender)
+
 		incumbent.trafficTarget.Spec.Clusters[0].Weight = 0
 		incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 0
 		incumbent.capacityTarget.Spec.Clusters[0].Percent = 0
 		incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 0
 		incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = 0
+
+		updateReports(incumbent)
 
 		f.addObjects(
 			contender.release.DeepCopy(),
@@ -2353,7 +2435,7 @@ func TestContenderReleaseIsInstalled(t *testing.T) {
 			incumbent.trafficTarget.DeepCopy(),
 		)
 
-		f.expectReleaseReleased(contender.release, 2)
+		f.expectReleaseReleased(contender.release, contender.capacityTarget, 2)
 
 		f.run()
 	}
@@ -2434,6 +2516,22 @@ func TestApplicationExposesStrategyFailure(t *testing.T) {
 	f.run()
 }
 
+func updateReports(ri *releaseInfo) {
+	for _, clus := range ri.capacityTarget.Status.Clusters {
+		ri.release.Status.Reports = append(
+			ri.release.Status.Reports,
+			shipper.ReleaseClusterReport{
+				Cluster:           clus.Name,
+				AchievedPercent:   clus.AchievedPercent,
+				AvailableReplicas: clus.AvailableReplicas,
+			},
+		)
+	}
+	sort.Slice(ri.release.Status.Reports, func(a, b int) bool {
+		return ri.release.Status.Reports[a].Cluster < ri.release.Status.Reports[b].Cluster
+	})
+}
+
 func workingOnContenderCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
 	namespace := "test-namespace"
 	incumbentName, contenderName := "test-incumbent", "test-contender"
@@ -2463,6 +2561,8 @@ func workingOnContenderCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
 	contender.capacityTarget.Status.Clusters[0].AchievedPercent = achievedCapacityPercentage
 	contender.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), float64(achievedCapacityPercentage)))
 
+	updateReports(contender)
+
 	f.addObjects(
 		contender.release.DeepCopy(),
 		contender.installationTarget.DeepCopy(),
@@ -2479,7 +2579,7 @@ func workingOnContenderCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
 		contender: contender,
 		incumbent: incumbent,
 	}
-	f.expectCapacityNotReady(relpair, 1, 0, Contender, "minikube")
+	f.expectCapacityNotReady(relpair, 1, 0, Contender, cluster.Name, cluster.Name)
 	f.run()
 }
 
@@ -2513,6 +2613,8 @@ func workingOnContenderTraffic(percent int, wg *sync.WaitGroup, t *testing.T) {
 	// Working on contender traffic.
 	contender.trafficTarget.Spec.Clusters[0].Weight = 50
 	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = uint32(percent)
+
+	updateReports(contender)
 
 	f.addObjects(
 		contender.release.DeepCopy(),
@@ -2566,9 +2668,15 @@ func workingOnIncumbentTraffic(percent int, wg *sync.WaitGroup, t *testing.T) {
 	contender.trafficTarget.Spec.Clusters[0].Weight = 50
 	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
+	updateReports(contender)
+
+	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
+	incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = totalReplicaCount - int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
 	// Working on incumbent traffic.
 	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
 	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 100 - uint32(percent)
+
+	updateReports(incumbent)
 
 	f.addObjects(
 		contender.release.DeepCopy(),
@@ -2621,16 +2729,15 @@ func workingOnIncumbentCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
 	contender.trafficTarget.Spec.Clusters[0].Weight = 50
 	contender.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
+	updateReports(contender)
+
 	// Desired incumbent traffic achieved.
 	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
 	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
 	// Working on incumbent capacity.
-	incumbentAchievedCapacityPercentage := 100 - int32(percent)
 	incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
 	incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
-	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = incumbentAchievedCapacityPercentage
-	incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), float64(incumbentAchievedCapacityPercentage)))
 
 	f.addObjects(
 		contender.release.DeepCopy(),
@@ -2648,7 +2755,7 @@ func workingOnIncumbentCapacity(percent int, wg *sync.WaitGroup, t *testing.T) {
 		contender: contender,
 		incumbent: incumbent,
 	}
-	f.expectCapacityNotReady(relpair, 1, 0, Incumbent, "minikube")
+	f.expectCapacityNotReady(relpair, 1, 2, Incumbent, cluster.Name, cluster.Name)
 	f.run()
 }
 

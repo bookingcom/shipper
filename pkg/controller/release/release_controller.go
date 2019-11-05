@@ -3,6 +3,7 @@ package release
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -279,6 +280,12 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 
 	rel, err := c.scheduleRelease(initialRel.DeepCopy())
 
+	if rel != nil {
+		if rep, sumErr := c.buildReleaseReports(rel); sumErr == nil {
+			rel.Status.Reports = rep
+		}
+	}
+
 	if !reflect.DeepEqual(initialRel, rel) {
 		if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); err != nil {
 			return shippererrors.NewKubeclientUpdateError(rel, err).
@@ -303,6 +310,37 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 	klog.V(4).Infof("Done processing Release %q", key)
 
 	return nil
+}
+
+func (c *Controller) buildReleaseReports(rel *shipper.Release) ([]shipper.ReleaseClusterReport, error) {
+	if rel == nil {
+		return nil, nil
+	}
+	ct, err := c.capacityTargetLister.CapacityTargets(rel.Namespace).Get(rel.Name)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	clusters := ct.Status.Clusters
+	res := make([]shipper.ReleaseClusterReport, 0, len(clusters))
+	for _, cs := range clusters {
+		report := shipper.ReleaseClusterReport{
+			Cluster:           cs.Name,
+			AchievedPercent:   cs.AchievedPercent,
+			AvailableReplicas: cs.AvailableReplicas,
+			Summary:           releaseutil.BuildClusterBreakdownReport(cs.Reports),
+			Problems:          releaseutil.BuildClusterProblemReport(cs.SadPods),
+		}
+		res = append(res, report)
+	}
+
+	sort.Slice(res, func(a, b int) bool {
+		return res[a].Cluster < res[b].Cluster
+	})
+
+	return res, nil
 }
 
 func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, error) {
