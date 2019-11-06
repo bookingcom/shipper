@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -353,6 +354,10 @@ func (c *Controller) processNextRolloutBlockWorkItem() bool {
 	err := c.syncRolloutBlock(key)
 
 	if err != nil {
+		if errors.IsNotFound(err) {
+			klog.Errorf("rollout block called %q could not be found", key)
+			return true
+		}
 		shouldRetry = shippererrors.ShouldRetry(err)
 		runtime.HandleError(fmt.Errorf("error syncing RolloutBlock %q (will retry: %t): %s", key, shouldRetry, err.Error()))
 	}
