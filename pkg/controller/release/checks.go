@@ -1,6 +1,8 @@
 package release
 
 import (
+	"sort"
+
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	replicasutil "github.com/bookingcom/shipper/pkg/util/replicas"
 )
@@ -126,6 +128,9 @@ func checkCapacity(
 			clustersNotReady = append(clustersNotReady, clusterName)
 		}
 	}
+
+	// We need a sorted order, otherwise it will trigger unnecessary etcd update operations
+	sort.Strings(clustersNotReady)
 
 	if len(newSpec.Clusters) > 0 {
 		return canProceed, newSpec, clustersNotReady
