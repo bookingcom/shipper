@@ -76,12 +76,12 @@ func NewController(
 	klog.Info("Setting up event handlers")
 	// Set up an event handler for when TrafficTarget resources change.
 	trafficTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: controller.enqueueTrafficTarget,
+		AddFunc: controller.enqueueAllTrafficTargets,
 		UpdateFunc: func(old, new interface{}) {
-			controller.enqueueTrafficTarget(new)
+			controller.enqueueAllTrafficTargets(new)
 		},
 		// The sync handler needs to cope with the case where the object was deleted.
-		DeleteFunc: controller.enqueueTrafficTarget,
+		DeleteFunc: controller.enqueueAllTrafficTargets,
 	})
 
 	store.AddSubscriptionCallback(controller.subscribeToAppClusterEvents)
@@ -378,6 +378,35 @@ func (c *Controller) enqueueTrafficTarget(obj interface{}) {
 	c.workqueue.Add(key)
 }
 
+func (c *Controller) enqueueAllTrafficTargets(obj interface{}) {
+	trafficTarget, ok := obj.(*shipper.TrafficTarget)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.TrafficTarget: %#v", obj))
+		return
+	}
+
+	namespace := trafficTarget.Namespace
+
+	appName, ok := trafficTarget.Labels[shipper.AppLabel]
+	if !ok {
+		runtime.HandleError(fmt.Errorf("TrafficTarget %s/%s is missing app label",
+			namespace, trafficTarget.Name))
+		return
+	}
+
+	selector := labels.Set{shipper.AppLabel: appName}.AsSelector()
+	trafficTargets, err := c.trafficTargetsLister.TrafficTargets(namespace).List(selector)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf(
+			"cannot list traffic targets for app '%s/%s': %s",
+			namespace, appName, err))
+	}
+
+	for _, tt := range trafficTargets {
+		c.enqueueTrafficTarget(tt)
+	}
+}
+
 func (c *Controller) enqueueTrafficTargetsFromPod(obj interface{}) {
 	pod, ok := obj.(*corev1.Pod)
 	if !ok {
@@ -385,7 +414,7 @@ func (c *Controller) enqueueTrafficTargetsFromPod(obj interface{}) {
 		return
 	}
 
-	app, ok := pod.GetLabels()[shipper.AppLabel]
+	appName, ok := pod.GetLabels()[shipper.AppLabel]
 	if !ok {
 		runtime.HandleError(fmt.Errorf(
 			"object %q does not have label %s. FilterFunc not working?",
@@ -394,7 +423,7 @@ func (c *Controller) enqueueTrafficTargetsFromPod(obj interface{}) {
 	}
 
 	namespace := pod.Namespace
-	selector := labels.Set{shipper.AppLabel: app}.AsSelector()
+	selector := labels.Set{shipper.AppLabel: appName}.AsSelector()
 	trafficTargets, err := c.trafficTargetsLister.TrafficTargets(namespace).List(selector)
 	if err != nil {
 		err = shippererrors.NewKubeclientListError(
@@ -402,7 +431,7 @@ func (c *Controller) enqueueTrafficTargetsFromPod(obj interface{}) {
 			namespace, selector, err)
 		runtime.HandleError(fmt.Errorf(
 			"cannot list traffic targets for app '%s/%s': %s",
-			namespace, app, err))
+			namespace, appName, err))
 	}
 
 	for _, tt := range trafficTargets {
