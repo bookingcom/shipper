@@ -71,6 +71,24 @@ func (f *fixture) checkPods(relName string, expectedCount int) {
 	}
 }
 
+func (f *fixture) checkEndpointActivePods(epName string, podCnt int) {
+	ep, err := kubeClient.CoreV1().Endpoints(f.namespace).Get(epName, metav1.GetOptions{})
+	if err != nil {
+		f.t.Fatalf("could not fetch endpoint %q: %q", epName, err)
+	}
+
+	ips := make([]string, 0, podCnt)
+	for _, subset := range ep.Subsets {
+		for _, addr := range subset.Addresses {
+			ips = append(ips, addr.IP)
+		}
+	}
+
+	if len(ips) != podCnt {
+		f.t.Fatalf("wrong IP address count in the endpoint %q: want: %d, got: %d", epName, len(ips), podCnt)
+	}
+}
+
 func (f *fixture) waitForRelease(appName string, historyIndex int) *shipper.Release {
 	var newRelease *shipper.Release
 	start := time.Now()
