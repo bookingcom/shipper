@@ -1435,6 +1435,62 @@ func TestDeletedDeploymentsAreReinstalled(t *testing.T) {
 	f.checkPods(relName, targetReplicas)
 }
 
+func TestConsistentTrafficBalanceOnStraightFullOn(t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+	t.Parallel()
+
+	ns, err := setupNamespace(t.Name())
+	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(ns.GetName())
+	}()
+
+	app := newApplication(ns.GetName(), appName, &allIn)
+	app.Spec.Template.Chart.Name = "test-nginx"
+	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": 0}
+
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
+	if err != nil {
+		t.Fatalf("could not create application %q: %q", appName, err)
+	}
+
+	t.Logf("waiting for a new release for new application %q", appName)
+	incumbent := f.waitForRelease(appName, 0)
+	incumbentName := incumbent.GetName()
+	t.Logf("waiting for incumbent release %q to complete", incumbentName)
+	f.waitForComplete(incumbent.GetName())
+	t.Logf("checking that incumbent release %q has %d pods (strategy step 0 -- finished)", incumbentName, 0)
+	f.checkPods(incumbentName, 0)
+
+	app, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("could not fetch application %q: %q", appName, err)
+	}
+
+	app.Spec.Template.Strategy = &vanguard
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": 2}
+	if _, err := shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Update(app); err != nil {
+		t.Fatalf("could not update app %q: %q", app.GetName(), err)
+	}
+
+	contender := f.waitForRelease(appName, 1)
+	contenderName := contender.GetName()
+	f.targetStep(2, contenderName)
+	f.waitForComplete(contender.GetName())
+	f.checkPods(contenderName, 2)
+
+	f.checkEndpointActivePods("test-nginx-prod", 2)
+}
+
 // TODO(btyler): cover a variety of broken chart cases as soon as we report
 // those outcomes somewhere other than stderr.
 
