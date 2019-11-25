@@ -6,18 +6,13 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
-	runtimeutil "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
-	kubefake "k8s.io/client-go/kubernetes/fake"
-	kubetesting "k8s.io/client-go/testing"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/cache"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
-	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	trafficutil "github.com/bookingcom/shipper/pkg/util/traffic"
 )
@@ -32,176 +27,254 @@ func init() {
 }
 
 func TestSingleCluster(t *testing.T) {
-	f := newFixture(t)
-	app := "test-app"
-	release := "test-app-1234"
-	cluster := f.newCluster()
-	cluster.AddOne(buildService(app))
+	app := "shipper-test"
+	release := "shipper-test-1"
+	cluster := "cluster-1"
 
-	const noTraffic = false
-	pods := buildPods(app, release, 1, noTraffic)
-	cluster.AddMany(pods)
+	tt := buildTrafficTarget(app, release, map[string]uint32{cluster: 10})
 
-	tt := buildTrafficTarget(
-		app, release,
-		map[string]uint32{
-			cluster.Name: 10,
+	spec := TrafficControllerTestSpec{
+		ObjectsByCluster: map[string][]runtime.Object{
+			cluster: buildWorldWithPods(app, release, 1, false),
 		},
-	)
+		TrafficTargets: []*shipper.TrafficTarget{tt},
+		Expectations: []TrafficTargetTestExpectations{
+			TrafficTargetTestExpectations{
+				Statuses: buildTotalSuccessStatus(tt),
+				PodsByCluster: map[string]PodStatus{
+					cluster: PodStatus{WithTraffic: 1},
+				},
+			},
+		},
+	}
 
-	f.addTrafficTarget(tt)
-	updatedTT := tt.DeepCopy()
-	updatedTT.Status.Clusters = buildTotalSuccessStatus(updatedTT)
-
-	pod := pods[0].(*corev1.Pod)
-	gvr := corev1.SchemeGroupVersion.WithResource("pods")
-	patchString := fmt.Sprintf(`[{"op":"replace","path":"/metadata/labels/%s","value":"%s"}]`, shipper.PodTrafficStatusLabel, shipper.Enabled)
-	cluster.Expect(kubetesting.NewPatchAction(gvr, shippertesting.TestNamespace, pod.Name, types.JSONPatchType, []byte(patchString)))
-
-	f.expectTrafficTargetUpdate(updatedTT)
-	f.run()
+	spec.Run(t)
 }
 
 func TestExtraClustersNoExtraStatuses(t *testing.T) {
-	f := newFixture(t)
 	app := "test-app"
 	releaseA := "test-app-1234"
 	releaseB := "test-app-4567"
 
-	clusterA := f.newCluster()
-	clusterB := f.newCluster()
+	clusterA := "cluster-a"
+	clusterB := "cluster-b"
 
-	clusterA.AddOne(buildService(app))
-	clusterB.AddOne(buildService(app))
+	ttA := buildTrafficTarget(app, releaseA, map[string]uint32{clusterA: 10})
+	ttB := buildTrafficTarget(app, releaseB, map[string]uint32{clusterB: 10})
 
-	const withTraffic = true
-	podsA := buildPods(app, releaseA, 1, withTraffic)
-	clusterA.AddMany(podsA)
-
-	podsB := buildPods(app, releaseB, 1, withTraffic)
-	clusterB.AddMany(podsB)
-
-	ttA := buildTrafficTarget(
-		app, releaseA,
-		map[string]uint32{
-			clusterA.Name: 10,
+	spec := TrafficControllerTestSpec{
+		ObjectsByCluster: map[string][]runtime.Object{
+			clusterA: buildWorldWithPods(app, releaseA, 1, true),
+			clusterB: buildWorldWithPods(app, releaseB, 1, true),
 		},
-	)
-
-	ttB := buildTrafficTarget(
-		app, releaseB,
-		map[string]uint32{
-			clusterB.Name: 10,
+		TrafficTargets: []*shipper.TrafficTarget{
+			ttA, ttB,
 		},
-	)
+		Expectations: []TrafficTargetTestExpectations{
+			TrafficTargetTestExpectations{
+				Statuses: buildTotalSuccessStatus(ttA),
+				PodsByCluster: map[string]PodStatus{
+					clusterA: PodStatus{WithTraffic: 1},
+					clusterB: PodStatus{},
+				},
+			},
+			TrafficTargetTestExpectations{
+				Statuses: buildTotalSuccessStatus(ttB),
+				PodsByCluster: map[string]PodStatus{
+					clusterA: PodStatus{},
+					clusterB: PodStatus{WithTraffic: 1},
+				},
+			},
+		},
+	}
 
-	f.addTrafficTarget(ttA)
-	f.addTrafficTarget(ttB)
-
-	updatedA := ttA.DeepCopy()
-	updatedA.Status.Clusters = buildTotalSuccessStatus(updatedA)
-
-	updatedB := ttB.DeepCopy()
-	updatedB.Status.Clusters = buildTotalSuccessStatus(updatedB)
-
-	f.expectTrafficTargetUpdate(updatedA)
-	f.expectTrafficTargetUpdate(updatedB)
-	f.run()
+	spec.Run(t)
 }
 
-type fixture struct {
-	t *testing.T
-
-	trafficTargetCount int
-
-	objects []runtime.Object
-	actions []kubetesting.Action
-
-	clusters map[string]*shippertesting.FakeCluster
+type TrafficControllerTestSpec struct {
+	ObjectsByCluster map[string][]runtime.Object
+	TrafficTargets   []*shipper.TrafficTarget
+	Expectations     []TrafficTargetTestExpectations
 }
 
-func newFixture(t *testing.T) *fixture {
-	return &fixture{
-		t: t,
+type PodStatus struct {
+	WithTraffic    int
+	WithoutTraffic int
+}
 
-		clusters: make(map[string]*shippertesting.FakeCluster),
+type TrafficTargetTestExpectations struct {
+	Statuses      []*shipper.ClusterTrafficStatus
+	PodsByCluster map[string]PodStatus
+}
+
+func (spec TrafficControllerTestSpec) Run(t *testing.T) {
+	if len(spec.TrafficTargets) != len(spec.Expectations) {
+		panic(fmt.Sprintf(
+			"programmer error: TrafficControllerTestTable contains %d TrafficTargets but %d Expectations to compare against",
+			len(spec.TrafficTargets), len(spec.Expectations),
+		))
+	}
+
+	f := NewControllerTestFixture()
+	for clusterName, objects := range spec.ObjectsByCluster {
+		cluster := f.AddNamedCluster(clusterName)
+		cluster.AddMany(objects)
+	}
+
+	for _, tt := range spec.TrafficTargets {
+		f.ShipperClient.Tracker().Add(tt)
+	}
+
+	spec.RunController(f)
+
+	ttGVR := shipper.SchemeGroupVersion.WithResource("traffictargets")
+	for i, expectation := range spec.Expectations {
+		if len(expectation.PodsByCluster) != len(spec.ObjectsByCluster) {
+			panic(fmt.Sprintf(
+				"programmer error: TrafficControllerTestTable contains %d ObjectsByCluster but expectation checks against %d",
+				len(spec.ObjectsByCluster), len(expectation.PodsByCluster),
+			))
+		}
+
+		initialTT := spec.TrafficTargets[i]
+		ttKey := fmt.Sprintf("%s/%s", initialTT.Namespace, initialTT.Name)
+		object, err := f.ShipperClient.Tracker().Get(ttGVR, initialTT.Namespace, initialTT.Name)
+		if err != nil {
+			t.Errorf("could not Get TrafficTarget %q: %s", ttKey, err)
+			continue
+		}
+
+		tt := object.(*shipper.TrafficTarget)
+
+		actualStatus := tt.Status.Clusters
+		eq, diff := deepEqualDiff(expectation.Statuses, actualStatus)
+		if !eq {
+			t.Errorf(
+				"TrafficTarget %q has Status.Clusters different from expected:\n%s",
+				ttKey, diff)
+			continue
+		}
+
+		for clusterName, expectedPods := range expectation.PodsByCluster {
+			spec.AssertPodTraffic(t, tt, f.Clusters[clusterName], expectedPods)
+		}
 	}
 }
 
-func (f *fixture) newCluster() *shippertesting.FakeCluster {
-	cluster := shippertesting.NewNamedFakeCluster(
-		fmt.Sprintf("cluster-%d", len(f.clusters)),
-		kubefake.NewSimpleClientset(), nil)
+func (spec TrafficControllerTestSpec) AssertPodTraffic(
+	t *testing.T,
+	tt *shipper.TrafficTarget,
+	cluster *shippertesting.FakeCluster,
+	expectedPods PodStatus,
+) {
+	podGVR := corev1.SchemeGroupVersion.WithResource("pods")
+	podGVK := corev1.SchemeGroupVersion.WithKind("Pod")
+	list, err := cluster.Client.Tracker().List(podGVR, podGVK, tt.Namespace)
+	if err != nil {
+		t.Errorf("could not List Pods in namespace %q: %s", tt.Namespace, err)
+		return
+	}
 
-	f.clusters[cluster.Name] = cluster
+	podsWithTraffic := 0
+	podsWithoutTraffic := 0
 
-	return cluster
+	pods, err := meta.ExtractList(list)
+	if err != nil {
+		t.Errorf("could not extrat list of Pods: %s", err)
+		return
+	}
+
+	ttSelector := labels.Set(map[string]string{
+		shipper.AppLabel:     tt.Labels[shipper.AppLabel],
+		shipper.ReleaseLabel: tt.Labels[shipper.ReleaseLabel],
+	}).AsSelector()
+	trafficSelector := labels.Set(map[string]string{
+		shipper.PodTrafficStatusLabel: shipper.Enabled,
+	}).AsSelector()
+	for _, podObj := range pods {
+		pod := podObj.(*corev1.Pod)
+		podLabels := labels.Set(pod.Labels)
+
+		if !ttSelector.Matches(podLabels) {
+			continue
+		}
+
+		if trafficSelector.Matches(podLabels) {
+			podsWithTraffic++
+		} else {
+			podsWithoutTraffic++
+		}
+	}
+
+	ttKey := fmt.Sprintf("%s/%s", tt.Namespace, tt.Name)
+	if podsWithTraffic != expectedPods.WithTraffic {
+		t.Errorf(
+			"TrafficTarget %q expects %d pods with traffic in cluster %q, got %d instead",
+			ttKey, expectedPods.WithTraffic, cluster.Name, podsWithTraffic)
+		return
+	}
+
+	if podsWithoutTraffic != expectedPods.WithoutTraffic {
+		t.Errorf(
+			"TrafficTarget %q expects %d pods without traffic in cluster %q, got %d instead",
+			ttKey, expectedPods.WithoutTraffic, cluster.Name, podsWithoutTraffic)
+		return
+	}
 }
 
-func (f *fixture) newController(
-	stopCh chan struct{},
-) (
-	*shipperfake.Clientset,
-	*Controller,
-	*shippertesting.FakeClusterClientStore,
-	shipperinformers.SharedInformerFactory,
-) {
-	store := shippertesting.NewFakeClusterClientStore(f.clusters)
-
-	shipperClient := shipperfake.NewSimpleClientset(f.objects...)
-	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(shipperClient, shippertesting.NoResyncPeriod)
-	c := NewController(
-		shipperClient, shipperInformerFactory, store, record.NewFakeRecorder(42),
+func (spec TrafficControllerTestSpec) RunController(f *ControllerTestFixture) {
+	controller := NewController(
+		f.ShipperClient,
+		f.ShipperInformerFactory,
+		f.ClusterClientStore,
+		f.Recorder,
 	)
 
-	return shipperClient, c, store, shipperInformerFactory
-}
-
-func (f *fixture) run() {
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 
-	client, controller, store, informer := f.newController(stopCh)
+	f.Run(stopCh)
 
-	runtimeutil.ErrorHandlers = []func(error){
-		func(err error) {
-			f.t.Errorf("runtime.Error invoked: %q", err)
-		},
+	for _, cluster := range f.Clusters {
+		kubeclient := cluster.Client
+		corev1Informers := cluster.InformerFactory.Core().V1()
+
+		handlerFn := func(pod *corev1.Pod) {
+			endpointsList, err := corev1Informers.Endpoints().Lister().List(labels.Everything())
+			if err != nil {
+				panic(fmt.Sprintf("can't list endpoints: %s", err))
+			}
+			if len(endpointsList) != 1 {
+				panic(fmt.Sprintf("expected a single endpoint, got %d", len(endpointsList)))
+			}
+
+			endpoints := shiftPodInEndpoints(pod, endpointsList[0])
+			_, err = kubeclient.CoreV1().Endpoints(endpoints.Namespace).Update(endpoints)
+			if err != nil {
+				panic(fmt.Sprintf("can't update endpoints: %s", err))
+			}
+		}
+
+		corev1Informers.Pods().Informer().AddEventHandler(
+			cache.ResourceEventHandlerFuncs{
+				AddFunc: func(obj interface{}) {
+					handlerFn(obj.(*corev1.Pod))
+				},
+				UpdateFunc: func(old, new interface{}) {
+					handlerFn(new.(*corev1.Pod))
+				},
+			},
+		)
 	}
 
-	informer.Start(stopCh)
-	informer.WaitForCacheSync(stopCh)
-
-	store.Run(stopCh)
-
-	wait.PollUntil(
-		10*time.Millisecond,
-		func() (bool, error) { return controller.workqueue.Len() >= f.trafficTargetCount, nil },
-		stopCh,
-	)
-
-	for i := 0; i < f.trafficTargetCount; i++ {
-		controller.processNextWorkItem()
+	for controller.processNextWorkItem() {
+		if controller.workqueue.Len() == 0 {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if controller.workqueue.Len() == 0 {
+			return
+		}
 	}
-
-	actual := shippertesting.FilterActions(client.Actions())
-	shippertesting.CheckActions(f.actions, actual, f.t)
-
-	for _, cluster := range f.clusters {
-		actual := shippertesting.FilterActions(cluster.Client.Actions())
-		shippertesting.CheckActions(cluster.ExpectedActions(), actual, f.t)
-	}
-}
-
-func (f *fixture) addTrafficTarget(tt *shipper.TrafficTarget) {
-	f.trafficTargetCount++
-	f.objects = append(f.objects, tt)
-}
-
-func (f *fixture) expectTrafficTargetUpdate(tt *shipper.TrafficTarget) {
-	gvr := shipper.SchemeGroupVersion.WithResource("traffictargets")
-	action := kubetesting.NewUpdateAction(gvr, tt.GetNamespace(), tt)
-	f.actions = append(f.actions, action)
 }
 
 func buildTrafficTarget(app, release string, clusterWeights map[string]uint32) *shipper.TrafficTarget {
@@ -236,7 +309,6 @@ func buildTotalSuccessStatus(tt *shipper.TrafficTarget) []*shipper.ClusterTraffi
 		clusterStatuses = append(clusterStatuses, &shipper.ClusterTrafficStatus{
 			Name:            cluster.Name,
 			AchievedTraffic: cluster.Weight,
-			Status:          "Synced",
 			Conditions: []shipper.ClusterTrafficCondition{
 				shipper.ClusterTrafficCondition{
 					Type:   shipper.ClusterConditionTypeOperational,
@@ -271,6 +343,24 @@ func buildService(app string) runtime.Object {
 	}
 }
 
+func buildEndpoints(app string) runtime.Object {
+	return &corev1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-prod", app),
+			Namespace: shippertesting.TestNamespace,
+			Labels: map[string]string{
+				shipper.LBLabel:  shipper.LBForProduction,
+				shipper.AppLabel: app,
+			},
+		},
+		Subsets: []corev1.EndpointSubset{
+			corev1.EndpointSubset{
+				Addresses: []corev1.EndpointAddress{},
+			},
+		},
+	}
+}
+
 func buildPods(app, release string, count int, withTraffic bool) []runtime.Object {
 	pods := make([]runtime.Object, 0, count)
 	for i := 0; i < count; i++ {
@@ -291,4 +381,15 @@ func buildPods(app, release string, count int, withTraffic bool) []runtime.Objec
 		})
 	}
 	return pods
+}
+
+func buildWorldWithPods(app, release string, n int, traffic bool) []runtime.Object {
+	objects := []runtime.Object{
+		buildService(app),
+		buildEndpoints(app),
+	}
+
+	objects = append(objects, buildPods(app, release, n, traffic)...)
+
+	return objects
 }

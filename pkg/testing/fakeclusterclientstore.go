@@ -24,6 +24,10 @@ func NewFakeClusterClientStore(clusters map[string]*FakeCluster) *FakeClusterCli
 	return &FakeClusterClientStore{clusters: clusters}
 }
 
+func (s *FakeClusterClientStore) AddCluster(c *FakeCluster) {
+	s.clusters[c.Name] = c
+}
+
 func (s *FakeClusterClientStore) AddSubscriptionCallback(c clusterclientstore.SubscriptionRegisterFunc) {
 	s.subscriptionCallbacks = append(s.subscriptionCallbacks, c)
 }
