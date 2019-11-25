@@ -94,19 +94,20 @@ func (c *Controller) registerAppClusterEventHandlers(informerFactory kubeinforme
 	handler := cache.FilteringResourceEventHandler{
 		FilterFunc: filters.BelongsToApp,
 		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc:    c.enqueueTrafficTargetsFromPod,
-			DeleteFunc: c.enqueueTrafficTargetsFromPod,
+			AddFunc:    c.enqueueTrafficTargetsFromEndpoints,
+			DeleteFunc: c.enqueueTrafficTargetsFromEndpoints,
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				c.enqueueTrafficTargetsFromPod(newObj)
+				c.enqueueTrafficTargetsFromEndpoints(newObj)
 			},
 		},
 	}
-	informerFactory.Core().V1().Pods().Informer().AddEventHandler(handler)
+	informerFactory.Core().V1().Endpoints().Informer().AddEventHandler(handler)
 }
 
 func (c *Controller) subscribeToAppClusterEvents(informerFactory kubeinformers.SharedInformerFactory) {
 	informerFactory.Core().V1().Pods().Informer()
 	informerFactory.Core().V1().Services().Informer()
+	informerFactory.Core().V1().Endpoints().Informer()
 }
 
 // Run will set up the event handlers for types we are interested in, as well as
@@ -216,6 +217,12 @@ func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.T
 		return tt, shippererrors.NewMissingShipperLabelError(tt, shipper.AppLabel)
 	}
 
+	syncingReleaseName, ok := tt.Labels[shipper.ReleaseLabel]
+	if !ok {
+		err := shippererrors.NewMissingShipperLabelError(tt, shipper.ReleaseLabel)
+		return tt, err
+	}
+
 	namespace := tt.Namespace
 	appSelector := labels.Set{shipper.AppLabel: appName}.AsSelector()
 	list, err := c.trafficTargetsLister.TrafficTargets(namespace).List(appSelector)
@@ -225,7 +232,7 @@ func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.T
 			namespace, appSelector, err)
 	}
 
-	shifter, err := newPodLabelShifter(appName, namespace, list)
+	shifter, err := newPodLabelShifter(appName, syncingReleaseName, namespace, list)
 	if err != nil {
 		return tt, err
 	}
@@ -274,21 +281,6 @@ func (c *Controller) processTrafficTargetOnCluster(
 		c.reportTrafficConditionChange(tt, diff)
 	}()
 
-	syncingReleaseName, ok := tt.Labels[shipper.ReleaseLabel]
-	if !ok {
-		err := shippererrors.NewMissingShipperLabelError(tt, shipper.ReleaseLabel)
-		cond := trafficutil.NewClusterTrafficCondition(
-			shipper.ClusterConditionTypeOperational,
-			corev1.ConditionFalse,
-			ServerError,
-			err.Error(),
-		)
-		diff.Append(trafficutil.SetClusterTrafficCondition(status, *cond))
-		status.Status = err.Error()
-
-		return err
-	}
-
 	clientset, err := c.clusterClientStore.GetClient(spec.Name, AgentName)
 	if err != nil {
 		cond := trafficutil.NewClusterTrafficCondition(
@@ -325,7 +317,7 @@ func (c *Controller) processTrafficTargetOnCluster(
 	)
 	diff.Append(trafficutil.SetClusterTrafficCondition(status, *cond))
 
-	achievedReleaseWeight, err := shifter.SyncCluster(spec.Name, syncingReleaseName, clientset, informerFactory)
+	achievedReleaseWeight, err := shifter.SyncCluster(spec.Name, clientset, informerFactory)
 	if err != nil {
 		var reason string
 
@@ -359,8 +351,6 @@ func (c *Controller) processTrafficTargetOnCluster(
 		"",
 	)
 	diff.Append(trafficutil.SetClusterTrafficCondition(status, *cond))
-
-	status.Status = "Synced"
 
 	return nil
 }
@@ -407,22 +397,22 @@ func (c *Controller) enqueueAllTrafficTargets(obj interface{}) {
 	}
 }
 
-func (c *Controller) enqueueTrafficTargetsFromPod(obj interface{}) {
-	pod, ok := obj.(*corev1.Pod)
+func (c *Controller) enqueueTrafficTargetsFromEndpoints(obj interface{}) {
+	endpoints, ok := obj.(*corev1.Endpoints)
 	if !ok {
-		runtime.HandleError(fmt.Errorf("not a corev1.Pod: %#v", obj))
+		runtime.HandleError(fmt.Errorf("not a corev1.Endpoints: %#v", obj))
 		return
 	}
 
-	appName, ok := pod.GetLabels()[shipper.AppLabel]
+	appName, ok := endpoints.GetLabels()[shipper.AppLabel]
 	if !ok {
 		runtime.HandleError(fmt.Errorf(
 			"object %q does not have label %s. FilterFunc not working?",
-			shippercontroller.MetaKey(pod), shipper.AppLabel))
+			shippercontroller.MetaKey(endpoints), shipper.AppLabel))
 		return
 	}
 
-	namespace := pod.Namespace
+	namespace := endpoints.Namespace
 	selector := labels.Set{shipper.AppLabel: appName}.AsSelector()
 	trafficTargets, err := c.trafficTargetsLister.TrafficTargets(namespace).List(selector)
 	if err != nil {

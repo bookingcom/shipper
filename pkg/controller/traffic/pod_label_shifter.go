@@ -18,8 +18,8 @@ import (
 
 type podLabelShifter struct {
 	appName               string
+	releaseName           string
 	namespace             string
-	serviceSelector       labels.Selector
 	clusterReleaseWeights clusterReleaseWeights
 }
 
@@ -27,118 +27,121 @@ type clusterReleaseWeights map[string]map[string]uint32
 
 func newPodLabelShifter(
 	appName string,
+	releaseName string,
 	namespace string,
 	trafficTargets []*shipper.TrafficTarget,
 ) (*podLabelShifter, error) {
-
 	weights, err := buildClusterReleaseWeights(trafficTargets)
 	if err != nil {
 		return nil, err
 	}
 
-	serviceSelector := map[string]string{
-		shipper.AppLabel: appName,
-		shipper.LBLabel:  shipper.LBForProduction,
-	}
-
 	return &podLabelShifter{
 		appName:               appName,
+		releaseName:           releaseName,
 		namespace:             namespace,
-		serviceSelector:       labels.Set(serviceSelector).AsSelector(),
 		clusterReleaseWeights: weights,
 	}, nil
 }
 
 func (p *podLabelShifter) SyncCluster(
 	cluster string,
-	release string,
 	clientset kubernetes.Interface,
 	informerFactory kubeinformers.SharedInformerFactory,
 ) (uint32, error) {
-	releaseWeights, ok := p.clusterReleaseWeights[cluster]
+	releaseTargetWeights, ok := p.clusterReleaseWeights[cluster]
 	if !ok {
 		return 0, shippererrors.NewMissingTrafficWeightsForClusterError(
 			p.namespace, p.appName, cluster)
 	}
 
-	appSelector := labels.Set{shipper.AppLabel: p.appName}.AsSelector()
-	releaseSelector := labels.Set{shipper.ReleaseLabel: release}.AsSelector()
-	trafficSelector, err := p.getTrafficSelector(cluster, informerFactory)
-	if err != nil {
-		return 0, err
-	}
-
 	podLister := informerFactory.Core().V1().Pods().Lister().Pods(p.namespace)
 	podGVK := corev1.SchemeGroupVersion.WithKind("Pod")
 
+	appSelector := labels.Set{shipper.AppLabel: p.appName}.AsSelector()
 	appPods, err := podLister.List(appSelector)
 	if err != nil {
 		return 0, shippererrors.NewKubeclientListError(
 			podGVK, p.namespace, appSelector, err)
 	}
 
-	releasePods, err := podLister.List(releaseSelector)
+	releaseSelector := labels.Set{shipper.ReleaseLabel: p.releaseName}.AsSelector()
+
+	svc, err := p.getService(informerFactory)
 	if err != nil {
-		return 0, shippererrors.NewKubeclientListError(
-			podGVK, p.namespace, releaseSelector, err)
+		return 0, err
+	} else if svc.Spec.Selector == nil {
+		return 0, shippererrors.NewTargetClusterServiceMissesSelectorError(p.namespace, svc.Name)
 	}
 
-	var totalWeight uint32 = 0
-	for _, weight := range releaseWeights {
-		totalWeight += weight
+	trafficSelector := labels.Set(svc.Spec.Selector).AsSelector()
+
+	endpoints, err := informerFactory.Core().V1().Endpoints().Lister().
+		Endpoints(svc.Namespace).Get(svc.Name)
+	if err != nil {
+		return 0, shippererrors.NewKubeclientGetError(svc.Namespace, svc.Name, err).
+			WithCoreV1Kind("Endpoints")
 	}
 
-	targetWeight := releaseWeights[release]
+	status := NewTrafficShiftingStatus(appPods, endpoints, trafficSelector, releaseSelector)
+
+	var totalTargetWeight uint32 = 0
+	for _, weight := range releaseTargetWeights {
+		totalTargetWeight += weight
+	}
+
+	releaseTargetWeight := releaseTargetWeights[p.releaseName]
 	targetPods := calculateReleasePodTarget(
-		len(releasePods), targetWeight, len(appPods), totalWeight)
+		status.ReleasePods, releaseTargetWeight, len(appPods), totalTargetWeight)
 
-	var trafficPods []*corev1.Pod
-	var idlePods []*corev1.Pod
-	for _, pod := range releasePods {
-		if getsTraffic(pod, trafficSelector) {
-			trafficPods = append(trafficPods, pod)
-			continue
+	// TODO(jgreff): we need to be able to tell, from the outside, that all
+	// pods have been labeled, but some may not be ready yet.
+
+	if len(status.LabeledPods) != targetPods {
+		err = p.shiftLabels(status, targetPods, clientset)
+		if err != nil {
+			return 0, err
 		}
-		idlePods = append(idlePods, pod)
-	}
 
-	// traffic achieved, no patches to apply.
-	if len(trafficPods) == targetPods {
-		return targetWeight, nil
+		achievedWeight := uint32(round(status.AchievedPercentage * float64(totalTargetWeight)))
+		return achievedWeight, nil
+	} else {
+		return releaseTargetWeight, nil
 	}
+}
 
-	var delta int
+func (p *podLabelShifter) shiftLabels(
+	status *TrafficShiftingStatus,
+	targetPods int,
+	clientset kubernetes.Interface,
+) error {
 	patches := make(map[string][]byte)
 
-	if len(trafficPods) > targetPods {
-		excess := len(trafficPods) - targetPods
+	if len(status.LabeledPods) > targetPods {
+		excess := len(status.LabeledPods) - targetPods
 
 		for i := 0; i < excess; i++ {
-			pod := trafficPods[i].DeepCopy()
+			pod := status.LabeledPods[i].DeepCopy()
 
 			value, ok := pod.Labels[shipper.PodTrafficStatusLabel]
 			if !ok || value == shipper.Enabled {
 				patches[pod.Name] = patchPodTrafficStatusLabel(pod, shipper.Disabled)
 			}
-
-			delta--
 		}
 	} else {
-		missing := targetPods - len(trafficPods)
+		missing := targetPods - len(status.LabeledPods)
 
-		if missing > len(idlePods) {
-			return 0, shippererrors.NewTargetClusterMathError(release, len(idlePods), missing)
+		if missing > len(status.UnlabeledPods) {
+			return shippererrors.NewTargetClusterMathError(p.releaseName, len(status.UnlabeledPods), missing)
 		}
 
 		for i := 0; i < missing; i++ {
-			pod := idlePods[i].DeepCopy()
+			pod := status.UnlabeledPods[i].DeepCopy()
 
 			value, ok := pod.Labels[shipper.PodTrafficStatusLabel]
 			if !ok || ok && value == shipper.Disabled {
 				patches[pod.Name] = patchPodTrafficStatusLabel(pod, shipper.Enabled)
 			}
-
-			delta++
 		}
 	}
 
@@ -146,31 +149,37 @@ func (p *podLabelShifter) SyncCluster(
 	for podName, patch := range patches {
 		_, err := podsClient.Patch(podName, types.JSONPatchType, patch)
 		if err != nil {
-			return 0, shippererrors.
+			return shippererrors.
 				NewKubeclientPatchError(p.namespace, podName, err).
 				WithCoreV1Kind("Pod")
 		}
 	}
 
-	// NOTE(jgreff): we assume that the patches will actually succeed in
-	// making pods satisfy traffic requirements. that's the wrong thing to
-	// do, and we should just return `len(trafficPods)`, and let the next
-	// sync calculate what actually happened.
-	finalTrafficPods := len(trafficPods) + delta
-	proportion := float64(finalTrafficPods) / float64(len(appPods))
-	achievedWeight := uint32(round(proportion * float64(totalWeight)))
-
-	return achievedWeight, nil
+	return nil
 }
 
-func getsTraffic(pod *corev1.Pod, trafficSelectors map[string]string) bool {
-	for key, trafficValue := range trafficSelectors {
-		podValue, ok := pod.Labels[key]
-		if !ok || podValue != trafficValue {
-			return false
-		}
+func (p *podLabelShifter) getService(
+	informerFactory kubeinformers.SharedInformerFactory,
+) (*corev1.Service, error) {
+	serviceSelector := labels.Set(map[string]string{
+		shipper.AppLabel: p.appName,
+		shipper.LBLabel:  shipper.LBForProduction,
+	}).AsSelector()
+
+	gvk := corev1.SchemeGroupVersion.WithKind("Service")
+	services, err := informerFactory.Core().V1().Services().Lister().
+		Services(p.namespace).List(serviceSelector)
+	if err != nil {
+		return nil, shippererrors.NewKubeclientListError(
+			gvk, p.namespace, serviceSelector, err)
 	}
-	return true
+
+	if n := len(services); n != 1 {
+		return nil, shippererrors.NewUnexpectedObjectCountFromSelectorError(
+			serviceSelector, gvk, 1, n)
+	}
+
+	return services[0], nil
 }
 
 // PatchOperation represents a JSON PatchOperation in a very specific way.
@@ -283,31 +292,4 @@ func round(num float64) int {
 		return int(num - 0.5)
 	}
 	return int(num + 0.5)
-}
-
-func (p *podLabelShifter) getTrafficSelector(
-	cluster string,
-	informerFactory kubeinformers.SharedInformerFactory,
-) (map[string]string, error) {
-	gvk := corev1.SchemeGroupVersion.WithKind("Service")
-	services, err := informerFactory.Core().V1().Services().Lister().
-		Services(p.namespace).List(p.serviceSelector)
-	if err != nil {
-		return nil, shippererrors.NewKubeclientListError(
-			gvk, p.namespace, p.serviceSelector, err)
-	}
-
-	if n := len(services); n != 1 {
-		return nil, shippererrors.NewUnexpectedObjectCountFromSelectorError(
-			p.serviceSelector, gvk, 1, n)
-	}
-
-	prodSvc := services[0]
-	trafficSelector := prodSvc.Spec.Selector
-	if trafficSelector == nil {
-		return nil, shippererrors.NewTargetClusterServiceMissesSelectorError(
-			cluster, p.namespace, prodSvc.Name)
-	}
-
-	return trafficSelector, nil
 }

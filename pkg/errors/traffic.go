@@ -52,7 +52,6 @@ func NewMissingTrafficWeightsForClusterError(ns, appName, clusterName string) Mi
 }
 
 type MissingTargetClusterSelectorError struct {
-	clusterName string
 	ns          string
 	serviceName string
 }
@@ -63,13 +62,12 @@ func (e MissingTargetClusterSelectorError) ShouldRetry() bool {
 
 func (e MissingTargetClusterSelectorError) Error() string {
 	return fmt.Sprintf(
-		"cluster error (%q): service %s/%s does not have a selector set. this means we cannot do label-based canary deployment",
-		e.clusterName, e.ns, e.serviceName)
+		"service %s/%s does not have a selector set. this means we cannot do label-based canary deployment",
+		e.ns, e.serviceName)
 }
 
-func NewTargetClusterServiceMissesSelectorError(clusterName, ns, serviceName string) MissingTargetClusterSelectorError {
+func NewTargetClusterServiceMissesSelectorError(ns, serviceName string) MissingTargetClusterSelectorError {
 	return MissingTargetClusterSelectorError{
-		clusterName: clusterName,
 		ns:          ns,
 		serviceName: serviceName,
 	}
