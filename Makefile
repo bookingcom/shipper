@@ -104,7 +104,7 @@ install-helm: build/helm.image.$(IMAGE_TAG)
 e2e: install install-helm build/e2e.test
 	./build/e2e.test --e2e --kubeconfig ~/.kube/config \
 		--testcharts http://$(shell $(KUBECTL) get service helm -o jsonpath='{.spec.clusterIP}'):8879 \
-		--progresstimeout=2m --appcluster $(SHIPPER_CLUSTER) \
+		--appcluster $(SHIPPER_CLUSTER) \
 		$(E2E_FLAGS)
 
 # Delete all pods in $(SHIPPER_NAMESPACE), to force kubernetes to spawn new
