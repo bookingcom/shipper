@@ -2,11 +2,11 @@ package traffic
 
 import (
 	"fmt"
-	"reflect"
 	"sort"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -197,7 +197,7 @@ func (c *Controller) syncHandler(key string) error {
 
 	tt, err := c.processTrafficTarget(initialTT.DeepCopy())
 
-	if !reflect.DeepEqual(initialTT, tt) {
+	if !equality.Semantic.DeepEqual(initialTT, tt) {
 		if _, err := c.shipperclientset.ShipperV1alpha1().TrafficTargets(namespace).Update(tt); err != nil {
 			return shippererrors.NewKubeclientUpdateError(tt, err).
 				WithShipperKind("TrafficTarget")

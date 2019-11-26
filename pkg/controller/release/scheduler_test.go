@@ -51,9 +51,8 @@ func buildRelease() *shipper.Release {
 			Kind:       "Release",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "test-release",
-			Namespace:   shippertesting.TestNamespace,
-			Annotations: map[string]string{},
+			Name:      "test-release",
+			Namespace: shippertesting.TestNamespace,
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: shipper.SchemeGroupVersion.String(),
@@ -64,6 +63,9 @@ func buildRelease() *shipper.Release {
 			Labels: map[string]string{
 				shipper.ReleaseLabel: "test-release",
 				shipper.AppLabel:     "test-application",
+			},
+			Annotations: map[string]string{
+				shipper.ReleaseGenerationAnnotation: "0",
 			},
 		},
 		Spec: shipper.ReleaseSpec{
@@ -194,6 +196,7 @@ func newScheduler(
 	informerFactory := shipperinformers.NewSharedInformerFactory(clientset, time.Millisecond*0)
 
 	clusterLister := informerFactory.Shipper().V1alpha1().Clusters().Lister()
+	releaseLister := informerFactory.Shipper().V1alpha1().Releases().Lister()
 	installationTargetLister := informerFactory.Shipper().V1alpha1().InstallationTargets().Lister()
 	capacityTargetLister := informerFactory.Shipper().V1alpha1().CapacityTargets().Lister()
 	trafficTargetLister := informerFactory.Shipper().V1alpha1().TrafficTargets().Lister()
@@ -202,6 +205,7 @@ func newScheduler(
 	c := NewScheduler(
 		clientset,
 		clusterLister,
+		releaseLister,
 		installationTargetLister,
 		capacityTargetLister,
 		trafficTargetLister,
@@ -354,15 +358,15 @@ func TestSchedule(t *testing.T) {
 
 	c, _ := newScheduler(fixtures)
 
-	got, err := c.ChooseClusters(release.DeepCopy())
-	if err != nil {
+	relcp := release.DeepCopy()
+	if err := c.chooseClusters(relcp); err != nil {
 		t.Fatal(err)
 	}
 
-	if expected.Annotations[shipper.ReleaseClustersAnnotation] != got.Annotations[shipper.ReleaseClustersAnnotation] {
+	if expected.Annotations[shipper.ReleaseClustersAnnotation] != relcp.Annotations[shipper.ReleaseClustersAnnotation] {
 		t.Errorf("expected release to have clusters %q, got %q",
 			expected.Annotations[shipper.ReleaseClustersAnnotation],
-			got.Annotations[shipper.ReleaseClustersAnnotation])
+			relcp.Annotations[shipper.ReleaseClustersAnnotation])
 	}
 }
 
@@ -390,15 +394,15 @@ func TestScheduleSkipsUnschedulable(t *testing.T) {
 
 	c, _ := newScheduler(fixtures)
 
-	got, err := c.ChooseClusters(release.DeepCopy())
-	if err != nil {
+	relcp := release.DeepCopy()
+	if err := c.chooseClusters(relcp); err != nil {
 		t.Fatal(err)
 	}
 
-	if expected.Annotations[shipper.ReleaseClustersAnnotation] != got.Annotations[shipper.ReleaseClustersAnnotation] {
+	if expected.Annotations[shipper.ReleaseClustersAnnotation] != relcp.Annotations[shipper.ReleaseClustersAnnotation] {
 		t.Errorf("expected release to have clusters %q, got %q",
 			expected.Annotations[shipper.ReleaseClustersAnnotation],
-			got.Annotations[shipper.ReleaseClustersAnnotation])
+			relcp.Annotations[shipper.ReleaseClustersAnnotation])
 	}
 }
 

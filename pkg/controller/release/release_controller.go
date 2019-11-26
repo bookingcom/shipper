@@ -2,10 +2,10 @@ package release
 
 import (
 	"fmt"
-	"reflect"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -146,11 +146,14 @@ func NewController(
 
 	releaseInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.enqueueRelease,
+			AddFunc: controller.enqueueAllReleases,
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueRelease(newObj)
+				controller.enqueueAllReleases(newObj)
 			},
-			DeleteFunc: controller.enqueueAppFromRelease,
+			DeleteFunc: func(obj interface{}) {
+				controller.enqueueAllReleases(obj)
+				controller.enqueueAppFromRelease(obj)
+			},
 		})
 
 	eventHandler := cache.ResourceEventHandlerFuncs{
@@ -279,7 +282,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 
 	rel, err := c.scheduleRelease(initialRel.DeepCopy())
 
-	if !reflect.DeepEqual(initialRel, rel) {
+	if !equality.Semantic.DeepEqual(initialRel, rel) {
 		if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); err != nil {
 			return shippererrors.NewKubeclientUpdateError(rel, err).
 				WithShipperKind("Release")
@@ -309,6 +312,7 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 	scheduler := NewScheduler(
 		c.clientset,
 		c.clusterLister,
+		c.releaseLister,
 		c.installationTargetLister,
 		c.capacityTargetLister,
 		c.trafficTargetLister,
@@ -439,6 +443,27 @@ func (c *Controller) buildReleaseInfo(rel *shipper.Release) (*releaseInfo, error
 		trafficTarget:      trafficTarget,
 		capacityTarget:     capacityTarget,
 	}, nil
+}
+
+func (c *Controller) enqueueAllReleases(obj interface{}) {
+	rel, ok := obj.(*shipper.Release)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", obj))
+		return
+	}
+	appName, err := releaseutil.ApplicationNameForRelease(rel)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("failed to get app name for release %s/%s: %s", rel.Namespace, rel.Name, err))
+		return
+	}
+	releases, err := c.releaseLister.Releases(rel.Namespace).ReleasesForApplication(appName)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("failed to list releases for application %s/%s: %s", rel.Namespace, appName, err))
+		return
+	}
+	for _, relObj := range releases {
+		c.enqueueRelease(relObj)
+	}
 }
 
 func (c *Controller) enqueueRelease(obj interface{}) {

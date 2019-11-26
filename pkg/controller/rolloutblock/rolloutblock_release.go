@@ -48,7 +48,9 @@ func (c *Controller) syncRelease(key string) error {
 	}
 	rel, err := c.releaseLister.Releases(ns).Get(name)
 	if err != nil {
-		return err
+		// Wrapping in KubeClientError so the controller can take the
+		// right decision on the error handling (e.g. if it's retriable).
+		return shippererrors.NewKubeclientGetError(ns, name, err)
 	}
 	overrides := rolloutblock.NewObjectNameList(rel.Annotations[shipper.RolloutBlocksOverrideAnnotation])
 	for rbkey := range overrides {

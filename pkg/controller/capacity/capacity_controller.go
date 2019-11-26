@@ -2,12 +2,12 @@ package capacity
 
 import (
 	"fmt"
-	"reflect"
 	"sort"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -301,7 +301,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 
 	ct, err := c.processCapacityTarget(initialCT.DeepCopy())
 
-	if !reflect.DeepEqual(initialCT, ct) {
+	if !equality.Semantic.DeepEqual(initialCT, ct) {
 		if _, err := c.shipperclientset.ShipperV1alpha1().CapacityTargets(namespace).Update(ct); err != nil {
 			return shippererrors.NewKubeclientUpdateError(ct, err).
 				WithShipperKind("CapacityTarget")

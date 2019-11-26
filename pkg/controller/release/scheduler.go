@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -28,6 +29,7 @@ type Scheduler struct {
 	clientset shipperclientset.Interface
 
 	clusterLister            listers.ClusterLister
+	releaseLister            listers.ReleaseLister
 	installationTargetLister listers.InstallationTargetLister
 	trafficTargetLister      listers.TrafficTargetLister
 	capacityTargetLister     listers.CapacityTargetLister
@@ -41,6 +43,7 @@ type Scheduler struct {
 func NewScheduler(
 	clientset shipperclientset.Interface,
 	clusterLister listers.ClusterLister,
+	releaseLister listers.ReleaseLister,
 	installationTargerLister listers.InstallationTargetLister,
 	capacityTargetLister listers.CapacityTargetLister,
 	trafficTargetLister listers.TrafficTargetLister,
@@ -52,6 +55,7 @@ func NewScheduler(
 		clientset: clientset,
 
 		clusterLister:            clusterLister,
+		releaseLister:            releaseLister,
 		installationTargetLister: installationTargerLister,
 		trafficTargetLister:      trafficTargetLister,
 		capacityTargetLister:     capacityTargetLister,
@@ -63,39 +67,81 @@ func NewScheduler(
 	}
 }
 
-func (s *Scheduler) ChooseClusters(rel *shipper.Release) (*shipper.Release, error) {
+func (s *Scheduler) chooseClusters(rel *shipper.Release) error {
 	metaKey := controller.MetaKey(rel)
 	if releaseHasClusters(rel) {
-		return nil, shippererrors.NewUnrecoverableError(fmt.Errorf("release %q has already been assigned to clusters", metaKey))
+		return shippererrors.NewUnrecoverableError(fmt.Errorf("release %q has already been assigned to clusters", metaKey))
 	}
 	klog.Infof("Choosing clusters for release %q", metaKey)
 
 	selector := labels.Everything()
 	allClusters, err := s.clusterLister.List(selector)
 	if err != nil {
-		return nil, shippererrors.NewKubeclientListError(
+		return shippererrors.NewKubeclientListError(
 			shipper.SchemeGroupVersion.WithKind("Cluster"),
 			"", selector, err)
 	}
 
 	selectedClusters, err := computeTargetClusters(rel, allClusters)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	setReleaseClusters(rel, selectedClusters)
 
-	return rel, nil
+	clusterNames := make([]string, 0, len(selectedClusters))
+	memo := make(map[string]struct{})
+	for _, cluster := range selectedClusters {
+		if _, ok := memo[cluster.Name]; ok {
+			continue
+		}
+		clusterNames = append(clusterNames, cluster.Name)
+		memo[cluster.Name] = struct{}{}
+	}
+	sort.Strings(clusterNames)
+	rel.Annotations[shipper.ReleaseClustersAnnotation] = strings.Join(clusterNames, ",")
+
+	return nil
 }
 
-func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, error) {
-	metaKey := controller.MetaKey(rel)
-	klog.Infof("Processing release %q", metaKey)
-	defer klog.Infof("Finished processing %q", metaKey)
+func (s *Scheduler) releaseIsActive(rel *shipper.Release) (bool, error) {
+	appName, err := releaseutil.ApplicationNameForRelease(rel)
+	if err != nil {
+		return false, err
+	}
+	releases, err := s.releaseLister.Releases(rel.Namespace).ReleasesForApplication(appName)
+	if err != nil {
+		return false, err
+	}
+	releases = releaseutil.SortByGenerationDescending(releases)
 
+	if len(releases) == 0 {
+		return false, fmt.Errorf("no releases found for application %s/%s", rel.Namespace, appName)
+	}
+
+	// The very top release
+	if equality.Semantic.DeepEqual(releases[0].ObjectMeta, rel.ObjectMeta) {
+		return true, nil
+	}
+
+	incumbent, err := s.releaseLister.Releases(rel.Namespace).IncumbentForApplication(appName)
+	if err != nil && !shippererrors.IsIncumbentNotFoundError(err) {
+		return false, err
+	}
+	contender, err := s.releaseLister.Releases(rel.Namespace).ContenderForApplication(appName)
+	if err != nil {
+		return false, err
+	}
+
+	if incumbent != nil && equality.Semantic.DeepEqual(rel.ObjectMeta, incumbent.ObjectMeta) {
+		return true, nil
+	}
+
+	return equality.Semantic.DeepEqual(rel.ObjectMeta, contender.ObjectMeta), nil
+}
+
+func (s *Scheduler) activateRelease(rel *shipper.Release) error {
 	if !releaseHasClusters(rel) {
-		rel, err := s.ChooseClusters(rel)
-		if err != nil {
-			return nil, err
+		if err := s.chooseClusters(rel); err != nil {
+			return err
 		}
 
 		s.recorder.Eventf(
@@ -108,13 +154,15 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 		)
 	}
 
+	metaKey := controller.MetaKey(rel)
+	klog.Infof("Release %q is active, ensuring traget object consistency", metaKey)
+
 	replicaCount, err := s.fetchChartAndExtractReplicaCount(rel)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	releaseErrors := shippererrors.NewMultiError()
-
 	if _, err := s.CreateOrUpdateInstallationTarget(rel); err != nil {
 		releaseErrors.Append(err)
 	}
@@ -126,12 +174,60 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 	if _, err := s.CreateOrUpdateCapacityTarget(rel, replicaCount); err != nil {
 		releaseErrors.Append(err)
 	}
-
 	if releaseErrors.Any() {
-		return nil, releaseErrors.Flatten()
+		return releaseErrors.Flatten()
+	}
+	return nil
+}
+
+func (s *Scheduler) deactivateRelease(rel *shipper.Release) error {
+	metaKey := controller.MetaKey(rel)
+	klog.Infof("Release %q is inactive, cleaning up target objects", metaKey)
+
+	releaseErrors := shippererrors.NewMultiError()
+	if err := s.DeleteInstallationTarget(rel); err != nil && !isNotFoundErr(err) {
+		releaseErrors.Append(err)
+	}
+	if err := s.DeleteTrafficTarget(rel); err != nil && !isNotFoundErr(err) {
+		releaseErrors.Append(err)
+	}
+	if err := s.DeleteCapacityTarget(rel); err != nil && !isNotFoundErr(err) {
+		releaseErrors.Append(err)
+	}
+	if releaseErrors.Any() {
+		return releaseErrors.Flatten()
+	}
+	return nil
+}
+
+func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, error) {
+	metaKey := controller.MetaKey(rel)
+	klog.Infof("Processing release %q", metaKey)
+	defer klog.Infof("Finished processing %q", metaKey)
+
+	active, err := s.releaseIsActive(rel)
+	if err != nil {
+		return nil, err
+	}
+
+	if active {
+		if err := s.activateRelease(rel); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.deactivateRelease(rel); err != nil {
+			return nil, err
+		}
 	}
 
 	return rel, nil
+}
+
+func isNotFoundErr(err error) bool {
+	if stserr, ok := err.(*errors.StatusError); ok {
+		return stserr.ErrStatus.Reason == metav1.StatusReasonNotFound
+	}
+	return false
 }
 
 func releaseHasClusters(rel *shipper.Release) bool {
@@ -233,6 +329,10 @@ func setTrafficTargetClusters(tt *shipper.TrafficTarget, clusters []string) {
 	tt.Spec.Clusters = trafficTargetClusters
 }
 
+func (s *Scheduler) DeleteInstallationTarget(rel *shipper.Release) error {
+	return s.clientset.ShipperV1alpha1().InstallationTargets(rel.Namespace).Delete(rel.Name, &metav1.DeleteOptions{})
+}
+
 func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shipper.InstallationTarget, error) {
 	clusters := getReleaseClusters(rel)
 
@@ -316,6 +416,10 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 	return it, nil
 }
 
+func (s *Scheduler) DeleteCapacityTarget(rel *shipper.Release) error {
+	return s.clientset.ShipperV1alpha1().CapacityTargets(rel.Namespace).Delete(rel.Name, &metav1.DeleteOptions{})
+}
+
 func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalReplicaCount int32) (*shipper.CapacityTarget, error) {
 	clusters := getReleaseClusters(rel)
 
@@ -392,6 +496,10 @@ func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalRepl
 	}
 
 	return ct, nil
+}
+
+func (s *Scheduler) DeleteTrafficTarget(rel *shipper.Release) error {
+	return s.clientset.ShipperV1alpha1().TrafficTargets(rel.Namespace).Delete(rel.Name, &metav1.DeleteOptions{})
 }
 
 func (s *Scheduler) CreateOrUpdateTrafficTarget(rel *shipper.Release) (*shipper.TrafficTarget, error) {
@@ -578,20 +686,6 @@ func validateClusterRequirements(requirements shipper.ClusterRequirements) error
 	}
 
 	return nil
-}
-
-func setReleaseClusters(rel *shipper.Release, clusters []*shipper.Cluster) {
-	clusterNames := make([]string, 0, len(clusters))
-	memo := make(map[string]struct{})
-	for _, cluster := range clusters {
-		if _, ok := memo[cluster.Name]; ok {
-			continue
-		}
-		clusterNames = append(clusterNames, cluster.Name)
-		memo[cluster.Name] = struct{}{}
-	}
-	sort.Strings(clusterNames)
-	rel.Annotations[shipper.ReleaseClustersAnnotation] = strings.Join(clusterNames, ",")
 }
 
 func (s *Scheduler) fetchChartAndExtractReplicaCount(rel *shipper.Release) (int32, error) {
