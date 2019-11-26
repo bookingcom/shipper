@@ -963,18 +963,17 @@ func TestNewApplicationAbort(t *testing.T) {
 	rel := f.waitForRelease(appName, 0)
 	relName := rel.GetName()
 
-	for _, i := range []int{0, 1} {
-		step := vanguard.Steps[i]
-		t.Logf("setting release %q targetStep to %d", relName, i)
-		f.targetStep(i, relName)
+	targetStep := 1
+	step := vanguard.Steps[targetStep]
+	t.Logf("setting release %q targetStep to %d", relName, targetStep)
+	f.targetStep(targetStep, relName)
 
-		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
-		f.waitForReleaseStrategyState("command", relName, i)
+	t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, targetStep)
+	f.waitForReleaseStrategyState("command", relName, targetStep)
 
-		expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
-		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
-		f.checkReadyPods(relName, int(expectedCapacity))
-	}
+	expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
+	t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, targetStep, step.Name)
+	f.checkReadyPods(relName, int(expectedCapacity))
 
 	t.Logf("Preparing to remove the release %q", relName)
 
@@ -987,7 +986,7 @@ func TestNewApplicationAbort(t *testing.T) {
 	f.waitForReleaseStrategyState("command", relName, 0)
 
 	// It's back to step 0, let's check the number of pods
-	expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(vanguard.Steps[0].Capacity.Contender), float64(targetReplicas))
+	expectedCapacity = replicas.CalculateDesiredReplicaCount(uint(vanguard.Steps[0].Capacity.Contender), float64(targetReplicas))
 	f.checkReadyPods(relName, int(expectedCapacity))
 }
 
@@ -1043,26 +1042,24 @@ func TestRolloutAbort(t *testing.T) {
 	contender := f.waitForRelease(appName, 1)
 	contenderName := contender.GetName()
 
-	// The strategy emulates deployment all way down to 50/50 (steps 0 and 1)
-	for _, i := range []int{0, 1} {
-		step := vanguard.Steps[i]
-		t.Logf("setting contender release %q targetStep to %d", contenderName, i)
-		f.targetStep(i, contenderName)
+	targetStep := 1
+	step := vanguard.Steps[targetStep]
+	t.Logf("setting contender release %q targetStep to %d", contenderName, targetStep)
+	f.targetStep(targetStep, contenderName)
 
-		t.Logf("waiting for contender release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
-		f.waitForReleaseStrategyState("command", contenderName, i)
+	t.Logf("waiting for contender release %q to achieve waitingForCommand for targetStep %d", contenderName, targetStep)
+	f.waitForReleaseStrategyState("command", contenderName, targetStep)
 
-		expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
-		expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
+	expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
+	expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
 
-		t.Logf(
-			"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step %d -- %d/%d)",
-			incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, i, step.Capacity.Incumbent, step.Capacity.Contender,
-		)
+	t.Logf(
+		"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step %d -- %d/%d)",
+		incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, targetStep, step.Capacity.Incumbent, step.Capacity.Contender,
+	)
 
-		f.checkReadyPods(contenderName, int(expectedContenderCapacity))
-		f.checkReadyPods(incumbentName, int(expectedIncumbentCapacity))
-	}
+	f.checkReadyPods(contenderName, int(expectedContenderCapacity))
+	f.checkReadyPods(incumbentName, int(expectedIncumbentCapacity))
 
 	err = shipperClient.ShipperV1alpha1().Releases(ns.GetName()).Delete(contenderName, &metav1.DeleteOptions{})
 	if err != nil {
