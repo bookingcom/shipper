@@ -68,7 +68,7 @@ func (s *Scheduler) ChooseClusters(rel *shipper.Release) (*shipper.Release, erro
 	if releaseHasClusters(rel) {
 		return nil, shippererrors.NewUnrecoverableError(fmt.Errorf("release %q has already been assigned to clusters", metaKey))
 	}
-	klog.Infof("Choosing clusters for release %q", metaKey)
+	klog.V(4).Infof("Choosing clusters for release %q", metaKey)
 
 	selector := labels.Everything()
 	allClusters, err := s.clusterLister.List(selector)
@@ -89,8 +89,8 @@ func (s *Scheduler) ChooseClusters(rel *shipper.Release) (*shipper.Release, erro
 
 func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, error) {
 	metaKey := controller.MetaKey(rel)
-	klog.Infof("Processing release %q", metaKey)
-	defer klog.Infof("Finished processing %q", metaKey)
+	klog.V(4).Infof("Processing release %q", metaKey)
+	defer klog.V(4).Infof("Finished processing %q", metaKey)
 
 	if !releaseHasClusters(rel) {
 		rel, err := s.ChooseClusters(rel)
@@ -292,7 +292,7 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 	}
 
 	if !installationTargetClustersMatch(it, clusters) {
-		klog.Infof("Updating InstallationTarget %q clusters to %s",
+		klog.V(4).Infof("Updating InstallationTarget %q clusters to %s",
 			controller.MetaKey(it),
 			strings.Join(clusters, ","))
 		setInstallationTargetClusters(it, clusters)
@@ -370,7 +370,7 @@ func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalRepl
 	}
 
 	if !capacityTargetClustersMatch(ct, clusters) {
-		klog.Infof("Updating CapacityTarget %q clusters to %s",
+		klog.V(4).Infof("Updating CapacityTarget %q clusters to %s",
 			controller.MetaKey(ct),
 			strings.Join(clusters, ","))
 		setCapacityTargetClusters(ct, clusters, totalReplicaCount)
@@ -448,7 +448,7 @@ func (s *Scheduler) CreateOrUpdateTrafficTarget(rel *shipper.Release) (*shipper.
 	}
 
 	if !trafficTargetClustersMatch(tt, clusters) {
-		klog.Infof("Updating TrafficTarget %q clusters to %s",
+		klog.V(4).Infof("Updating TrafficTarget %q clusters to %s",
 			controller.MetaKey(tt),
 			strings.Join(clusters, ","))
 		setTrafficTargetClusters(tt, clusters)
