@@ -25,7 +25,7 @@ type Executor struct {
 }
 
 func (s *Executor) info(format string, args ...interface{}) {
-	klog.Infof("Release %q: %s", controller.MetaKey(s.contender.release), fmt.Sprintf(format, args...))
+	klog.V(4).Infof("Release %q: %s", controller.MetaKey(s.contender.release), fmt.Sprintf(format, args...))
 }
 
 func (s *Executor) event(obj runtime.Object, format string, args ...interface{}) {
