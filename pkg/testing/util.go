@@ -133,17 +133,17 @@ func FilterActions(actions []kubetesting.Action) []kubetesting.Action {
 		for _, v := range []string{"list", "watch"} {
 			for _, r := range []string{
 				"applications",
-				"shipmentorders",
-				"releases",
-				"clusters",
-				"secrets",
-				"installationtargets",
-				"traffictargets",
 				"capacitytargets",
+				"clusters",
 				"deployments",
-				"services",
+				"endpoints",
+				"installationtargets",
 				"pods",
+				"releases",
 				"rolloutblocks",
+				"secrets",
+				"services",
+				"traffictargets",
 			} {
 				if action.Matches(v, r) {
 					return true
