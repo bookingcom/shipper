@@ -238,8 +238,10 @@ func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 		Status: shipper.InstallationTargetStatus{
 			Clusters: []*shipper.ClusterInstallationStatus{
 				{
-					Name:   clusterName,
-					Status: shipper.InstallationStatusInstalled,
+					Name: clusterName,
+					Conditions: []shipper.ClusterInstallationCondition{
+						{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+					},
 				},
 			},
 		},
@@ -381,8 +383,10 @@ func buildContender(totalReplicaCount uint) *releaseInfo {
 		Status: shipper.InstallationTargetStatus{
 			Clusters: []*shipper.ClusterInstallationStatus{
 				{
-					Name:   clusterName,
-					Status: shipper.InstallationStatusInstalled,
+					Name: clusterName,
+					Conditions: []shipper.ClusterInstallationCondition{
+						{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+					},
 				},
 			},
 		},
