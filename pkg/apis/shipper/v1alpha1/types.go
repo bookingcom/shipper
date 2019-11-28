@@ -14,26 +14,11 @@ const (
 	ShipperManagementServiceAccount  = "shipper-management-cluster"
 	ShipperApplicationServiceAccount = "shipper-application-cluster"
 
-	PhaseLabel = "phase"
-
 	ReleaseLabel                 = "shipper-release"
 	AppLabel                     = "shipper-app"
 	ReleaseEnvironmentHashLabel  = "shipper-release-hash"
 	PodTrafficStatusLabel        = "shipper-traffic-status"
 	InstallationTargetOwnerLabel = "shipper-owned-by"
-
-	ReleaseRecordWaitingForObject = "WaitingForObject"
-	ReleaseRecordObjectCreated    = "ReleaseCreated"
-
-	ReleasePhaseWaitingForScheduling = "WaitingForScheduling"
-	ReleasePhaseWaitingForStrategy   = "WaitingForStrategy"
-	ReleasePhaseWaitingForCommand    = "WaitingForCommand"
-	ReleasePhaseInstalled            = "Installed"
-	ReleasePhaseSuperseded           = "Superseded"
-	ReleasePhaseAborted              = "Aborted"
-
-	InstallationStatusInstalled = "Installed"
-	InstallationStatusFailed    = "Failed"
 
 	AppHighestObservedGenerationAnnotation = "shipper.booking.com/app.highestObservedGeneration"
 
@@ -139,7 +124,7 @@ func (in *ChartValues) DeepCopyInto(out *ChartValues) {
 // +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// An Cluster is a cluster we're deploying to.
+// A Cluster is a cluster we're deploying to.
 type Cluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -182,7 +167,7 @@ type ClusterStatus struct {
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// A Release is the  defines the goal state for # of pods for incumbent and
+// A Release  defines the goal state for # of pods for incumbent and
 // contender versions. This is used by the StrategyController to change the
 // state of the cluster to satisfy a single step of a Strategy.
 type Release struct {
@@ -303,8 +288,6 @@ type InstallationTargetStatus struct {
 
 type ClusterInstallationStatus struct {
 	Name       string                         `json:"name"`
-	Status     string                         `json:"status"`
-	Message    string                         `json:"message,omitempty"`
 	Conditions []ClusterInstallationCondition `json:"conditions,omitempty"`
 }
 
@@ -462,7 +445,6 @@ type TrafficTargetStatus struct {
 type ClusterTrafficStatus struct {
 	Name            string                    `json:"name"`
 	AchievedTraffic uint32                    `json:"achievedTraffic"`
-	Status          string                    `json:"status"`
 	Conditions      []ClusterTrafficCondition `json:"conditions"`
 }
 

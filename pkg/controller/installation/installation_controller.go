@@ -325,8 +325,6 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 			err = shippererrors.NewKubeclientGetError("", name, err).
 				WithShipperKind("Cluster")
 			clusterErrors.Append(err)
-			status.Status = shipper.InstallationStatusFailed
-			status.Message = err.Error()
 
 			condOperational := installationutil.NewClusterInstallationCondition(
 				shipper.ClusterConditionTypeOperational,
@@ -351,8 +349,6 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 		client, restConfig, err = c.GetClusterAndConfig(name)
 		if err != nil {
 			clusterErrors.Append(err)
-			status.Status = shipper.InstallationStatusFailed
-			status.Message = err.Error()
 
 			condOperational := installationutil.NewClusterInstallationCondition(
 				shipper.ClusterConditionTypeOperational,
@@ -385,8 +381,6 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 
 		if err = installer.install(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
 			clusterErrors.Append(err)
-			status.Status = shipper.InstallationStatusFailed
-			status.Message = err.Error()
 
 			condReady := installationutil.NewClusterInstallationCondition(
 				shipper.ClusterConditionTypeReady,
@@ -405,7 +399,6 @@ func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
 			"",
 		)
 		diff.Append(installationutil.SetClusterInstallationCondition(status, *condReady))
-		status.Status = shipper.InstallationStatusInstalled
 	}
 
 	sort.Sort(byClusterName(newClusterStatuses))

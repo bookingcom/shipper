@@ -290,7 +290,6 @@ func (c *Controller) processTrafficTargetOnCluster(
 			err.Error(),
 		)
 		diff.Append(trafficutil.SetClusterTrafficCondition(status, *cond))
-		status.Status = err.Error()
 
 		return err
 	}
@@ -304,7 +303,6 @@ func (c *Controller) processTrafficTargetOnCluster(
 			err.Error(),
 		)
 		diff.Append(trafficutil.SetClusterTrafficCondition(status, *cond))
-		status.Status = err.Error()
 
 		return err
 	}

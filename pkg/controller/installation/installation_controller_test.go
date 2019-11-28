@@ -89,7 +89,7 @@ func TestInstallOneCluster(t *testing.T) {
 	it.Spec.CanOverride = false
 	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
-			Name: "minikube-a", Status: shipper.InstallationStatusInstalled,
+			Name: "minikube-a",
 			Conditions: []shipper.ClusterInstallationCondition{
 				{
 					Type:   shipper.ClusterConditionTypeOperational,
@@ -176,8 +176,7 @@ func TestInstallMultipleClusters(t *testing.T) {
 	it.Spec.CanOverride = false
 	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
-			Name:   "minikube-a",
-			Status: shipper.InstallationStatusInstalled,
+			Name: "minikube-a",
 			Conditions: []shipper.ClusterInstallationCondition{
 				{
 					Type:   shipper.ClusterConditionTypeOperational,
@@ -190,8 +189,7 @@ func TestInstallMultipleClusters(t *testing.T) {
 			},
 		},
 		{
-			Name:   "minikube-b",
-			Status: shipper.InstallationStatusInstalled,
+			Name: "minikube-b",
 			Conditions: []shipper.ClusterInstallationCondition{
 				{
 					Type:   shipper.ClusterConditionTypeOperational,
@@ -257,9 +255,7 @@ func TestClientError(t *testing.T) {
 	it := installationTarget.DeepCopy()
 	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
-			Name:    "minikube-a",
-			Status:  shipper.InstallationStatusFailed,
-			Message: `cluster "minikube-a" not ready for use yet; cluster client is being initialized`,
+			Name: "minikube-a",
 			Conditions: []shipper.ClusterInstallationCondition{
 				{
 					Type:    shipper.ClusterConditionTypeOperational,
@@ -336,9 +332,7 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 	it := installationTarget.DeepCopy()
 	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
-			Name:    "minikube-a",
-			Status:  shipper.InstallationStatusFailed,
-			Message: `failed to discover server resources for GroupVersion "v1": GroupVersion "v1" not found`,
+			Name: "minikube-a",
 			Conditions: []shipper.ClusterInstallationCondition{
 				{
 					Type:   shipper.ClusterConditionTypeOperational,
@@ -412,9 +406,7 @@ func TestManagementServerMissesCluster(t *testing.T) {
 	it := installationTarget.DeepCopy()
 	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
-			Name:    "minikube-a",
-			Status:  shipper.InstallationStatusFailed,
-			Message: `failed to GET Cluster "minikube-a": cluster.shipper.booking.com "minikube-a" not found`,
+			Name: "minikube-a",
 			Conditions: []shipper.ClusterInstallationCondition{
 				{
 					Type:    shipper.ClusterConditionTypeOperational,
