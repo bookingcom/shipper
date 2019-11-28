@@ -147,7 +147,7 @@ func (spec TrafficControllerTestSpec) Run(t *testing.T) {
 		tt := object.(*shipper.TrafficTarget)
 
 		actualStatus := tt.Status.Clusters
-		eq, diff := deepEqualDiff(expectation.Statuses, actualStatus)
+		eq, diff := shippertesting.DeepEqualDiff(expectation.Statuses, actualStatus)
 		if !eq {
 			t.Errorf(
 				"TrafficTarget %q has Status.Clusters different from expected:\n%s",

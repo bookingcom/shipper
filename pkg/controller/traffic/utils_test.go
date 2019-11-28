@@ -2,14 +2,11 @@ package traffic
 
 import (
 	"fmt"
-	"reflect"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
-	"github.com/pmezard/go-difflib/difflib"
-	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
@@ -52,34 +49,6 @@ func shiftPodInEndpoints(pod *corev1.Pod, endpoints *corev1.Endpoints) *corev1.E
 	}
 
 	return endpoints
-}
-
-func yamlDiff(a interface{}, b interface{}) (string, error) {
-	yamlActual, _ := yaml.Marshal(a)
-	yamlExpected, _ := yaml.Marshal(b)
-
-	diff := difflib.UnifiedDiff{
-		A:        difflib.SplitLines(string(yamlExpected)),
-		B:        difflib.SplitLines(string(yamlActual)),
-		FromFile: "Expected",
-		ToFile:   "Actual",
-		Context:  4,
-	}
-
-	return difflib.GetUnifiedDiffString(diff)
-}
-
-func deepEqualDiff(expected, actual interface{}) (bool, string) {
-	if !reflect.DeepEqual(actual, expected) {
-		diff, err := yamlDiff(actual, expected)
-		if err != nil {
-			panic(fmt.Sprintf("couldn't generate yaml diff: %s", err))
-		}
-
-		return false, diff
-	}
-
-	return true, ""
 }
 
 type ControllerTestFixture struct {

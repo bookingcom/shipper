@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/pmezard/go-difflib/difflib"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	kubetesting "k8s.io/client-go/testing"
@@ -167,9 +166,45 @@ func FilterActions(actions []kubetesting.Action) []kubetesting.Action {
 }
 
 func CheckEvents(expectedOrderedEvents []string, receivedEvents []string, t *testing.T) {
-	if !reflect.DeepEqual(expectedOrderedEvents, receivedEvents) {
-		t.Errorf("Events don't match expectation:\n\n%s", cmp.Diff(expectedOrderedEvents, receivedEvents))
+	eq, diff := DeepEqualDiff(expectedOrderedEvents, receivedEvents)
+	if !eq {
+		t.Errorf("Events don't match expectation:\n%s", diff)
 	}
+}
+
+func YamlDiff(a interface{}, b interface{}) (string, error) {
+	yamlActual, err := yaml.Marshal(a)
+	if err != nil {
+		return "", err
+	}
+
+	yamlExpected, err := yaml.Marshal(b)
+	if err != nil {
+		return "", err
+	}
+
+	diff := difflib.UnifiedDiff{
+		A:        difflib.SplitLines(string(yamlExpected)),
+		B:        difflib.SplitLines(string(yamlActual)),
+		FromFile: "Expected",
+		ToFile:   "Actual",
+		Context:  4,
+	}
+
+	return difflib.GetUnifiedDiffString(diff)
+}
+
+func DeepEqualDiff(expected, actual interface{}) (bool, string) {
+	if !reflect.DeepEqual(actual, expected) {
+		diff, err := YamlDiff(actual, expected)
+		if err != nil {
+			panic(fmt.Sprintf("couldn't generate yaml diff: %s", err))
+		}
+
+		return false, diff
+	}
+
+	return true, ""
 }
 
 func prettyPrintAction(a kubetesting.Action) string {
