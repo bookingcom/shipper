@@ -1,3 +1,3 @@
 #!/bin/bash -ex
 
-make verify-codegen lint test
+TEST_FLAGS="-v" make verify-codegen lint test
