@@ -4,7 +4,9 @@ import (
 	"sort"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	installationutil "github.com/bookingcom/shipper/pkg/util/installation"
 	replicasutil "github.com/bookingcom/shipper/pkg/util/replicas"
+	corev1 "k8s.io/api/core/v1"
 )
 
 func contenderTrafficComparison(achieved uint32, desired uint32) bool {
@@ -18,7 +20,6 @@ func incumbentTrafficComparison(achieved uint32, desired uint32) bool {
 func checkInstallation(contenderRelease *releaseInfo) (bool, []string) {
 	clustersFromStatus := contenderRelease.installationTarget.Status.Clusters
 	clustersFromSpec := contenderRelease.installationTarget.Spec.Clusters
-	clusterStatuses := clustersFromStatus
 	clustersFromSpecMap := make(map[string]struct{})
 	clustersFromStatusMap := make(map[string]struct{})
 	clustersNotReady := make(map[string]struct{})
@@ -41,8 +42,9 @@ func checkInstallation(contenderRelease *releaseInfo) (bool, []string) {
 		}
 	}
 
-	for _, clusterStatus := range clusterStatuses {
-		if clusterStatus.Status != shipper.ReleasePhaseInstalled {
+	for _, clusterStatus := range clustersFromStatus {
+		readyCond := installationutil.GetClusterInstallationCondition(*clusterStatus, shipper.ClusterConditionTypeReady)
+		if readyCond == nil || readyCond.Status != corev1.ConditionTrue {
 			clustersNotReady[clusterStatus.Name] = struct{}{}
 		}
 	}

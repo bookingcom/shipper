@@ -377,8 +377,10 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 	installationTargetClusters := make([]*shipper.ClusterInstallationStatus, 0, len(clusterNames))
 	for _, clusterName := range clusterNames {
 		installationTargetClusters = append(installationTargetClusters, &shipper.ClusterInstallationStatus{
-			Name:   clusterName,
-			Status: shipper.InstallationStatusInstalled,
+			Name: clusterName,
+			Conditions: []shipper.ClusterInstallationCondition{
+				{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+			},
 		})
 	}
 
@@ -565,8 +567,10 @@ func (f *fixture) buildContender(namespace string, relName string, replicaCount 
 	installationTargetClusters := make([]*shipper.ClusterInstallationStatus, 0, len(clusterNames))
 	for _, clusterName := range clusterNames {
 		installationTargetClusters = append(installationTargetClusters, &shipper.ClusterInstallationStatus{
-			Name:   clusterName,
-			Status: shipper.InstallationStatusInstalled,
+			Name: clusterName,
+			Conditions: []shipper.ClusterInstallationCondition{
+				{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+			},
 		})
 	}
 
@@ -704,7 +708,12 @@ func addCluster(ri *releaseInfo, cluster *shipper.Cluster) {
 	ri.installationTarget.Spec.Clusters = append(ri.installationTarget.Spec.Clusters, cluster.Name)
 
 	ri.installationTarget.Status.Clusters = append(ri.installationTarget.Status.Clusters,
-		&shipper.ClusterInstallationStatus{Name: cluster.Name, Status: shipper.InstallationStatusInstalled},
+		&shipper.ClusterInstallationStatus{
+			Name: cluster.Name,
+			Conditions: []shipper.ClusterInstallationCondition{
+				{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
+			},
+		},
 	)
 
 	ri.capacityTarget.Status.Clusters = append(ri.capacityTarget.Status.Clusters,
@@ -1551,9 +1560,9 @@ func TestContenderDoNothingClusterInstallationNotReady(t *testing.T) {
 
 		contender.release.Spec.TargetStep = 0
 
-		// the fixture creates installation targets in 'installation succeeded' status,
-		// so we'll break one
-		contender.installationTarget.Status.Clusters[1].Status = shipper.InstallationStatusFailed
+		// the fixture creates installation targets in 'installation
+		// succeeded' status, so we'll break one
+		contender.installationTarget.Status.Clusters[1].Conditions = []shipper.ClusterInstallationCondition{}
 
 		f.addObjects(
 			contender.release.DeepCopy(),
