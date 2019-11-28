@@ -29,6 +29,10 @@ SHIPPER_CLUSTER ?= microk8s
 # ones).
 E2E_FLAGS ?=
 
+# Defines optional flags to pass to `go test` when running unit tests. Most
+# useful flag here is `-v`, for verbose output.
+TEST_FLAGS ?=
+
 # Defines optional flags to pass to `shipperctl` when running `make setup`.
 SETUP_FLAGS ?=
 
@@ -122,7 +126,7 @@ lint:
 
 # Run all unit tests. It's useful to run this one before pushing commits ;)
 test:
-	go test -v ./pkg/... ./cmd/...
+	go test $(TEST_FLAGS) ./pkg/... ./cmd/...
 
 # Tidy up and vendor dependencies. Run this every time you add or remove
 # dependencies, otherwise the CI pipeline will fail to download them, and
