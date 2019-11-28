@@ -204,6 +204,13 @@ func prettyPrintAction(a kubetesting.Action) string {
 		message := fmt.Sprintf("(no object body: GET %s)", action.GetName())
 		return fmt.Sprintf(template, message)
 
+	case kubetesting.ListActionImpl:
+		message := fmt.Sprintf("(no object body: GET %s)", action.GetKind())
+		return fmt.Sprintf(template, message)
+
+	case kubetesting.WatchActionImpl:
+		return fmt.Sprintf(template, "(no object body: WATCH)")
+
 	case kubetesting.DeleteActionImpl:
 		message := fmt.Sprintf("(no object body: DELETE %s)", action.GetName())
 		return fmt.Sprintf(template, message)
