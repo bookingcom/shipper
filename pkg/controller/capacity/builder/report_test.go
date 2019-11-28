@@ -3,26 +3,9 @@ package builder
 import (
 	"testing"
 
-	"github.com/pmezard/go-difflib/difflib"
-	"sigs.k8s.io/yaml"
-
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
-
-func yamlDiff(a interface{}, b interface{}) (string, error) {
-	yamlActual, _ := yaml.Marshal(a)
-	yamlExpected, _ := yaml.Marshal(b)
-
-	diff := difflib.UnifiedDiff{
-		A:        difflib.SplitLines(string(yamlExpected)),
-		B:        difflib.SplitLines(string(yamlActual)),
-		FromFile: "Expected",
-		ToFile:   "Actual",
-		Context:  4,
-	}
-
-	return difflib.GetUnifiedDiffString(diff)
-}
 
 func TestEmptyReport(t *testing.T) {
 
@@ -33,7 +16,7 @@ func TestEmptyReport(t *testing.T) {
 		Owner: shipper.ClusterCapacityReportOwner{Name: ownerName},
 	}
 
-	text, err := yamlDiff(expected, actual)
+	text, err := shippertesting.YamlDiff(expected, actual)
 	if err != nil {
 		t.Errorf("an error occurred: %s", err)
 	}
@@ -74,7 +57,7 @@ func TestReportOneContainerOnePodOneCondition(t *testing.T) {
 		},
 	}
 
-	text, err := yamlDiff(expected, actual)
+	text, err := shippertesting.YamlDiff(expected, actual)
 	if err != nil {
 		t.Errorf("an error occurred: %s", err)
 	}
@@ -120,7 +103,7 @@ func TestReportOneContainerOnePodOneConditionTerminatedWithExitCodeContainer(t *
 		},
 	}
 
-	text, err := yamlDiff(expected, actual)
+	text, err := shippertesting.YamlDiff(expected, actual)
 	if err != nil {
 		t.Errorf("an error occurred: %s", err)
 	}
@@ -163,7 +146,7 @@ func TestReportOneContainerTwoPodsOneCondition(t *testing.T) {
 		},
 	}
 
-	text, err := yamlDiff(expected, actual)
+	text, err := shippertesting.YamlDiff(expected, actual)
 	if err != nil {
 		t.Errorf("an error occurred: %s", err)
 	}
@@ -221,7 +204,7 @@ func TestReportTwoContainersTwoPodsOneCondition(t *testing.T) {
 		},
 	}
 
-	text, err := yamlDiff(expected, actual)
+	text, err := shippertesting.YamlDiff(expected, actual)
 	if err != nil {
 		t.Errorf("an error occurred: %s", err)
 	}
@@ -317,7 +300,7 @@ func TestReportTwoContainersTwoPodsTwoConditions(t *testing.T) {
 		},
 	}
 
-	text, err := yamlDiff(expected, actual)
+	text, err := shippertesting.YamlDiff(expected, actual)
 	if err != nil {
 		t.Errorf("an error occurred: %s", err)
 	}
