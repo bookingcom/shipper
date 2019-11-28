@@ -1,6 +1,6 @@
 module github.com/bookingcom/shipper
 
-go 1.12
+go 1.13
 
 require (
 	cloud.google.com/go v0.39.0 // indirect
@@ -54,3 +54,5 @@ require (
 	k8s.io/utils v0.0.0-20190529001817-6999998975a7 // indirect
 	sigs.k8s.io/yaml v1.1.0
 )
+
+replace k8s.io/apimachinery v0.0.0-20190602113612-63a6072eb563 => k8s.io/apimachinery v0.0.0-20190602183612-63a6072eb563
