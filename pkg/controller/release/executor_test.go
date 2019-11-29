@@ -72,23 +72,11 @@ func TestCompleteStrategyNoController(t *testing.T) {
 		executor.contender.trafficTarget.Spec = *newSpec
 	}
 
-	// Mimic Traffic Controller patch to contender's
-	// .status.clusters.*.achievedTraffic.
-	for i := range executor.contender.trafficTarget.Status.Clusters {
-		executor.contender.trafficTarget.Status.Clusters[i].AchievedTraffic = 50
-	}
-
 	// Execute third part of strategy's first step.
 	if newSpec, err := ensureTrafficPatch(executor, incumbentName, Incumbent); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.incumbent.trafficTarget.Spec = *newSpec
-	}
-
-	// Mimic Traffic Controller patch to incumbent's
-	// .status.clusters.*.achievedTraffic.
-	for i := range executor.incumbent.trafficTarget.Status.Clusters {
-		executor.incumbent.trafficTarget.Status.Clusters[i].AchievedTraffic = 50
 	}
 
 	// Execute fourth part of strategy's first step.
@@ -136,23 +124,11 @@ func TestCompleteStrategyNoController(t *testing.T) {
 		executor.contender.trafficTarget.Spec = *newSpec
 	}
 
-	// Mimic Traffic Controller patch to contender's
-	// .status.clusters.*.achievedTraffic.
-	for i := range executor.contender.trafficTarget.Status.Clusters {
-		executor.contender.trafficTarget.Status.Clusters[i].AchievedTraffic = 100
-	}
-
 	// Execute third part of strategy's second step.
 	if newSpec, err := ensureTrafficPatch(executor, incumbentName, Incumbent); err != nil {
 		t.Fatal(err)
 	} else {
 		executor.incumbent.trafficTarget.Spec = *newSpec
-	}
-
-	// Mimic Traffic Controller patch to incumbent's
-	// .status.clusters.*.achievedTraffic.
-	for i := range executor.incumbent.trafficTarget.Status.Clusters {
-		executor.incumbent.trafficTarget.Status.Clusters[i].AchievedTraffic = 0
 	}
 
 	// Execute fourth part of strategy's second step.
@@ -301,10 +277,10 @@ func buildIncumbent(totalReplicaCount uint) *releaseInfo {
 		},
 		Status: shipper.TrafficTargetStatus{
 			Clusters: []*shipper.ClusterTrafficStatus{
-				{
-					Name:            clusterName,
-					AchievedTraffic: 100,
-				},
+				{Name: clusterName},
+			},
+			Conditions: []shipper.TargetCondition{
+				{Type: shipper.TargetConditionTypeReady, Status: corev1.ConditionTrue},
 			},
 		},
 		Spec: shipper.TrafficTargetSpec{
@@ -446,10 +422,10 @@ func buildContender(totalReplicaCount uint) *releaseInfo {
 		},
 		Status: shipper.TrafficTargetStatus{
 			Clusters: []*shipper.ClusterTrafficStatus{
-				{
-					Name:            clusterName,
-					AchievedTraffic: 100,
-				},
+				{Name: clusterName},
+			},
+			Conditions: []shipper.TargetCondition{
+				{Type: shipper.TargetConditionTypeReady, Status: corev1.ConditionTrue},
 			},
 		},
 		Spec: shipper.TrafficTargetSpec{
@@ -536,7 +512,7 @@ func ensureTrafficPatch(e *Executor, expectedName string, role role) (*shipper.T
 			return nil, fmt.Errorf("%s shouldn't have achieved traffic", releaseRole)
 		}
 
-		if len(patches) < 2 || len(patches) > 3 {
+		if len(patches) != 2 {
 			return nil, fmt.Errorf("expected two patches, got %d patch(es) instead", len(patches))
 		} else {
 			if p, ok := patches[0].(*TrafficTargetOutdatedResult); !ok {

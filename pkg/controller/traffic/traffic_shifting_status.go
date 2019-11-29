@@ -5,9 +5,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 )
 
-// TODO(jgreff): calculate achieved weight based on pods in the endpoint
-// TODO(jgreff): maybe we don't need the pods themselves in Ready/NotReady
-
 type TrafficShiftingStatus struct {
 	LabeledPods   []*corev1.Pod
 	UnlabeledPods []*corev1.Pod

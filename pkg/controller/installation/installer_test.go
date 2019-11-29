@@ -45,9 +45,9 @@ var localFetchChart = func(chartspec *shipper.Chart) (*chart.Chart, error) {
 	return chartutil.LoadArchive(buf)
 }
 
-// apiResourceList contains a list of APIResources containing some of v1 and
-// extensions/v1beta1 resources from Kubernetes, since fake clients by default
-// don't contain any reference which resources it can handle.
+// apiResourceList contains a list of APIResources containing some of v1
+// resources from Kubernetes, since fake clients by default don't contain any
+// reference which resources it can handle.
 var apiResourceList = []*metav1.APIResourceList{
 	{
 		GroupVersion: "v1",
@@ -69,17 +69,6 @@ var apiResourceList = []*metav1.APIResourceList{
 				Namespaced: true,
 				Name:       "pods",
 				Group:      "",
-			},
-		},
-	},
-	{
-		GroupVersion: "extensions/v1beta1",
-		APIResources: []metav1.APIResource{
-
-			{
-				Kind:       "Deployment",
-				Namespaced: true,
-				Name:       "deployments",
 			},
 		},
 	},

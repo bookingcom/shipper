@@ -456,8 +456,9 @@ type TrafficTargetList struct {
 }
 
 type TrafficTargetStatus struct {
-	Clusters   []*ClusterTrafficStatus `json:"clusters,omitempty"`
-	Conditions []TargetCondition       `json:"conditions,omitempty"`
+	ObservedGeneration int64                   `json:"observedGeneration,omitempty"`
+	Clusters           []*ClusterTrafficStatus `json:"clusters,omitempty"`
+	Conditions         []TargetCondition       `json:"conditions,omitempty"`
 }
 
 type ClusterTrafficStatus struct {

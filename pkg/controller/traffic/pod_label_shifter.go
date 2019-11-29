@@ -103,7 +103,7 @@ func (p *podLabelShifter) SyncCluster(
 			return 0, err
 		}
 
-		achievedWeight := uint32(round(status.AchievedPercentage * float64(totalTargetWeight)))
+		achievedWeight := uint32(math.Round(status.AchievedPercentage * float64(totalTargetWeight)))
 		return achievedWeight, nil
 	} else {
 		return releaseTargetWeight, nil
@@ -285,11 +285,4 @@ func buildClusterReleaseWeights(trafficTargets []*shipper.TrafficTarget) (cluste
 	}
 
 	return clusterReleaseWeights(clusterReleases), nil
-}
-
-func round(num float64) int {
-	if num < 0 {
-		return int(num - 0.5)
-	}
-	return int(num + 0.5)
 }

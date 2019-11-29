@@ -1,21 +1,16 @@
 package release
 
 import (
+	"fmt"
 	"sort"
+
+	corev1 "k8s.io/api/core/v1"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	installationutil "github.com/bookingcom/shipper/pkg/util/installation"
 	replicasutil "github.com/bookingcom/shipper/pkg/util/replicas"
-	corev1 "k8s.io/api/core/v1"
+	targetutil "github.com/bookingcom/shipper/pkg/util/target"
 )
-
-func contenderTrafficComparison(achieved uint32, desired uint32) bool {
-	return achieved >= desired
-}
-
-func incumbentTrafficComparison(achieved uint32, desired uint32) bool {
-	return achieved <= desired
-}
 
 func checkInstallation(contenderRelease *releaseInfo) (bool, []string) {
 	clustersFromStatus := contenderRelease.installationTarget.Status.Clusters
@@ -141,69 +136,65 @@ func checkCapacity(
 	}
 }
 
-type trafficState struct {
-	achievedTrafficWeight uint32
-	desiredTrafficWeight  uint32
-	stepTrafficWeight     uint32
-}
-
 func checkTraffic(
-	trafficTarget *shipper.TrafficTarget,
+	tt *shipper.TrafficTarget,
 	stepTrafficWeight uint32,
-	compFn func(achieved uint32, desired uint32) bool,
 ) (
 	bool,
 	*shipper.TrafficTargetSpec,
-	[]string,
+	string,
 ) {
-
-	clusterTrafficData := make(map[string]trafficState)
-
-	specs := trafficTarget.Spec.Clusters
-	for _, spec := range specs {
-		clusterTrafficData[spec.Name] = trafficState{
-			desiredTrafficWeight: spec.Weight,
-			stepTrafficWeight:    stepTrafficWeight,
-		}
-	}
-
-	statuses := trafficTarget.Status.Clusters
-	if len(statuses) != len(specs) {
-		return false, nil, nil
-	}
-
-	for _, status := range statuses {
-		td, ok := clusterTrafficData[status.Name]
-		// This means that we have a status for a cluster which is not present in the
-		// spec. Suspicious, sketchy, and probably fixed by the responsible controller
-		// by the next time we look.
-		if !ok {
-			return false, nil, nil
-		}
-
-		td.achievedTrafficWeight = status.AchievedTraffic
-		clusterTrafficData[status.Name] = td
-	}
-
-	clustersNotReady := make([]string, 0)
 	canProceed := true
 	newSpec := &shipper.TrafficTargetSpec{}
+	reason := ""
 
-	for clusterName, trafficData := range clusterTrafficData {
-		if trafficData.desiredTrafficWeight != trafficData.stepTrafficWeight {
-			t := shipper.ClusterTrafficTarget{Name: clusterName, Weight: trafficData.stepTrafficWeight}
+	clustersNotReadyMap := make(map[string]struct{})
+	for _, spec := range tt.Spec.Clusters {
+		if spec.Weight != stepTrafficWeight {
+			t := shipper.ClusterTrafficTarget{
+				Name:   spec.Name,
+				Weight: stepTrafficWeight,
+			}
 			newSpec.Clusters = append(newSpec.Clusters, t)
+
+			clustersNotReadyMap[spec.Name] = struct{}{}
 			canProceed = false
-			clustersNotReady = append(clustersNotReady, clusterName)
-		} else if !compFn(trafficData.achievedTrafficWeight, trafficData.desiredTrafficWeight) {
-			canProceed = false
-			clustersNotReady = append(clustersNotReady, clusterName)
 		}
+	}
+
+	if canProceed {
+		if tt.Status.ObservedGeneration >= tt.Generation {
+			canProceed, reason = targetutil.IsReady(tt.Status.Conditions)
+		} else {
+			canProceed = false
+			clustersNotReady := make([]string, 0)
+			for _, c := range tt.Spec.Clusters {
+				clustersNotReady = append(clustersNotReady, c.Name)
+			}
+
+			// We need a sorted order, otherwise it will trigger
+			// unnecessary etcd update operations
+			sort.Strings(clustersNotReady)
+
+			reason = fmt.Sprintf("%v", clustersNotReady)
+		}
+
+	} else {
+		clustersNotReady := make([]string, 0)
+		for c, _ := range clustersNotReadyMap {
+			clustersNotReady = append(clustersNotReady, c)
+		}
+
+		// We need a sorted order, otherwise it will trigger
+		// unnecessary etcd update operations
+		sort.Strings(clustersNotReady)
+
+		reason = fmt.Sprintf("%v", clustersNotReady)
 	}
 
 	if len(newSpec.Clusters) > 0 {
-		return canProceed, newSpec, clustersNotReady
+		return canProceed, newSpec, reason
 	} else {
-		return canProceed, nil, clustersNotReady
+		return canProceed, nil, reason
 	}
 }
