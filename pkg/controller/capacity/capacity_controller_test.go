@@ -539,6 +539,7 @@ func TestCapacityTargetStatusReturnsCorrectFleetReportWithMultiplePodsWithDiffer
 			AchievedPercent:   100,
 			AvailableReplicas: 3,
 			Conditions: []shipper.ClusterCapacityCondition{
+				{Type: shipper.ClusterConditionTypeOperational, Status: corev1.ConditionTrue},
 				{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionFalse, Reason: PodsNotReady, Message: "there are 3 sad pods"},
 			},
 			SadPods: sadPodsStatuses,
@@ -579,6 +580,10 @@ func TestUpdatingDeploymentsUpdatesTheCapacityTargetStatus(t *testing.T) {
 
 	clusterConditions := []shipper.ClusterCapacityCondition{
 		{
+			Type:   shipper.ClusterConditionTypeOperational,
+			Status: corev1.ConditionTrue,
+		},
+		{
 			Type:    shipper.ClusterConditionTypeReady,
 			Status:  corev1.ConditionFalse,
 			Reason:  WrongPodCount,
@@ -605,6 +610,10 @@ func TestSadPodsAreReflectedInCapacityTargetStatus(t *testing.T) {
 	f.targetClusterObjects = append(f.targetClusterObjects, deployment, happyPod, sadPod)
 
 	clusterConditions := []shipper.ClusterCapacityCondition{
+		{
+			Type:   shipper.ClusterConditionTypeOperational,
+			Status: corev1.ConditionTrue,
+		},
 		{
 			Type:    shipper.ClusterConditionTypeReady,
 			Status:  corev1.ConditionFalse,

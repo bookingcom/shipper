@@ -240,44 +240,38 @@ func (c *Controller) processCapacityTargetOnCluster(
 		return err
 	}
 
+	condOperational := capacityutil.NewClusterCapacityCondition(
+		shipper.ClusterConditionTypeOperational,
+		corev1.ConditionTrue,
+		"",
+		"")
+	diff.Append(capacityutil.SetClusterCapacityCondition(status, *condOperational))
+
+	status.SadPods = sadPods
+	var condReady *shipper.ClusterCapacityCondition
+
 	if targetDeployment.Spec.Replicas == nil || int(*targetDeployment.Spec.Replicas) != podCount {
-		cond := capacityutil.NewClusterCapacityCondition(
+		condReady = capacityutil.NewClusterCapacityCondition(
 			shipper.ClusterConditionTypeReady,
 			corev1.ConditionFalse,
 			WrongPodCount,
 			fmt.Sprintf("expected %d replicas but have %d", *targetDeployment.Spec.Replicas, podCount),
 		)
-		diff.Append(capacityutil.SetClusterCapacityCondition(status, *cond))
-		return err
-	}
-
-	if sadPodCount > 0 {
-		cond := capacityutil.NewClusterCapacityCondition(
+	} else if sadPodCount == 0 {
+		condReady = capacityutil.NewClusterCapacityCondition(
+			shipper.ClusterConditionTypeReady,
+			corev1.ConditionTrue,
+			"",
+			"")
+	} else {
+		condReady = capacityutil.NewClusterCapacityCondition(
 			shipper.ClusterConditionTypeReady,
 			corev1.ConditionFalse,
 			PodsNotReady,
 			fmt.Sprintf("there are %d sad pods", sadPodCount),
 		)
-		diff.Append(capacityutil.SetClusterCapacityCondition(status, *cond))
 	}
-
-	status.SadPods = sadPods
-
-	if sadPodCount == 0 {
-		condReady := capacityutil.NewClusterCapacityCondition(
-			shipper.ClusterConditionTypeReady,
-			corev1.ConditionTrue,
-			"",
-			"")
-		diff.Append(capacityutil.SetClusterCapacityCondition(status, *condReady))
-
-		condOperational := capacityutil.NewClusterCapacityCondition(
-			shipper.ClusterConditionTypeOperational,
-			corev1.ConditionTrue,
-			"",
-			"")
-		diff.Append(capacityutil.SetClusterCapacityCondition(status, *condOperational))
-	}
+	diff.Append(capacityutil.SetClusterCapacityCondition(status, *condReady))
 
 	return nil
 }
