@@ -259,6 +259,21 @@ type RolloutStrategyStepValue struct {
 	Contender int32 `json:"contender"`
 }
 
+type TargetConditionType string
+
+const (
+	TargetConditionTypeOperational TargetConditionType = "Operational"
+	TargetConditionTypeReady       TargetConditionType = "Ready"
+)
+
+type TargetCondition struct {
+	Type               TargetConditionType    `json:"type"`
+	Status             corev1.ConditionStatus `json:"status"`
+	LastTransitionTime metav1.Time            `json:"lastTransitionTime,omitempty"`
+	Reason             string                 `json:"reason,omitempty"`
+	Message            string                 `json:"message,omitempty"`
+}
+
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
@@ -283,7 +298,8 @@ type InstallationTargetList struct {
 }
 
 type InstallationTargetStatus struct {
-	Clusters []*ClusterInstallationStatus `json:"clusters,omitempty"`
+	Clusters   []*ClusterInstallationStatus `json:"clusters,omitempty"`
+	Conditions []TargetCondition            `json:"conditions,omitempty"`
 }
 
 type ClusterInstallationStatus struct {
@@ -331,7 +347,8 @@ type CapacityTargetList struct {
 }
 
 type CapacityTargetStatus struct {
-	Clusters []ClusterCapacityStatus `json:"clusters,omitempty"`
+	Clusters   []ClusterCapacityStatus `json:"clusters,omitempty"`
+	Conditions []TargetCondition       `json:"conditions,omitempty"`
 }
 
 type ClusterCapacityReportContainerBreakdownExample struct {
@@ -439,7 +456,8 @@ type TrafficTargetList struct {
 }
 
 type TrafficTargetStatus struct {
-	Clusters []*ClusterTrafficStatus `json:"clusters,omitempty"`
+	Clusters   []*ClusterTrafficStatus `json:"clusters,omitempty"`
+	Conditions []TargetCondition       `json:"conditions,omitempty"`
 }
 
 type ClusterTrafficStatus struct {
