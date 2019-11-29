@@ -1185,6 +1185,9 @@ func newApplication(name string) *shipper.Application {
 				Strategy:            &vanguard,
 			},
 		},
+		Status: shipper.ApplicationStatus{
+			History: []string{},
+		},
 	}
 }
 
