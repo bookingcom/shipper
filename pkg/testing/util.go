@@ -1,6 +1,7 @@
 package testing
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"testing"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/pmezard/go-difflib/difflib"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	kubetesting "k8s.io/client-go/testing"
 	"sigs.k8s.io/yaml"
 )
@@ -95,24 +97,16 @@ func ShallowCheckAction(expected, actual kubetesting.Action, t *testing.T) {
 // CheckAction compares two individual actions and calls Errorf on t if it finds
 // a difference.
 func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
-	prettyExpected := prettyPrintAction(expected)
-	prettyActual := prettyPrintAction(actual)
+	if !reflect.DeepEqual(expected, actual) {
+		prettyExpected := prettyPrintAction(expected)
+		prettyActual := prettyPrintAction(actual)
 
-	diff := difflib.UnifiedDiff{
-		A:        difflib.SplitLines(prettyExpected),
-		B:        difflib.SplitLines(prettyActual),
-		FromFile: "Expected Action",
-		ToFile:   "Actual Action",
-		// TODO(btyler): add a param or env var to change context size.
-		Context: ContextLines,
-	}
-	text, err := difflib.GetUnifiedDiffString(diff)
-	if err != nil {
-		panic("could not compute diff! this is bad news bears")
-	}
+		diff, err := YamlDiff(prettyActual, prettyExpected)
+		if err != nil {
+			panic(fmt.Sprintf("couldn't generate yaml diff: %s", err))
+		}
 
-	if len(text) > 0 {
-		t.Errorf("expected action is different from actual:\n%s", text)
+		t.Errorf("expected action is different from actual:\n%s", diff)
 	}
 }
 
@@ -233,7 +227,8 @@ func prettyPrintAction(a kubetesting.Action) string {
 		return fmt.Sprintf(template, string(obj))
 
 	case kubetesting.PatchActionImpl:
-		return fmt.Sprintf(template, string(action.GetPatch()))
+		patch := prettyPrintActionPatch(action)
+		return fmt.Sprintf(template, patch)
 
 	case kubetesting.GetActionImpl:
 		message := fmt.Sprintf("(no object body: GET %s)", action.GetName())
@@ -256,6 +251,31 @@ func prettyPrintAction(a kubetesting.Action) string {
 	}
 
 	panic(fmt.Sprintf("unknown action! patch printAction to support %T %+v", a, a))
+}
+
+func prettyPrintActionPatch(action kubetesting.PatchActionImpl) string {
+	switch action.GetPatchType() {
+	case types.MergePatchType:
+		var obj map[string]interface{}
+
+		err := json.Unmarshal(action.GetPatch(), &obj)
+		if err != nil {
+			panic(fmt.Sprintf("could not unmarshal %v: %s", action.GetPatch(), err))
+		}
+
+		str, err := yaml.Marshal(obj)
+		if err != nil {
+			panic(fmt.Sprintf("could not marshal %v: %s", obj, err))
+		}
+
+		return string(str)
+	case types.JSONPatchType:
+		panic("not implemented")
+	case types.StrategicMergePatchType:
+		panic("not implemented")
+	}
+
+	return ""
 }
 
 func NewDiscoveryAction(_ string) kubetesting.ActionImpl {
