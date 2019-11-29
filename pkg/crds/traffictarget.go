@@ -25,6 +25,9 @@ var TrafficTarget = &apiextensionv1beta1.CustomResourceDefinition{
 			ShortNames: []string{"tt"},
 			Categories: []string{"shipper"},
 		},
+		Subresources: &apiextensionv1beta1.CustomResourceSubresources{
+			Status: &apiextensionv1beta1.CustomResourceSubresourceStatus{},
+		},
 		Validation: &apiextensionv1beta1.CustomResourceValidation{
 			OpenAPIV3Schema: &apiextensionv1beta1.JSONSchemaProps{
 				Properties: map[string]apiextensionv1beta1.JSONSchemaProps{

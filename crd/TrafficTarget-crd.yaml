@@ -25,6 +25,8 @@ spec:
     - tt
     categories:
     - shipper
+  subresources:
+    status: {}
   validation:
     openAPIV3Schema:
       properties:

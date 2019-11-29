@@ -161,7 +161,7 @@ func (s *Executor) Execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 		//
 		trafficWeight := strategyStep.Traffic.Contender
 
-		if achieved, newSpec, clustersNotReady := checkTraffic(s.contender.trafficTarget, uint32(trafficWeight), contenderTrafficComparison); !achieved {
+		if achieved, newSpec, reason := checkTraffic(s.contender.trafficTarget, uint32(trafficWeight)); !achieved {
 			s.info("contender %q hasn't achieved traffic yet", s.contender.release.Name)
 
 			var patches []ExecutorResult
@@ -170,7 +170,7 @@ func (s *Executor) Execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 				shipper.StrategyConditionContenderAchievedTraffic,
 				conditions.StrategyConditionsUpdate{
 					Reason:             ClustersNotReady,
-					Message:            fmt.Sprintf("clusters pending traffic adjustments: %v. for more details, try `kubectl describe tt %s`", clustersNotReady, s.contender.trafficTarget.Name),
+					Message:            fmt.Sprintf("clusters pending traffic adjustments: %v. for more details, try `kubectl describe tt %s`", reason, s.contender.trafficTarget.Name),
 					Step:               targetStep,
 					LastTransitionTime: lastTransitionTime,
 				})
@@ -207,7 +207,7 @@ func (s *Executor) Execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 		//
 		trafficWeight := strategyStep.Traffic.Incumbent
 
-		if achieved, newSpec, clustersNotReady := checkTraffic(s.incumbent.trafficTarget, uint32(trafficWeight), incumbentTrafficComparison); !achieved {
+		if achieved, newSpec, reason := checkTraffic(s.incumbent.trafficTarget, uint32(trafficWeight)); !achieved {
 			s.info("incumbent %q hasn't achieved traffic yet", s.incumbent.release.Name)
 
 			var patches []ExecutorResult
@@ -216,7 +216,7 @@ func (s *Executor) Execute() ([]ExecutorResult, []ReleaseStrategyStateTransition
 				shipper.StrategyConditionIncumbentAchievedTraffic,
 				conditions.StrategyConditionsUpdate{
 					Reason:             ClustersNotReady,
-					Message:            fmt.Sprintf("incumbent traffic is unhealthy in clusters: %v. for more details, try `kubectl describe tt %s`", clustersNotReady, s.incumbent.trafficTarget.Name),
+					Message:            fmt.Sprintf("incumbent traffic is unhealthy in clusters: %v. for more details, try `kubectl describe tt %s`", reason, s.incumbent.trafficTarget.Name),
 					Step:               targetStep,
 					LastTransitionTime: lastTransitionTime,
 				})
