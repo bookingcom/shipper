@@ -95,7 +95,7 @@ install-shipper-state-metrics: build/shipper-state-metrics.image.$(IMAGE_TAG) bu
 # mostly for end-to-end tests.
 install-helm: build/helm.image.$(IMAGE_TAG)
 	$(KUBECTL) apply -f ci/helm.service.yaml
-	sed s=\<IMAGE\>=$(HELM_IMAGE)= ci/helm.deployment.yaml | $(KUBECTL) apply -f -
+	sed s=\<IMAGE\>=$(shell cat build/helm.image.$(IMAGE_TAG))= ci/helm.deployment.yaml | $(KUBECTL) apply -f -
 
 # Run all end-to-end tests. It does all the work necessary to get the current
 # version of shipper on your working directory running in kubernetes, so just
@@ -214,6 +214,7 @@ helm: build/helm.image.$(IMAGE_TAG)
 # image does not have any binaries that it depends on.
 build/shipper.image.$(IMAGE_TAG): build/shipper.linux-amd64
 build/shipper-state-metrics.image.$(IMAGE_TAG): build/shipper-state-metrics.linux-amd64
+build/helm.image.$(IMAGE_TAG): test/e2e/testdata
 
 build/%.image.$(IMAGE_TAG): Dockerfile.%
 	docker build -f Dockerfile.$* -t $(IMAGE_NAME_WITH_TAG) --build-arg HTTP_PROXY=$(HTTP_PROXY) --build-arg HTTPS_PROXY=$(HTTPS_PROXY) .

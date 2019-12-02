@@ -138,7 +138,7 @@ func TestNewAppAllIn(t *testing.T) {
 	t.Logf("waiting for release %q to complete", relName)
 	f.waitForComplete(rel.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
-	f.checkPods(relName, targetReplicas)
+	f.checkReadyPods(relName, targetReplicas)
 }
 
 func TestNewAppAllInWithRolloutBlockOverride(t *testing.T) {
@@ -182,7 +182,7 @@ func TestNewAppAllInWithRolloutBlockOverride(t *testing.T) {
 	t.Logf("waiting for release %q to complete", relName)
 	f.waitForComplete(rel.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
-	f.checkPods(relName, targetReplicas)
+	f.checkReadyPods(relName, targetReplicas)
 }
 
 func TestBlockNewAppWithRolloutBlock(t *testing.T) {
@@ -290,7 +290,7 @@ func TestBlockNewAppProgressWithRolloutBlock(t *testing.T) {
 		t.Fatalf("could not create rollout block %q: %q", rolloutBlockName, err)
 	}
 
-	f.checkPods(appName, 0)
+	f.checkReadyPods(appName, 0)
 }
 
 func TestRolloutAllIn(t *testing.T) {
@@ -328,7 +328,7 @@ func TestRolloutAllIn(t *testing.T) {
 	t.Logf("waiting for release %q to complete", relName)
 	f.waitForComplete(rel.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
-	f.checkPods(relName, targetReplicas)
+	f.checkReadyPods(relName, targetReplicas)
 
 	// refetch so that the update has a fresh version to work with
 	app, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
@@ -347,7 +347,7 @@ func TestRolloutAllIn(t *testing.T) {
 	t.Logf("waiting for contender %q to complete", contender.GetName())
 	f.waitForComplete(contender.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", contender.GetName(), targetReplicas)
-	f.checkPods(contender.GetName(), targetReplicas)
+	f.checkReadyPods(contender.GetName(), targetReplicas)
 }
 
 func TestRolloutAllInWithRolloutBlockOverride(t *testing.T) {
@@ -391,7 +391,7 @@ func TestRolloutAllInWithRolloutBlockOverride(t *testing.T) {
 	t.Logf("waiting for release %q to complete", relName)
 	f.waitForComplete(rel.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
-	f.checkPods(relName, targetReplicas)
+	f.checkReadyPods(relName, targetReplicas)
 
 	t.Log("refetch so that the update has a fresh version to work with")
 	app, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
@@ -411,7 +411,7 @@ func TestRolloutAllInWithRolloutBlockOverride(t *testing.T) {
 	t.Logf("waiting for contender %q to complete", contender.GetName())
 	f.waitForComplete(contender.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", contender.GetName(), targetReplicas)
-	f.checkPods(contender.GetName(), targetReplicas)
+	f.checkReadyPods(contender.GetName(), targetReplicas)
 }
 
 func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
@@ -460,7 +460,7 @@ func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
 
 		expectedCapacity := int(replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas)))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
-		f.checkPods(relName, expectedCapacity)
+		f.checkReadyPods(relName, expectedCapacity)
 	}
 }
 
@@ -516,7 +516,7 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int, t *t
 
 		expectedCapacity := int(replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas)))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
-		f.checkPods(relName, expectedCapacity)
+		f.checkReadyPods(relName, expectedCapacity)
 	}
 }
 
@@ -577,7 +577,7 @@ func testRolloutVanguard(targetReplicas int, t *testing.T) {
 	incumbent := f.waitForRelease(appName, 0)
 	incumbentName := incumbent.GetName()
 	f.waitForComplete(incumbentName)
-	f.checkPods(incumbentName, targetReplicas)
+	f.checkReadyPods(incumbentName, targetReplicas)
 
 	// Refetch so that the update has a fresh version to work with.
 	app, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
@@ -616,8 +616,8 @@ func testRolloutVanguard(targetReplicas int, t *testing.T) {
 			incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, i, step.Capacity.Incumbent, step.Capacity.Contender,
 		)
 
-		f.checkPods(contenderName, int(expectedContenderCapacity))
-		f.checkPods(incumbentName, int(expectedIncumbentCapacity))
+		f.checkReadyPods(contenderName, int(expectedContenderCapacity))
+		f.checkReadyPods(incumbentName, int(expectedIncumbentCapacity))
 	}
 }
 
@@ -672,7 +672,7 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 
 		expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
-		f.checkPods(relName, int(expectedCapacity))
+		f.checkReadyPods(relName, int(expectedCapacity))
 	}
 }
 
@@ -723,7 +723,7 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 
 		expectedCapacity = replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
-		f.checkPods(relName, int(expectedCapacity))
+		f.checkReadyPods(relName, int(expectedCapacity))
 	}
 
 	t.Logf("created a new rollout block object %q", rolloutBlockName)
@@ -744,7 +744,7 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 	f.waitForReleaseStrategyState("command", relName, 1)
 
 	t.Logf("checking that release %q still has %d pods (strategy step %d aka %q)", relName, expectedCapacity, 1, step.Name)
-	f.checkPods(relName, int(expectedCapacity))
+	f.checkReadyPods(relName, int(expectedCapacity))
 }
 
 func TestRolloutMovingStrategyBackwards(t *testing.T) {
@@ -780,7 +780,7 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 	incumbent := f.waitForRelease(appName, 0)
 	incumbentName := incumbent.GetName()
 	f.waitForComplete(incumbentName)
-	f.checkPods(incumbentName, targetReplicas)
+	f.checkReadyPods(incumbentName, targetReplicas)
 
 	// Refetch so that the update has a fresh version to work with.
 	app, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
@@ -817,8 +817,8 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 			incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, i, step.Capacity.Incumbent, step.Capacity.Contender,
 		)
 
-		f.checkPods(contenderName, int(expectedContenderCapacity))
-		f.checkPods(incumbentName, int(expectedIncumbentCapacity))
+		f.checkReadyPods(contenderName, int(expectedContenderCapacity))
+		f.checkReadyPods(incumbentName, int(expectedIncumbentCapacity))
 	}
 }
 
@@ -855,7 +855,7 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 	incumbent := f.waitForRelease(appName, 0)
 	incumbentName := incumbent.GetName()
 	f.waitForComplete(incumbentName)
-	f.checkPods(incumbentName, targetReplicas)
+	f.checkReadyPods(incumbentName, targetReplicas)
 
 	// Refetch so that the update has a fresh version to work with.
 	app, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
@@ -892,8 +892,8 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 		incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, i, step.Capacity.Incumbent, step.Capacity.Contender,
 	)
 
-	f.checkPods(contenderName, int(expectedContenderCapacity))
-	f.checkPods(incumbentName, int(expectedIncumbentCapacity))
+	f.checkReadyPods(contenderName, int(expectedContenderCapacity))
+	f.checkReadyPods(incumbentName, int(expectedIncumbentCapacity))
 
 	t.Logf("created a new rollout block object %q", rolloutBlockName)
 	_, err = createRolloutBlock(ns.GetName(), rolloutBlockName)
@@ -919,8 +919,8 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 		incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, i, step.Capacity.Incumbent, step.Capacity.Contender,
 	)
 
-	f.checkPods(contenderName, int(expectedContenderCapacity))
-	f.checkPods(incumbentName, int(expectedIncumbentCapacity))
+	f.checkReadyPods(contenderName, int(expectedContenderCapacity))
+	f.checkReadyPods(incumbentName, int(expectedIncumbentCapacity))
 }
 
 // TestNewApplicationAbort emulates a brand new application rollout.
@@ -973,7 +973,7 @@ func TestNewApplicationAbort(t *testing.T) {
 
 		expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
-		f.checkPods(relName, int(expectedCapacity))
+		f.checkReadyPods(relName, int(expectedCapacity))
 	}
 
 	t.Logf("Preparing to remove the release %q", relName)
@@ -988,7 +988,7 @@ func TestNewApplicationAbort(t *testing.T) {
 
 	// It's back to step 0, let's check the number of pods
 	expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(vanguard.Steps[0].Capacity.Contender), float64(targetReplicas))
-	f.checkPods(relName, int(expectedCapacity))
+	f.checkReadyPods(relName, int(expectedCapacity))
 }
 
 func TestRolloutAbort(t *testing.T) {
@@ -1024,7 +1024,7 @@ func TestRolloutAbort(t *testing.T) {
 	incumbent := f.waitForRelease(appName, 0)
 	incumbentName := incumbent.GetName()
 	f.waitForComplete(incumbentName)
-	f.checkPods(incumbentName, targetReplicas)
+	f.checkReadyPods(incumbentName, targetReplicas)
 
 	// Refetch so that the update has a fresh version to work with.
 	app, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
@@ -1060,8 +1060,8 @@ func TestRolloutAbort(t *testing.T) {
 			incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, i, step.Capacity.Incumbent, step.Capacity.Contender,
 		)
 
-		f.checkPods(contenderName, int(expectedContenderCapacity))
-		f.checkPods(incumbentName, int(expectedIncumbentCapacity))
+		f.checkReadyPods(contenderName, int(expectedContenderCapacity))
+		f.checkReadyPods(incumbentName, int(expectedIncumbentCapacity))
 	}
 
 	err = shipperClient.ShipperV1alpha1().Releases(ns.GetName()).Delete(contenderName, &metav1.DeleteOptions{})
@@ -1083,7 +1083,7 @@ func TestRolloutAbort(t *testing.T) {
 	// By this moment shipper is expected to have recovered the missing capacity
 	// and get all pods up and running
 	expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(allIn.Steps[0].Capacity.Contender), float64(targetReplicas))
-	f.checkPods(incumbentName, int(expectedCapacity))
+	f.checkReadyPods(incumbentName, int(expectedCapacity))
 }
 
 func TestNewRolloutBlockAddOverrides(t *testing.T) {
@@ -1137,7 +1137,7 @@ func TestNewRolloutBlockAddOverrides(t *testing.T) {
 	t.Logf("waiting for release %q to complete", relName)
 	f.waitForComplete(rel.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
-	f.checkPods(relName, targetReplicas)
+	f.checkReadyPods(relName, targetReplicas)
 
 	t.Logf("waiting for rollout block %q/%q status to be updated ", namespace, rolloutBlockName)
 	f.waitForStatus(
@@ -1203,7 +1203,7 @@ func TestNewGlobalRolloutBlockAddOverrides(t *testing.T) {
 	t.Logf("waiting for release %q to complete", relName)
 	f.waitForComplete(rel.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
-	f.checkPods(relName, targetReplicas)
+	f.checkReadyPods(relName, targetReplicas)
 
 	t.Logf("waiting for rollout block %q/%q status to be updated ", rb.GetNamespace(), rolloutBlockName)
 	f.waitForStatus(
@@ -1264,7 +1264,7 @@ func TestNewRolloutBlockRemoveRelease(t *testing.T) {
 	t.Logf("waiting for release %q to complete", relName)
 	f.waitForComplete(rel.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
-	f.checkPods(relName, targetReplicas)
+	f.checkReadyPods(relName, targetReplicas)
 
 	t.Logf("waiting for rollout block %q/%q status to be updated ", rb.GetNamespace(), rolloutBlockName)
 	f.waitForStatus(
@@ -1353,7 +1353,7 @@ func TestNewGlobalRolloutBlockRemoveRelease(t *testing.T) {
 	t.Logf("waiting for release %q to complete", relName)
 	f.waitForComplete(rel.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
-	f.checkPods(relName, targetReplicas)
+	f.checkReadyPods(relName, targetReplicas)
 
 	t.Logf("waiting for rollout block %q/%q status to be updated ", rb.GetNamespace(), rolloutBlockName)
 	f.waitForStatus(
@@ -1432,7 +1432,7 @@ func TestDeletedDeploymentsAreReinstalled(t *testing.T) {
 	t.Logf("waiting for release %q to complete again", relName)
 	f.waitForReleaseStrategyState("none", rel.GetName(), 0)
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
-	f.checkPods(relName, targetReplicas)
+	f.checkReadyPods(relName, targetReplicas)
 }
 
 func TestConsistentTrafficBalanceOnStraightFullOn(t *testing.T) {
@@ -1469,7 +1469,7 @@ func TestConsistentTrafficBalanceOnStraightFullOn(t *testing.T) {
 	t.Logf("waiting for incumbent release %q to complete", incumbentName)
 	f.waitForComplete(incumbent.GetName())
 	t.Logf("checking that incumbent release %q has %d pods (strategy step 0 -- finished)", incumbentName, 0)
-	f.checkPods(incumbentName, 0)
+	f.checkReadyPods(incumbentName, 0)
 
 	app, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
 	if err != nil {
@@ -1486,9 +1486,65 @@ func TestConsistentTrafficBalanceOnStraightFullOn(t *testing.T) {
 	contenderName := contender.GetName()
 	f.targetStep(2, contenderName)
 	f.waitForComplete(contender.GetName())
-	f.checkPods(contenderName, 2)
 
-	f.checkEndpointActivePods("test-nginx-prod", 2)
+	pods := f.checkReadyPods(contenderName, 2)
+	f.checkEndpointActivePods("test-nginx-prod", pods)
+}
+
+func TestMultipleAppsInNamespace(t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+	t.Parallel()
+
+	targetReplicas := 1
+	ns, err := setupNamespace(t.Name())
+	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(ns.GetName())
+	}()
+
+	appNames := []string{
+		fmt.Sprintf("%s-1", appName),
+		fmt.Sprintf("%s-2", appName),
+	}
+
+	for _, appName := range appNames {
+		newApp := newApplication(ns.GetName(), appName, &allIn)
+		newApp.Spec.Template.Values = &shipper.ChartValues{
+			"replicaCount": targetReplicas,
+			"nameOverride": appName,
+		}
+		newApp.Spec.Template.Chart.Name = "test-nginx"
+		newApp.Spec.Template.Chart.Version = "0.0.1"
+
+		_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
+		if err != nil {
+			t.Fatalf("could not create application %q: %q", appName, err)
+		}
+	}
+
+	for _, appName := range appNames {
+		t.Logf("waiting for a new release for new application %q", appName)
+		rel := f.waitForRelease(appName, 0)
+
+		relName := rel.GetName()
+		t.Logf("waiting for release %q to complete", relName)
+
+		f.waitForComplete(rel.GetName())
+		t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
+
+		pods := f.checkReadyPods(relName, targetReplicas)
+
+		svcName := fmt.Sprintf("%s-prod", appName)
+		f.checkEndpointActivePods(svcName, pods)
+	}
 }
 
 // TODO(btyler): cover a variety of broken chart cases as soon as we report

@@ -46,14 +46,14 @@ func (f *fixture) targetStep(step int, relName string) {
 	}
 }
 
-func (f *fixture) checkPods(relName string, expectedCount int) {
+func (f *fixture) checkReadyPods(relName string, expectedCount int) []corev1.Pod {
 	selector := labels.Set{shipper.ReleaseLabel: relName}.AsSelector()
 	podList, err := appKubeClient.CoreV1().Pods(f.namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		f.t.Fatalf("could not list pods %q: %q", f.namespace, err)
 	}
 
-	readyCount := 0
+	readyPods := []corev1.Pod{}
 	for _, pod := range podList.Items {
 		for _, condition := range pod.Status.Conditions {
 			// This line imitates how ReplicaSets calculate 'ready replicas'; Shipper
@@ -61,31 +61,43 @@ func (f *fixture) checkPods(relName string, expectedCount int) {
 			// There's no handy library for this because the functionality is split
 			// between k8s' controller_util.go and api v1 podUtil.
 			if condition.Type == "Ready" && condition.Status == "True" && pod.DeletionTimestamp == nil {
-				readyCount++
+				readyPods = append(readyPods, pod)
+				break
 			}
 		}
 	}
 
-	if readyCount != expectedCount {
-		f.t.Fatalf("checking pods on release %q: expected %d but got %d", relName, expectedCount, readyCount)
+	if len(readyPods) != expectedCount {
+		f.t.Fatalf("checking pods on release %q: expected %d but got %d", relName, expectedCount, len(readyPods))
 	}
+
+	return readyPods
 }
 
-func (f *fixture) checkEndpointActivePods(epName string, podCnt int) {
+func (f *fixture) checkEndpointActivePods(epName string, pods []corev1.Pod) {
 	ep, err := kubeClient.CoreV1().Endpoints(f.namespace).Get(epName, metav1.GetOptions{})
 	if err != nil {
 		f.t.Fatalf("could not fetch endpoint %q: %q", epName, err)
 	}
 
-	ips := make([]string, 0, podCnt)
+	podMap := make(map[string]corev1.Pod)
+	for _, pod := range pods {
+		podMap[pod.Name] = pod
+	}
+
+	readyPods := make([]string, 0, len(pods))
 	for _, subset := range ep.Subsets {
 		for _, addr := range subset.Addresses {
-			ips = append(ips, addr.IP)
+			pod, ok := podMap[addr.TargetRef.Name]
+			if !ok {
+				f.t.Fatalf("unexpected pod in the endpoint: %q", pod.Name)
+			}
+			readyPods = append(readyPods, pod.Name)
 		}
 	}
 
-	if len(ips) != podCnt {
-		f.t.Fatalf("wrong IP address count in the endpoint %q: want: %d, got: %d", epName, len(ips), podCnt)
+	if len(readyPods) != len(pods) {
+		f.t.Fatalf("wrong address count in the endpoint %q: want: %d, got: %d", epName, len(readyPods), len(pods))
 	}
 }
 
