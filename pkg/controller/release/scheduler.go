@@ -87,17 +87,17 @@ func (s *Scheduler) ChooseClusters(rel *shipper.Release) (*shipper.Release, erro
 	return rel, nil
 }
 
-func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, error) {
+func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*releaseInfo, error) {
 	metaKey := controller.MetaKey(rel)
 	klog.V(4).Infof("Processing release %q", metaKey)
 	defer klog.V(4).Infof("Finished processing %q", metaKey)
 
 	if !releaseHasClusters(rel) {
-		rel, err := s.ChooseClusters(rel)
+		var err error
+		rel, err = s.ChooseClusters(rel)
 		if err != nil {
 			return nil, err
 		}
-
 		s.recorder.Eventf(
 			rel,
 			corev1.EventTypeNormal,
@@ -115,23 +115,33 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*shipper.Release, err
 
 	releaseErrors := shippererrors.NewMultiError()
 
-	if _, err := s.CreateOrUpdateInstallationTarget(rel); err != nil {
+	it, err := s.CreateOrUpdateInstallationTarget(rel)
+	if err != nil {
 		releaseErrors.Append(err)
 	}
 
-	if _, err := s.CreateOrUpdateTrafficTarget(rel); err != nil {
+	tt, err := s.CreateOrUpdateTrafficTarget(rel)
+	if err != nil {
 		releaseErrors.Append(err)
 	}
 
-	if _, err := s.CreateOrUpdateCapacityTarget(rel, replicaCount); err != nil {
+	ct, err := s.CreateOrUpdateCapacityTarget(rel, replicaCount)
+	if err != nil {
 		releaseErrors.Append(err)
+	}
+
+	relinfo := &releaseInfo{
+		release:            rel,
+		installationTarget: it,
+		trafficTarget:      tt,
+		capacityTarget:     ct,
 	}
 
 	if releaseErrors.Any() {
 		return nil, releaseErrors.Flatten()
 	}
 
-	return rel, nil
+	return relinfo, nil
 }
 
 func releaseHasClusters(rel *shipper.Release) bool {

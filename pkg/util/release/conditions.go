@@ -99,6 +99,11 @@ func ReleaseScheduled(release *shipper.Release) bool {
 	return scheduledCond != nil && scheduledCond.Status == corev1.ConditionTrue
 }
 
+func ReleaseStrategyExecuted(release *shipper.Release) bool {
+	strategyExecutedCond := GetReleaseCondition(release.Status, shipper.ReleaseConditionTypeStrategyExecuted)
+	return strategyExecutedCond != nil && strategyExecutedCond.Status == corev1.ConditionTrue
+}
+
 func ReleaseComplete(release *shipper.Release) bool {
 	releasedCond := GetReleaseCondition(release.Status, shipper.ReleaseConditionTypeComplete)
 	return releasedCond != nil && releasedCond.Status == corev1.ConditionTrue

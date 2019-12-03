@@ -2,13 +2,15 @@ package release
 
 import (
 	"fmt"
-	"k8s.io/apimachinery/pkg/labels"
-	"reflect"
 	"time"
 
+	"k8s.io/apimachinery/pkg/labels"
+
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -22,7 +24,9 @@ import (
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/controller"
+	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	conditions "github.com/bookingcom/shipper/pkg/util/conditions"
 	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	rolloutblock "github.com/bookingcom/shipper/pkg/util/rolloutblock"
@@ -41,8 +45,6 @@ const (
 // release and progress it forward by scheduling the release on a set of
 // selected clusters, creating a set of associated objects and executing the
 // strategy.
-//
-// Release Controller has 2 primary workqueues: releases and applications.
 type Controller struct {
 	clientset shipperclient.Interface
 
@@ -67,8 +69,7 @@ type Controller struct {
 	rolloutBlockLister shipperlisters.RolloutBlockLister
 	rolloutBlockSynced cache.InformerSynced
 
-	releaseWorkqueue     workqueue.RateLimitingInterface
-	applicationWorkqueue workqueue.RateLimitingInterface
+	releaseWorkqueue workqueue.RateLimitingInterface
 
 	chartFetcher shipperrepo.ChartFetcher
 
@@ -133,10 +134,6 @@ func NewController(
 			shipperworkqueue.NewDefaultControllerRateLimiter(),
 			"release_controller_releases",
 		),
-		applicationWorkqueue: workqueue.NewNamedRateLimitingQueue(
-			shipperworkqueue.NewDefaultControllerRateLimiter(),
-			"release_controller_applications",
-		),
 
 		chartFetcher: chartFetcher,
 
@@ -147,11 +144,11 @@ func NewController(
 
 	releaseInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: controller.enqueueRelease,
+			AddFunc: controller.enqueueReleaseAndNeighbours,
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueRelease(newObj)
+				controller.enqueueReleaseAndNeighbours(newObj)
 			},
-			DeleteFunc: controller.enqueueAppFromRelease,
+			DeleteFunc: controller.enqueueReleaseAndNeighbours,
 		})
 
 	rolloutBlockInformer.Informer().AddEventHandler(
@@ -178,7 +175,6 @@ func NewController(
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.releaseWorkqueue.ShutDown()
-	defer c.applicationWorkqueue.ShutDown()
 
 	klog.V(2).Info("Starting Release controller")
 	defer klog.V(2).Info("Shutting down Release controller")
@@ -199,7 +195,6 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.runReleaseWorker, time.Second, stopCh)
-		go wait.Until(c.runApplicationWorker, time.Second, stopCh)
 	}
 
 	klog.V(4).Info("Started Release controller")
@@ -209,11 +204,6 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 
 func (c *Controller) runReleaseWorker() {
 	for c.processNextReleaseWorkItem() {
-	}
-}
-
-func (c *Controller) runApplicationWorker() {
-	for c.processNextAppWorkItem() {
 	}
 }
 
@@ -249,7 +239,6 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 
 	if shouldRetry {
 		c.releaseWorkqueue.AddRateLimited(key)
-
 		return true
 	}
 
@@ -268,7 +257,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 		return shippererrors.NewUnrecoverableError(err)
 	}
 
-	initialRel, err := c.releaseLister.Releases(namespace).Get(name)
+	rel, err := c.releaseLister.Releases(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			klog.V(3).Infof("Release %q not found", key)
@@ -279,39 +268,29 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 			WithShipperKind("Release")
 	}
 
-	if releaseutil.HasEmptyEnvironment(initialRel) {
+	if releaseutil.HasEmptyEnvironment(rel) {
 		return nil
 	}
 
-	rel, err := c.scheduleRelease(initialRel.DeepCopy())
+	var condition *shipper.ReleaseCondition
+	var strategyPatches []ExecutorResult
+	var trans []ReleaseStrategyStateTransition
+	var relinfo *releaseInfo
 
-	if !reflect.DeepEqual(initialRel, rel) {
-		if _, err := c.clientset.ShipperV1alpha1().Releases(namespace).Update(rel); err != nil {
-			return shippererrors.NewKubeclientUpdateError(rel, err).
-				WithShipperKind("Release")
+	// we keep baseRel as a comparison baseline in order to figure out if
+	// we even have to send an update
+	baseRel := rel.DeepCopy()
+	patches := make([]ExecutorResult, 0)
+
+	diff := diffutil.NewMultiDiff()
+	defer func() {
+		if !diff.IsEmpty() {
+			// baseRel is kept for the sake of safety: it's
+			// guaranteed to not convert to nil during the execution
+			c.recorder.Event(baseRel, corev1.EventTypeNormal, "ReleaseConditionChanged", diff.String())
 		}
-	}
+	}()
 
-	if err != nil {
-		return err
-	}
-
-	appKey, err := c.getAssociatedApplicationKey(rel)
-	if err != nil {
-		return err
-	}
-
-	// If everything went fine, scheduling an application key in the
-	// application workqueue.
-	klog.V(4).Infof("Scheduling Application key %q", appKey)
-	c.applicationWorkqueue.Add(appKey)
-
-	klog.V(4).Infof("Done processing Release %q", key)
-
-	return nil
-}
-
-func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, error) {
 	scheduler := NewScheduler(
 		c.clientset,
 		c.clusterLister,
@@ -323,24 +302,18 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 		c.recorder,
 	)
 
-	initialRel := rel.DeepCopy()
-
-	diff := diffutil.NewMultiDiff()
-	defer func() {
-		c.reportReleaseConditionChange(initialRel, diff)
-	}()
-
 	rolloutBlocked, events, err := rolloutblock.BlocksRollout(c.rolloutBlockLister, rel)
 	for _, ev := range events {
 		c.recorder.Event(rel, ev.Type, ev.Reason, ev.Message)
 	}
+
 	if rolloutBlocked {
 		var msg string
 		if err != nil {
 			msg = err.Error()
 		}
 
-		condition := releaseutil.NewReleaseCondition(
+		condition = releaseutil.NewReleaseCondition(
 			shipper.ReleaseConditionTypeBlocked,
 			corev1.ConditionTrue,
 			shipper.RolloutBlockReason,
@@ -348,10 +321,10 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 		)
 		diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
-		return rel, err
+		goto ApplyChanges
 	}
 
-	condition := releaseutil.NewReleaseCondition(
+	condition = releaseutil.NewReleaseCondition(
 		shipper.ReleaseConditionTypeBlocked,
 		corev1.ConditionFalse,
 		"",
@@ -359,7 +332,7 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 	)
 	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
-	scheduledRel, err := scheduler.ScheduleRelease(rel.DeepCopy())
+	relinfo, err = scheduler.ScheduleRelease(rel.DeepCopy())
 	if err != nil {
 		reason := reasonForReleaseCondition(err)
 		condition := releaseutil.NewReleaseCondition(
@@ -368,12 +341,13 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 			reason,
 			err.Error(),
 		)
-		diff.Append(releaseutil.SetReleaseCondition(&initialRel.Status, *condition))
+		diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
-		return rel, err
+		goto ApplyChanges
 	}
+	rel = relinfo.release
 
-	rel = scheduledRel
+	klog.V(4).Infof("Release %q has been successfully scheduled", controller.MetaKey(rel))
 	condition = releaseutil.NewReleaseCondition(
 		shipper.ReleaseConditionTypeScheduled,
 		corev1.ConditionTrue,
@@ -382,9 +356,135 @@ func (c *Controller) scheduleRelease(rel *shipper.Release) (*shipper.Release, er
 	)
 	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
-	klog.V(4).Infof("Release %q has been successfully scheduled", controller.MetaKey(rel))
+	strategyPatches, trans, err = c.ensureReleaseState(relinfo)
+	if err != nil {
+		releaseStrategyExecutedCond := releaseutil.NewReleaseCondition(
+			shipper.ReleaseConditionTypeStrategyExecuted,
+			corev1.ConditionFalse,
+			conditions.StrategyExecutionFailed,
+			fmt.Sprintf("failed to execute strategy: %q", err),
+		)
+		diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *releaseStrategyExecutedCond))
 
-	return rel, nil
+		goto ApplyChanges
+	}
+	patches = append(patches, strategyPatches...)
+
+	condition = releaseutil.NewReleaseCondition(
+		shipper.ReleaseConditionTypeStrategyExecuted,
+		corev1.ConditionTrue,
+		"",
+		"",
+	)
+	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
+
+	for _, t := range trans {
+		c.recorder.Eventf(
+			rel,
+			corev1.EventTypeNormal,
+			"ReleaseStateTransitioned",
+			"Release %q had its state %q transitioned to %q",
+			shippercontroller.MetaKey(rel),
+			t.State,
+			t.New,
+		)
+	}
+
+ApplyChanges:
+
+	if !equality.Semantic.DeepEqual(rel, baseRel) {
+		if _, updErr := c.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel); updErr != nil {
+			return updErr
+		}
+	}
+
+	for _, patch := range patches {
+		if err := c.applyPatch(namespace, patch); err != nil {
+			return err
+		}
+	}
+
+	klog.V(4).Infof("Done processing Release %q", key)
+
+	return err
+}
+
+func (c *Controller) applicationReleases(rel *shipper.Release) ([]*shipper.Release, error) {
+	appName, err := releaseutil.ApplicationNameForRelease(rel)
+	if err != nil {
+		return nil, err
+	}
+	releases, err := c.releaseLister.Releases(rel.Namespace).ReleasesForApplication(appName)
+	if err != nil {
+		return nil, err
+	}
+	return releases, nil
+}
+
+func (c *Controller) ensureReleaseState(relinfo *releaseInfo) ([]ExecutorResult, []ReleaseStrategyStateTransition, error) {
+	releases, err := c.applicationReleases(relinfo.release)
+	if err != nil {
+		return nil, nil, err
+	}
+	prev, succ, err := releaseutil.GetSiblingReleases(relinfo.release, releases)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var relinfoPrev, relinfoSucc *releaseInfo
+	if prev != nil {
+		relinfoPrev, err = c.buildReleaseInfo(prev)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	if succ != nil {
+		relinfoSucc, err = c.buildReleaseInfo(succ)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	//TODO: this flag is deprecated, we keep it here for the sake of gradual
+	//changes. The flag propagates as deep as strategy conditions
+	//consolidation functions
+	// see pkg/util/conditions/strategy.go for more details.
+	hasIncumbent := len(releases) > 1
+
+	executor := NewStrategyExecutor(relinfo, relinfoPrev, relinfoSucc, c.recorder, hasIncumbent)
+
+	patches, trans, err := executor.Execute()
+
+	if len(patches) == 0 {
+		klog.V(4).Infof("Strategy verified for release %q, nothing to patch", controller.MetaKey(relinfo.release))
+	} else {
+		klog.V(4).Infof("Strategy has been executed for release %q, applying patches", controller.MetaKey(relinfo.release))
+	}
+
+	return patches, trans, err
+}
+
+func (c *Controller) applyPatch(namespace string, patch ExecutorResult) error {
+	name, gvk, b := patch.PatchSpec()
+
+	var err error
+	switch gvk.Kind {
+	case "Release":
+		_, err = c.clientset.ShipperV1alpha1().Releases(namespace).Patch(name, types.MergePatchType, b)
+	case "InstallationTarget":
+		_, err = c.clientset.ShipperV1alpha1().InstallationTargets(namespace).Patch(name, types.MergePatchType, b)
+	case "CapacityTarget":
+		_, err = c.clientset.ShipperV1alpha1().CapacityTargets(namespace).Patch(name, types.MergePatchType, b)
+	case "TrafficTarget":
+		_, err = c.clientset.ShipperV1alpha1().TrafficTargets(namespace).Patch(name, types.MergePatchType, b)
+	default:
+		return shippererrors.NewUnrecoverableError(fmt.Errorf("error syncing Release %q (will not retry): unknown GVK resource name: %s", name, gvk.Kind))
+	}
+	if err != nil {
+		return shippererrors.NewKubeclientPatchError(namespace, name, err).WithKind(gvk)
+	}
+
+	return nil
 }
 
 // getAssociatedApplicationKey returns an application key in the format:
@@ -403,7 +503,7 @@ func (c *Controller) getAssociatedApplicationKey(rel *shipper.Release) (string, 
 // getAssociatedReleaseKey returns an owner reference release name for an
 // associated object in the format:
 // <namespace> / <release name>
-func (c *Controller) getAssociatedReleaseKey(obj metav1.Object) (string, error) {
+func (c *Controller) getAssociatedReleaseName(obj metav1.Object) (string, error) {
 	references := obj.GetOwnerReferences()
 	if n := len(references); n != 1 {
 		return "", shippererrors.NewMultipleOwnerReferencesError(obj.GetName(), n)
@@ -411,7 +511,7 @@ func (c *Controller) getAssociatedReleaseKey(obj metav1.Object) (string, error) 
 
 	owner := references[0]
 
-	return fmt.Sprintf("%s/%s", obj.GetNamespace(), owner.Name), nil
+	return owner.Name, nil
 }
 
 // buildReleaseInfo returns a release and it's associated objects fetched from
@@ -447,6 +547,34 @@ func (c *Controller) buildReleaseInfo(rel *shipper.Release) (*releaseInfo, error
 	}, nil
 }
 
+func (c *Controller) enqueueReleaseAndNeighbours(obj interface{}) {
+	rel, ok := obj.(*shipper.Release)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", obj))
+		return
+	}
+	if rel == nil {
+		return
+	}
+	c.enqueueRelease(rel)
+	releases, err := c.applicationReleases(rel)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("failed to list application releases for shipper.Release %#v: %s", rel, err))
+		return
+	}
+	predecessor, ancestor, err := releaseutil.GetSiblingReleases(rel, releases)
+	if err != nil {
+		runtime.HandleError(err)
+		return
+	}
+	if predecessor != nil {
+		c.enqueueRelease(predecessor)
+	}
+	if ancestor != nil {
+		c.enqueueRelease(ancestor)
+	}
+}
+
 func (c *Controller) enqueueRelease(obj interface{}) {
 	rel, ok := obj.(*shipper.Release)
 	if !ok {
@@ -479,22 +607,6 @@ func (c *Controller) enqueueReleaseRateLimited(obj interface{}) {
 	c.releaseWorkqueue.AddRateLimited(key)
 }
 
-func (c *Controller) enqueueAppFromRelease(obj interface{}) {
-	rel, ok := obj.(*shipper.Release)
-	if !ok {
-		runtime.HandleError(fmt.Errorf("not a shipper.Release: %#v", obj))
-		return
-	}
-
-	appName, err := c.getAssociatedApplicationKey(rel)
-	if err != nil {
-		runtime.HandleError(fmt.Errorf("error fetching Application key for release %v: %s", rel, err))
-		return
-	}
-
-	c.applicationWorkqueue.Add(appName)
-}
-
 func (c *Controller) enqueueReleaseFromRolloutBlock(obj interface{}) {
 	_, ok := obj.(*shipper.RolloutBlock)
 	if !ok {
@@ -521,19 +633,20 @@ func (c *Controller) enqueueReleaseFromAssociatedObject(obj interface{}) {
 		return
 	}
 
-	releaseKey, err := c.getAssociatedReleaseKey(kubeobj)
+	releaseName, err := c.getAssociatedReleaseName(kubeobj)
 	if err != nil {
 		runtime.HandleError(err)
 		return
 	}
 
-	c.releaseWorkqueue.Add(releaseKey)
-}
-
-func (c *Controller) reportReleaseConditionChange(rel *shipper.Release, diff diffutil.Diff) {
-	if !diff.IsEmpty() {
-		c.recorder.Event(rel, corev1.EventTypeNormal, "ReleaseConditionChanged", diff.String())
+	rel, err := c.releaseLister.Releases(kubeobj.GetNamespace()).Get(releaseName)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			runtime.HandleError(err)
+		}
 	}
+
+	c.enqueueReleaseAndNeighbours(rel)
 }
 
 func reasonForReleaseCondition(err error) string {

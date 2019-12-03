@@ -27,6 +27,11 @@ type ReleaseUpdateResult struct {
 	NewStatus *shipper.ReleaseStatus
 }
 
+type ReleaseAnnotationUpdateResult struct {
+	Name           string
+	NewAnnotations map[string]string
+}
+
 func (c *CapacityTargetOutdatedResult) PatchSpec() (string, schema.GroupVersionKind, []byte) {
 	patch := make(map[string]interface{})
 	patch["spec"] = c.NewSpec
@@ -52,6 +57,19 @@ func (c *TrafficTargetOutdatedResult) PatchSpec() (string, schema.GroupVersionKi
 func (r *ReleaseUpdateResult) PatchSpec() (string, schema.GroupVersionKind, []byte) {
 	patch := make(map[string]interface{})
 	patch["status"] = r.NewStatus
+	b, _ := json.Marshal(patch)
+	return r.Name, schema.GroupVersionKind{
+		Group:   shipper.SchemeGroupVersion.Group,
+		Version: shipper.SchemeGroupVersion.Version,
+		Kind:    "Release",
+	}, b
+}
+
+func (r *ReleaseAnnotationUpdateResult) PatchSpec() (string, schema.GroupVersionKind, []byte) {
+	patch := make(map[string]interface{})
+	meta := make(map[string]interface{})
+	meta["annotations"] = r.NewAnnotations
+	patch["metadata"] = meta
 	b, _ := json.Marshal(patch)
 	return r.Name, schema.GroupVersionKind{
 		Group:   shipper.SchemeGroupVersion.Group,

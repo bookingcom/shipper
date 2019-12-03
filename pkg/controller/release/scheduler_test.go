@@ -51,9 +51,11 @@ func buildRelease() *shipper.Release {
 			Kind:       "Release",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "test-release",
-			Namespace:   shippertesting.TestNamespace,
-			Annotations: map[string]string{},
+			Name:      "test-release",
+			Namespace: shippertesting.TestNamespace,
+			Annotations: map[string]string{
+				shipper.ReleaseGenerationAnnotation: "1",
+			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: shipper.SchemeGroupVersion.String(),
@@ -68,6 +70,7 @@ func buildRelease() *shipper.Release {
 		},
 		Spec: shipper.ReleaseSpec{
 			Environment: shipper.ReleaseEnvironment{
+				Strategy: &vanguard,
 				Chart: shipper.Chart{
 					Name:    "simple",
 					Version: "0.0.1",
