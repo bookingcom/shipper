@@ -5,14 +5,10 @@ import (
 	"sort"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
-	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	kubefake "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/tools/record"
 )
 
 const (
@@ -38,6 +34,7 @@ var (
 		Type:   shipper.TargetConditionTypeReady,
 		Status: corev1.ConditionTrue,
 	}
+
 	ClusterTrafficOperational = shipper.ClusterTrafficCondition{
 		Type:   shipper.ClusterConditionTypeOperational,
 		Status: corev1.ConditionTrue,
@@ -234,56 +231,4 @@ func addPodsToList(objects []runtime.Object, pods []*corev1.Pod) []runtime.Objec
 	}
 
 	return objects
-}
-
-type ControllerTestFixture struct {
-	ShipperClient          *shipperfake.Clientset
-	ShipperInformerFactory shipperinformers.SharedInformerFactory
-
-	Clusters           map[string]*shippertesting.FakeCluster
-	ClusterClientStore *shippertesting.FakeClusterClientStore
-
-	Recorder *record.FakeRecorder
-}
-
-func NewControllerTestFixture() *ControllerTestFixture {
-	const recorderBufSize = 42
-
-	shipperClient := shipperfake.NewSimpleClientset()
-	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(
-		shipperClient, shippertesting.NoResyncPeriod)
-
-	store := shippertesting.NewFakeClusterClientStore(map[string]*shippertesting.FakeCluster{})
-
-	return &ControllerTestFixture{
-		ShipperClient:          shipperClient,
-		ShipperInformerFactory: shipperInformerFactory,
-
-		Clusters:           make(map[string]*shippertesting.FakeCluster),
-		ClusterClientStore: store,
-
-		Recorder: record.NewFakeRecorder(recorderBufSize),
-	}
-}
-
-func (f *ControllerTestFixture) AddNamedCluster(name string) *shippertesting.FakeCluster {
-	cluster := shippertesting.NewNamedFakeCluster(
-		name,
-		kubefake.NewSimpleClientset(), nil)
-
-	f.Clusters[cluster.Name] = cluster
-	f.ClusterClientStore.AddCluster(cluster)
-
-	return cluster
-}
-
-func (f *ControllerTestFixture) AddCluster() *shippertesting.FakeCluster {
-	name := fmt.Sprintf("cluster-%d", len(f.Clusters))
-	return f.AddNamedCluster(name)
-}
-
-func (f *ControllerTestFixture) Run(stopCh chan struct{}) {
-	f.ShipperInformerFactory.Start(stopCh)
-	f.ShipperInformerFactory.WaitForCacheSync(stopCh)
-	f.ClusterClientStore.Run(stopCh)
 }

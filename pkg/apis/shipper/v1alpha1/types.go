@@ -348,8 +348,9 @@ type CapacityTargetList struct {
 }
 
 type CapacityTargetStatus struct {
-	Clusters   []ClusterCapacityStatus `json:"clusters,omitempty"`
-	Conditions []TargetCondition       `json:"conditions,omitempty"`
+	ObservedGeneration int64                   `json:"observedGeneration,omitempty"`
+	Clusters           []ClusterCapacityStatus `json:"clusters,omitempty"`
+	Conditions         []TargetCondition       `json:"conditions,omitempty"`
 }
 
 type ClusterCapacityReportContainerBreakdownExample struct {

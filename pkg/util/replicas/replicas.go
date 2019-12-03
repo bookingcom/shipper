@@ -30,10 +30,10 @@ func CalculateDesiredReplicaCount(totalReplicaCount uint, desiredCapacityPercent
 // case the informed desiredPercentage value is greater than 100, this
 // function will panic; it is the caller's responsibility to check if the
 // value falls in the 0-100 range.
-func AchievedDesiredReplicaPercentage(totalReplicaCount, currentReplicaCount uint, desiredPercentage float64) bool {
+func AchievedDesiredReplicaPercentage(totalReplicaCount, currentReplicaCount, desiredPercentage int32) bool {
 	if desiredPercentage > 100 {
 		panic("Programmer error: desiredPercentage should be a value between 0 and 100 inclusive")
 	}
 
-	return currentReplicaCount == CalculateDesiredReplicaCount(totalReplicaCount, desiredPercentage)
+	return uint(currentReplicaCount) == CalculateDesiredReplicaCount(uint(totalReplicaCount), float64(desiredPercentage))
 }
