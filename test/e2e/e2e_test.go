@@ -330,16 +330,29 @@ func TestRolloutAllIn(t *testing.T) {
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
 	f.checkReadyPods(relName, targetReplicas)
 
-	// refetch so that the update has a fresh version to work with
-	app, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("could not refetch app: %q", err)
+	circuitBreaker := 0
+	failed := true
+	for circuitBreaker <= 10 {
+		circuitBreaker++
+		// refetch so that the update has a fresh version to work with
+		app, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
+		if err != nil {
+			t.Logf("could not refetch app: %q", err)
+			continue
+		}
+
+		app.Spec.Template.Chart.Version = "0.0.2"
+		_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Update(app)
+		if err != nil {
+			t.Logf("could not update application %q: %q", appName, err)
+			continue
+		}
+		failed = false
+		break
 	}
 
-	app.Spec.Template.Chart.Version = "0.0.2"
-	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Update(app)
-	if err != nil {
-		t.Fatalf("could not update application %q: %q", appName, err)
+	if failed {
+		t.Fatalf("failed to update app")
 	}
 
 	t.Logf("waiting for contender release to appear after editing app %q", app.GetName())

@@ -207,9 +207,10 @@ type AchievedStep struct {
 type ReleaseConditionType string
 
 const (
-	ReleaseConditionTypeScheduled ReleaseConditionType = "Scheduled"
-	ReleaseConditionTypeComplete  ReleaseConditionType = "Complete"
-	ReleaseConditionTypeBlocked   ReleaseConditionType = "Blocked"
+	ReleaseConditionTypeScheduled        ReleaseConditionType = "Scheduled"
+	ReleaseConditionTypeStrategyExecuted ReleaseConditionType = "StrategyExecuted"
+	ReleaseConditionTypeComplete         ReleaseConditionType = "Complete"
+	ReleaseConditionTypeBlocked          ReleaseConditionType = "Blocked"
 )
 
 type ReleaseCondition struct {

@@ -12,9 +12,9 @@ import (
 	targetutil "github.com/bookingcom/shipper/pkg/util/target"
 )
 
-func checkInstallation(contenderRelease *releaseInfo) (bool, []string) {
-	clustersFromStatus := contenderRelease.installationTarget.Status.Clusters
-	clustersFromSpec := contenderRelease.installationTarget.Spec.Clusters
+func checkInstallation(relInfo *releaseInfo) (bool, []string) {
+	clustersFromStatus := relInfo.installationTarget.Status.Clusters
+	clustersFromSpec := relInfo.installationTarget.Spec.Clusters
 	clustersFromSpecMap := make(map[string]struct{})
 	clustersFromStatusMap := make(map[string]struct{})
 	clustersNotReady := make(map[string]struct{})
