@@ -20,3 +20,15 @@ func IsClusterTrafficReady(conditions []shipper.ClusterTrafficCondition) bool {
 
 	return readyCond.Status == corev1.ConditionTrue
 }
+
+func IsClusterCapacityReady(conditions []shipper.ClusterCapacityCondition) bool {
+	var readyCond shipper.ClusterCapacityCondition
+	for _, c := range conditions {
+		if c.Type == shipper.ClusterConditionTypeReady {
+			readyCond = c
+			break
+		}
+	}
+
+	return readyCond.Status == corev1.ConditionTrue
+}

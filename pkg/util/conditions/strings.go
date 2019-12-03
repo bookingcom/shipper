@@ -49,6 +49,13 @@ func CondStr(ci interface{}) string {
 			c.Reason,
 			c.Message,
 		}
+	case *shipper.TargetCondition:
+		chunks = []string{
+			fmt.Sprintf("%v", c.Type),
+			fmt.Sprintf("%v", c.Status),
+			c.Reason,
+			c.Message,
+		}
 	default:
 		chunks = []string{fmt.Sprintf("Condition %v is not classified", ci)}
 	}

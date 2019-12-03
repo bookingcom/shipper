@@ -25,6 +25,8 @@ spec:
     - ct
     categories:
     - shipper
+  subresources:
+    status: {}
   # this validation will allow unknown fields in objects, but they'll just be
   # ignored (which is consistent with Kubernetes behavior in general)
   validation:

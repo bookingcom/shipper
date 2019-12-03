@@ -128,7 +128,7 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 
 		isLastStep := int(targetStep) == len(strategy.Steps)-1
 
-		if achieved, newSpec, clustersNotReady := checkCapacity(curr.capacityTarget, uint(capacityWeight)); !achieved {
+		if achieved, newSpec, clustersNotReady := checkCapacity(curr.capacityTarget, capacityWeight); !achieved {
 			e.info("release hasn't achieved capacity yet")
 
 			var patches []ExecutorResult
