@@ -1,0 +1,1253 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Shipper",
+    "version": "v1alpha1"
+  },
+  "paths": {},
+  "definitions": {
+    "AchievedStep.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "step",
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "step": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "Application.shipper.booking.com": {
+      "description": "Application describes a deployable application",
+      "type": "object",
+      "required": [
+        "spec",
+        "status"
+      ],
+      "properties": {
+        "apiVersion": {
+          "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"
+        },
+        "spec": {
+          "$ref": "#/definitions/ApplicationSpec.shipper.booking.com"
+        },
+        "status": {
+          "description": "Most recently observed status of the application",
+          "$ref": "#/definitions/ApplicationStatus.shipper.booking.com"
+        }
+      }
+    },
+    "ApplicationCondition.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "type",
+        "status"
+      ],
+      "properties": {
+        "lastTransitionTime": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.Time"
+        },
+        "message": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "ApplicationList.shipper.booking.com": {
+      "description": "ApplicationList is a list of Applications. Mostly only useful for admins: regular users interact with exactly one Application at once",
+      "type": "object",
+      "required": [
+        "metadata",
+        "items"
+      ],
+      "properties": {
+        "apiVersion": {
+          "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Application.shipper.booking.com"
+          }
+        },
+        "kind": {
+          "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta"
+        }
+      }
+    },
+    "ApplicationSpec.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "revisionHistoryLimit",
+        "template"
+      ],
+      "properties": {
+        "revisionHistoryLimit": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "template": {
+          "$ref": "#/definitions/ReleaseEnvironment.shipper.booking.com"
+        }
+      }
+    },
+    "ApplicationStatus.shipper.booking.com": {
+      "type": "object",
+      "properties": {
+        "conditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ApplicationCondition.shipper.booking.com"
+          }
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "CapacityTarget.shipper.booking.com": {
+      "description": "A CapacityTarget defines the goal state for # of pods for incumbent and contender versions. This is used by the StrategyController to change the state of the cluster to satisfy a single step of a Strategy.",
+      "type": "object",
+      "required": [
+        "spec"
+      ],
+      "properties": {
+        "apiVersion": {
+          "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"
+        },
+        "spec": {
+          "$ref": "#/definitions/CapacityTargetSpec.shipper.booking.com"
+        },
+        "status": {
+          "$ref": "#/definitions/CapacityTargetStatus.shipper.booking.com"
+        }
+      }
+    },
+    "CapacityTargetList.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "metadata",
+        "items"
+      ],
+      "properties": {
+        "apiVersion": {
+          "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CapacityTarget.shipper.booking.com"
+          }
+        },
+        "kind": {
+          "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta"
+        }
+      }
+    },
+    "CapacityTargetSpec.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "clusters"
+      ],
+      "properties": {
+        "clusters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ClusterCapacityTarget.shipper.booking.com"
+          }
+        }
+      }
+    },
+    "CapacityTargetStatus.shipper.booking.com": {
+      "type": "object",
+      "properties": {
+        "clusters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ClusterCapacityStatus.shipper.booking.com"
+          }
+        }
+      }
+    },
+    "Chart.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "name",
+        "version",
+        "repoUrl"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "repoUrl": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "Cluster.shipper.booking.com": {
+      "description": "An Cluster is a cluster we're deploying to.",
+      "type": "object",
+      "required": [
+        "spec",
+        "status"
+      ],
+      "properties": {
+        "apiVersion": {
+          "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"
+        },
+        "spec": {
+          "$ref": "#/definitions/ClusterSpec.shipper.booking.com"
+        },
+        "status": {
+          "description": "Most recently observed status of the order / +optional",
+          "$ref": "#/definitions/ClusterStatus.shipper.booking.com"
+        }
+      }
+    },
+    "ClusterCapacityCondition.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "type",
+        "status"
+      ],
+      "properties": {
+        "lastTransitionTime": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.Time"
+        },
+        "message": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "ClusterCapacityReport.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "owner"
+      ],
+      "properties": {
+        "breakdown": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ClusterCapacityReportBreakdown.shipper.booking.com"
+          }
+        },
+        "owner": {
+          "$ref": "#/definitions/ClusterCapacityReportOwner.shipper.booking.com"
+        }
+      }
+    },
+    "ClusterCapacityReportBreakdown.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "count",
+        "status",
+        "type"
+      ],
+      "properties": {
+        "containers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ClusterCapacityReportContainerBreakdown.shipper.booking.com"
+          }
+        },
+        "count": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "ClusterCapacityReportContainerBreakdown.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "name",
+        "states"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "states": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ClusterCapacityReportContainerStateBreakdown.shipper.booking.com"
+          }
+        }
+      }
+    },
+    "ClusterCapacityReportContainerBreakdownExample.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "pod"
+      ],
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "pod": {
+          "type": "string"
+        }
+      }
+    },
+    "ClusterCapacityReportContainerStateBreakdown.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "count",
+        "example",
+        "type"
+      ],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "example": {
+          "$ref": "#/definitions/ClusterCapacityReportContainerBreakdownExample.shipper.booking.com"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "ClusterCapacityReportOwner.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "ClusterCapacityStatus.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "name",
+        "availableReplicas",
+        "achievedPercent"
+      ],
+      "properties": {
+        "achievedPercent": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "availableReplicas": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ClusterCapacityCondition.shipper.booking.com"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "reports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ClusterCapacityReport.shipper.booking.com"
+          }
+        },
+        "sadPods": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PodStatus.shipper.booking.com"
+          }
+        }
+      }
+    },
+    "ClusterCapacityTarget.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "name",
+        "percent",
+        "totalReplicaCount"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "percent": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "totalReplicaCount": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "ClusterInstallationCondition.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "type",
+        "status"
+      ],
+      "properties": {
+        "lastTransitionTime": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.Time"
+        },
+        "message": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "ClusterInstallationStatus.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "name",
+        "status"
+      ],
+      "properties": {
+        "conditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ClusterInstallationCondition.shipper.booking.com"
+          }
+        },
+        "message": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "ClusterList.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "metadata",
+        "items"
+      ],
+      "properties": {
+        "apiVersion": {
+          "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Cluster.shipper.booking.com"
+          }
+        },
+        "kind": {
+          "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta"
+        }
+      }
+    },
+    "ClusterRequirements.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "regions"
+      ],
+      "properties": {
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "regions": {
+          "description": "it is an error to not specify any regions",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RegionRequirement.shipper.booking.com"
+          }
+        }
+      }
+    },
+    "ClusterSchedulerSettings.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "unschedulable"
+      ],
+      "properties": {
+        "identity": {
+          "type": "string"
+        },
+        "unschedulable": {
+          "type": "boolean"
+        },
+        "weight": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "ClusterSpec.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "capabilities",
+        "region",
+        "apiMaster",
+        "scheduler"
+      ],
+      "properties": {
+        "apiMaster": {
+          "type": "string"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "region": {
+          "type": "string"
+        },
+        "scheduler": {
+          "$ref": "#/definitions/ClusterSchedulerSettings.shipper.booking.com"
+        }
+      }
+    },
+    "ClusterStatus.shipper.booking.com": {
+      "description": "NOTE(btyler) when we introduce capacity based scheduling, the capacity can be collected by a cluster controller and stored in cluster.status",
+      "type": "object",
+      "required": [
+        "inService"
+      ],
+      "properties": {
+        "inService": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ClusterTrafficCondition.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "type",
+        "status"
+      ],
+      "properties": {
+        "lastTransitionTime": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.Time"
+        },
+        "message": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "ClusterTrafficStatus.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "name",
+        "achievedTraffic",
+        "status",
+        "conditions"
+      ],
+      "properties": {
+        "achievedTraffic": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ClusterTrafficCondition.shipper.booking.com"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "ClusterTrafficTarget.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "name",
+        "weight"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "weight": {
+          "description": "apimachinery intstr for percentages?",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "InstallationTarget.shipper.booking.com": {
+      "description": "An InstallationTarget defines the goal state for # of pods for incumbent and contender versions. This is used by the StrategyController to change the state of the cluster to satisfy a single step of a Strategy.",
+      "type": "object",
+      "required": [
+        "spec"
+      ],
+      "properties": {
+        "apiVersion": {
+          "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"
+        },
+        "spec": {
+          "$ref": "#/definitions/InstallationTargetSpec.shipper.booking.com"
+        },
+        "status": {
+          "$ref": "#/definitions/InstallationTargetStatus.shipper.booking.com"
+        }
+      }
+    },
+    "InstallationTargetList.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "metadata",
+        "items"
+      ],
+      "properties": {
+        "apiVersion": {
+          "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/InstallationTarget.shipper.booking.com"
+          }
+        },
+        "kind": {
+          "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta"
+        }
+      }
+    },
+    "InstallationTargetSpec.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "clusters",
+        "canOverride",
+        "chart"
+      ],
+      "properties": {
+        "canOverride": {
+          "type": "boolean"
+        },
+        "chart": {
+          "description": "XXX these are nullable because of migration",
+          "$ref": "#/definitions/Chart.shipper.booking.com"
+        },
+        "clusters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "values": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "InstallationTargetStatus.shipper.booking.com": {
+      "type": "object",
+      "properties": {
+        "clusters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ClusterInstallationStatus.shipper.booking.com"
+          }
+        }
+      }
+    },
+    "PodStatus.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "name",
+        "containers",
+        "initContainers",
+        "condition"
+      ],
+      "properties": {
+        "condition": {
+          "$ref": "#/definitions/io.k8s.api.core.v1.PodCondition"
+        },
+        "containers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/io.k8s.api.core.v1.ContainerStatus"
+          }
+        },
+        "initContainers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/io.k8s.api.core.v1.ContainerStatus"
+          }
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "RegionRequirement.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "replicas": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "Release.shipper.booking.com": {
+      "description": "A Release is the  defines the goal state for # of pods for incumbent and contender versions. This is used by the StrategyController to change the state of the cluster to satisfy a single step of a Strategy.",
+      "type": "object",
+      "required": [
+        "spec",
+        "status"
+      ],
+      "properties": {
+        "apiVersion": {
+          "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"
+        },
+        "spec": {
+          "$ref": "#/definitions/ReleaseSpec.shipper.booking.com"
+        },
+        "status": {
+          "$ref": "#/definitions/ReleaseStatus.shipper.booking.com"
+        }
+      }
+    },
+    "ReleaseCondition.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "type",
+        "status"
+      ],
+      "properties": {
+        "lastTransitionTime": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.Time"
+        },
+        "message": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "ReleaseEnvironment.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "chart",
+        "values",
+        "clusterRequirements"
+      ],
+      "properties": {
+        "chart": {
+          "description": "Chart spec: name, version, repoURL",
+          "$ref": "#/definitions/Chart.shipper.booking.com"
+        },
+        "clusterRequirements": {
+          "description": "requirements for target clusters for the deployment",
+          "$ref": "#/definitions/ClusterRequirements.shipper.booking.com"
+        },
+        "strategy": {
+          "$ref": "#/definitions/RolloutStrategy.shipper.booking.com"
+        },
+        "values": {
+          "description": "the inlined \"values.yaml\" to apply to the chart when rendering it XXX pointer here means it's null-able, do we want that?",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "ReleaseList.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "metadata",
+        "items"
+      ],
+      "properties": {
+        "apiVersion": {
+          "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Release.shipper.booking.com"
+          }
+        },
+        "kind": {
+          "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta"
+        }
+      }
+    },
+    "ReleaseSpec.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "targetStep",
+        "environment"
+      ],
+      "properties": {
+        "environment": {
+          "$ref": "#/definitions/ReleaseEnvironment.shipper.booking.com"
+        },
+        "targetStep": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "ReleaseStatus.shipper.booking.com": {
+      "description": "this will likely grow into a struct with interesting fields",
+      "type": "object",
+      "properties": {
+        "achievedStep": {
+          "$ref": "#/definitions/AchievedStep.shipper.booking.com"
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ReleaseCondition.shipper.booking.com"
+          }
+        },
+        "strategy": {
+          "$ref": "#/definitions/ReleaseStrategyStatus.shipper.booking.com"
+        }
+      }
+    },
+    "ReleaseStrategyCondition.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "type",
+        "status"
+      ],
+      "properties": {
+        "lastTransitionTime": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.Time"
+        },
+        "message": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "step": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "ReleaseStrategyState.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "waitingForInstallation",
+        "waitingForCapacity",
+        "waitingForTraffic",
+        "waitingForCommand"
+      ],
+      "properties": {
+        "waitingForCapacity": {
+          "type": "string"
+        },
+        "waitingForCommand": {
+          "type": "string"
+        },
+        "waitingForInstallation": {
+          "type": "string"
+        },
+        "waitingForTraffic": {
+          "type": "string"
+        }
+      }
+    },
+    "ReleaseStrategyStatus.shipper.booking.com": {
+      "type": "object",
+      "properties": {
+        "conditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ReleaseStrategyCondition.shipper.booking.com"
+          }
+        },
+        "state": {
+          "$ref": "#/definitions/ReleaseStrategyState.shipper.booking.com"
+        }
+      }
+    },
+    "RolloutBlock.shipper.booking.com": {
+      "description": "A RolloutBlock defines the a state where rollouts are blocked, locally or globally. This is used by the ApplicationController to disable rollouts.",
+      "type": "object",
+      "required": [
+        "spec",
+        "status"
+      ],
+      "properties": {
+        "apiVersion": {
+          "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"
+        },
+        "spec": {
+          "$ref": "#/definitions/RolloutBlockSpec.shipper.booking.com"
+        },
+        "status": {
+          "$ref": "#/definitions/RolloutBlockStatus.shipper.booking.com"
+        }
+      }
+    },
+    "RolloutBlockAuthor.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "type",
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "RolloutBlockList.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "metadata",
+        "items"
+      ],
+      "properties": {
+        "apiVersion": {
+          "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RolloutBlock.shipper.booking.com"
+          }
+        },
+        "kind": {
+          "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta"
+        }
+      }
+    },
+    "RolloutBlockOverrides.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "application",
+        "release"
+      ],
+      "properties": {
+        "application": {
+          "type": "string"
+        },
+        "release": {
+          "type": "string"
+        }
+      }
+    },
+    "RolloutBlockSpec.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "message",
+        "author"
+      ],
+      "properties": {
+        "author": {
+          "$ref": "#/definitions/RolloutBlockAuthor.shipper.booking.com"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "RolloutBlockStatus.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "overrides"
+      ],
+      "properties": {
+        "overrides": {
+          "$ref": "#/definitions/RolloutBlockOverrides.shipper.booking.com"
+        }
+      }
+    },
+    "RolloutStrategy.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "steps"
+      ],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RolloutStrategyStep.shipper.booking.com"
+          }
+        }
+      }
+    },
+    "RolloutStrategyStep.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "name",
+        "capacity",
+        "traffic"
+      ],
+      "properties": {
+        "capacity": {
+          "$ref": "#/definitions/RolloutStrategyStepValue.shipper.booking.com"
+        },
+        "name": {
+          "type": "string"
+        },
+        "traffic": {
+          "$ref": "#/definitions/RolloutStrategyStepValue.shipper.booking.com"
+        }
+      }
+    },
+    "RolloutStrategyStepValue.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "incumbent",
+        "contender"
+      ],
+      "properties": {
+        "contender": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "incumbent": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "TrafficTarget.shipper.booking.com": {
+      "description": "A TrafficTarget defines the goal state for traffic split between incumbent and contender versions. This is used by the StrategyController to change the state of the service mesh to satisfy a single step of a Strategy.",
+      "type": "object",
+      "required": [
+        "spec"
+      ],
+      "properties": {
+        "apiVersion": {
+          "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"
+        },
+        "spec": {
+          "$ref": "#/definitions/TrafficTargetSpec.shipper.booking.com"
+        },
+        "status": {
+          "$ref": "#/definitions/TrafficTargetStatus.shipper.booking.com"
+        }
+      }
+    },
+    "TrafficTargetList.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "metadata",
+        "items"
+      ],
+      "properties": {
+        "apiVersion": {
+          "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TrafficTarget.shipper.booking.com"
+          }
+        },
+        "kind": {
+          "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta"
+        }
+      }
+    },
+    "TrafficTargetSpec.shipper.booking.com": {
+      "type": "object",
+      "required": [
+        "clusters"
+      ],
+      "properties": {
+        "clusters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ClusterTrafficTarget.shipper.booking.com"
+          }
+        }
+      }
+    },
+    "TrafficTargetStatus.shipper.booking.com": {
+      "type": "object",
+      "properties": {
+        "clusters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ClusterTrafficStatus.shipper.booking.com"
+          }
+        }
+      }
+    }
+  }
+}
