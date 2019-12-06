@@ -296,7 +296,7 @@ func teardownNamespace(name string) {
 
 func purgeTestNamespaces() {
 	req, err := labels.NewRequirement(
-		shippertesting.TestLabel,
+		shippertesting.E2ETestNamespaceLabel,
 		selection.Exists,
 		[]string{},
 	)
@@ -352,7 +352,7 @@ func testNamespace(name string) *corev1.Namespace {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
-				shippertesting.TestLabel: name,
+				shippertesting.E2ETestNamespaceLabel: name,
 			},
 		},
 	}

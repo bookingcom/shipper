@@ -28,51 +28,6 @@ func NewMissingShipperLabelError(tt *shipper.TrafficTarget, label string) Missin
 	}
 }
 
-type MissingTrafficWeightsForClusterError struct {
-	ns          string
-	appName     string
-	clusterName string
-}
-
-func (e MissingTrafficWeightsForClusterError) Error() string {
-	return fmt.Sprintf(`Application "%s/%s" has no traffic weights for cluster %s`,
-		e.ns, e.appName, e.clusterName)
-}
-
-func (e MissingTrafficWeightsForClusterError) ShouldRetry() bool {
-	return false
-}
-
-func NewMissingTrafficWeightsForClusterError(ns, appName, clusterName string) MissingTrafficWeightsForClusterError {
-	return MissingTrafficWeightsForClusterError{
-		ns:          ns,
-		appName:     appName,
-		clusterName: clusterName,
-	}
-}
-
-type MissingTargetClusterSelectorError struct {
-	ns          string
-	serviceName string
-}
-
-func (e MissingTargetClusterSelectorError) ShouldRetry() bool {
-	return true
-}
-
-func (e MissingTargetClusterSelectorError) Error() string {
-	return fmt.Sprintf(
-		"service %s/%s does not have a selector set. this means we cannot do label-based canary deployment",
-		e.ns, e.serviceName)
-}
-
-func NewTargetClusterServiceMissesSelectorError(ns, serviceName string) MissingTargetClusterSelectorError {
-	return MissingTargetClusterSelectorError{
-		ns:          ns,
-		serviceName: serviceName,
-	}
-}
-
 type MultipleTrafficTargetsForReleaseError struct {
 	ns          string
 	releaseName string
@@ -94,24 +49,4 @@ func NewMultipleTrafficTargetsForReleaseError(ns, releaseName string, ttNames []
 		releaseName: releaseName,
 		ttNames:     ttNames,
 	}
-}
-
-type TargetClusterMathError struct {
-	releaseName  string
-	idlePodCount int
-	missingCount int
-}
-
-func NewTargetClusterMathError(releaseName string, idlePodCount, missingCount int) TargetClusterMathError {
-	return TargetClusterMathError{
-		releaseName:  releaseName,
-		idlePodCount: idlePodCount,
-		missingCount: missingCount,
-	}
-}
-
-func (e TargetClusterMathError) Error() string {
-	return fmt.Sprintf(
-		"release error (%q): the math is broken: there aren't enough idle pods (%d) to meet requested increase in traffic pods (%d)",
-		e.releaseName, e.idlePodCount, e.missingCount)
 }
