@@ -34,15 +34,14 @@ import (
 
 const (
 	AgentName = "traffic-controller"
-)
 
-const (
-	ServerError      = "ServerError"
-	MissingService   = "MissingService"
-	InternalError    = "InternalError"
-	UnknownError     = "UnknownError"
-	PodsNotReady     = "PodsNotReady"
 	ClustersNotReady = "ClustersNotReady"
+	InProgress       = "InProgress"
+	InternalError    = "InternalError"
+	PodsNotReady     = "PodsNotReady"
+
+	TrafficTargetConditionChanged  = "TrafficTargetConditionChanged"
+	ClusterTrafficConditionChanged = "ClusterTrafficConditionChanged"
 )
 
 // Controller is the controller implementation for TrafficTarget resources.
@@ -212,10 +211,8 @@ func (c *Controller) syncHandler(key string) error {
 }
 
 func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.TrafficTarget, error) {
-	initialTT := tt.DeepCopy()
-
 	diff := diffutil.NewMultiDiff()
-	defer c.reportTrafficConditionChange(initialTT, diff)
+	defer c.reportConditionChange(tt, TrafficTargetConditionChanged, diff)
 
 	appName, ok := tt.Labels[shipper.AppLabel]
 	if !ok {
@@ -226,29 +223,19 @@ func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.T
 		return tt, err
 	}
 
-	syncingReleaseName, ok := tt.Labels[shipper.ReleaseLabel]
-	if !ok {
-		err := shippererrors.NewMissingShipperLabelError(tt, shipper.ReleaseLabel)
-		tt.Status.Conditions = targetutil.TransitionToNotOperational(
-			diff, tt.Status.Conditions,
-			InternalError, err.Error())
-		return tt, err
-	}
-
-	namespace := tt.Namespace
 	appSelector := labels.Set{shipper.AppLabel: appName}.AsSelector()
-	list, err := c.trafficTargetsLister.TrafficTargets(namespace).List(appSelector)
+	allTTs, err := c.trafficTargetsLister.TrafficTargets(tt.Namespace).List(appSelector)
 	if err != nil {
 		err := shippererrors.NewKubeclientListError(
 			shipper.SchemeGroupVersion.WithKind("TrafficTarget"),
-			namespace, appSelector, err)
+			tt.Namespace, appSelector, err)
 		tt.Status.Conditions = targetutil.TransitionToNotOperational(
 			diff, tt.Status.Conditions,
 			InternalError, err.Error())
 		return tt, err
 	}
 
-	shifter, err := newPodLabelShifter(appName, syncingReleaseName, namespace, list)
+	clusterReleaseWeights, err := buildClusterReleaseWeights(allTTs)
 	if err != nil {
 		tt.Status.Conditions = targetutil.TransitionToNotOperational(
 			diff, tt.Status.Conditions,
@@ -276,7 +263,7 @@ func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.T
 			curClusterStatuses[clusterSpec.Name] = clusterStatus
 		}
 
-		err := c.processTrafficTargetOnCluster(tt, &clusterSpec, clusterStatus, shifter)
+		err := c.processTrafficTargetOnCluster(tt, &clusterSpec, clusterStatus, clusterReleaseWeights)
 		if err != nil {
 			clusterErrors.Append(err)
 		}
@@ -311,95 +298,158 @@ func (c *Controller) processTrafficTargetOnCluster(
 	tt *shipper.TrafficTarget,
 	spec *shipper.ClusterTrafficTarget,
 	status *shipper.ClusterTrafficStatus,
-	shifter *podLabelShifter,
+	clusterReleaseWeights clusterReleaseWeights,
 ) error {
 	diff := diffutil.NewMultiDiff()
+	operationalCond := trafficutil.NewClusterTrafficCondition(
+		shipper.ClusterConditionTypeOperational,
+		corev1.ConditionUnknown,
+		"",
+		"")
+	readyCond := trafficutil.NewClusterTrafficCondition(
+		shipper.ClusterConditionTypeReady,
+		corev1.ConditionUnknown,
+		"",
+		"")
+
+	var achievedTraffic uint32
 	defer func() {
-		c.reportTrafficConditionChange(tt, diff)
+		status.AchievedTraffic = achievedTraffic
+
+		diff.Append(trafficutil.SetClusterTrafficCondition(status, *operationalCond))
+		diff.Append(trafficutil.SetClusterTrafficCondition(status, *readyCond))
+		c.reportConditionChange(tt, ClusterTrafficConditionChanged, diff)
 	}()
 
 	clientset, err := c.clusterClientStore.GetClient(spec.Name, AgentName)
 	if err != nil {
-		cond := trafficutil.NewClusterTrafficCondition(
+		operationalCond = trafficutil.NewClusterTrafficCondition(
 			shipper.ClusterConditionTypeOperational,
 			corev1.ConditionFalse,
-			ServerError,
+			InternalError,
 			err.Error(),
 		)
-		diff.Append(trafficutil.SetClusterTrafficCondition(status, *cond))
 
 		return err
 	}
 
-	informerFactory, err := c.clusterClientStore.GetInformerFactory(spec.Name)
+	appName := tt.Labels[shipper.AppLabel]
+	releaseName := tt.Labels[shipper.ReleaseLabel]
+
+	appPods, endpoints, err := c.getClusterObjects(spec.Name, tt.Namespace, appName)
 	if err != nil {
-		cond := trafficutil.NewClusterTrafficCondition(
+		operationalCond = trafficutil.NewClusterTrafficCondition(
 			shipper.ClusterConditionTypeOperational,
 			corev1.ConditionFalse,
-			ServerError,
+			InternalError,
 			err.Error(),
 		)
-		diff.Append(trafficutil.SetClusterTrafficCondition(status, *cond))
 
 		return err
 	}
 
-	cond := trafficutil.NewClusterTrafficCondition(
+	operationalCond = trafficutil.NewClusterTrafficCondition(
 		shipper.ClusterConditionTypeOperational,
 		corev1.ConditionTrue,
 		"",
 		"",
 	)
-	diff.Append(trafficutil.SetClusterTrafficCondition(status, *cond))
 
-	achievedWeight, err := shifter.SyncCluster(spec.Name, clientset, informerFactory)
-	if err != nil {
-		var reason string
+	trafficStatus := buildTrafficShiftingStatus(
+		spec.Name, appName, releaseName,
+		clusterReleaseWeights,
+		endpoints, appPods)
 
-		switch err.(type) {
-		case shippererrors.UnexpectedObjectCountFromSelectorError:
-			reason = MissingService
-		case shippererrors.KubeclientError:
-			reason = ServerError
-		case shippererrors.TargetClusterMathError:
-			reason = InternalError
-		default:
-			reason = UnknownError
-		}
+	// achievedTraffic is used by the defer at the top of this func
+	achievedTraffic = trafficStatus.achievedTrafficWeight
 
-		cond := trafficutil.NewClusterTrafficCondition(
-			shipper.ClusterConditionTypeReady,
-			corev1.ConditionFalse,
-			reason,
-			err.Error(),
-		)
-		diff.Append(trafficutil.SetClusterTrafficCondition(status, *cond))
-
-		return err
-	}
-
-	status.AchievedTraffic = achievedWeight
-
-	var readyCond *shipper.ClusterTrafficCondition
-	if achievedWeight == spec.Weight {
+	if trafficStatus.ready {
 		readyCond = trafficutil.NewClusterTrafficCondition(
 			shipper.ClusterConditionTypeReady,
 			corev1.ConditionTrue,
 			"",
 			"",
 		)
+
+		return nil
+	}
+
+	if trafficStatus.podsToShift != nil {
+		err := shiftPodLabels(clientset, trafficStatus.podsToShift)
+		if err != nil {
+			readyCond = trafficutil.NewClusterTrafficCondition(
+				shipper.ClusterConditionTypeReady,
+				corev1.ConditionFalse,
+				InternalError,
+				err.Error(),
+			)
+
+			return err
+		} else {
+			readyCond = trafficutil.NewClusterTrafficCondition(
+				shipper.ClusterConditionTypeReady,
+				corev1.ConditionFalse,
+				InProgress,
+				"",
+			)
+		}
 	} else {
 		readyCond = trafficutil.NewClusterTrafficCondition(
 			shipper.ClusterConditionTypeReady,
 			corev1.ConditionFalse,
 			PodsNotReady,
-			fmt.Sprintf("weight expected: %d, weight achieved: %d", spec.Weight, achievedWeight),
+			fmt.Sprintf(
+				"%d out of %d pods are not ready. this might require intervention, check the CapacityTarget for more information",
+				trafficStatus.podsReady, trafficStatus.podsLabeled),
 		)
 	}
 
-	diff.Append(trafficutil.SetClusterTrafficCondition(status, *readyCond))
-
 	return nil
+}
+
+func (c *Controller) getClusterObjects(cluster, ns, appName string) ([]*corev1.Pod, *corev1.Endpoints, error) {
+	informerFactory, err := c.clusterClientStore.GetInformerFactory(cluster)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	appSelector := labels.Set{shipper.AppLabel: appName}.AsSelector()
+	appPods, err := informerFactory.Core().V1().Pods().Lister().
+		Pods(ns).List(appSelector)
+	if err != nil {
+		return nil, nil, shippererrors.NewKubeclientListError(
+			corev1.SchemeGroupVersion.WithKind("Pod"),
+			ns, appSelector, err)
+	}
+
+	serviceSelector := labels.Set(map[string]string{
+		shipper.AppLabel: appName,
+		shipper.LBLabel:  shipper.LBForProduction,
+	}).AsSelector()
+	serviceGVK := corev1.SchemeGroupVersion.WithKind("Service")
+	services, err := informerFactory.Core().V1().Services().Lister().
+		Services(ns).List(serviceSelector)
+	if err != nil {
+		return nil, nil, shippererrors.NewKubeclientListError(
+			serviceGVK, ns, serviceSelector, err)
+	}
+
+	if len(services) != 1 {
+		err := shippererrors.NewUnexpectedObjectCountFromSelectorError(
+			serviceSelector, serviceGVK, 1, len(services))
+		return nil, nil, err
+	}
+
+	svc := services[0]
+
+	endpoints, err := informerFactory.Core().V1().Endpoints().Lister().
+		Endpoints(svc.Namespace).Get(svc.Name)
+	if err != nil {
+		return nil, nil, shippererrors.NewKubeclientGetError(svc.Namespace, svc.Name, err).
+			WithCoreV1Kind("Endpoints")
+	}
+
+	return appPods, endpoints, nil
 }
 
 // enqueueTrafficTarget takes a TrafficTarget resource and converts it into a
@@ -476,8 +526,8 @@ func (c *Controller) enqueueTrafficTargetsFromEndpoints(obj interface{}) {
 	}
 }
 
-func (c *Controller) reportTrafficConditionChange(tt *shipper.TrafficTarget, diff diffutil.Diff) {
+func (c *Controller) reportConditionChange(tt *shipper.TrafficTarget, reason string, diff diffutil.Diff) {
 	if !diff.IsEmpty() {
-		c.recorder.Event(tt, corev1.EventTypeNormal, "TrafficTargetConditionChanged", diff.String())
+		c.recorder.Event(tt, corev1.EventTypeNormal, reason, diff.String())
 	}
 }

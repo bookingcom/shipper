@@ -20,9 +20,11 @@ const (
 	ContextLines = 4
 
 	TestNamespace = "test-namespace"
-	TestLabel     = "shipper-e2e-test"
+	TestApp       = "shipper-test"
+	TestRegion    = "eu-west"
+	TestCluster   = "test-cluster"
 
-	TestRegion = "eu-west"
+	E2ETestNamespaceLabel = "shipper-e2e-test"
 )
 
 // CheckActions takes a slice of expected actions and a slice of observed
@@ -182,7 +184,7 @@ func YamlDiff(a interface{}, b interface{}) (string, error) {
 		B:        difflib.SplitLines(string(yamlActual)),
 		FromFile: "Expected",
 		ToFile:   "Actual",
-		Context:  4,
+		Context:  ContextLines,
 	}
 
 	return difflib.GetUnifiedDiffString(diff)
