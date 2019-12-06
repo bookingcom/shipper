@@ -8,6 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -76,13 +77,11 @@ func NewController(
 	}
 
 	klog.Info("Setting up event handlers")
-	// Set up an event handler for when TrafficTarget resources change.
 	trafficTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueAllTrafficTargets,
 		UpdateFunc: func(old, new interface{}) {
 			controller.enqueueAllTrafficTargets(new)
 		},
-		// The sync handler needs to cope with the case where the object was deleted.
 		DeleteFunc: controller.enqueueAllTrafficTargets,
 	})
 
@@ -92,18 +91,33 @@ func NewController(
 	return controller
 }
 
+// registerAppClusterEventHandlers listens to events on both Endpoints and
+// Pods. An event on an Endpoints object enqueues all traffic targets for an
+// app, as a change in one of them might affect the weight in the others. For
+// Pods, we only enqueue the owning traffic target, and only for adds and
+// deletes, as any changes relevant for traffic will be reflected in the
+// Endpoints object anyway. In case a new or deleted pod does change traffic
+// shifting in any way, the update to the traffic target itself will trigger a
+// new evaluation of all traffic targets for an app.
 func (c *Controller) registerAppClusterEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
-	handler := cache.FilteringResourceEventHandler{
+	informerFactory.Core().V1().Endpoints().Informer().AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: filters.BelongsToApp,
 		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc:    c.enqueueTrafficTargetsFromEndpoints,
-			DeleteFunc: c.enqueueTrafficTargetsFromEndpoints,
+			AddFunc:    c.enqueueAllTrafficTargets,
+			DeleteFunc: c.enqueueAllTrafficTargets,
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				c.enqueueTrafficTargetsFromEndpoints(newObj)
+				c.enqueueAllTrafficTargets(newObj)
 			},
 		},
-	}
-	informerFactory.Core().V1().Endpoints().Informer().AddEventHandler(handler)
+	})
+
+	informerFactory.Core().V1().Pods().Informer().AddEventHandler(cache.FilteringResourceEventHandler{
+		FilterFunc: filters.BelongsToRelease,
+		Handler: cache.ResourceEventHandlerFuncs{
+			AddFunc:    c.enqueueTrafficTargetFromPod,
+			DeleteFunc: c.enqueueTrafficTargetFromPod,
+		},
+	})
 }
 
 func (c *Controller) subscribeToAppClusterEvents(informerFactory kubeinformers.SharedInformerFactory) {
@@ -260,7 +274,6 @@ func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.T
 			clusterStatus = &shipper.ClusterTrafficStatus{
 				Name: clusterSpec.Name,
 			}
-			curClusterStatuses[clusterSpec.Name] = clusterStatus
 		}
 
 		err := c.processTrafficTargetOnCluster(tt, &clusterSpec, clusterStatus, clusterReleaseWeights)
@@ -276,7 +289,7 @@ func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.T
 	tt.Status.Clusters = newClusterStatuses
 	tt.Status.ObservedGeneration = tt.Generation
 
-	clustersNotReady := make([]string, 0)
+	clustersNotReady := []string{}
 	for _, clusterStatus := range tt.Status.Clusters {
 		if !clusterstatusutil.IsClusterTrafficReady(clusterStatus.Conditions) {
 			clustersNotReady = append(clustersNotReady, clusterStatus.Name)
@@ -466,18 +479,17 @@ func (c *Controller) enqueueTrafficTarget(obj interface{}) {
 }
 
 func (c *Controller) enqueueAllTrafficTargets(obj interface{}) {
-	trafficTarget, ok := obj.(*shipper.TrafficTarget)
+	kubeobj, ok := obj.(metav1.Object)
 	if !ok {
-		runtime.HandleError(fmt.Errorf("not a shipper.TrafficTarget: %#v", obj))
+		runtime.HandleError(fmt.Errorf("not a metav1.Object: %#v", obj))
 		return
 	}
 
-	namespace := trafficTarget.Namespace
-
-	appName, ok := trafficTarget.Labels[shipper.AppLabel]
+	namespace := kubeobj.GetNamespace()
+	appName, ok := kubeobj.GetLabels()[shipper.AppLabel]
 	if !ok {
-		runtime.HandleError(fmt.Errorf("TrafficTarget %s/%s is missing app label",
-			namespace, trafficTarget.Name))
+		runtime.HandleError(fmt.Errorf("object %q is missing label %s. FilterFunc not working?",
+			shippercontroller.MetaKey(kubeobj), shipper.AppLabel))
 		return
 	}
 
@@ -487,6 +499,7 @@ func (c *Controller) enqueueAllTrafficTargets(obj interface{}) {
 		runtime.HandleError(fmt.Errorf(
 			"cannot list traffic targets for app '%s/%s': %s",
 			namespace, appName, err))
+		return
 	}
 
 	for _, tt := range trafficTargets {
@@ -494,36 +507,43 @@ func (c *Controller) enqueueAllTrafficTargets(obj interface{}) {
 	}
 }
 
-func (c *Controller) enqueueTrafficTargetsFromEndpoints(obj interface{}) {
-	endpoints, ok := obj.(*corev1.Endpoints)
+func (c *Controller) enqueueTrafficTargetFromPod(obj interface{}) {
+	pod, ok := obj.(*corev1.Pod)
 	if !ok {
-		runtime.HandleError(fmt.Errorf("not a corev1.Endpoints: %#v", obj))
+		runtime.HandleError(fmt.Errorf("not a corev1.Pod: %#v", obj))
 		return
 	}
 
-	appName, ok := endpoints.GetLabels()[shipper.AppLabel]
+	release, ok := pod.GetLabels()[shipper.ReleaseLabel]
 	if !ok {
 		runtime.HandleError(fmt.Errorf(
 			"object %q does not have label %s. FilterFunc not working?",
-			shippercontroller.MetaKey(endpoints), shipper.AppLabel))
+			shippercontroller.MetaKey(pod), shipper.ReleaseLabel))
 		return
 	}
 
-	namespace := endpoints.Namespace
-	selector := labels.Set{shipper.AppLabel: appName}.AsSelector()
+	namespace := pod.GetNamespace()
+	selector := labels.Set{shipper.ReleaseLabel: release}.AsSelector()
+	gvk := shipper.SchemeGroupVersion.WithKind("TrafficTarget")
 	trafficTargets, err := c.trafficTargetsLister.TrafficTargets(namespace).List(selector)
 	if err != nil {
-		err = shippererrors.NewKubeclientListError(
-			shipper.SchemeGroupVersion.WithKind("TrafficTarget"),
-			namespace, selector, err)
 		runtime.HandleError(fmt.Errorf(
-			"cannot list traffic targets for app '%s/%s': %s",
-			namespace, appName, err))
+			"cannot list traffic targets for release '%s/%s': %s",
+			namespace, release, err))
+		return
 	}
 
-	for _, tt := range trafficTargets {
-		c.enqueueTrafficTarget(tt)
+	expected := 1
+	if got := len(trafficTargets); got != 1 {
+		err := shippererrors.NewUnexpectedObjectCountFromSelectorError(
+			selector, gvk, expected, got)
+		runtime.HandleError(fmt.Errorf(
+			"cannot get traffic target for release '%s/%s': %s",
+			namespace, release, err))
+		return
 	}
+
+	c.enqueueTrafficTarget(trafficTargets[0])
 }
 
 func (c *Controller) reportConditionChange(tt *shipper.TrafficTarget, reason string, diff diffutil.Diff) {
