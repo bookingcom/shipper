@@ -2,6 +2,7 @@ package application
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/labels"
 	"math"
 	"time"
 
@@ -98,6 +99,10 @@ func NewController(
 			c.enqueueRel(new)
 		},
 		DeleteFunc: c.enqueueRel,
+	})
+
+	rbInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		DeleteFunc: c.enqueueAppFromRolloutBlock,
 	})
 
 	return c
@@ -201,6 +206,25 @@ func (c *Controller) enqueueApp(obj interface{}) {
 	}
 
 	c.workqueue.Add(key)
+}
+
+func (c *Controller) enqueueAppFromRolloutBlock(obj interface{}) {
+	_, ok := obj.(*shipper.RolloutBlock)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.RolloutBlock: %#v", obj))
+		return
+	}
+
+	// update condition for all applications, they are not blocked anymore
+	apps, err := c.appLister.List(labels.Everything())
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("error fetching applications: %s", err))
+		return
+	}
+
+	for _, app := range apps {
+		c.enqueueApp(app)
+	}
 }
 
 func (c *Controller) syncApplication(key string) error {
