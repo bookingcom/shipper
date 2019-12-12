@@ -2,6 +2,7 @@ package release
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/labels"
 	"reflect"
 	"time"
 
@@ -151,6 +152,11 @@ func NewController(
 				controller.enqueueRelease(newObj)
 			},
 			DeleteFunc: controller.enqueueAppFromRelease,
+		})
+
+	rolloutBlockInformer.Informer().AddEventHandler(
+		cache.ResourceEventHandlerFuncs{
+			DeleteFunc: controller.enqueueReleaseFromRolloutBlock,
 		})
 
 	eventHandler := cache.ResourceEventHandlerFuncs{
@@ -487,6 +493,25 @@ func (c *Controller) enqueueAppFromRelease(obj interface{}) {
 	}
 
 	c.applicationWorkqueue.Add(appName)
+}
+
+func (c *Controller) enqueueReleaseFromRolloutBlock(obj interface{}) {
+	_, ok := obj.(*shipper.RolloutBlock)
+	if !ok {
+		runtime.HandleError(fmt.Errorf("not a shipper.RolloutBlock: %#v", obj))
+		return
+	}
+
+	// update condition for all releases, they are not blocked anymore
+	releases, err := c.releaseLister.List(labels.Everything())
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("error fetching releases: %s", err))
+		return
+	}
+
+	for _, rel := range releases {
+		c.enqueueReleaseRateLimited(rel)
+	}
 }
 
 func (c *Controller) enqueueReleaseFromAssociatedObject(obj interface{}) {
