@@ -1,26 +1,17 @@
 package installation
 
 import (
-	"bytes"
-	"fmt"
-	"io/ioutil"
-	"path"
-	"reflect"
 	"regexp"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
-	"k8s.io/helm/pkg/chartutil"
-	"k8s.io/helm/pkg/proto/hapi/chart"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
@@ -28,78 +19,27 @@ import (
 	"github.com/bookingcom/shipper/pkg/util/anchor"
 )
 
-var localFetchChart = func(chartspec *shipper.Chart) (*chart.Chart, error) {
-	re := regexp.MustCompile(`[^a-zA-Z0-9]+`)
-	pathurl := re.ReplaceAllString(chartspec.RepoURL, "_")
-	data, err := ioutil.ReadFile(
-		path.Join(
-			"testdata",
-			"chart-cache",
-			pathurl,
-			fmt.Sprintf("%s-%s.tgz", chartspec.Name, chartspec.Version),
-		))
-	if err != nil {
-		return nil, err
-	}
-	buf := bytes.NewBuffer(data)
-	return chartutil.LoadArchive(buf)
-}
+var restConfig *rest.Config
 
-// apiResourceList contains a list of APIResources containing some of v1
-// resources from Kubernetes, since fake clients by default don't contain any
-// reference which resources it can handle.
-var apiResourceList = []*metav1.APIResourceList{
-	{
-		GroupVersion: "v1",
-		APIResources: []metav1.APIResource{
-			{
-				Kind:       "Namespace",
-				Namespaced: false,
-				Name:       "namespaces",
-				Group:      "",
-			},
-			{
-				Kind:       "Service",
-				Namespaced: true,
-				Name:       "services",
-				Group:      "",
-			},
-			{
-				Kind:       "Pod",
-				Namespaced: true,
-				Name:       "pods",
-				Group:      "",
-			},
-		},
-	},
-	{
-		GroupVersion: "apps/v1",
-		APIResources: []metav1.APIResource{
-
-			{
-				Kind:       "Deployment",
-				Namespaced: true,
-				Name:       "deployments",
-			},
-		},
-	},
+func newInstaller(it *shipper.InstallationTarget) *Installer {
+	return NewInstaller(localFetchChart, it)
 }
 
 // TestInstaller tests the installation process using a Installer directly.
 func TestInstaller(t *testing.T) {
 	// First install.
-	ImplTestInstaller(t, nil, nil)
+	ImplTestInstaller(t, nil)
 
 	// With existing remote service.
 	notOwnedService := loadService("no-owners")
-	ImplTestInstaller(t, nil, []runtime.Object{notOwnedService})
+	ImplTestInstaller(t, []runtime.Object{notOwnedService})
 
 	// With existing remote service.
 	ownedService := loadService("existing-owners")
-	ImplTestInstaller(t, nil, []runtime.Object{ownedService})
+	ImplTestInstaller(t, []runtime.Object{ownedService})
 }
 
-func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObjects []runtime.Object) {
+func ImplTestInstaller(t *testing.T, kubeObjects []runtime.Object) {
 	cluster := buildCluster("minikube-a")
 	appName := "reviews-api"
 	testNs := "test-namespace"
@@ -110,11 +50,8 @@ func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObject
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
-	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, shipperObjects, objectsPerClusterMap{cluster.Name: kubeObjects})
-
-	fakePair := clientsPerCluster[cluster.Name]
-
-	restConfig := &rest.Config{}
+	f := newFixture(objectsPerClusterMap{cluster.Name: kubeObjects})
+	fakeCluster := f.Clusters[cluster.Name]
 
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "reviews-api-anchor"),
@@ -130,15 +67,15 @@ func ImplTestInstaller(t *testing.T, shipperObjects []runtime.Object, kubeObject
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, nil),
 	}
 
-	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err != nil {
+	if err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	shippertesting.ShallowCheckActions(expectedActions, fakePair.Client.Actions(), t)
-	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.DynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakeCluster.Client.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakeCluster.DynamicClient.Actions(), t)
 
-	filteredActions := filterActions(fakePair.Client.Actions(), "create")
-	filteredActions = append(filteredActions, filterActions(fakePair.DynamicClient.Actions(), "create")...)
+	filteredActions := filterActions(fakeCluster.Client.Actions(), "create")
+	filteredActions = append(filteredActions, filterActions(fakeCluster.DynamicClient.Actions(), "create")...)
 
 	validateAction(t, filteredActions[0], "ConfigMap")
 	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
@@ -184,17 +121,16 @@ func validateServiceCreateAction(t *testing.T, existingService *corev1.Service, 
 
 	_, expectedUnstructuredServiceContent := extractUnstructuredContent(scheme, existingService)
 
-	uMetadata := unstructuredContent["metadata"].(map[string]interface{})
-	sMetadata := expectedUnstructuredServiceContent["metadata"].(map[string]interface{})
-
-	if !reflect.DeepEqual(uMetadata, sMetadata) {
-		t.Fatalf("metadata mismatch in Service (-want +got): %s", cmp.Diff(sMetadata, uMetadata))
+	uMetadata := unstructuredContent["metadata"]
+	sMetadata := expectedUnstructuredServiceContent["metadata"]
+	if eq, diff := shippertesting.DeepEqualDiff(uMetadata, sMetadata); !eq {
+		t.Fatalf("metadata mismatch in Service:\n%s", diff)
 	}
 
-	uSpec := unstructuredContent["spec"].(map[string]interface{})
-	sSpec := expectedUnstructuredServiceContent["spec"].(map[string]interface{})
-	if !reflect.DeepEqual(uSpec, sSpec) {
-		t.Fatalf("spec mismatch in Service (-want +got): %s", cmp.Diff(sSpec, uSpec))
+	uSpec := unstructuredContent["spec"]
+	sSpec := expectedUnstructuredServiceContent["spec"]
+	if eq, diff := shippertesting.DeepEqualDiff(uSpec, sSpec); !eq {
+		t.Fatalf("spec mismatch in Service:\n%s", diff)
 	}
 }
 
@@ -257,12 +193,11 @@ func TestInstallerBrokenChartTarball(t *testing.T) {
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	installer := newInstaller(it)
 
-	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: []runtime.Object{}})
+	f := newFixture(objectsPerClusterMap{cluster.Name: []runtime.Object{}})
+	fakeCluster := f.Clusters[cluster.Name]
 
-	fakePair := clientsPerCluster[cluster.Name]
-
-	restConfig := &rest.Config{}
-	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err == nil {
+	err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder)
+	if err == nil {
 		t.Fatal("installRelease should fail, invalid tarball")
 	}
 }
@@ -281,12 +216,11 @@ func TestInstallerChartTarballBrokenService(t *testing.T) {
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	installer := newInstaller(it)
 
-	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: []runtime.Object{}})
+	f := newFixture(objectsPerClusterMap{cluster.Name: []runtime.Object{}})
+	fakeCluster := f.Clusters[cluster.Name]
 
-	fakePair := clientsPerCluster[cluster.Name]
-
-	restConfig := &rest.Config{}
-	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err == nil {
+	err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder)
+	if err == nil {
 		t.Fatal("installRelease should fail, invalid tarball")
 	}
 }
@@ -306,13 +240,10 @@ func TestInstallerChartTarballInvalidDeploymentName(t *testing.T) {
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	installer := newInstaller(it)
 
-	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: []runtime.Object{}})
+	f := newFixture(objectsPerClusterMap{cluster.Name: []runtime.Object{}})
+	fakeCluster := f.Clusters[cluster.Name]
 
-	fakePair := clientsPerCluster[cluster.Name]
-
-	restConfig := &rest.Config{}
-
-	err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder)
+	err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder)
 	if err == nil {
 		t.Fatal("installRelease should fail, invalid deployment name")
 	}
@@ -336,12 +267,11 @@ func TestInstallerBrokenChartContents(t *testing.T) {
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	installer := newInstaller(it)
 
-	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
+	f := newFixture(objectsPerClusterMap{cluster.Name: nil})
+	fakeCluster := f.Clusters[cluster.Name]
 
-	fakePair := clientsPerCluster[cluster.Name]
-
-	restConfig := &rest.Config{}
-	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err == nil {
+	err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder)
+	if err == nil {
 		t.Fatal("installRelease should fail, invalid k8s objects")
 	}
 }
@@ -359,11 +289,8 @@ func TestInstallerSingleServiceNoLB(t *testing.T) {
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
-	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
-
-	fakePair := clientsPerCluster[cluster.Name]
-
-	restConfig := &rest.Config{}
+	f := newFixture(objectsPerClusterMap{cluster.Name: nil})
+	fakeCluster := f.Clusters[cluster.Name]
 
 	expectedDynamicActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.0.1-reviews-api"),
@@ -379,15 +306,15 @@ func TestInstallerSingleServiceNoLB(t *testing.T) {
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
 
-	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err != nil {
+	if err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.DynamicClient.Actions(), t)
-	shippertesting.ShallowCheckActions(expectedActions, fakePair.Client.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakeCluster.DynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakeCluster.Client.Actions(), t)
 
-	filteredActions := filterActions(fakePair.Client.Actions(), "create")
-	filteredActions = append(filteredActions, filterActions(fakePair.DynamicClient.Actions(), "create")...)
+	filteredActions := filterActions(fakeCluster.Client.Actions(), "create")
+	filteredActions = append(filteredActions, filterActions(fakeCluster.DynamicClient.Actions(), "create")...)
 
 	validateAction(t, filteredActions[0], "ConfigMap")
 	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
@@ -407,11 +334,8 @@ func TestInstallerSingleServiceWithLB(t *testing.T) {
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
-	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
-
-	fakePair := clientsPerCluster[cluster.Name]
-
-	restConfig := &rest.Config{}
+	f := newFixture(objectsPerClusterMap{cluster.Name: nil})
+	fakeCluster := f.Clusters[cluster.Name]
 
 	expectedDynamicActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.0.1-reviews-api"),
@@ -427,15 +351,15 @@ func TestInstallerSingleServiceWithLB(t *testing.T) {
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
 
-	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err != nil {
+	if err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.DynamicClient.Actions(), t)
-	shippertesting.ShallowCheckActions(expectedActions, fakePair.Client.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakeCluster.DynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakeCluster.Client.Actions(), t)
 
-	filteredActions := filterActions(fakePair.Client.Actions(), "create")
-	filteredActions = append(filteredActions, filterActions(fakePair.DynamicClient.Actions(), "create")...)
+	filteredActions := filterActions(fakeCluster.Client.Actions(), "create")
+	filteredActions = append(filteredActions, filterActions(fakeCluster.DynamicClient.Actions(), "create")...)
 
 	validateAction(t, filteredActions[0], "ConfigMap")
 	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
@@ -455,13 +379,10 @@ func TestInstallerMultiServiceNoLB(t *testing.T) {
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
-	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
+	f := newFixture(objectsPerClusterMap{cluster.Name: nil})
+	fakeCluster := f.Clusters[cluster.Name]
 
-	fakePair := clientsPerCluster[cluster.Name]
-
-	restConfig := &rest.Config{}
-
-	err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder)
+	err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder)
 	if err == nil {
 		t.Fatal("Expected an error, none raised")
 	}
@@ -485,11 +406,8 @@ func TestInstallerMultiServiceWithLB(t *testing.T) {
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
-	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
-
-	fakePair := clientsPerCluster[cluster.Name]
-
-	restConfig := &rest.Config{}
+	f := newFixture(objectsPerClusterMap{cluster.Name: nil})
+	fakeCluster := f.Clusters[cluster.Name]
 
 	expectedDynamicActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.0.1-reviews-api"),
@@ -508,15 +426,15 @@ func TestInstallerMultiServiceWithLB(t *testing.T) {
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
 
-	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err != nil {
+	if err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.DynamicClient.Actions(), t)
-	shippertesting.ShallowCheckActions(expectedActions, fakePair.Client.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakeCluster.DynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakeCluster.Client.Actions(), t)
 
-	filteredActions := filterActions(fakePair.Client.Actions(), "create")
-	filteredActions = append(filteredActions, filterActions(fakePair.DynamicClient.Actions(), "create")...)
+	filteredActions := filterActions(fakeCluster.Client.Actions(), "create")
+	filteredActions = append(filteredActions, filterActions(fakeCluster.DynamicClient.Actions(), "create")...)
 
 	validateAction(t, filteredActions[0], "ConfigMap")
 	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
@@ -539,11 +457,8 @@ func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
 	primarySvc.SetOwnerReferences(append(primarySvc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 	secondarySvc.SetOwnerReferences(append(secondarySvc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
-	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
-
-	fakePair := clientsPerCluster[cluster.Name]
-
-	restConfig := &rest.Config{}
+	f := newFixture(objectsPerClusterMap{cluster.Name: nil})
+	fakeCluster := f.Clusters[cluster.Name]
 
 	expectedDynamicActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.1.0-nginx"),
@@ -562,15 +477,15 @@ func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
 
-	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err != nil {
+	if err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	shippertesting.ShallowCheckActions(expectedActions, fakePair.Client.Actions(), t)
-	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.DynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakeCluster.Client.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakeCluster.DynamicClient.Actions(), t)
 
-	filteredActions := filterActions(fakePair.Client.Actions(), "create")
-	filteredActions = append(filteredActions, filterActions(fakePair.DynamicClient.Actions(), "create")...)
+	filteredActions := filterActions(fakeCluster.Client.Actions(), "create")
+	filteredActions = append(filteredActions, filterActions(fakeCluster.DynamicClient.Actions(), "create")...)
 	validateAction(t, filteredActions[0], "ConfigMap")
 	validateServiceCreateAction(t, primarySvc, validateAction(t, filteredActions[1], "Service"))
 	validateServiceCreateAction(t, secondarySvc, validateAction(t, filteredActions[2], "Service"))
@@ -594,13 +509,10 @@ func TestInstallerServiceWithReleaseNoWorkaround(t *testing.T) {
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
-	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(apiResourceList, nil, objectsPerClusterMap{cluster.Name: nil})
+	f := newFixture(objectsPerClusterMap{cluster.Name: nil})
+	fakeCluster := f.Clusters[cluster.Name]
 
-	fakePair := clientsPerCluster[cluster.Name]
-
-	restConfig := &rest.Config{}
-
-	err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder)
+	err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder)
 	if err == nil {
 		t.Fatal("Expected error, none raised")
 	}
@@ -631,15 +543,13 @@ func TestInstallerNoOverride(t *testing.T) {
 	svc.ObjectMeta.Namespace = testNs
 	svc.ObjectMeta.SetLabels(labels)
 
-	deployment := loadDeployment("baseline")
+	deployment := buildDeployment()
 	deployment.ObjectMeta.Namespace = testNs
 	deployment.ObjectMeta.SetLabels(labels)
 
 	kubeObjects := []runtime.Object{svc, deployment}
 
-	clientsPerCluster, _, fakeDynamicClientBuilder, _ := initializeClients(
-		apiResourceList, nil,
-		objectsPerClusterMap{cluster.Name: kubeObjects})
+	f := newFixture(objectsPerClusterMap{cluster.Name: kubeObjects})
 
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "reviews-api-anchor"),
@@ -654,12 +564,12 @@ func TestInstallerNoOverride(t *testing.T) {
 	}
 
 	installer := newInstaller(it)
-	fakePair := clientsPerCluster[cluster.Name]
-	restConfig := &rest.Config{}
-	if err := installer.install(cluster, fakePair.Client, restConfig, fakeDynamicClientBuilder); err != nil {
+	fakeCluster := f.Clusters[cluster.Name]
+
+	if err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder); err != nil {
 		t.Fatal(err)
 	}
 
-	shippertesting.ShallowCheckActions(expectedActions, fakePair.Client.Actions(), t)
-	shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.DynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakeCluster.Client.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakeCluster.DynamicClient.Actions(), t)
 }

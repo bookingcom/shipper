@@ -1,11 +1,13 @@
 package testing
 
 import (
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	fakediscovery "k8s.io/client-go/discovery/fake"
 	fakedynamic "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
-	kubetesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/kubernetes/scheme"
 )
 
 type FakeCluster struct {
@@ -14,27 +16,13 @@ type FakeCluster struct {
 	Client          *kubefake.Clientset
 	DynamicClient   *fakedynamic.FakeDynamicClient
 	InformerFactory informers.SharedInformerFactory
-
-	objects []runtime.Object
-	actions []kubetesting.Action
 }
 
-func NewFakeCluster(
-	client *kubefake.Clientset,
-	dynamic *fakedynamic.FakeDynamicClient,
-) *FakeCluster {
-	return NewNamedFakeCluster("", client, dynamic)
-}
-
-func NewNamedFakeCluster(
-	name string,
-	client *kubefake.Clientset,
-	dynamic *fakedynamic.FakeDynamicClient,
-) *FakeCluster {
+func NewNamedFakeCluster(name string) *FakeCluster {
+	client := kubefake.NewSimpleClientset()
 	return &FakeCluster{
 		Name:            name,
 		Client:          client,
-		DynamicClient:   dynamic,
 		InformerFactory: informers.NewSharedInformerFactory(client, NoResyncPeriod),
 	}
 }
@@ -43,25 +31,20 @@ func NewNamedFakeCluster(
 // Go doesn't support that.
 
 func (c *FakeCluster) AddOne(object runtime.Object) {
-	c.objects = append(c.objects, object)
 	c.Client.Tracker().Add(object)
 }
 
 func (c *FakeCluster) AddMany(objects []runtime.Object) {
-	c.objects = append(c.objects, objects...)
 	for _, o := range objects {
 		c.Client.Tracker().Add(o)
 	}
 }
 
-func (c *FakeCluster) Expect(actions ...kubetesting.Action) {
-	c.actions = append(c.actions, actions...)
+func (c *FakeCluster) InitializeDiscovery(resources []*v1.APIResourceList) {
+	fakeDiscovery := c.Client.Discovery().(*fakediscovery.FakeDiscovery)
+	fakeDiscovery.Resources = resources
 }
 
-func (c *FakeCluster) Objects() []runtime.Object {
-	return c.objects
-}
-
-func (c *FakeCluster) ExpectedActions() []kubetesting.Action {
-	return c.actions
+func (c *FakeCluster) InitializeDynamicClient(objects []runtime.Object) {
+	c.DynamicClient = fakedynamic.NewSimpleDynamicClient(scheme.Scheme, objects...)
 }
