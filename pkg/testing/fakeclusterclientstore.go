@@ -8,7 +8,6 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
-	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
 // FakeClusterClientStore is a fake implementation of a ClusterClientStore,
@@ -68,19 +67,4 @@ func (s *FakeClusterClientStore) GetConfig(clusterName string) (*rest.Config, er
 
 func (s *FakeClusterClientStore) GetInformerFactory(clusterName string) (informers.SharedInformerFactory, error) {
 	return s.clusters[clusterName].InformerFactory, nil
-}
-
-func NewFailingFakeClusterClientStore() clusterclientstore.Interface {
-	return &FailingFakeClusterClientStore{}
-}
-
-// FailingFakeClusterClientStore is an implementation of
-// clusterclientstore.Interface that always fails when trying to get clients
-// for any cluster.
-type FailingFakeClusterClientStore struct {
-	FakeClusterClientStore
-}
-
-func (s *FailingFakeClusterClientStore) GetClient(clusterName string, ua string) (kubernetes.Interface, error) {
-	return nil, shippererrors.NewClusterNotReadyError(clusterName)
 }

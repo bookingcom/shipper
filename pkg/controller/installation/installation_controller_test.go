@@ -2,548 +2,256 @@ package installation
 
 import (
 	"fmt"
+	"sort"
 	"testing"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	runtimeutil "k8s.io/apimachinery/pkg/util/runtime"
-	kubetesting "k8s.io/client-go/testing"
-	"k8s.io/client-go/tools/record"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	"github.com/bookingcom/shipper/pkg/util/anchor"
 	installationutil "github.com/bookingcom/shipper/pkg/util/installation"
 	targetutil "github.com/bookingcom/shipper/pkg/util/target"
 )
+
+const (
+	clusterA = "cluster-a"
+	clusterB = "cluster-b"
+
+	// needs to match a file in
+	// "testdata/chart-cache/$repoUrl/$chartName-$version.tar.gz"
+	chartName = "nginx"
+	repoUrl   = "https://charts.example.com"
+	version   = "0.1.0"
+)
+
+type object struct {
+	gvr  schema.GroupVersionResource
+	name string
+}
+
+type installationTargetTestExpectation struct {
+	installationTarget *shipper.InstallationTarget
+	status             shipper.InstallationTargetStatus
+	objectsByCluster   map[string][]object
+}
 
 func init() {
 	installationutil.InstallationConditionsShouldDiscardTimestamps = true
 	targetutil.ConditionsShouldDiscardTimestamps = true
 }
 
-const (
-	repoUrl = "https://charts.example.com"
-)
+// TestSingleCluster verifies that the installation controller creates the
+// objects rendered from the chart and reports  readiness.
+func TestSingleCluster(t *testing.T) {
+	clusters := []string{clusterA}
+	chart := buildChart(chartName, version, repoUrl)
+	it := buildInstallationTarget(shippertesting.TestNamespace, shippertesting.TestApp, clusters, &chart)
 
-// TestInstallOneCluster tests the installation process using the
-// installation.Controller.
-func TestInstallOneCluster(t *testing.T) {
-	cluster := buildCluster("minikube-a")
-	appName := "reviews-api"
-	testNs := "test-namespace"
-	chart := buildChart(appName, "0.0.1", repoUrl)
-	installationTarget := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-
-	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, []runtime.Object{cluster, installationTarget}, objectsPerClusterMap{cluster.Name: []runtime.Object{}})
-
-	clusterPair := clientsPerCluster[cluster.Name]
-
-	fakeRecorder := record.NewFakeRecorder(42)
-	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster)
-
-	c := newController(
-		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
-
-	if !c.processNextWorkItem() {
-		t.Fatal("Could not process work item")
-	}
-
-	// The chart contained in the test release produces a service and a deployment
-	// manifest. The events order should be always the same, since we changed the
-	// renderer behavior to always return a consistently ordered list of manifests,
-	// according to Kind and Name. The actions described below are expected to be
-	// executed against the dynamic client that is returned by the
-	// fakeDynamicClientBuilder function passed to the controller, which mimics a
-	// connection to a Target Cluster.
-	expectedDynamicActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.0.1-reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, nil),
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, "0.0.1-reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, nil),
-	}
-	shippertesting.ShallowCheckActions(expectedDynamicActions, clusterPair.DynamicClient.Actions(), t)
-
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "0.0.1-anchor"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, nil),
-		shippertesting.NewDiscoveryAction("services"),
-		shippertesting.NewDiscoveryAction("deployments"),
-	}
-	shippertesting.ShallowCheckActions(expectedActions, clusterPair.Client.Actions(), t)
-
-	// We are interested only in "update" actions here.
-	var filteredActions []kubetesting.Action
-	for _, a := range shipperclientset.Actions() {
-		if a.GetVerb() == "update" {
-			filteredActions = append(filteredActions, a)
-		}
-	}
-
-	// Now we need to check if the installation target process was properly
-	// patched.
-	it := installationTarget.DeepCopy()
-	it.Spec.CanOverride = false
-	it.Status.Conditions = []shipper.TargetCondition{
-		{
-			Type:   shipper.TargetConditionTypeOperational,
-			Status: corev1.ConditionTrue,
-		},
-		{
-			Type:   shipper.TargetConditionTypeReady,
-			Status: corev1.ConditionTrue,
-		},
-	}
-	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
-		{
-			Name: "minikube-a",
-			Conditions: []shipper.ClusterInstallationCondition{
-				{
-					Type:   shipper.ClusterConditionTypeOperational,
-					Status: corev1.ConditionTrue,
-				},
-				{
-					Type:   shipper.ClusterConditionTypeReady,
-					Status: corev1.ConditionTrue,
+	runInstallationControllerTest(t,
+		clusters,
+		[]installationTargetTestExpectation{
+			{
+				installationTarget: it,
+				status:             buildSuccessStatus(clusters),
+				objectsByCluster: map[string][]object{
+					clusterA: buildExpectedObjects(it),
 				},
 			},
 		},
-	}
-	expectedActions = []kubetesting.Action{
-		kubetesting.NewUpdateAction(schema.GroupVersionResource{
-			Resource: "installationtargets",
-			Version:  shipper.SchemeGroupVersion.Version,
-			Group:    shipper.SchemeGroupVersion.Group,
-		}, testNs, it),
-	}
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
+	)
 }
 
-func TestInstallMultipleClusters(t *testing.T) {
-	clusterA := buildCluster("minikube-a")
-	clusterB := buildCluster("minikube-b")
-	appName := "reviews-api"
-	testNs := "reviews-api"
-	chart := buildChart(appName, "0.0.1", repoUrl)
-	installationTarget := buildInstallationTarget(testNs, appName, []string{clusterA.Name, clusterB.Name}, &chart)
+// TestMultipleClusters does the same thing as TestSingleCluster, but does so
+// for multiple clusters.
+func TestMultipleClusters(t *testing.T) {
+	clusters := []string{clusterA, clusterB}
+	chart := buildChart(chartName, version, repoUrl)
+	it := buildInstallationTarget(shippertesting.TestNamespace, shippertesting.TestApp, clusters, &chart)
 
-	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, []runtime.Object{clusterA, clusterB, installationTarget}, objectsPerClusterMap{
-			clusterA.Name: []runtime.Object{},
-			clusterB.Name: []runtime.Object{},
-		})
-
-	fakeRecorder := record.NewFakeRecorder(42)
-	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster)
-
-	c := newController(
-		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
-
-	if !c.processNextWorkItem() {
-		t.Fatal("Could not process work item")
-	}
-
-	// The chart contained in the test release produces a service and a deployment
-	// manifest. The events order should be always the same, since we changed the
-	// renderer behavior to always return a consistently ordered list of manifests,
-	// according to Kind and Name. The actions described below are expected to be
-	// executed against the dynamic client that is returned by the
-	// fakeDynamicClientBuilder function passed to the controller, which mimics a
-	// connection to a Target Cluster.
-	expectedDynamicActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.0.1-reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, nil),
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, "0.0.1-reviews-api"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, nil),
-	}
-
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "0.0.1-anchor"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, nil),
-		shippertesting.NewDiscoveryAction("services"),
-		shippertesting.NewDiscoveryAction("deployments"),
-	}
-
-	for _, fakePair := range clientsPerCluster {
-		shippertesting.ShallowCheckActions(expectedDynamicActions, fakePair.DynamicClient.Actions(), t)
-		shippertesting.ShallowCheckActions(expectedActions, fakePair.Client.Actions(), t)
-	}
-
-	// We are interested only in "update" actions here.
-	var filteredActions []kubetesting.Action
-	for _, a := range shipperclientset.Actions() {
-		if a.GetVerb() == "update" {
-			filteredActions = append(filteredActions, a)
-		}
-	}
-
-	// Now we need to check if the installation target process was properly patched
-	// and the clusters are listed in alphabetical order.
-	it := installationTarget.DeepCopy()
-	it.Spec.CanOverride = false
-	it.Status.Conditions = []shipper.TargetCondition{
-		{
-			Type:   shipper.TargetConditionTypeOperational,
-			Status: corev1.ConditionTrue,
-		},
-		{
-			Type:   shipper.TargetConditionTypeReady,
-			Status: corev1.ConditionTrue,
-		},
-	}
-	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
-		{
-			Name: "minikube-a",
-			Conditions: []shipper.ClusterInstallationCondition{
-				{
-					Type:   shipper.ClusterConditionTypeOperational,
-					Status: corev1.ConditionTrue,
-				},
-				{
-					Type:   shipper.ClusterConditionTypeReady,
-					Status: corev1.ConditionTrue,
+	runInstallationControllerTest(t,
+		clusters,
+		[]installationTargetTestExpectation{
+			{
+				installationTarget: it,
+				status:             buildSuccessStatus(clusters),
+				objectsByCluster: map[string][]object{
+					clusterA: buildExpectedObjects(it),
+					clusterB: buildExpectedObjects(it),
 				},
 			},
 		},
-		{
-			Name: "minikube-b",
-			Conditions: []shipper.ClusterInstallationCondition{
-				{
-					Type:   shipper.ClusterConditionTypeOperational,
-					Status: corev1.ConditionTrue,
-				},
-				{
-					Type:   shipper.ClusterConditionTypeReady,
-					Status: corev1.ConditionTrue,
-				},
-			},
-		},
-	}
-	expectedActions = []kubetesting.Action{
-		kubetesting.NewUpdateAction(schema.GroupVersionResource{
-			Resource: "installationtargets",
-			Version:  shipper.SchemeGroupVersion.Version,
-			Group:    shipper.SchemeGroupVersion.Group,
-		}, testNs, it),
-	}
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
+	)
 }
 
-// TestClientError tests a case where an error has been returned by the
-// clusterclientstore when requesting a client.
-//
-// This raises an error so the operation can be retried, but it also updates
-// the installation target status, so this test checks whether the manifest has
-// been updated with the desired status.
-func TestClientError(t *testing.T) {
-	var shipperclientset *shipperfake.Clientset
+// TestInstallationFailed verifies that the installation controller updates the
+// installation traffic with the correct conditions when a chart can't be
+// installed in a cluster.
+func TestInstallationFailed(t *testing.T) {
+	clusters := []string{clusterA}
+	chart := buildChart("reviews-api", "invalid-deployment-name", repoUrl)
+	it := buildInstallationTarget(shippertesting.TestNamespace, shippertesting.TestApp, clusters, &chart)
 
-	cluster := buildCluster("minikube-a")
-	appName := "reviews-api"
-	testNs := "reviews-api"
-	chart := buildChart(appName, "0.0.1", repoUrl)
-	installationTarget := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-
-	_, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, []runtime.Object{cluster, installationTarget}, nil)
-
-	fakeRecorder := record.NewFakeRecorder(42)
-	fakeClientProvider := shippertesting.NewFailingFakeClusterClientStore()
-
-	c := newController(
-		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
-
-	handleErrors := 0
-	runtimeutil.ErrorHandlers = []func(error){
-		func(err error) {
-			handleErrors = handleErrors + 1
-		},
-	}
-
-	if !c.processNextWorkItem() {
-		t.Fatal("Could not process work item")
-	}
-
-	expectedHandleErrors := 1
-	if handleErrors != expectedHandleErrors {
-		t.Fatalf("expected %d handle errors, got %d instead", expectedHandleErrors, handleErrors)
-	}
-
-	it := installationTarget.DeepCopy()
-	it.Status.Conditions = []shipper.TargetCondition{
-		{
-			Type:   shipper.TargetConditionTypeOperational,
-			Status: corev1.ConditionTrue,
-		},
-		{
-			Type:    shipper.TargetConditionTypeReady,
-			Status:  corev1.ConditionFalse,
-			Reason:  "ClustersNotReady",
-			Message: "[minikube-a]",
-		},
-	}
-	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
-		{
-			Name: "minikube-a",
-			Conditions: []shipper.ClusterInstallationCondition{
-				{
-					Type:    shipper.ClusterConditionTypeOperational,
-					Status:  corev1.ConditionFalse,
-					Reason:  "InternalError",
-					Message: `cluster "minikube-a" not ready for use yet; cluster client is being initialized`,
-				},
-				{
-					Type:   shipper.ClusterConditionTypeReady,
-					Status: corev1.ConditionUnknown,
+	status := shipper.InstallationTargetStatus{
+		Clusters: []*shipper.ClusterInstallationStatus{
+			{
+				Name: clusterA,
+				Conditions: []shipper.ClusterInstallationCondition{
+					ClusterInstallationOperational,
+					{
+						Type:    shipper.ClusterConditionTypeReady,
+						Status:  corev1.ConditionFalse,
+						Reason:  ChartError,
+						Message: `Deployment "reviews-api" has invalid name. The name of the Deployment should be templated with {{.Release.Name}}.`,
+					},
 				},
 			},
 		},
-	}
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(schema.GroupVersionResource{
-			Resource: "installationtargets",
-			Version:  shipper.SchemeGroupVersion.Version,
-			Group:    shipper.SchemeGroupVersion.Group,
-		}, testNs, it),
-	}
-	var filteredActions []kubetesting.Action
-	for _, a := range shipperclientset.Actions() {
-		if a.GetVerb() == "update" {
-			filteredActions = append(filteredActions, a)
-		}
-	}
-
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
-}
-
-// TestTargetClusterMissesGVK tests a case where the rendered manifest refers to
-// a GroupVersionKind that the Target Cluster doesn't understand.
-//
-// This raises an error, but it also updates the installation target status, so
-// this test checks whether the manifest has been updated with the desired
-// status.
-func TestTargetClusterMissesGVK(t *testing.T) {
-	var shipperclientset *shipperfake.Clientset
-
-	cluster := buildCluster("minikube-a")
-	appName := "reviews-api"
-	testNs := "reviews-api"
-	chart := buildChart(appName, "0.0.1", repoUrl)
-	installationTarget := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-
-	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients([]*metav1.APIResourceList{}, []runtime.Object{cluster, installationTarget}, objectsPerClusterMap{cluster.Name: nil})
-
-	fakeRecorder := record.NewFakeRecorder(42)
-	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster)
-
-	c := newController(
-		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
-
-	handleErrors := 0
-	runtimeutil.ErrorHandlers = []func(error){
-		func(err error) {
-			handleErrors = handleErrors + 1
-		},
-	}
-
-	if !c.processNextWorkItem() {
-		t.Fatal("Could not process work item")
-	}
-
-	expectedHandleErrors := 1
-	if handleErrors != expectedHandleErrors {
-		t.Fatalf("expected %d handle errors, got %d instead", expectedHandleErrors, handleErrors)
-	}
-
-	it := installationTarget.DeepCopy()
-	it.Status.Conditions = []shipper.TargetCondition{
-		{
-			Type:   shipper.TargetConditionTypeOperational,
-			Status: corev1.ConditionTrue,
-		},
-		{
-			Type:    shipper.TargetConditionTypeReady,
-			Status:  corev1.ConditionFalse,
-			Reason:  "ClustersNotReady",
-			Message: "[minikube-a]",
-		},
-	}
-	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
-		{
-			Name: "minikube-a",
-			Conditions: []shipper.ClusterInstallationCondition{
-				{
-					Type:   shipper.ClusterConditionTypeOperational,
-					Status: corev1.ConditionTrue,
-				},
-				{
-					Type:    shipper.ClusterConditionTypeReady,
-					Status:  corev1.ConditionFalse,
-					Reason:  "InternalError",
-					Message: `failed to discover server resources for GroupVersion "v1": GroupVersion "v1" not found`,
-				},
+		Conditions: []shipper.TargetCondition{
+			TargetConditionOperational,
+			{
+				Type:    shipper.TargetConditionTypeReady,
+				Status:  corev1.ConditionFalse,
+				Reason:  ClustersNotReady,
+				Message: fmt.Sprintf("%v", []string{clusterA}),
 			},
 		},
 	}
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(schema.GroupVersionResource{
-			Resource: "installationtargets",
-			Version:  shipper.SchemeGroupVersion.Version,
-			Group:    shipper.SchemeGroupVersion.Group,
-		}, testNs, it),
-	}
-	var filteredActions []kubetesting.Action
-	for _, a := range shipperclientset.Actions() {
-		if a.GetVerb() == "update" {
-			filteredActions = append(filteredActions, a)
-		}
-	}
 
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
-}
-
-// TestManagementServerMissesCluster tests a case where the installation target
-// refers to a cluster the management cluster doesn't know.
-//
-// This raises an error so the operation can be retried, but it also updates
-// the installation target status, so this test checks whether the manifest has
-// been updated with the desired status.
-func TestManagementServerMissesCluster(t *testing.T) {
-	var shipperclientset *shipperfake.Clientset
-
-	appName := "reviews-api"
-	testNs := "reviews-api"
-	chart := buildChart(appName, "0.0.1", repoUrl)
-	installationTarget := buildInstallationTarget(testNs, appName, []string{"minikube-a"}, &chart)
-
-	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, []runtime.Object{installationTarget}, nil)
-
-	fakeRecorder := record.NewFakeRecorder(42)
-	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster)
-
-	c := newController(
-		shipperclientset, shipperInformerFactory, fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
-
-	handleErrors := 0
-	runtimeutil.ErrorHandlers = []func(error){
-		func(err error) {
-			handleErrors = handleErrors + 1
-		},
-	}
-
-	if !c.processNextWorkItem() {
-		t.Fatal("Could not process work item")
-	}
-
-	expectedHandleErrors := 1
-	if handleErrors != expectedHandleErrors {
-		t.Fatalf("expected %d handle errors, got %d instead", expectedHandleErrors, handleErrors)
-	}
-
-	it := installationTarget.DeepCopy()
-	it.Status.Conditions = []shipper.TargetCondition{
-		{
-			Type:   shipper.TargetConditionTypeOperational,
-			Status: corev1.ConditionTrue,
-		},
-		{
-			Type:    shipper.TargetConditionTypeReady,
-			Status:  corev1.ConditionFalse,
-			Reason:  "ClustersNotReady",
-			Message: "[minikube-a]",
-		},
-	}
-	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
-		{
-			Name: "minikube-a",
-			Conditions: []shipper.ClusterInstallationCondition{
-				{
-					Type:    shipper.ClusterConditionTypeOperational,
-					Status:  corev1.ConditionFalse,
-					Reason:  "InternalError",
-					Message: `failed to GET Cluster "minikube-a": cluster.shipper.booking.com "minikube-a" not found`,
-				},
-				{
-					Type:   shipper.ClusterConditionTypeReady,
-					Status: corev1.ConditionUnknown,
-				},
+	runInstallationControllerTest(t,
+		clusters,
+		[]installationTargetTestExpectation{
+			{
+				installationTarget: it,
+				status:             status,
 			},
 		},
-	}
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewUpdateAction(schema.GroupVersionResource{
-			Resource: "installationtargets",
-			Version:  shipper.SchemeGroupVersion.Version,
-			Group:    shipper.SchemeGroupVersion.Group,
-		}, testNs, it),
-	}
-	var filteredActions []kubetesting.Action
-	for _, a := range shipperclientset.Actions() {
-		if a.GetVerb() == "update" {
-			filteredActions = append(filteredActions, a)
-		}
-	}
-
-	shippertesting.CheckActions(expectedActions, filteredActions, t)
+	)
 }
 
-// TestInstallNoOverride verifies that an InstallationTarget with disabled
-// overrides does not update any existing objects.
-func TestInstallNoOverride(t *testing.T) {
-	cluster := buildCluster("minikube-a")
-	appName := "reviews-api"
-	testNs := "test-namespace"
-	chart := buildChart(appName, "0.0.1", repoUrl)
+// buildExpectedObjects returns a list of the objects we expect from
+// `chartName`. This can be hardcoded for as long as we depend on that one chart.
+func buildExpectedObjects(it *shipper.InstallationTarget) []object {
+	deployment := appsv1.SchemeGroupVersion.WithResource("deployments")
+	service := corev1.SchemeGroupVersion.WithResource("services")
 
-	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-	it.Spec.CanOverride = false
+	return []object{
+		{deployment, fmt.Sprintf("%s-%s", shippertesting.TestApp, chartName)},
+		{service, chartName},
+		{service, fmt.Sprintf("%s-%s", chartName, "staging")},
+	}
+}
 
-	labels := map[string]string{
-		shipper.AppLabel:                     appName,
-		shipper.InstallationTargetOwnerLabel: appName}
-	meta := metav1.ObjectMeta{
-		Namespace: testNs,
-		Name:      fmt.Sprintf("%s-%s", appName, appName),
-		Labels:    labels,
+func runInstallationControllerTest(
+	t *testing.T,
+	clusterNames []string,
+	expectations []installationTargetTestExpectation,
+) {
+	clusters := make(map[string][]runtime.Object)
+	for _, clusterName := range clusterNames {
+		clusters[clusterName] = []runtime.Object{}
 	}
 
-	existingObjs := objectsPerClusterMap{cluster.Name: []runtime.Object{
-		&appsv1.Deployment{ObjectMeta: meta},
-		&corev1.Service{ObjectMeta: meta},
-	}}
+	f := newFixture(clusters)
 
-	clientsPerCluster, shipperclientset, fakeDynamicClientBuilder, shipperInformerFactory :=
-		initializeClients(apiResourceList, []runtime.Object{cluster, it}, existingObjs)
-
-	clusterPair := clientsPerCluster[cluster.Name]
-
-	fakeRecorder := record.NewFakeRecorder(42)
-	fakeClientProvider := shippertesting.NewFakeClusterClientStore(clientsPerCluster)
-
-	c := newController(shipperclientset, shipperInformerFactory,
-		fakeClientProvider, fakeDynamicClientBuilder, fakeRecorder)
-
-	if !c.processNextWorkItem() {
-		t.Fatal("Could not process work item")
+	for _, clusterName := range clusterNames {
+		f.ShipperClient.Tracker().Add(buildCluster(clusterName))
+	}
+	for _, expectation := range expectations {
+		f.ShipperClient.Tracker().Add(expectation.installationTarget)
 	}
 
-	expectedDynamicActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.0.1-reviews-api"),
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, "0.0.1-reviews-api"),
-	}
-	shippertesting.ShallowCheckActions(expectedDynamicActions, clusterPair.DynamicClient.Actions(), t)
+	sort.Strings(clusterNames)
 
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "0.0.1-anchor"),
-		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, nil),
-		shippertesting.NewDiscoveryAction("services"),
-		shippertesting.NewDiscoveryAction("deployments"),
+	runController(f)
+
+	itGVR := shipper.SchemeGroupVersion.WithResource("installationtargets")
+	for _, expectation := range expectations {
+		initialIT := expectation.installationTarget
+		itKey := fmt.Sprintf("%s/%s", initialIT.Namespace, initialIT.Name)
+		object, err := f.ShipperClient.Tracker().Get(itGVR, initialIT.Namespace, initialIT.Name)
+		if err != nil {
+			t.Errorf("could not Get InstallationTarget %q: %s", itKey, err)
+			continue
+		}
+
+		it := object.(*shipper.InstallationTarget)
+
+		actualStatus := it.Status
+		eq, diff := shippertesting.DeepEqualDiff(expectation.status, actualStatus)
+		if !eq {
+			t.Errorf(
+				"InstallationTarget %q has Status different from expected:\n%s",
+				itKey, diff)
+			continue
+		}
+
+		for _, clusterName := range clusterNames {
+			expectedObjects := expectation.objectsByCluster[clusterName]
+			assertClusterObjects(t, it, f.Clusters[clusterName], expectedObjects)
+		}
 	}
-	shippertesting.ShallowCheckActions(expectedActions, clusterPair.Client.Actions(), t)
+}
+
+func assertClusterObjects(
+	t *testing.T,
+	it *shipper.InstallationTarget,
+	cluster *shippertesting.FakeCluster,
+	expectedObjects []object,
+) {
+	// although we don't pass it in expectedObjects, an anchor configmap
+	// should always be present
+	configmapGVR := corev1.SchemeGroupVersion.WithResource("configmaps")
+	configmapName := anchor.CreateAnchorName(it)
+	_, err := cluster.Client.Tracker().Get(configmapGVR, it.Namespace, configmapName)
+	if err != nil {
+		t.Errorf(
+			`expected to get ConfigMap %q in cluster %q, but got error instead: %s`,
+			configmapName, cluster.Name, err)
+	}
+
+	for _, expected := range expectedObjects {
+		gvr := expected.gvr
+		name := expected.name
+		_, err := cluster.DynamicClient.
+			Resource(gvr).
+			Namespace(it.Namespace).
+			Get(name, metav1.GetOptions{})
+
+		if err != nil {
+			t.Errorf(
+				`expected to get %s %q in cluster %q, but got error instead: %s`,
+				gvr.Resource, name, cluster.Name, err)
+		}
+	}
+}
+
+func runController(f *shippertesting.ControllerTestFixture) {
+	controller := NewController(
+		f.ShipperClient,
+		f.ShipperInformerFactory,
+		f.ClusterClientStore,
+		f.DynamicClientBuilder,
+		localFetchChart,
+		f.Recorder,
+	)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	f.Run(stopCh)
+
+	for controller.processNextWorkItem() {
+		if controller.workqueue.Len() == 0 {
+			time.Sleep(20 * time.Millisecond)
+		}
+		if controller.workqueue.Len() == 0 {
+			return
+		}
+	}
 }

@@ -130,6 +130,7 @@ func FilterActions(actions []kubetesting.Action) []kubetesting.Action {
 				"applications",
 				"capacitytargets",
 				"clusters",
+				"configmaps",
 				"deployments",
 				"endpoints",
 				"installationtargets",

@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -51,7 +52,7 @@ func NewInstaller(
 
 // renderManifests returns a list of rendered manifests for the given
 // InstallationTarget and cluster, or an error.
-func (i *Installer) renderManifests(_ *shipper.Cluster) ([]string, error) {
+func (i *Installer) renderManifests() ([]string, error) {
 	it := i.InstallationTarget
 	chart, err := i.chartFetcher(it.Spec.Chart)
 	if err != nil {
@@ -194,7 +195,7 @@ func (i *Installer) patchService(
 
 	// Those are modified regardless.
 	s.OwnerReferences = []metav1.OwnerReference{*ownerReference}
-	s.Labels = mergeLabels(s.Labels, labelsToInject)
+	s.Labels = labels.Merge(labels.Set(s.Labels), labels.Set(labelsToInject))
 
 	return s, nil
 }
@@ -384,7 +385,7 @@ func (i *Installer) installManifests(
 			}
 		}
 
-		labels := mergeLabels(it.Labels, map[string]string{
+		labels := labels.Merge(labels.Set(it.Labels), labels.Set{
 			shipper.InstallationTargetOwnerLabel: it.Name,
 		})
 
@@ -550,7 +551,7 @@ func (i *Installer) install(
 	restConfig *rest.Config,
 	dynamicClientBuilder DynamicClientBuilderFunc,
 ) error {
-	renderedManifests, err := i.renderManifests(cluster)
+	renderedManifests, err := i.renderManifests()
 	if err != nil {
 		return err
 	}
@@ -598,22 +599,4 @@ func shouldUpdateObject(it *shipper.InstallationTarget, obj *unstructured.Unstru
 	}
 
 	return true, nil
-}
-
-// mergeLabels takes to sets of labels and merge them into another set.
-//
-// Values of the second set overwrite values from the first one.
-func mergeLabels(a map[string]string, b map[string]string) map[string]string {
-
-	labels := make(map[string]string)
-
-	for k, v := range a {
-		labels[k] = v
-	}
-
-	for k, v := range b {
-		labels[k] = v
-	}
-
-	return labels
 }

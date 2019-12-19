@@ -4,11 +4,10 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
@@ -19,35 +18,12 @@ import (
 // which is triggered by deleting an installation target object from the
 // management cluster.
 func TestSuccessfulDeleteInstallationTarget(t *testing.T) {
-	installationTarget := loadInstallationTarget()
+	installationTarget := buildInstallationTarget()
 
-	// Setup client without any objects since we'll enqueue a work item directly
-	// later on.
-	kubeFakeClientset, shipperFakeClientset, shipperInformerFactory, kubeInformerFactory :=
-		setup(
-			[]runtime.Object{},
-			[]runtime.Object{},
-		)
+	f := shippertesting.NewControllerTestFixture()
+	cluster := f.AddNamedCluster(shippertesting.TestCluster)
 
-	// Setup cluster client store that'll be used by the controller to contact
-	// application clusters to perform the anchor removal.
-	fakeClusterClientStore := shippertesting.NewFakeClusterClientStore(map[string]*shippertesting.FakeCluster{
-		clusterName: shippertesting.NewFakeCluster(kubeFakeClientset, nil),
-	})
-
-	fakeRecorder := record.NewFakeRecorder(42)
-
-	// Create the controller without waiting until the work queue is populated.
-	// This is required since I couldn't find yet a way to trigger the Delete
-	// handler from a test; that's the reason c.syncInstallationTarget() is
-	// called directly later in this test.
-	c := newController(
-		false,
-		kubeInformerFactory,
-		shipperFakeClientset,
-		shipperInformerFactory,
-		fakeClusterClientStore,
-		fakeRecorder)
+	c := runController(f)
 
 	key, err := cache.MetaNamespaceKeyFunc(installationTarget)
 	if err != nil {
@@ -62,8 +38,6 @@ func TestSuccessfulDeleteInstallationTarget(t *testing.T) {
 		Namespace:  installationTarget.Namespace,
 	}
 
-	// Execute c.syncInstallationTarget() here since I couldn't find an API to
-	// trigger the Delete event handler.
 	if err := c.syncInstallationTarget(item); err != nil {
 		t.Fatal(err)
 	}
@@ -76,45 +50,24 @@ func TestSuccessfulDeleteInstallationTarget(t *testing.T) {
 		),
 	}
 
-	shippertesting.CheckActions(expectedActions, kubeFakeClientset.Actions(), t)
+	actual := shippertesting.FilterActions(cluster.Client.Actions())
+	shippertesting.CheckActions(expectedActions, actual, t)
 }
 
 // TestDeleteConfigMapAnchorInstallationTargetMatch should not delete anything,
 // since the installation target object's UID matches the anchor config map
 // synced from an application cluster.
 func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
-	cluster := loadCluster("minikube-a")
-	installationTarget := loadInstallationTarget()
+	f := shippertesting.NewControllerTestFixture()
+	cluster := f.AddNamedCluster(shippertesting.TestCluster)
 
-	// Create a ConfigMap based on the existing installation target object.
+	installationTarget := buildInstallationTarget()
+	f.ShipperClient.Tracker().Add(installationTarget)
+
 	configMap := anchor.CreateConfigMapAnchor(installationTarget)
+	cluster.AddOne(configMap)
 
-	// Setup clients with only the existing installation target object, that
-	// will be retrieved and compared by syncAnchor() later on.
-	kubeFakeClientset, shipperFakeClientset, shipperInformerFactory, kubeInformerFactory :=
-		setup(
-			[]runtime.Object{installationTarget},
-			[]runtime.Object{},
-		)
-
-	// Setup cluster client store that'll be used by the controller to contact
-	// application clusters to perform the anchor removal.
-	fakeClusterClientStore := shippertesting.NewFakeClusterClientStore(map[string]*shippertesting.FakeCluster{
-		clusterName: shippertesting.NewFakeCluster(kubeFakeClientset, nil),
-	})
-	fakeRecorder := record.NewFakeRecorder(42)
-
-	// Create the controller without waiting until the work queue is populated.
-	// This is required since I couldn't find yet a way to trigger the Update
-	// handler from a test; that's the reason c.syncAnchor() is called directly
-	// later in this test.
-	c := newController(
-		false,
-		kubeInformerFactory,
-		shipperFakeClientset,
-		shipperInformerFactory,
-		fakeClusterClientStore,
-		fakeRecorder)
+	c := runController(f)
 
 	key, err := cache.MetaNamespaceKeyFunc(configMap)
 	if err != nil {
@@ -130,8 +83,6 @@ func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
 		ReleaseName:           configMap.GetLabels()[shipper.ReleaseLabel],
 	}
 
-	// Execute c.syncAnchor() here since I couldn't find an API to trigger the
-	// Update event handler.
 	if err := c.syncAnchor(item); err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +91,8 @@ func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
 	// existing installation target.
 	expectedActions := []kubetesting.Action{}
 
-	shippertesting.CheckActions(expectedActions, kubeFakeClientset.Actions(), t)
+	actual := shippertesting.FilterActions(cluster.Client.Actions())
+	shippertesting.CheckActions(expectedActions, actual, t)
 }
 
 // TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch exercises
@@ -148,39 +100,17 @@ func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
 // UID differs from the installation target UID present in the anchor config
 // map.
 func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
-	cluster := loadCluster("minikube-a")
-	installationTarget := loadInstallationTarget()
+	f := shippertesting.NewControllerTestFixture()
+	cluster := f.AddNamedCluster(shippertesting.TestCluster)
 
-	configMap := anchor.CreateConfigMapAnchor(installationTarget)
+	installationTarget := buildInstallationTarget()
+	f.ShipperClient.Tracker().Add(installationTarget)
 
 	// Change the installation target object's UID present in the config map.
+	configMap := anchor.CreateConfigMapAnchor(installationTarget)
 	configMap.Data[InstallationTargetUID] = "some-other-installation-target-uid"
 
-	// Setup only with the installation target object and the anchor config map.
-	kubeFakeClientset, shipperFakeClientset, shipperInformerFactory, kubeInformerFactory :=
-		setup(
-			[]runtime.Object{installationTarget},
-			[]runtime.Object{},
-		)
-
-	// Setup cluster client store that'll be used by the controller to contact
-	// application clusters to perform the anchor removal.
-	fakeClusterClientStore := shippertesting.NewFakeClusterClientStore(map[string]*shippertesting.FakeCluster{
-		clusterName: shippertesting.NewFakeCluster(kubeFakeClientset, nil),
-	})
-	fakeRecorder := record.NewFakeRecorder(42)
-
-	// Create the controller without waiting until the work queue is populated.
-	// This is required since I couldn't find a way to trigger the Update
-	// handler from a test; that's the reason c.syncAnchor() is called directly
-	// later on.
-	c := newController(
-		false,
-		kubeInformerFactory,
-		shipperFakeClientset,
-		shipperInformerFactory,
-		fakeClusterClientStore,
-		fakeRecorder)
+	c := runController(f)
 
 	key, err := cache.MetaNamespaceKeyFunc(configMap)
 	if err != nil {
@@ -188,7 +118,7 @@ func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
 	}
 
 	item := &AnchorWorkItem{
-		ClusterName:           cluster.GetName(),
+		ClusterName:           cluster.Name,
 		InstallationTargetUID: configMap.Data[InstallationTargetUID],
 		Key:                   key,
 		Name:                  configMap.GetName(),
@@ -196,8 +126,6 @@ func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
 		ReleaseName:           configMap.GetLabels()[shipper.ReleaseLabel],
 	}
 
-	// Execute c.syncAnchor() here since I couldn't find an API to trigger the
-	// Update event handler.
 	if err := c.syncAnchor(item); err != nil {
 		t.Fatal(err)
 	}
@@ -210,43 +138,22 @@ func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
 		),
 	}
 
-	shippertesting.CheckActions(expectedActions, kubeFakeClientset.Actions(), t)
+	actual := shippertesting.FilterActions(cluster.Client.Actions())
+	shippertesting.CheckActions(expectedActions, actual, t)
 }
 
 // TestDeleteConfigMapAnchorInstallationTargetDoesNotExist exercises
 // syncAnchor() for the case where the installation target present in the
 // anchor config map doesn't exist anymore in the management cluster.
 func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
-	cluster := loadCluster("minikube-a")
-	installationTarget := loadInstallationTarget()
+	f := shippertesting.NewControllerTestFixture()
+	cluster := f.AddNamedCluster(shippertesting.TestCluster)
 
+	installationTarget := buildInstallationTarget()
 	configMap := anchor.CreateConfigMapAnchor(installationTarget)
+	cluster.AddOne(configMap)
 
-	// Setup without any extra object in the cache.
-	kubeFakeClientset, shipperFakeClientset, shipperInformerFactory, kubeInformerFactory :=
-		setup(
-			[]runtime.Object{},
-			[]runtime.Object{},
-		)
-
-	// Setup cluster client store that'll be used by the controller to contact
-	// application clusters to perform the anchor removal.
-	fakeClusterClientStore := shippertesting.NewFakeClusterClientStore(map[string]*shippertesting.FakeCluster{
-		clusterName: shippertesting.NewFakeCluster(kubeFakeClientset, nil),
-	})
-	fakeRecorder := record.NewFakeRecorder(42)
-
-	// Create the controller without waiting until the work queue is populated.
-	// This is required since I couldn't find a way to trigger the Update
-	// handler from a test; that's the reason c.syncAnchor() is called directly
-	// later on.
-	c := newController(
-		false,
-		kubeInformerFactory,
-		shipperFakeClientset,
-		shipperInformerFactory,
-		fakeClusterClientStore,
-		fakeRecorder)
+	c := runController(f)
 
 	key, err := cache.MetaNamespaceKeyFunc(configMap)
 	if err != nil {
@@ -254,7 +161,7 @@ func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
 	}
 
 	item := &AnchorWorkItem{
-		ClusterName:           cluster.GetName(),
+		ClusterName:           cluster.Name,
 		InstallationTargetUID: configMap.Data[InstallationTargetUID],
 		Key:                   key,
 		Name:                  configMap.Name,
@@ -262,8 +169,6 @@ func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
 		ReleaseName:           configMap.GetLabels()[shipper.ReleaseLabel],
 	}
 
-	// Execute c.syncAnchor() here since I couldn't find an API to trigger the
-	// Update event handler.
 	if err := c.syncAnchor(item); err != nil {
 		t.Fatal(err)
 	}
@@ -275,5 +180,39 @@ func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
 			configMap.GetName(),
 		),
 	}
-	shippertesting.CheckActions(expectedActions, kubeFakeClientset.Actions(), t)
+
+	actual := shippertesting.FilterActions(cluster.Client.Actions())
+	shippertesting.CheckActions(expectedActions, actual, t)
+}
+
+func runController(f *shippertesting.ControllerTestFixture) *Controller {
+	c := NewController(
+		f.ShipperClient,
+		f.ShipperInformerFactory,
+		f.ClusterClientStore,
+		f.Recorder,
+	)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	f.Run(stopCh)
+
+	return c
+}
+
+func buildInstallationTarget() *shipper.InstallationTarget {
+	return &shipper.InstallationTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: shippertesting.TestNamespace,
+			Name:      shippertesting.TestApp,
+			UID:       "deadbeef",
+			Labels: map[string]string{
+				shipper.ReleaseLabel: shippertesting.TestApp,
+			},
+		},
+		Spec: shipper.InstallationTargetSpec{
+			Clusters: []string{shippertesting.TestCluster},
+		},
+	}
 }

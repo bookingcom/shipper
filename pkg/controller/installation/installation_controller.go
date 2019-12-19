@@ -225,6 +225,8 @@ func (c *Controller) syncHandler(key string) error {
 	it, err := c.processInstallationTarget(initialIT.DeepCopy())
 
 	if !reflect.DeepEqual(initialIT, it) {
+		// NOTE(jgreff): we can't use .UpdateStatus() because we also
+		// need to update .Spec.CanOverride
 		_, err := c.shipperclientset.ShipperV1alpha1().InstallationTargets(namespace).Update(it)
 		if err != nil {
 			return shippererrors.NewKubeclientUpdateError(it, err).
