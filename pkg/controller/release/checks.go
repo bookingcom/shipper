@@ -4,53 +4,12 @@ import (
 	"fmt"
 	"sort"
 
-	corev1 "k8s.io/api/core/v1"
-
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	installationutil "github.com/bookingcom/shipper/pkg/util/installation"
 	targetutil "github.com/bookingcom/shipper/pkg/util/target"
 )
 
-func checkInstallation(relInfo *releaseInfo) (bool, []string) {
-	clustersFromStatus := relInfo.installationTarget.Status.Clusters
-	clustersFromSpec := relInfo.installationTarget.Spec.Clusters
-	clustersFromSpecMap := make(map[string]struct{})
-	clustersFromStatusMap := make(map[string]struct{})
-	clustersNotReady := make(map[string]struct{})
-
-	for _, e := range clustersFromSpec {
-		clustersFromSpecMap[e] = struct{}{}
-	}
-
-	for _, e := range clustersFromStatus {
-		clustersFromStatusMap[e.Name] = struct{}{}
-	}
-
-	// NOTE(btyler): not comparing against 0 because 'uninstall' looks like a 0-len
-	// Clusters in the Spec, which is correct.
-	if len(clustersFromStatusMap) != len(clustersFromSpecMap) {
-		for k := range clustersFromSpecMap {
-			if _, ok := clustersFromStatusMap[k]; !ok {
-				clustersNotReady[k] = struct{}{}
-			}
-		}
-	}
-
-	for _, clusterStatus := range clustersFromStatus {
-		readyCond := installationutil.GetClusterInstallationCondition(*clusterStatus, shipper.ClusterConditionTypeReady)
-		if readyCond == nil || readyCond.Status != corev1.ConditionTrue {
-			clustersNotReady[clusterStatus.Name] = struct{}{}
-		}
-	}
-
-	if len(clustersNotReady) > 0 {
-		clusters := make([]string, 0, len(clustersNotReady))
-		for k := range clustersNotReady {
-			clusters = append(clusters, k)
-		}
-		return false, clusters
-	}
-	return true, nil
+func checkInstallation(it *shipper.InstallationTarget) (bool, string) {
+	return targetutil.IsReady(it.Status.Conditions)
 }
 
 func checkCapacity(

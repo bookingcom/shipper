@@ -25,7 +25,6 @@ import (
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	"github.com/bookingcom/shipper/pkg/util/conditions"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
-	"github.com/bookingcom/shipper/pkg/util/replicas"
 	targetutil "github.com/bookingcom/shipper/pkg/util/target"
 )
 
@@ -339,16 +338,6 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 		},
 	}
 
-	installationTargetClusters := make([]*shipper.ClusterInstallationStatus, 0, len(clusterNames))
-	for _, clusterName := range clusterNames {
-		installationTargetClusters = append(installationTargetClusters, &shipper.ClusterInstallationStatus{
-			Name: clusterName,
-			Conditions: []shipper.ClusterInstallationCondition{
-				{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
-			},
-		})
-	}
-
 	installationTarget := &shipper.InstallationTarget{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: shipper.SchemeGroupVersion.String(),
@@ -367,26 +356,20 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 			},
 		},
 		Status: shipper.InstallationTargetStatus{
-			Clusters: installationTargetClusters,
+			Conditions: []shipper.TargetCondition{
+				{
+					Type:   shipper.TargetConditionTypeReady,
+					Status: corev1.ConditionTrue,
+				},
+			},
 		},
 		Spec: shipper.InstallationTargetSpec{
 			Clusters: clusterNames,
 		},
 	}
 
-	capacityTargetStatusClusters := make([]shipper.ClusterCapacityStatus, 0, len(clusterNames))
-	capacityTargetStatusConditions := []shipper.TargetCondition{
-		{
-			Type:   shipper.TargetConditionTypeReady,
-			Status: corev1.ConditionTrue,
-		},
-	}
 	capacityTargetSpecClusters := make([]shipper.ClusterCapacityTarget, 0, len(clusterNames))
-
 	for _, clusterName := range clusterNames {
-		capacityTargetStatusClusters = append(capacityTargetStatusClusters, shipper.ClusterCapacityStatus{
-			Name: clusterName,
-		})
 		capacityTargetSpecClusters = append(capacityTargetSpecClusters, shipper.ClusterCapacityTarget{
 			Name:              clusterName,
 			Percent:           100,
@@ -412,26 +395,20 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 			},
 		},
 		Status: shipper.CapacityTargetStatus{
-			Clusters:   capacityTargetStatusClusters,
-			Conditions: capacityTargetStatusConditions,
+			Conditions: []shipper.TargetCondition{
+				{
+					Type:   shipper.TargetConditionTypeReady,
+					Status: corev1.ConditionTrue,
+				},
+			},
 		},
 		Spec: shipper.CapacityTargetSpec{
 			Clusters: capacityTargetSpecClusters,
 		},
 	}
 
-	trafficTargetStatusClusters := make([]*shipper.ClusterTrafficStatus, 0, len(clusterNames))
-	trafficTargetStatusConditions := make([]shipper.TargetCondition, 0, len(clusterNames))
 	trafficTargetSpecClusters := make([]shipper.ClusterTrafficTarget, 0, len(clusterNames))
-
 	for _, clusterName := range clusterNames {
-		trafficTargetStatusClusters = append(trafficTargetStatusClusters, &shipper.ClusterTrafficStatus{
-			Name: clusterName,
-		})
-		trafficTargetStatusConditions = append(trafficTargetStatusConditions, shipper.TargetCondition{
-			Type:   shipper.TargetConditionTypeReady,
-			Status: corev1.ConditionTrue,
-		})
 		trafficTargetSpecClusters = append(trafficTargetSpecClusters, shipper.ClusterTrafficTarget{
 			Name:   clusterName,
 			Weight: 100,
@@ -456,8 +433,12 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 			},
 		},
 		Status: shipper.TrafficTargetStatus{
-			Clusters:   trafficTargetStatusClusters,
-			Conditions: trafficTargetStatusConditions,
+			Conditions: []shipper.TargetCondition{
+				{
+					Type:   shipper.TargetConditionTypeReady,
+					Status: corev1.ConditionTrue,
+				},
+			},
 		},
 		Spec: shipper.TrafficTargetSpec{
 			Clusters: trafficTargetSpecClusters,
@@ -542,16 +523,6 @@ func (f *fixture) buildContender(namespace string, relName string, replicaCount 
 		},
 	}
 
-	installationTargetClusters := make([]*shipper.ClusterInstallationStatus, 0, len(clusterNames))
-	for _, clusterName := range clusterNames {
-		installationTargetClusters = append(installationTargetClusters, &shipper.ClusterInstallationStatus{
-			Name: clusterName,
-			Conditions: []shipper.ClusterInstallationCondition{
-				{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
-			},
-		})
-	}
-
 	installationTarget := &shipper.InstallationTarget{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: shipper.SchemeGroupVersion.String(),
@@ -570,26 +541,20 @@ func (f *fixture) buildContender(namespace string, relName string, replicaCount 
 			},
 		},
 		Status: shipper.InstallationTargetStatus{
-			Clusters: installationTargetClusters,
+			Conditions: []shipper.TargetCondition{
+				{
+					Type:   shipper.TargetConditionTypeReady,
+					Status: corev1.ConditionTrue,
+				},
+			},
 		},
 		Spec: shipper.InstallationTargetSpec{
 			Clusters: clusterNames,
 		},
 	}
 
-	capacityTargetStatusClusters := make([]shipper.ClusterCapacityStatus, 0, len(clusterNames))
-	capacityTargetStatusConditions := []shipper.TargetCondition{
-		{
-			Type:   shipper.TargetConditionTypeReady,
-			Status: corev1.ConditionTrue,
-		},
-	}
 	capacityTargetSpecClusters := make([]shipper.ClusterCapacityTarget, 0, len(clusterNames))
-
 	for _, clusterName := range clusterNames {
-		capacityTargetStatusClusters = append(capacityTargetStatusClusters, shipper.ClusterCapacityStatus{
-			Name: clusterName,
-		})
 		capacityTargetSpecClusters = append(capacityTargetSpecClusters, shipper.ClusterCapacityTarget{
 			Name:              clusterName,
 			Percent:           0,
@@ -615,26 +580,20 @@ func (f *fixture) buildContender(namespace string, relName string, replicaCount 
 			},
 		},
 		Status: shipper.CapacityTargetStatus{
-			Clusters:   capacityTargetStatusClusters,
-			Conditions: capacityTargetStatusConditions,
+			Conditions: []shipper.TargetCondition{
+				{
+					Type:   shipper.TargetConditionTypeReady,
+					Status: corev1.ConditionTrue,
+				},
+			},
 		},
 		Spec: shipper.CapacityTargetSpec{
 			Clusters: capacityTargetSpecClusters,
 		},
 	}
 
-	trafficTargetStatusClusters := make([]*shipper.ClusterTrafficStatus, 0, len(clusterNames))
-	trafficTargetStatusConditions := make([]shipper.TargetCondition, 0, len(clusterNames))
 	trafficTargetSpecClusters := make([]shipper.ClusterTrafficTarget, 0, len(clusterNames))
-
 	for _, clusterName := range clusterNames {
-		trafficTargetStatusClusters = append(trafficTargetStatusClusters, &shipper.ClusterTrafficStatus{
-			Name: clusterName,
-		})
-		trafficTargetStatusConditions = append(trafficTargetStatusConditions, shipper.TargetCondition{
-			Type:   shipper.TargetConditionTypeReady,
-			Status: corev1.ConditionTrue,
-		})
 		trafficTargetSpecClusters = append(trafficTargetSpecClusters, shipper.ClusterTrafficTarget{
 			Name:   clusterName,
 			Weight: 0,
@@ -659,8 +618,12 @@ func (f *fixture) buildContender(namespace string, relName string, replicaCount 
 			},
 		},
 		Status: shipper.TrafficTargetStatus{
-			Clusters:   trafficTargetStatusClusters,
-			Conditions: trafficTargetStatusConditions,
+			Conditions: []shipper.TargetCondition{
+				{
+					Type:   shipper.TargetConditionTypeReady,
+					Status: corev1.ConditionTrue,
+				},
+			},
 		},
 		Spec: shipper.TrafficTargetSpec{
 			Clusters: trafficTargetSpecClusters,
@@ -680,7 +643,6 @@ func init() {
 }
 
 func addCluster(ri *releaseInfo, cluster *shipper.Cluster) {
-
 	clusters := getReleaseClusters(ri.release)
 	exists := false
 	for _, cl := range clusters {
@@ -695,31 +657,14 @@ func addCluster(ri *releaseInfo, cluster *shipper.Cluster) {
 		ri.release.ObjectMeta.Annotations[shipper.ReleaseClustersAnnotation] = strings.Join(clusters, ",")
 	}
 
-	ri.installationTarget.Spec.Clusters = append(ri.installationTarget.Spec.Clusters, cluster.Name)
-
-	ri.installationTarget.Status.Clusters = append(ri.installationTarget.Status.Clusters,
-		&shipper.ClusterInstallationStatus{
-			Name: cluster.Name,
-			Conditions: []shipper.ClusterInstallationCondition{
-				{Type: shipper.ClusterConditionTypeReady, Status: corev1.ConditionTrue},
-			},
-		},
+	ri.installationTarget.Spec.Clusters = append(ri.installationTarget.Spec.Clusters,
+		cluster.Name,
 	)
-
-	ri.capacityTarget.Status.Clusters = append(ri.capacityTarget.Status.Clusters,
-		shipper.ClusterCapacityStatus{Name: cluster.Name},
-	)
-
 	ri.capacityTarget.Spec.Clusters = append(ri.capacityTarget.Spec.Clusters,
 		shipper.ClusterCapacityTarget{Name: cluster.Name, Percent: 0},
 	)
-
 	ri.trafficTarget.Spec.Clusters = append(ri.trafficTarget.Spec.Clusters,
 		shipper.ClusterTrafficTarget{Name: cluster.Name, Weight: 0},
-	)
-
-	ri.trafficTarget.Status.Clusters = append(ri.trafficTarget.Status.Clusters,
-		&shipper.ClusterTrafficStatus{Name: cluster.Name},
 	)
 }
 
@@ -1547,6 +1492,7 @@ func TestContenderDoNothingClusterInstallationNotReady(t *testing.T) {
 	brokenCluster := buildCluster("broken-installation-cluster")
 
 	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+	f.cycles = 1
 
 	totalReplicaCount := int32(10)
 	contender := f.buildContender(namespace, contenderName, totalReplicaCount)
@@ -1556,9 +1502,14 @@ func TestContenderDoNothingClusterInstallationNotReady(t *testing.T) {
 
 	contender.release.Spec.TargetStep = 0
 
-	// the fixture creates installation targets in 'installation
-	// succeeded' status, so we'll break one
-	contender.installationTarget.Status.Clusters[1].Conditions = []shipper.ClusterInstallationCondition{}
+	// the fixture creates installation targets in 'installation succeeded'
+	// status, so we'll break one
+	contender.installationTarget.Status.Conditions, _ = targetutil.SetTargetCondition(
+		contender.installationTarget.Status.Conditions,
+		targetutil.NewTargetCondition(
+			shipper.TargetConditionTypeReady,
+			corev1.ConditionFalse,
+			ClustersNotReady, "[broken-installation-cluster]"))
 
 	f.addObjects(
 		contender.release.DeepCopy(),
@@ -1753,10 +1704,7 @@ func TestContenderCapacityShouldIncreaseWithRolloutBlockOverride(t *testing.T) {
 
 	incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
 	incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
-	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
-	incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
 	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
-	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
 	f.addObjects(
 		contender.release.DeepCopy(),
@@ -1842,11 +1790,8 @@ func TestContenderTrafficShouldIncrease(t *testing.T) {
 	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
 
 	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
-	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 	incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
 	incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
-	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
-	incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
 
 	f.addObjects(
 		contender.release.DeepCopy(),
@@ -1889,11 +1834,8 @@ func TestContenderTrafficShouldIncreaseWithRolloutBlockOverride(t *testing.T) {
 	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
 
 	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
-	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 	incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
 	incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
-	incumbent.capacityTarget.Status.Clusters[0].AchievedPercent = 50
-	incumbent.capacityTarget.Status.Clusters[0].AvailableReplicas = int32(replicas.CalculateDesiredReplicaCount(uint(totalReplicaCount), 50))
 
 	f.addObjects(
 		contender.release.DeepCopy(),
@@ -2149,7 +2091,6 @@ func TestIncumbentCapacityShouldDecreaseWithRolloutBlockOverride(t *testing.T) {
 	contender.trafficTarget.Spec.Clusters[0].Weight = 50
 
 	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
-	incumbent.trafficTarget.Status.Clusters[0].AchievedTraffic = 50
 
 	f.addObjects(
 		contender.release.DeepCopy(),

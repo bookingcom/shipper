@@ -32,3 +32,15 @@ func IsClusterCapacityReady(conditions []shipper.ClusterCapacityCondition) bool 
 
 	return readyCond.Status == corev1.ConditionTrue
 }
+
+func IsClusterInstallationReady(conditions []shipper.ClusterInstallationCondition) bool {
+	var readyCond shipper.ClusterInstallationCondition
+	for _, c := range conditions {
+		if c.Type == shipper.ClusterConditionTypeReady {
+			readyCond = c
+			break
+		}
+	}
+
+	return readyCond.Status == corev1.ConditionTrue
+}
