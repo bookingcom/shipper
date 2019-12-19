@@ -16,12 +16,13 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
-	"github.com/bookingcom/shipper/pkg/util/conditions"
 	installationutil "github.com/bookingcom/shipper/pkg/util/installation"
+	targetutil "github.com/bookingcom/shipper/pkg/util/target"
 )
 
 func init() {
 	installationutil.InstallationConditionsShouldDiscardTimestamps = true
+	targetutil.ConditionsShouldDiscardTimestamps = true
 }
 
 const (
@@ -87,6 +88,16 @@ func TestInstallOneCluster(t *testing.T) {
 	// patched.
 	it := installationTarget.DeepCopy()
 	it.Spec.CanOverride = false
+	it.Status.Conditions = []shipper.TargetCondition{
+		{
+			Type:   shipper.TargetConditionTypeOperational,
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:   shipper.TargetConditionTypeReady,
+			Status: corev1.ConditionTrue,
+		},
+	}
 	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
 			Name: "minikube-a",
@@ -174,6 +185,16 @@ func TestInstallMultipleClusters(t *testing.T) {
 	// and the clusters are listed in alphabetical order.
 	it := installationTarget.DeepCopy()
 	it.Spec.CanOverride = false
+	it.Status.Conditions = []shipper.TargetCondition{
+		{
+			Type:   shipper.TargetConditionTypeOperational,
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:   shipper.TargetConditionTypeReady,
+			Status: corev1.ConditionTrue,
+		},
+	}
 	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
 			Name: "minikube-a",
@@ -253,6 +274,18 @@ func TestClientError(t *testing.T) {
 	}
 
 	it := installationTarget.DeepCopy()
+	it.Status.Conditions = []shipper.TargetCondition{
+		{
+			Type:   shipper.TargetConditionTypeOperational,
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:    shipper.TargetConditionTypeReady,
+			Status:  corev1.ConditionFalse,
+			Reason:  "ClustersNotReady",
+			Message: "[minikube-a]",
+		},
+	}
 	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
 			Name: "minikube-a",
@@ -260,14 +293,12 @@ func TestClientError(t *testing.T) {
 				{
 					Type:    shipper.ClusterConditionTypeOperational,
 					Status:  corev1.ConditionFalse,
-					Reason:  conditions.TargetClusterClientError,
+					Reason:  "InternalError",
 					Message: `cluster "minikube-a" not ready for use yet; cluster client is being initialized`,
 				},
 				{
-					Type:    shipper.ClusterConditionTypeReady,
-					Status:  corev1.ConditionUnknown,
-					Reason:  conditions.TargetClusterClientError,
-					Message: `cluster "minikube-a" not ready for use yet; cluster client is being initialized`,
+					Type:   shipper.ClusterConditionTypeReady,
+					Status: corev1.ConditionUnknown,
 				},
 			},
 		},
@@ -330,6 +361,18 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 	}
 
 	it := installationTarget.DeepCopy()
+	it.Status.Conditions = []shipper.TargetCondition{
+		{
+			Type:   shipper.TargetConditionTypeOperational,
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:    shipper.TargetConditionTypeReady,
+			Status:  corev1.ConditionFalse,
+			Reason:  "ClustersNotReady",
+			Message: "[minikube-a]",
+		},
+	}
 	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
 			Name: "minikube-a",
@@ -341,7 +384,7 @@ func TestTargetClusterMissesGVK(t *testing.T) {
 				{
 					Type:    shipper.ClusterConditionTypeReady,
 					Status:  corev1.ConditionFalse,
-					Reason:  conditions.ServerError,
+					Reason:  "InternalError",
 					Message: `failed to discover server resources for GroupVersion "v1": GroupVersion "v1" not found`,
 				},
 			},
@@ -404,6 +447,18 @@ func TestManagementServerMissesCluster(t *testing.T) {
 	}
 
 	it := installationTarget.DeepCopy()
+	it.Status.Conditions = []shipper.TargetCondition{
+		{
+			Type:   shipper.TargetConditionTypeOperational,
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:    shipper.TargetConditionTypeReady,
+			Status:  corev1.ConditionFalse,
+			Reason:  "ClustersNotReady",
+			Message: "[minikube-a]",
+		},
+	}
 	it.Status.Clusters = []*shipper.ClusterInstallationStatus{
 		{
 			Name: "minikube-a",
@@ -411,14 +466,12 @@ func TestManagementServerMissesCluster(t *testing.T) {
 				{
 					Type:    shipper.ClusterConditionTypeOperational,
 					Status:  corev1.ConditionFalse,
-					Reason:  conditions.ServerError,
+					Reason:  "InternalError",
 					Message: `failed to GET Cluster "minikube-a": cluster.shipper.booking.com "minikube-a" not found`,
 				},
 				{
-					Type:    shipper.ClusterConditionTypeReady,
-					Status:  corev1.ConditionUnknown,
-					Reason:  conditions.ServerError,
-					Message: `failed to GET Cluster "minikube-a": cluster.shipper.booking.com "minikube-a" not found`,
+					Type:   shipper.ClusterConditionTypeReady,
+					Status: corev1.ConditionUnknown,
 				},
 			},
 		},

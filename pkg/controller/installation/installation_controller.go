@@ -2,6 +2,7 @@ package installation
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"time"
 
@@ -28,9 +29,11 @@ import (
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	clusterstatusutil "github.com/bookingcom/shipper/pkg/util/clusterstatus"
 	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
 	"github.com/bookingcom/shipper/pkg/util/filters"
 	installationutil "github.com/bookingcom/shipper/pkg/util/installation"
+	targetutil "github.com/bookingcom/shipper/pkg/util/target"
 	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
 )
 
@@ -38,13 +41,15 @@ type ChartFetcher func(i *Installer, name, version string) (*chart.Chart, error)
 
 const (
 	AgentName = "installation-controller"
-)
 
-const (
 	ChartError               = "ChartError"
-	ServerError              = "ServerError"
+	ClustersNotReady         = "ClustersNotReady"
+	InternalError            = "InternalError"
 	TargetClusterClientError = "TargetClusterClientError"
 	UnknownError             = "UnknownError"
+
+	InstallationTargetConditionChanged  = "InstallationTargetConditionChanged"
+	ClusterInstallationConditionChanged = "ClusterInstallationConditionChanged"
 )
 
 // Controller is a Kubernetes controller that processes InstallationTarget
@@ -181,7 +186,7 @@ func (c *Controller) processNextWorkItem() bool {
 	}
 
 	shouldRetry := false
-	err := c.syncOne(key)
+	err := c.syncHandler(key)
 
 	if err != nil {
 		shouldRetry = shippererrors.ShouldRetry(err)
@@ -200,13 +205,13 @@ func (c *Controller) processNextWorkItem() bool {
 	return true
 }
 
-func (c *Controller) syncOne(key string) error {
+func (c *Controller) syncHandler(key string) error {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return shippererrors.NewUnrecoverableError(err)
 	}
 
-	it, err := c.installationTargetsLister.InstallationTargets(namespace).Get(name)
+	initialIT, err := c.installationTargetsLister.InstallationTargets(namespace).Get(name)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			klog.V(3).Infof("InstallationTarget %q has been deleted", key)
@@ -217,11 +222,17 @@ func (c *Controller) syncOne(key string) error {
 			WithShipperKind("InstallationTarget")
 	}
 
-	if err := c.processInstallation(it.DeepCopy()); err != nil {
-		return err
+	it, err := c.processInstallationTarget(initialIT.DeepCopy())
+
+	if !reflect.DeepEqual(initialIT, it) {
+		_, err := c.shipperclientset.ShipperV1alpha1().InstallationTargets(namespace).Update(it)
+		if err != nil {
+			return shippererrors.NewKubeclientUpdateError(it, err).
+				WithShipperKind("InstallationTarget")
+		}
 	}
 
-	return nil
+	return err
 }
 
 func (c *Controller) enqueueInstallationTarget(obj interface{}) {
@@ -282,166 +293,155 @@ func (c *Controller) getInstallationTargetForReleaseAndNamespace(release, namesp
 	return installationTargets[0], nil
 }
 
-// processInstallation attempts to install the related InstallationTarget on
+// processInstallationTarget attempts to install the related InstallationTarget on
 // all target clusters.
-func (c *Controller) processInstallation(it *shipper.InstallationTarget) error {
-	// Build .status over based on the current .spec.clusters.
-	newClusterStatuses := make([]*shipper.ClusterInstallationStatus, 0, len(it.Spec.Clusters))
+func (c *Controller) processInstallationTarget(it *shipper.InstallationTarget) (*shipper.InstallationTarget, error) {
+	diff := diffutil.NewMultiDiff()
+	defer c.reportConditionChange(it, InstallationTargetConditionChanged, diff)
 
-	// Collect the existing conditions for clusters present in .spec.clusters in a
-	// map.
-	existingConditionsPerCluster := extractExistingConditionsPerCluster(it)
-
-	// The strategy here is try our best to install as many objects as possible in
-	// all target clusters. It is not the Installation Controller job to reason
-	// about an application cluster status, so it just report that a cluster might
-	// not be operational if operations on the application cluster fail for any
-	// reason.
+	// InstallationTarget is always Operational at the top level because it
+	// doesn't depend on anything.
+	it.Status.Conditions = targetutil.TransitionToOperational(diff, it.Status.Conditions)
 
 	installer := NewInstaller(c.chartFetcher, it)
+
+	newClusterStatuses := make([]*shipper.ClusterInstallationStatus, 0, len(it.Spec.Clusters))
 	clusterErrors := shippererrors.NewMultiError()
 
-	diff := diffutil.NewMultiDiff()
-	defer func() {
-		c.reportClusterInstallationConditionChange(it, diff)
-	}()
+	curClusterStatuses := make(map[string]*shipper.ClusterInstallationStatus)
+	for _, clusterStatus := range it.Status.Clusters {
+		curClusterStatuses[clusterStatus.Name] = clusterStatus
+	}
 
-	for _, name := range it.Spec.Clusters {
-
-		// IMPORTANT: Since we keep existing conditions from previous syncing
-		// points (as in existingConditionsPerCluster[name]), one needs to
-		// adjust all the dependent conditions. For example, whenever we
-		// transition "Operational" to "False", "Ready" *MUST* be transitioned
-		// to "Unknown" since we can't verify if it is actually "Ready".
-		status := &shipper.ClusterInstallationStatus{
-			Name:       name,
-			Conditions: existingConditionsPerCluster[name],
-		}
-		newClusterStatuses = append(newClusterStatuses, status)
-
-		var cluster *shipper.Cluster
-		var err error
-		if cluster, err = c.clusterLister.Get(name); err != nil {
-			err = shippererrors.NewKubeclientGetError("", name, err).
-				WithShipperKind("Cluster")
-			clusterErrors.Append(err)
-
-			condOperational := installationutil.NewClusterInstallationCondition(
-				shipper.ClusterConditionTypeOperational,
-				corev1.ConditionFalse,
-				reasonForOperationalCondition(err),
-				err.Error(),
-			)
-			diff.Append(installationutil.SetClusterInstallationCondition(status, *condOperational))
-
-			condReady := installationutil.NewClusterInstallationCondition(
-				shipper.ClusterConditionTypeReady,
-				corev1.ConditionUnknown,
-				reasonForReadyCondition(err),
-				err.Error(),
-			)
-			diff.Append(installationutil.SetClusterInstallationCondition(status, *condReady))
-			continue
+	for _, clusterName := range it.Spec.Clusters {
+		clusterStatus, ok := curClusterStatuses[clusterName]
+		if !ok {
+			clusterStatus = &shipper.ClusterInstallationStatus{
+				Name: clusterName,
+			}
 		}
 
-		var client kubernetes.Interface
-		var restConfig *rest.Config
-		client, restConfig, err = c.GetClusterAndConfig(name)
+		err := c.processInstallationTargetOnCluster(it, clusterName, clusterStatus, installer)
 		if err != nil {
 			clusterErrors.Append(err)
-
-			condOperational := installationutil.NewClusterInstallationCondition(
-				shipper.ClusterConditionTypeOperational,
-				corev1.ConditionFalse,
-				reasonForOperationalCondition(err),
-				err.Error(),
-			)
-			diff.Append(installationutil.SetClusterInstallationCondition(status, *condOperational))
-
-			condReady := installationutil.NewClusterInstallationCondition(
-				shipper.ClusterConditionTypeReady,
-				corev1.ConditionUnknown,
-				reasonForReadyCondition(err),
-				err.Error(),
-			)
-			diff.Append(installationutil.SetClusterInstallationCondition(status, *condReady))
-			continue
 		}
 
-		// At this point, we got a hold in a connection to the target cluster,
-		// so we assume it's operational until some other signal saying
-		// otherwise arrives.
-		condOperational := installationutil.NewClusterInstallationCondition(
-			shipper.ClusterConditionTypeOperational,
-			corev1.ConditionTrue,
-			"",
-			"",
-		)
-		diff.Append(installationutil.SetClusterInstallationCondition(status, *condOperational))
-
-		if err = installer.install(cluster, client, restConfig, c.dynamicClientBuilderFunc); err != nil {
-			clusterErrors.Append(err)
-
-			condReady := installationutil.NewClusterInstallationCondition(
-				shipper.ClusterConditionTypeReady,
-				corev1.ConditionFalse,
-				reasonForReadyCondition(err),
-				err.Error(),
-			)
-			diff.Append(installationutil.SetClusterInstallationCondition(status, *condReady))
-			continue
-		}
-
-		condReady := installationutil.NewClusterInstallationCondition(
-			shipper.ClusterConditionTypeReady,
-			corev1.ConditionTrue,
-			"",
-			"",
-		)
-		diff.Append(installationutil.SetClusterInstallationCondition(status, *condReady))
+		newClusterStatuses = append(newClusterStatuses, clusterStatus)
 	}
 
 	sort.Sort(byClusterName(newClusterStatuses))
-	it.Status.Clusters = newClusterStatuses
 
+	it.Status.Clusters = newClusterStatuses
 	if !clusterErrors.Any() {
 		it.Spec.CanOverride = false
 	}
 
-	_, err := c.shipperclientset.ShipperV1alpha1().InstallationTargets(it.Namespace).Update(it)
-	if err != nil {
-		err = shippererrors.NewKubeclientUpdateError(it, err).
-			WithShipperKind("InstallationTarget")
-
-		clusterErrors.Append(err)
-	}
-
-	return clusterErrors.Flatten()
-}
-
-// extractExistingConditionsPerCluster builds a map with values being a list of conditions.
-func extractExistingConditionsPerCluster(it *shipper.InstallationTarget) map[string][]shipper.ClusterInstallationCondition {
-	existingConditionsPerCluster := map[string][]shipper.ClusterInstallationCondition{}
-	for _, name := range it.Spec.Clusters {
-		for _, s := range it.Status.Clusters {
-			if s.Name == name {
-				existingConditionsPerCluster[name] = s.Conditions
-			}
+	clustersNotReady := []string{}
+	for _, clusterStatus := range it.Status.Clusters {
+		if !clusterstatusutil.IsClusterInstallationReady(clusterStatus.Conditions) {
+			clustersNotReady = append(clustersNotReady, clusterStatus.Name)
 		}
 	}
-	return existingConditionsPerCluster
+
+	if len(clustersNotReady) == 0 {
+		it.Status.Conditions = targetutil.TransitionToReady(diff, it.Status.Conditions)
+	} else {
+		it.Status.Conditions = targetutil.TransitionToNotReady(
+			diff, it.Status.Conditions,
+			ClustersNotReady, fmt.Sprintf("%v", clustersNotReady))
+	}
+
+	return it, clusterErrors.Flatten()
+}
+
+func (c *Controller) processInstallationTargetOnCluster(
+	it *shipper.InstallationTarget,
+	clusterName string,
+	status *shipper.ClusterInstallationStatus,
+	installer *Installer,
+) error {
+	diff := diffutil.NewMultiDiff()
+	operationalCond := installationutil.NewClusterInstallationCondition(
+		shipper.ClusterConditionTypeOperational,
+		corev1.ConditionUnknown,
+		"",
+		"")
+	readyCond := installationutil.NewClusterInstallationCondition(
+		shipper.ClusterConditionTypeReady,
+		corev1.ConditionUnknown,
+		"",
+		"")
+
+	defer func() {
+		diff.Append(installationutil.SetClusterInstallationCondition(status, *operationalCond))
+		diff.Append(installationutil.SetClusterInstallationCondition(status, *readyCond))
+		c.reportConditionChange(it, ClusterInstallationConditionChanged, diff)
+	}()
+
+	cluster, err := c.clusterLister.Get(clusterName)
+	if err != nil {
+		err = shippererrors.NewKubeclientGetError("", clusterName, err).
+			WithShipperKind("Cluster")
+
+		operationalCond = installationutil.NewClusterInstallationCondition(
+			shipper.ClusterConditionTypeOperational,
+			corev1.ConditionFalse,
+			InternalError,
+			err.Error(),
+		)
+
+		return err
+	}
+
+	client, restConfig, err := c.GetClusterAndConfig(clusterName)
+	if err != nil {
+		operationalCond = installationutil.NewClusterInstallationCondition(
+			shipper.ClusterConditionTypeOperational,
+			corev1.ConditionFalse,
+			InternalError,
+			err.Error(),
+		)
+
+		return err
+	}
+
+	operationalCond = installationutil.NewClusterInstallationCondition(
+		shipper.ClusterConditionTypeOperational,
+		corev1.ConditionTrue,
+		"",
+		"",
+	)
+
+	err = installer.install(cluster, client, restConfig, c.dynamicClientBuilderFunc)
+	if err != nil {
+		readyCond = installationutil.NewClusterInstallationCondition(
+			shipper.ClusterConditionTypeReady,
+			corev1.ConditionFalse,
+			reasonForReadyCondition(err),
+			err.Error(),
+		)
+
+		return err
+	}
+
+	readyCond = installationutil.NewClusterInstallationCondition(
+		shipper.ClusterConditionTypeReady,
+		corev1.ConditionTrue,
+		"",
+		"",
+	)
+
+	return nil
 }
 
 func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interface, *rest.Config, error) {
-	var client kubernetes.Interface
-	var referenceConfig *rest.Config
-	var err error
-
-	if client, err = c.clusterClientStore.GetClient(clusterName, AgentName); err != nil {
+	client, err := c.clusterClientStore.GetClient(clusterName, AgentName)
+	if err != nil {
 		return nil, nil, err
 	}
 
-	if referenceConfig, err = c.clusterClientStore.GetConfig(clusterName); err != nil {
+	referenceConfig, err := c.clusterClientStore.GetConfig(clusterName)
+	if err != nil {
 		return nil, nil, err
 	}
 
@@ -452,16 +452,9 @@ func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interfa
 	return client, referenceCopy, nil
 }
 
-func reasonForOperationalCondition(err error) string {
-	if shippererrors.IsClusterClientStoreError(err) {
-		return TargetClusterClientError
-	}
-	return ServerError
-}
-
 func reasonForReadyCondition(err error) string {
 	if shippererrors.IsKubeclientError(err) {
-		return ServerError
+		return InternalError
 	}
 
 	if shippererrors.IsDecodeManifestError(err) || shippererrors.IsConvertUnstructuredError(err) || shippererrors.IsInvalidChartError(err) {
@@ -475,8 +468,8 @@ func reasonForReadyCondition(err error) string {
 	return UnknownError
 }
 
-func (c *Controller) reportClusterInstallationConditionChange(ct *shipper.InstallationTarget, diff diffutil.Diff) {
+func (c *Controller) reportConditionChange(ct *shipper.InstallationTarget, reason string, diff diffutil.Diff) {
 	if !diff.IsEmpty() {
-		c.recorder.Event(ct, corev1.EventTypeNormal, "ClusterInstallationConditionChanged", diff.String())
+		c.recorder.Event(ct, corev1.EventTypeNormal, reason, diff.String())
 	}
 }

@@ -67,26 +67,16 @@ func genInstallationEnforcer(curr, succ *releaseInfo) PipelineStep {
 		targetStep := curr.release.Spec.TargetStep
 		isLastStep := int(targetStep) == len(strategy.Steps)-1
 
-		if ready, clusters := checkInstallation(curr); !ready {
-			if len(curr.installationTarget.Spec.Clusters) != len(curr.installationTarget.Status.Clusters) {
-				cond.SetUnknown(
-					shipper.StrategyConditionContenderAchievedInstallation,
-					conditions.StrategyConditionsUpdate{
-						Step:               targetStep,
-						LastTransitionTime: time.Now(),
-					},
-				)
-			} else {
-				cond.SetFalse(
-					shipper.StrategyConditionContenderAchievedInstallation,
-					conditions.StrategyConditionsUpdate{
-						Reason:             ClustersNotReady,
-						Message:            fmt.Sprintf("clusters pending installation: %v. for more details try `kubectl describe it %s`", clusters, curr.installationTarget.Name),
-						Step:               targetStep,
-						LastTransitionTime: time.Now(),
-					},
-				)
-			}
+		if ready, clusters := checkInstallation(curr.installationTarget); !ready {
+			cond.SetFalse(
+				shipper.StrategyConditionContenderAchievedInstallation,
+				conditions.StrategyConditionsUpdate{
+					Reason:             ClustersNotReady,
+					Message:            fmt.Sprintf("clusters pending installation: %v. for more details try `kubectl describe it %s`", clusters, curr.installationTarget.Name),
+					Step:               targetStep,
+					LastTransitionTime: time.Now(),
+				},
+			)
 
 			return PipelineBreak, e.buildContenderStrategyConditionsPatch(cond, targetStep, isLastStep, e.hasIncumbent), nil
 		}
