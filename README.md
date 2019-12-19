@@ -1,9 +1,9 @@
 [![Build Status](https://travis-ci.com/bookingcom/shipper.svg?branch=master)](https://travis-ci.com/bookingcom/shipper)
-[![Documentation Status](https://readthedocs.org/projects/shipper-k8s/badge/?version=latest)](https://docs.shipper-k8s.io/en/latest/?badge=latest)
+[![Documentation Status](https://readthedocs.org/projects/shipper-k8s/badge/?version=latest)](https://shipper-k8s.readthedocs.io/en/latest/)
 
 # Shipper
 
-Visit [docs.shipper-k8s.io](https://docs.shipper-k8s.io) for the full documentation,
+Visit [Read the Docs](https://shipper-k8s.readthedocs.io/en/latest/) for the full documentation,
 examples and guides.
 
 Shipper is an extension for Kubernetes to add sophisticated rollout strategies
@@ -81,7 +81,7 @@ Shipper APIs.
 
 ## Documentation and Support
 
-Visit [docs.shipper-k8s.io](https://docs.shipper-k8s.io) for the full documentation,
+Visit [Read the Docs](https://shipper-k8s.readthedocs.io/en/latest/) for the full documentation,
 examples and guides.
 
 You can find us at [#shipper](https://kubernetes.slack.com/messages/shipper/)
