@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
+	corev1informers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -150,19 +151,19 @@ func main() {
 
 	enabledControllers := buildEnabledControllers(*enabledControllers, *disabledControllers)
 
-	wg := &sync.WaitGroup{}
-
+	secretInformer := corev1informers.New(kubeInformerFactory, *ns, nil).Secrets()
 	store := clusterclientstore.NewStore(
 		func(clusterName string, ua string, config *rest.Config) (kubernetes.Interface, error) {
 			klog.V(8).Infof("Building a client for Cluster %q, UserAgent %q", clusterName, ua)
 			return client.NewKubeClient(config, ua, nil)
 		},
-		kubeInformerFactory.Core().V1().Secrets(),
+		secretInformer,
 		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
 		*ns,
 		restTimeout,
 	)
 
+	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
 		store.Run(stopCh)
