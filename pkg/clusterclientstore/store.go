@@ -201,8 +201,8 @@ func (s *Store) syncSecret(key string) error {
 		return shippererrors.NewUnrecoverableError(err)
 	}
 
-	// Programmer error: there's a filter func on the callbacks before things get
-	// enqueued.
+	// Programmer error: secretInformer needs to be namespaced to only
+	// shipper's own namespace.
 	if ns != s.ns {
 		panic("client store secret workqueue should only contain secrets from the shipper namespace")
 	}

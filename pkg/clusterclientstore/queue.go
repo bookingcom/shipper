@@ -34,7 +34,7 @@ func (s *Store) bindEventHandlers() {
 			// This is a bit aggressive, but I think it makes sense; otherwise we get
 			// logs about the service account token.
 			_, ok = secret.GetAnnotations()[shipper.SecretChecksumAnnotation]
-			return ok && secret.Namespace == shipper.ShipperNamespace
+			return ok
 		},
 		Handler: kubecache.ResourceEventHandlerFuncs{
 			AddFunc: enqueueSecret,
