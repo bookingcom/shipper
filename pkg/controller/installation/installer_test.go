@@ -21,10 +21,6 @@ import (
 
 var restConfig *rest.Config
 
-func newInstaller(it *shipper.InstallationTarget) *Installer {
-	return NewInstaller(localFetchChart, it)
-}
-
 // TestInstaller tests the installation process using a Installer directly.
 func TestInstaller(t *testing.T) {
 	// First install.
@@ -46,7 +42,10 @@ func ImplTestInstaller(t *testing.T, kubeObjects []runtime.Object) {
 	chart := buildChart(appName, "0.0.1", repoUrl)
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	configMapAnchor := anchor.CreateConfigMapAnchor(it)
-	installer := newInstaller(it)
+	installer, err := NewInstaller(localFetchChart, it)
+	if err != nil {
+		t.Fatalf("could not initialize the installer: %s", err)
+	}
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
@@ -82,9 +81,9 @@ func ImplTestInstaller(t *testing.T, kubeObjects []runtime.Object) {
 	validateDeploymentCreateAction(t, validateAction(t, filteredActions[2], "Deployment"), map[string]string{"app": "reviews-api"})
 }
 
-func extractUnstructuredContent(scheme *runtime.Scheme, obj runtime.Object) (*unstructured.Unstructured, map[string]interface{}) {
+func extractUnstructuredContent(obj runtime.Object) (*unstructured.Unstructured, map[string]interface{}) {
 	u := &unstructured.Unstructured{}
-	err := scheme.Convert(obj, u, nil)
+	err := kubescheme.Scheme.Convert(obj, u, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -108,9 +107,7 @@ func validateAction(t *testing.T, a kubetesting.Action, k string) runtime.Object
 }
 
 func validateServiceCreateAction(t *testing.T, existingService *corev1.Service, obj runtime.Object) {
-	scheme := kubescheme.Scheme
-
-	unstructuredObj, unstructuredContent := extractUnstructuredContent(scheme, obj)
+	unstructuredObj, unstructuredContent := extractUnstructuredContent(obj)
 
 	// First we test the data that is expected to be in the created service
 	// object, since we delete keys on the underlying unstructured object
@@ -119,7 +116,7 @@ func validateServiceCreateAction(t *testing.T, existingService *corev1.Service, 
 		t.Fatalf("could not find %q in Service .metadata.labels", shipper.InstallationTargetOwnerLabel)
 	}
 
-	_, expectedUnstructuredServiceContent := extractUnstructuredContent(scheme, existingService)
+	_, expectedUnstructuredServiceContent := extractUnstructuredContent(existingService)
 
 	uMetadata := unstructuredContent["metadata"]
 	sMetadata := expectedUnstructuredServiceContent["metadata"]
@@ -135,10 +132,8 @@ func validateServiceCreateAction(t *testing.T, existingService *corev1.Service, 
 }
 
 func validateDeploymentCreateAction(t *testing.T, obj runtime.Object, validateLabels map[string]string) {
-	scheme := kubescheme.Scheme
-
 	u := &unstructured.Unstructured{}
-	err := scheme.Convert(obj, u, nil)
+	err := kubescheme.Scheme.Convert(obj, u, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -191,18 +186,13 @@ func TestInstallerBrokenChartTarball(t *testing.T) {
 	chart := buildChart(appName, "invalid-tarball", repoUrl)
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-	installer := newInstaller(it)
-
-	f := newFixture(objectsPerClusterMap{cluster.Name: []runtime.Object{}})
-	fakeCluster := f.Clusters[cluster.Name]
-
-	err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder)
+	_, err := NewInstaller(localFetchChart, it)
 	if err == nil {
-		t.Fatal("installRelease should fail, invalid tarball")
+		t.Fatal("NewInstaller should fail, invalid tarball")
 	}
 }
 
-// TestInstallerBrokenChartTarball tests if the installation process fails when the
+// TestInstallerChartTarballBrokenService tests if the installation process fails when the
 // release contains an invalid serialized chart.
 func TestInstallerChartTarballBrokenService(t *testing.T) {
 	cluster := buildCluster("minikube-a")
@@ -214,14 +204,9 @@ func TestInstallerChartTarballBrokenService(t *testing.T) {
 	chart := buildChart(appName, "0.0.1-broken-service", repoUrl)
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-	installer := newInstaller(it)
-
-	f := newFixture(objectsPerClusterMap{cluster.Name: []runtime.Object{}})
-	fakeCluster := f.Clusters[cluster.Name]
-
-	err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder)
+	_, err := NewInstaller(localFetchChart, it)
 	if err == nil {
-		t.Fatal("installRelease should fail, invalid tarball")
+		t.Fatal("NewInstaller should fail, broken service")
 	}
 }
 
@@ -238,18 +223,13 @@ func TestInstallerChartTarballInvalidDeploymentName(t *testing.T) {
 	chart := buildChart(appName, "invalid-deployment-name", repoUrl)
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-	installer := newInstaller(it)
-
-	f := newFixture(objectsPerClusterMap{cluster.Name: []runtime.Object{}})
-	fakeCluster := f.Clusters[cluster.Name]
-
-	err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder)
+	_, err := NewInstaller(localFetchChart, it)
 	if err == nil {
-		t.Fatal("installRelease should fail, invalid deployment name")
+		t.Fatal("NewInstaller should fail, invalid deployment name")
 	}
 
 	if _, ok := err.(shippererrors.InvalidChartError); !ok {
-		t.Fatalf("installRelease should fail with InvalidChartError, got %v instead", err)
+		t.Fatalf("NewInstaller should fail with InvalidChartError, got %v instead", err)
 	}
 }
 
@@ -265,14 +245,9 @@ func TestInstallerBrokenChartContents(t *testing.T) {
 	chart := buildChart(appName, "invalid-k8s-objects", repoUrl)
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-	installer := newInstaller(it)
-
-	f := newFixture(objectsPerClusterMap{cluster.Name: nil})
-	fakeCluster := f.Clusters[cluster.Name]
-
-	err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder)
+	_, err := NewInstaller(localFetchChart, it)
 	if err == nil {
-		t.Fatal("installRelease should fail, invalid k8s objects")
+		t.Fatal("NewInstaller should fail, invalid k8s objects")
 	}
 }
 
@@ -285,7 +260,10 @@ func TestInstallerSingleServiceNoLB(t *testing.T) {
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	configMapAnchor := anchor.CreateConfigMapAnchor(it)
-	installer := newInstaller(it)
+	installer, err := NewInstaller(localFetchChart, it)
+	if err != nil {
+		t.Fatalf("could not initialize the installer: %s", err)
+	}
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
@@ -330,7 +308,10 @@ func TestInstallerSingleServiceWithLB(t *testing.T) {
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	configMapAnchor := anchor.CreateConfigMapAnchor(it)
-	installer := newInstaller(it)
+	installer, err := NewInstaller(localFetchChart, it)
+	if err != nil {
+		t.Fatalf("could not initialize the installer: %s", err)
+	}
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
@@ -374,15 +355,7 @@ func TestInstallerMultiServiceNoLB(t *testing.T) {
 	chart := buildChart(appName, "multi-service-no-lb", repoUrl)
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-	configMapAnchor := anchor.CreateConfigMapAnchor(it)
-	installer := newInstaller(it)
-	svc := loadService("baseline")
-	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
-
-	f := newFixture(objectsPerClusterMap{cluster.Name: nil})
-	fakeCluster := f.Clusters[cluster.Name]
-
-	err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder)
+	_, err := NewInstaller(localFetchChart, it)
 	if err == nil {
 		t.Fatal("Expected an error, none raised")
 	}
@@ -402,7 +375,10 @@ func TestInstallerMultiServiceWithLB(t *testing.T) {
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	configMapAnchor := anchor.CreateConfigMapAnchor(it)
-	installer := newInstaller(it)
+	installer, err := NewInstaller(localFetchChart, it)
+	if err != nil {
+		t.Fatalf("could not initialize the installer: %s", err)
+	}
 	svc := loadService("baseline")
 	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
 
@@ -451,7 +427,10 @@ func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
 	it := buildInstallationTarget("nginx", "nginx", []string{cluster.Name}, &chart)
 
 	configMapAnchor := anchor.CreateConfigMapAnchor(it)
-	installer := newInstaller(it)
+	installer, err := NewInstaller(localFetchChart, it)
+	if err != nil {
+		t.Fatalf("could not initialize the installer: %s", err)
+	}
 	primarySvc := loadService("nginx-primary")
 	secondarySvc := loadService("nginx-secondary")
 	primarySvc.SetOwnerReferences(append(primarySvc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
@@ -503,16 +482,7 @@ func TestInstallerServiceWithReleaseNoWorkaround(t *testing.T) {
 	// Disabling the helm workaround
 	delete(it.ObjectMeta.Labels, shipper.HelmWorkaroundLabel)
 
-	configMapAnchor := anchor.CreateConfigMapAnchor(it)
-
-	installer := newInstaller(it)
-	svc := loadService("baseline")
-	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
-
-	f := newFixture(objectsPerClusterMap{cluster.Name: nil})
-	fakeCluster := f.Clusters[cluster.Name]
-
-	err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder)
+	_, err := NewInstaller(localFetchChart, it)
 	if err == nil {
 		t.Fatal("Expected error, none raised")
 	}
@@ -563,7 +533,10 @@ func TestInstallerNoOverride(t *testing.T) {
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, "test-namespace-reviews-api"),
 	}
 
-	installer := newInstaller(it)
+	installer, err := NewInstaller(localFetchChart, it)
+	if err != nil {
+		t.Fatalf("could not initialize the installer: %s", err)
+	}
 	fakeCluster := f.Clusters[cluster.Name]
 
 	if err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder); err != nil {
