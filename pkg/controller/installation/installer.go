@@ -18,6 +18,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -32,33 +33,39 @@ type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *res
 // Installer is an object that knows how to install Helm charts directly into
 // Kubernetes clusters.
 type Installer struct {
-	chartFetcher shipperrepo.ChartFetcher
-
-	InstallationTarget *shipper.InstallationTarget
-	Scheme             *runtime.Scheme
+	installationTarget *shipper.InstallationTarget
+	preparedObjects    []runtime.Object
 }
 
 // NewInstaller returns a new Installer.
 func NewInstaller(
 	chartFetcher shipperrepo.ChartFetcher,
 	it *shipper.InstallationTarget,
-) *Installer {
-	return &Installer{
-		chartFetcher:       chartFetcher,
-		InstallationTarget: it,
-		Scheme:             kubescheme.Scheme,
-	}
-}
-
-// renderManifests returns a list of rendered manifests for the given
-// InstallationTarget and cluster, or an error.
-func (i *Installer) renderManifests() ([]string, error) {
-	it := i.InstallationTarget
-	chart, err := i.chartFetcher(it.Spec.Chart)
+) (*Installer, error) {
+	chart, err := chartFetcher(it.Spec.Chart)
 	if err != nil {
 		return nil, err
 	}
 
+	manifests, err := renderManifests(it, chart)
+	if err != nil {
+		return nil, err
+	}
+
+	preparedObjects, err := prepareObjects(it, manifests)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Installer{
+		installationTarget: it,
+		preparedObjects:    preparedObjects,
+	}, nil
+}
+
+// renderManifests returns a list of rendered manifests for a given
+// InstallationTarget and chart, or an error.
+func renderManifests(it *shipper.InstallationTarget, chart *helmchart.Chart) ([]string, error) {
 	rendered, err := shipperchart.Render(
 		chart,
 		it.GetName(),
@@ -67,14 +74,103 @@ func (i *Installer) renderManifests() ([]string, error) {
 	)
 
 	if err != nil {
-		err = shippererrors.NewRenderManifestError(err)
+		return nil, shippererrors.NewRenderManifestError(err)
 	}
 
 	for _, v := range rendered {
 		klog.V(10).Infof("Rendered object:\n%s", v)
 	}
 
-	return rendered, err
+	return rendered, nil
+}
+
+type kubeobj interface {
+	runtime.Object
+	GetLabels() map[string]string
+	SetLabels(map[string]string)
+}
+
+func prepareObjects(it *shipper.InstallationTarget, manifests []string) ([]runtime.Object, error) {
+	shipperLabels := labels.Merge(labels.Set(it.Labels), labels.Set{
+		shipper.InstallationTargetOwnerLabel: it.Name,
+	})
+
+	var (
+		allServices          []*corev1.Service
+		productionLBServices []*corev1.Service
+	)
+
+	preparedObjects := make([]runtime.Object, 0, len(manifests))
+	for _, manifest := range manifests {
+		decodedObj, _, err :=
+			kubescheme.Codecs.
+				UniversalDeserializer().
+				Decode([]byte(manifest), nil, nil)
+
+		if err != nil {
+			return nil, shippererrors.NewDecodeManifestError("error decoding manifest: %s", err)
+		}
+
+		switch obj := decodedObj.(type) {
+		case *appsv1.Deployment:
+			// We need the Deployment in the chart to have a unique
+			// name, meaning that different installations need to
+			// generate Deployments with different names,
+			// otherwise, we try to overwrite a previous
+			// Deployment, and that fails with a "field is
+			// immutable" error.
+			deploymentName := obj.Name
+			expectedName := it.Name
+			if !strings.Contains(deploymentName, expectedName) {
+				return nil, shippererrors.NewInvalidChartError(
+					fmt.Sprintf("Deployment %q has invalid name."+
+						" The name of the Deployment should be"+
+						" templated with {{.Release.Name}}.",
+						deploymentName),
+				)
+			}
+
+			decodedObj = patchDeployment(obj, shipperLabels)
+		case *corev1.Service:
+			allServices = append(allServices, obj)
+
+			lbValue, ok := obj.Labels[shipper.LBLabel]
+			if ok && lbValue == shipper.LBForProduction {
+				productionLBServices = append(productionLBServices, obj)
+			}
+		}
+
+		obj := decodedObj.(kubeobj)
+		obj.SetLabels(labels.Merge(
+			obj.GetLabels(),
+			shipperLabels,
+		))
+
+		preparedObjects = append(preparedObjects, obj)
+	}
+
+	// If we have observed only 1 Service object and it was not marked with
+	// shipper-lb=production label, we can do it ourselves.
+	if len(productionLBServices) == 0 && len(allServices) == 1 {
+		productionLBServices = allServices
+	}
+
+	// If, after all, we still can not identify a single Service which will
+	// be the production LB, there is nothing else to do rather than bail
+	// out
+	if len(productionLBServices) != 1 {
+		return nil, shippererrors.NewInvalidChartError(
+			fmt.Sprintf(
+				"one and only one v1.Service object with label %q is required, but %d found instead",
+				shipper.LBLabel, len(productionLBServices)))
+	}
+
+	err := patchService(it, productionLBServices[0])
+	if err != nil {
+		return nil, err
+	}
+
+	return preparedObjects, nil
 }
 
 // buildResourceClient returns a ResourceClient suitable to manipulate the kind
@@ -86,17 +182,15 @@ func (i *Installer) buildResourceClient(
 	dynamicClientBuilder DynamicClientBuilderFunc,
 	gvk *schema.GroupVersionKind,
 ) (dynamic.ResourceInterface, error) {
-	dynamicClient := dynamicClientBuilder(gvk, restConfig, cluster)
-
 	// From the list of resources the target cluster knows about, find the resource for the
 	// kind of object we have at hand.
-	var resource *metav1.APIResource
 	gv := gvk.GroupVersion()
 	resources, err := client.Discovery().ServerResourcesForGroupVersion(gv.String())
 	if err != nil {
-		return nil, shippererrors.NewKubeclientDiscoverError(gvk.GroupVersion(), err)
+		return nil, shippererrors.NewKubeclientDiscoverError(gv, err)
 	}
 
+	var resource *metav1.APIResource
 	for _, e := range resources.APIResources {
 		if e.Kind == gvk.Kind {
 			resource = &e
@@ -118,36 +212,19 @@ func (i *Installer) buildResourceClient(
 		Resource: resource.Name,
 	}
 
+	dynamicClient := dynamicClientBuilder(gvk, restConfig, cluster)
 	resourceClient := dynamicClient.Resource(gvr)
 	if resource.Namespaced {
-		return resourceClient.Namespace(i.InstallationTarget.Namespace), nil
+		return resourceClient.Namespace(i.installationTarget.Namespace), nil
 	} else {
 		return resourceClient, nil
 	}
 }
 
-func (i *Installer) patchDeployment(
-	d *appsv1.Deployment,
-	labelsToInject map[string]string,
-	ownerReference *metav1.OwnerReference,
-) (runtime.Object, error) {
-
-	d.OwnerReferences = []metav1.OwnerReference{*ownerReference}
-
+func patchDeployment(d *appsv1.Deployment, labelsToInject map[string]string) runtime.Object {
 	replicas := int32(0)
 	d.Spec.Replicas = &replicas
 
-	newLabels := d.Labels
-	if newLabels == nil {
-		newLabels = map[string]string{}
-	}
-
-	for k, v := range labelsToInject {
-		newLabels[k] = v
-	}
-	d.SetLabels(newLabels)
-
-	// Patch .spec.selector
 	var newSelector *metav1.LabelSelector
 	if d.Spec.Selector != nil {
 		newSelector = d.Spec.Selector.DeepCopy()
@@ -168,145 +245,60 @@ func (i *Installer) patchDeployment(
 	}
 	d.Spec.Template.SetLabels(podTemplateLabels)
 
-	return d, nil
+	return d
 }
 
-func (i *Installer) patchService(
-	s *corev1.Service,
-	labelsToInject map[string]string,
-	ownerReference *metav1.OwnerReference,
-) (runtime.Object, error) {
-
-	// TODO(btyler): this check and this error are a blocker for using Releases
-	// without Applications. I expect we should just blanket-apply all of the
-	// Release's labels and cope with the fact that some of those are going to be
-	// a little weird on application-lifetime objects like stably named Services
-	requiredLabels := []string{shipper.AppLabel}
-	for _, label := range requiredLabels {
-		if _, ok := labelsToInject[label]; !ok {
-			return nil, shippererrors.NewInvalidChartError(
-				fmt.Sprintf(
-					"Service is missing label %q. This means the Release is also missing it. You might be trying to use Releases without Applications, Shipper isn't ready for this yet.",
-					label,
-				),
-			)
-		}
-	}
-
-	// Those are modified regardless.
-	s.OwnerReferences = []metav1.OwnerReference{*ownerReference}
-	s.Labels = labels.Merge(labels.Set(s.Labels), labels.Set(labelsToInject))
-
-	return s, nil
-}
-
-func (i *Installer) modifyServiceSelector(
-	s *corev1.Service,
-) (runtime.Object, error) {
-
-	labels := s.Labels
-	appName, ok := labels[shipper.AppLabel]
-	if !ok {
-		return nil, shippererrors.NewInvalidChartError(
-			fmt.Sprintf("A service object metadata is expected to contain %q label, none found",
-				shipper.AppLabel))
-	}
-
-	// We are interested only in patching Services properly identified by our specific label
-	if lbValue, ok := labels[shipper.LBLabel]; ok && lbValue == shipper.LBForProduction {
-		s.Spec.Selector[shipper.PodTrafficStatusLabel] = shipper.Enabled
-	}
-
+func patchService(it *shipper.InstallationTarget, s *corev1.Service) error {
 	if relName, ok := s.Spec.Selector[shipper.HelmReleaseLabel]; ok {
-		if v, ok := i.InstallationTarget.Labels[shipper.HelmWorkaroundLabel]; ok && v == shipper.True {
+		v, ok := it.Labels[shipper.HelmWorkaroundLabel]
+		if ok && v == shipper.True {
 			// This selector label is native to helm-bootstrapped charts.
 			// In order to make it work the shipper way, we remove the
 			// label and proceed normally. With one little twist: the user
 			// has to ask shipper to do it explicitly.
-			if relName == i.InstallationTarget.Name {
+			if relName == it.Name {
 				delete(s.Spec.Selector, shipper.HelmReleaseLabel)
 			}
 		} else if !ok || v == shipper.False {
-			return nil, shippererrors.NewInvalidChartError(
+			return shippererrors.NewInvalidChartError(
 				fmt.Sprintf("The chart contains %q label in Service object %q. This will"+
 					" break shipper traffic shifting logic. Consider adding the workaround"+
 					" label %q: true to your Application object",
 					shipper.HelmReleaseLabel, s.Name, shipper.HelmWorkaroundLabel))
-
 		} else {
-			return nil, shippererrors.NewInvalidChartError(
+			return shippererrors.NewInvalidChartError(
 				fmt.Sprintf("Unexpected value for label %q: %q. Expected values: %s/%s.",
 					shipper.HelmWorkaroundLabel, v, shipper.True, shipper.False))
 		}
 	}
 
-	s.Spec.Selector[shipper.AppLabel] = appName
+	s.Labels[shipper.LBLabel] = shipper.LBForProduction
+	s.Spec.Selector[shipper.AppLabel] = s.Labels[shipper.AppLabel]
+	s.Spec.Selector[shipper.PodTrafficStatusLabel] = shipper.Enabled
 
-	return s, nil
+	return nil
 }
 
-func (i *Installer) patchUnstructured(
-	o *unstructured.Unstructured,
-	labelsToInject map[string]string,
-	ownerReference *metav1.OwnerReference,
-) (runtime.Object, error) {
-
-	o.SetOwnerReferences([]metav1.OwnerReference{*ownerReference})
-
-	labels := o.GetLabels()
-	if labels == nil {
-		labels = make(map[string]string)
-	}
-	for k, v := range labelsToInject {
-		labels[k] = v
-	}
-	o.SetLabels(labels)
-	return o, nil
-}
-
-func (i *Installer) patchObject(
-	object runtime.Object,
-	labelsToInject map[string]string,
-	ownerReference *metav1.OwnerReference,
-) (runtime.Object, error) {
-	switch o := object.(type) {
-	case *appsv1.Deployment:
-		return i.patchDeployment(o, labelsToInject, ownerReference)
-	case *corev1.Service:
-		return i.patchService(o, labelsToInject, ownerReference)
-	default:
-		unstructuredObj := &unstructured.Unstructured{}
-		err := i.Scheme.Convert(object, unstructuredObj, nil)
-		if err != nil {
-			return nil, shippererrors.NewConvertUnstructuredError("error converting object to unstructured: %s", err)
-		}
-		return i.patchUnstructured(unstructuredObj, labelsToInject, ownerReference)
-	}
-}
-
-// installManifests attempts to install the manifests on the specified cluster.
-func (i *Installer) installManifests(
+// install attempts to install the manifests on the specified cluster.
+func (i *Installer) install(
 	cluster *shipper.Cluster,
 	client kubernetes.Interface,
 	restConfig *rest.Config,
 	dynamicClientBuilderFunc DynamicClientBuilderFunc,
-	manifests []string,
 ) error {
-
-	it := i.InstallationTarget
+	it := i.installationTarget
 
 	var createdConfigMap *corev1.ConfigMap
-	var existingConfigMap *corev1.ConfigMap
-	var err error
 
 	configMap := anchor.CreateConfigMapAnchor(it)
 	// TODO(jgreff): use a lister insted of a bare client
-	existingConfigMap, err = client.CoreV1().ConfigMaps(it.Namespace).Get(configMap.Name, metav1.GetOptions{})
+	existingConfigMap, err := client.CoreV1().ConfigMaps(it.Namespace).Get(configMap.Name, metav1.GetOptions{})
 	if err != nil && !errors.IsNotFound(err) {
 		return shippererrors.NewKubeclientGetError(it.Name, configMap.Name, err).
 			WithCoreV1Kind("ConfigMap")
 	} else if err != nil { // errors.IsNotFound(err) == true
-		if createdConfigMap, err = client.CoreV1().ConfigMaps(configMap.Namespace).Create(configMap); err != nil {
+		createdConfigMap, err = client.CoreV1().ConfigMaps(configMap.Namespace).Create(configMap)
+		if err != nil {
 			return shippererrors.NewKubeclientCreateError(configMap, err).
 				WithCoreV1Kind("ConfigMap")
 		}
@@ -314,148 +306,26 @@ func (i *Installer) installManifests(
 		createdConfigMap = existingConfigMap
 	}
 
-	// Create the OwnerReference for the manifest objects.
 	ownerReference := anchor.ConfigMapAnchorToOwnerReference(createdConfigMap)
 
-	// We keep decoded objects and labels separately in order to perform
-	// some intermediate checks and decorate labels if needed before the
-	// actual patching happens.
-	preparedObjects := make([]struct {
-		decoded runtime.Object
-		labels  map[string]string
-	}, 0, len(manifests))
-
-	var (
-		productionLoadBalancerServices []*corev1.Service
-		allServices                    []*corev1.Service
-	)
-
-	// Try to install all the rendered objects in the target cluster. We should
-	// fail in the first error to report that this cluster has an issue. Since the
-	// InstallationTarget.Status represent a per cluster status with a scalar
-	// value, we don't try to install other objects for now.
-	//
-	// We'll do this in two parts: the first for loop will decode the manifest
-	// and convert it to unstructured in addition of keep tabs of the number of
-	// v1.Service manifests that have the lb label set to production.
-	for _, manifest := range manifests {
-		decodedObj, _, err :=
-			kubescheme.Codecs.
-				UniversalDeserializer().
-				Decode([]byte(manifest), nil, nil)
-
-		if err != nil {
-			return shippererrors.NewDecodeManifestError("error decoding manifest: %s", err)
-		}
-
-		// We need the Deployment in the chart to have a unique name,
-		// meaning that different installations need to generate
-		// Deployments with different names, otherwise, we try to
-		// overwrite a previous Deployment, and that fails with a
-		// "field is immutable" error.
-		if deployment, ok := decodedObj.(*appsv1.Deployment); ok {
-			deploymentName := deployment.ObjectMeta.Name
-			expectedName := it.GetName()
-			if !strings.Contains(deploymentName, expectedName) {
-				return shippererrors.NewInvalidChartError(
-					fmt.Sprintf("Deployment %q has invalid name."+
-						" The name of the Deployment should be"+
-						" templated with {{.Release.Name}}.",
-						deploymentName),
-				)
-			}
-		}
-
-		// Here we keep a counter of Services that have the lb label. This will
-		// be used later on to determine whether or not an invalid error should
-		// be returned to the caller.
-		if svc, ok := decodedObj.(*corev1.Service); ok {
-			allServices = append(allServices, svc)
-			// Looking for a Service marked as the production LB
-			if lbValue, ok := svc.Labels[shipper.LBLabel]; ok && lbValue == shipper.LBForProduction {
-				// If we have already seen a service marked as a prod LB, it's an error
-				if len(productionLoadBalancerServices) > 0 {
-					return shippererrors.NewInvalidChartError(
-						fmt.Sprintf("Object %#v contains %q label, but %#v claims"+
-							" it is the production LB. This looks like a misconfig:"+
-							" only 1 service is allowed to be the production LB.",
-							decodedObj, shipper.LBLabel, productionLoadBalancerServices[0]))
-				}
-				productionLoadBalancerServices = append(productionLoadBalancerServices, svc)
-			}
-		}
-
-		labels := labels.Merge(labels.Set(it.Labels), labels.Set{
-			shipper.InstallationTargetOwnerLabel: it.Name,
-		})
-
-		preparedObjects = append(preparedObjects, struct {
-			decoded runtime.Object
-			labels  map[string]string
-		}{decoded: decodedObj, labels: labels})
-	}
-
-	// If we have observed only 1 Service object and it was not marked
-	// with shipper-lb=production label, we can do it ourselves.
-	if len(productionLoadBalancerServices) == 0 && len(allServices) == 1 {
-		productionLoadBalancerServices = allServices
-	}
-
-	// If, after all, we still can not identify a single Service which will
-	// be the production LB, there is nothing else to do rather than bail out
-	if len(productionLoadBalancerServices) != 1 {
-		return shippererrors.NewInvalidChartError(
-			fmt.Sprintf(
-				"one and only one v1.Service object with label %q is required, but %d found instead",
-				shipper.LBLabel, len(productionLoadBalancerServices)))
-	}
-
-	chosenService := productionLoadBalancerServices[0]
-	if chosenService.Labels == nil {
-		chosenService.Labels = make(map[string]string)
-	}
-	chosenService.Labels[shipper.LBLabel] = shipper.LBForProduction
-
-	// The second loop is meant to install all the decoded and transformed
-	// manifests once we assume it the Chart is in good shape.
-	for _, r := range preparedObjects {
-		decodedObj, err := i.patchObject(r.decoded, r.labels, &ownerReference)
-		if err != nil {
-			return err
-		}
-
-		// This is the Service object we picked as the production LB
-		if decodedObj == chosenService {
-			if svc, ok := decodedObj.(*corev1.Service); ok {
-				decodedObj, err = i.modifyServiceSelector(svc)
-				if err != nil {
-					return err
-				}
-			} else {
-				// This is a weird situation and this check is kept
-				// here mostly for the sake of checking the world sanity
-				return shippererrors.NewInvalidChartError(
-					fmt.Sprintf("Object %#v is expected to be a Service."+
-						" Can not proceed forward", decodedObj))
-			}
-		}
-
-		// ResourceClient.Create() requires an Unstructured object to work with, so we
-		// need to convert.
-		unstrObj := &unstructured.Unstructured{}
-		err = i.Scheme.Convert(decodedObj, unstrObj, nil)
+	for _, preparedObj := range i.preparedObjects {
+		obj := &unstructured.Unstructured{}
+		err = kubescheme.Scheme.Convert(preparedObj, obj, nil)
 		if err != nil {
 			return shippererrors.NewConvertUnstructuredError("error converting object to unstructured: %s", err)
 		}
 
-		name := unstrObj.GetName()
-		namespace := unstrObj.GetNamespace()
-		gvk := unstrObj.GroupVersionKind()
+		name := obj.GetName()
+		namespace := obj.GetNamespace()
+		gvk := obj.GroupVersionKind()
 
-		// Once we've gathered enough information about the document we want to
-		// install, we're able to build a resource client to interact with the target
-		// cluster.
-		resourceClient, err := i.buildResourceClient(cluster, client, restConfig, dynamicClientBuilderFunc, &gvk)
+		resourceClient, err := i.buildResourceClient(
+			cluster,
+			client,
+			restConfig,
+			dynamicClientBuilderFunc,
+			&gvk,
+		)
 		if err != nil {
 			return err
 		}
@@ -479,10 +349,11 @@ func (i *Installer) installManifests(
 		// If have an error here, it means it is NotFound, so proceed to
 		// create the object on the application cluster.
 		if err != nil {
-			_, err = resourceClient.Create(unstrObj, metav1.CreateOptions{})
+			obj.SetOwnerReferences([]metav1.OwnerReference{ownerReference})
+			_, err = resourceClient.Create(obj, metav1.CreateOptions{})
 			if err != nil {
 				return shippererrors.
-					NewKubeclientCreateError(unstrObj, err).
+					NewKubeclientCreateError(obj, err).
 					WithKind(gvk)
 			}
 			continue
@@ -491,7 +362,7 @@ func (i *Installer) installManifests(
 		// We inject a Namespace object in the objects to be installed
 		// for a particular InstallationTarget; we don't want to
 		// continue if the Namespace already exists.
-		if gvk := existingObj.GroupVersionKind(); gvk.Kind == "Namespace" {
+		if gvk.Kind == "Namespace" {
 			continue
 		}
 
@@ -516,14 +387,14 @@ func (i *Installer) installManifests(
 			existingObj.SetOwnerReferences(ownerReferences)
 		}
 
-		existingObj.SetLabels(unstrObj.GetLabels())
-		existingObj.SetAnnotations(unstrObj.GetAnnotations())
+		existingObj.SetLabels(obj.GetLabels())
+		existingObj.SetAnnotations(obj.GetAnnotations())
 		existingUnstructuredObj := existingObj.UnstructuredContent()
-		newUnstructuredObj := unstrObj.UnstructuredContent()
-		switch decodedObj.(type) {
-		case *corev1.Service:
-			// Copy over clusterIP from existing object's .spec to the
-			// rendered one.
+		newUnstructuredObj := obj.UnstructuredContent()
+
+		if gvk.Kind == "Service" {
+			// Copy over clusterIP from existing object's .spec to
+			// the rendered one.
 			if clusterIP, ok, err := unstructured.NestedString(existingUnstructuredObj, "spec", "clusterIP"); ok {
 				if err != nil {
 					return err
@@ -532,31 +403,17 @@ func (i *Installer) installManifests(
 				unstructured.SetNestedField(newUnstructuredObj, clusterIP, "spec", "clusterIP")
 			}
 		}
+
 		unstructured.SetNestedField(existingUnstructuredObj, newUnstructuredObj["spec"], "spec")
 		existingObj.SetUnstructuredContent(existingUnstructuredObj)
 
 		if _, err := resourceClient.Update(existingObj, metav1.UpdateOptions{}); err != nil {
-			return shippererrors.NewKubeclientUpdateError(unstrObj, err).
+			return shippererrors.NewKubeclientUpdateError(obj, err).
 				WithKind(gvk)
 		}
 	}
 
 	return nil
-}
-
-// install attempts to install an InstallationTarget on the given cluster.
-func (i *Installer) install(
-	cluster *shipper.Cluster,
-	client kubernetes.Interface,
-	restConfig *rest.Config,
-	dynamicClientBuilder DynamicClientBuilderFunc,
-) error {
-	renderedManifests, err := i.renderManifests()
-	if err != nil {
-		return err
-	}
-
-	return i.installManifests(cluster, client, restConfig, dynamicClientBuilder, renderedManifests)
 }
 
 // shouldUpdateObject detects whether the current iteration of the installer

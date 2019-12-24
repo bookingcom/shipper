@@ -301,11 +301,15 @@ func (c *Controller) processInstallationTarget(it *shipper.InstallationTarget) (
 	diff := diffutil.NewMultiDiff()
 	defer c.reportConditionChange(it, InstallationTargetConditionChanged, diff)
 
-	// InstallationTarget is always Operational at the top level because it
-	// doesn't depend on anything.
-	it.Status.Conditions = targetutil.TransitionToOperational(diff, it.Status.Conditions)
+	installer, err := NewInstaller(c.chartFetcher, it)
+	if err != nil {
+		it.Status.Conditions = targetutil.TransitionToNotOperational(
+			diff, it.Status.Conditions,
+			ChartError, err.Error())
+		return it, err
+	}
 
-	installer := NewInstaller(c.chartFetcher, it)
+	it.Status.Conditions = targetutil.TransitionToOperational(diff, it.Status.Conditions)
 
 	newClusterStatuses := make([]*shipper.ClusterInstallationStatus, 0, len(it.Spec.Clusters))
 	clusterErrors := shippererrors.NewMultiError()

@@ -89,36 +89,20 @@ func TestMultipleClusters(t *testing.T) {
 	)
 }
 
-// TestInstallationFailed verifies that the installation controller updates the
-// installation traffic with the correct conditions when a chart can't be
-// installed in a cluster.
-func TestInstallationFailed(t *testing.T) {
-	clusters := []string{clusterA}
+// TestInvalidChart verifies that the installation controller updates the
+// installation traffic with the correct conditions when a chart is invalid.
+func TestInvalidChart(t *testing.T) {
+	clusters := []string{}
 	chart := buildChart("reviews-api", "invalid-deployment-name", repoUrl)
 	it := buildInstallationTarget(shippertesting.TestNamespace, shippertesting.TestApp, clusters, &chart)
 
 	status := shipper.InstallationTargetStatus{
-		Clusters: []*shipper.ClusterInstallationStatus{
-			{
-				Name: clusterA,
-				Conditions: []shipper.ClusterInstallationCondition{
-					ClusterInstallationOperational,
-					{
-						Type:    shipper.ClusterConditionTypeReady,
-						Status:  corev1.ConditionFalse,
-						Reason:  ChartError,
-						Message: `Deployment "reviews-api" has invalid name. The name of the Deployment should be templated with {{.Release.Name}}.`,
-					},
-				},
-			},
-		},
 		Conditions: []shipper.TargetCondition{
-			TargetConditionOperational,
 			{
-				Type:    shipper.TargetConditionTypeReady,
+				Type:    shipper.TargetConditionTypeOperational,
 				Status:  corev1.ConditionFalse,
-				Reason:  ClustersNotReady,
-				Message: fmt.Sprintf("%v", []string{clusterA}),
+				Reason:  ChartError,
+				Message: `Deployment "reviews-api" has invalid name. The name of the Deployment should be templated with {{.Release.Name}}.`,
 			},
 		},
 	}
