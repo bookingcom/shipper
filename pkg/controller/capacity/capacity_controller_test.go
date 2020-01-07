@@ -127,10 +127,9 @@ func TestCapacityShiftingPodsNotSadButNotAvailable(t *testing.T) {
 				Conditions: []shipper.ClusterCapacityCondition{
 					ClusterCapacityOperational,
 					{
-						Type:    shipper.ClusterConditionTypeReady,
-						Status:  corev1.ConditionFalse,
-						Reason:  PodsNotReady,
-						Message: "5 out of 10 pods were not created yet. this might require intervention, check the Deployment for more information",
+						Type:   shipper.ClusterConditionTypeReady,
+						Status: corev1.ConditionFalse,
+						Reason: InProgress,
 					},
 				},
 				Reports: []shipper.ClusterCapacityReport{
@@ -214,7 +213,7 @@ func TestCapacityShiftingSadPods(t *testing.T) {
 						Type:    shipper.ClusterConditionTypeReady,
 						Status:  corev1.ConditionFalse,
 						Reason:  PodsNotReady,
-						Message: "1 out of 10 pods are sad. this might require intervention, check SadPods in this object for more information",
+						Message: "1 out of 10 pods are not Ready. this might require intervention, check SadPods in this object for more information",
 					},
 				},
 				SadPods: []shipper.PodStatus{

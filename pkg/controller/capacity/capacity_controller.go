@@ -25,6 +25,7 @@ import (
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
+	"github.com/bookingcom/shipper/pkg/controller/capacity/builder"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	capacityutil "github.com/bookingcom/shipper/pkg/util/capacity"
 	clusterstatusutil "github.com/bookingcom/shipper/pkg/util/clusterstatus"
@@ -43,6 +44,7 @@ const (
 	InProgress       = "InProgress"
 	InternalError    = "InternalError"
 	PodsNotReady     = "PodsNotReady"
+	DeploymentStuck  = "DeploymentStuck"
 
 	CapacityTargetConditionChanged  = "CapacityTargetConditionChanged"
 	ClusterCapacityConditionChanged = "ClusterCapacityConditionChanged"
@@ -249,6 +251,22 @@ func (c *Controller) processCapacityTargetOnCluster(
 		}
 	}
 
+	// Deployment was successfully updated, but the update hasn't been
+	// observed by the deployment controller yet, so our change is still in
+	// flight, and we can't trust the status yet.
+	if deployment.Generation > deployment.Status.ObservedGeneration {
+		readyCond = capacityutil.NewClusterCapacityCondition(
+			shipper.ClusterConditionTypeReady,
+			corev1.ConditionFalse,
+			InProgress,
+			"",
+		)
+
+		return nil
+	}
+
+	// If the number of available replicas matches what we want, the
+	// CapacityTarget is Ready and there's nothing left to check.
 	if replicas.AchievedDesiredReplicaPercentage(spec.TotalReplicaCount, availableReplicas, spec.Percent) {
 		readyCond = capacityutil.NewClusterCapacityCondition(
 			shipper.ClusterConditionTypeReady,
@@ -261,31 +279,52 @@ func (c *Controller) processCapacityTargetOnCluster(
 	}
 
 	// Not all pods are availble, so we know for sure this cluster isn't
-	// ready. We try to give the user a good error message by checking
-	// whether the pods were created, but aren't ready (aka a sad pod) or
-	// if they were not created yet (possibly because of quota).
-	var msg string
-	sadPods = c.getSadPods(pods)
-	if l := len(sadPods); l > 0 {
-		if l > SadPodLimit {
-			sadPods = sadPods[:SadPodLimit]
-		}
+	// ready. From here on out we just try to figure out why to give users
+	// a good place to start looking.
 
+	// sadPods will be used by the defer at the top of this func
+	sadPods = c.getSadPods(pods)
+	if len(sadPods) > SadPodLimit {
+		sadPods = sadPods[:SadPodLimit]
+	}
+
+	replicaFailureCond := getDeploymentCondition(deployment.Status, appsv1.DeploymentReplicaFailure)
+	progressingCond := getDeploymentCondition(deployment.Status, appsv1.DeploymentProgressing)
+
+	var msg, reason string
+
+	if replicaFailureCond != nil && replicaFailureCond.Status == corev1.ConditionTrue {
+		// It is common for a Deployment to get stuck because of exceeded
+		// quotas. Looking at the ReplicaFailure condition exposes that
+		// condition, and potentially others too.
+		reason = DeploymentStuck
+		msg = replicaFailureCond.Message
+	} else if progressingCond != nil && progressingCond.Status == corev1.ConditionFalse {
+		// If the Deployment has a timeout defined, and exceeds it,
+		// Progressing becomes False. Note that True doesn't *actually*
+		// mean the rollout is still progressing, for our definition of
+		// progressing.
+		reason = DeploymentStuck
+		msg = progressingCond.Message
+	} else if l := len(sadPods); l > 0 {
+		// We ran out of conditions to look at, but we have pods that
+		// aren't Ready, so that's one reason to be concerned.
+		reason = PodsNotReady
 		msg = fmt.Sprintf(
-			"%d out of %d pods are sad. this might require intervention, check SadPods in this object for more information",
+			"%d out of %d pods are not Ready. this might require intervention, check SadPods in this object for more information",
 			l, desiredReplicas,
 		)
 	} else {
-		msg = fmt.Sprintf(
-			"%d out of %d pods were not created yet. this might require intervention, check the Deployment for more information",
-			desiredReplicas-availableReplicas, desiredReplicas,
-		)
+		// None of the existing pods are non-Ready, and we presumably
+		// didn't hit quota yet, so we're most likely still in
+		// progress.
+		reason = InProgress
 	}
 
 	readyCond = capacityutil.NewClusterCapacityCondition(
 		shipper.ClusterConditionTypeReady,
 		corev1.ConditionFalse,
-		PodsNotReady,
+		reason,
 		msg,
 	)
 
@@ -471,4 +510,31 @@ func (c *Controller) reportConditionChange(ct *shipper.CapacityTarget, reason st
 	if !diff.IsEmpty() {
 		c.recorder.Event(ct, corev1.EventTypeNormal, reason, diff.String())
 	}
+}
+
+func buildReport(ownerName string, podsList []*corev1.Pod) *shipper.ClusterCapacityReport {
+	sort.Slice(podsList, func(i, j int) bool {
+		return podsList[i].Name < podsList[j].Name
+	})
+
+	reportBuilder := builder.NewReport(ownerName)
+
+	for _, pod := range podsList {
+		reportBuilder.AddPod(pod)
+	}
+
+	return reportBuilder.Build()
+}
+
+func getDeploymentCondition(
+	status appsv1.DeploymentStatus,
+	condType appsv1.DeploymentConditionType,
+) *appsv1.DeploymentCondition {
+	for _, cond := range status.Conditions {
+		if cond.Type == condType {
+			return &cond
+		}
+	}
+
+	return nil
 }
