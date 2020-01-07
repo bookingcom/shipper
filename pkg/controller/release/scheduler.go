@@ -9,7 +9,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 	"k8s.io/klog"
@@ -277,18 +276,8 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 		return updIt, nil
 	}
 
-	ownerFound := false
-	for _, ownerRef := range it.GetOwnerReferences() {
-		if ownerRef.UID == rel.GetUID() {
-			ownerFound = true
-			break
-		}
-	}
-	if !ownerFound {
-		err := fmt.Errorf("mismatch in owner reference UIDs for InstallationTarget %q", controller.MetaKey(it))
-		klog.Errorf(err.Error())
-
-		return nil, errors.NewConflict(schema.GroupResource{Resource: "InstallationTarget"}, controller.MetaKey(it), err)
+	if !objectBelongsToRelease(it, rel) {
+		return nil, shippererrors.NewWrongOwnerReferenceError(it, rel)
 	}
 
 	if !installationTargetClustersMatch(it, clusters) {
@@ -355,18 +344,8 @@ func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalRepl
 		return updCt, nil
 	}
 
-	ownerFound := false
-	for _, ownerRef := range ct.GetOwnerReferences() {
-		if ownerRef.UID == rel.GetUID() {
-			ownerFound = true
-			break
-		}
-	}
-	if !ownerFound {
-		err := fmt.Errorf("mismatch in owner reference UIDs for CapacityTarget %q", controller.MetaKey(ct))
-		klog.Errorf(err.Error())
-
-		return nil, errors.NewConflict(schema.GroupResource{Resource: "CapacityTarget"}, controller.MetaKey(ct), err)
+	if !objectBelongsToRelease(ct, rel) {
+		return nil, shippererrors.NewWrongOwnerReferenceError(ct, rel)
 	}
 
 	if !capacityTargetClustersMatch(ct, clusters) {
@@ -433,18 +412,8 @@ func (s *Scheduler) CreateOrUpdateTrafficTarget(rel *shipper.Release) (*shipper.
 		return updTt, nil
 	}
 
-	ownerFound := false
-	for _, ownerRef := range tt.GetOwnerReferences() {
-		if ownerRef.UID == rel.GetUID() {
-			ownerFound = true
-			break
-		}
-	}
-	if !ownerFound {
-		err := fmt.Errorf("mismatch in owner reference UIDs for TrafficTarget %q", controller.MetaKey(tt))
-		klog.Errorf(err.Error())
-
-		return nil, errors.NewConflict(schema.GroupResource{Resource: "TrafficTarget"}, controller.MetaKey(tt), err)
+	if !objectBelongsToRelease(tt, rel) {
+		return nil, shippererrors.NewWrongOwnerReferenceError(tt, rel)
 	}
 
 	if !trafficTargetClustersMatch(tt, clusters) {
@@ -656,4 +625,14 @@ func createOwnerRefFromRelease(r *shipper.Release) metav1.OwnerReference {
 		Name:       r.GetName(),
 		UID:        r.GetUID(),
 	}
+}
+
+func objectBelongsToRelease(obj metav1.Object, release *shipper.Release) bool {
+	for _, ref := range obj.GetOwnerReferences() {
+		if ref.Kind == "Release" && ref.UID == release.UID {
+			return true
+		}
+	}
+
+	return false
 }

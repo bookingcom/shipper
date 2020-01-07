@@ -4,8 +4,18 @@ import (
 	"fmt"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/klog"
 )
+
+// kubeobj is close to an union of Object and Type, as there's no interface in
+// apimachinery that has them both together, and it's used in a few places here
+// to get k8s objects as a parameter.
+type kubeobj interface {
+	GetName() string
+	GetNamespace() string
+	GroupVersionKind() schema.GroupVersionKind
+}
 
 // RetryAware is an error that knows if the action that caused it should be
 // retried.

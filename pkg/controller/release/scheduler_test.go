@@ -11,7 +11,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubetesting "k8s.io/client-go/testing"
@@ -22,6 +21,7 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
@@ -688,8 +688,8 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetSameOwner(t *testing.
 
 // TestCreateAssociatedObjectsDuplicateInstallationTargetNoOwner tests a case
 // where an installationtarget object already exists but it does not belong to
-// the propper release. This is an exception and we expect a conflict error to
-// be returned.
+// the propper release. This is an exception and we expect the appropriate
+// error to be returned.
 func TestCreateAssociatedObjectsDuplicateInstallationTargetNoOwner(t *testing.T) {
 	cluster := buildCluster("minikube-a")
 	release := buildRelease()
@@ -718,8 +718,8 @@ func TestCreateAssociatedObjectsDuplicateInstallationTargetNoOwner(t *testing.T)
 		t.Fatalf("Expected an error here, none received")
 	}
 
-	if !errors.IsConflict(err) {
-		t.Fatalf("Expected a conflict error, got: %s", err)
+	if !shippererrors.IsWrongOwnerReferenceError(err) {
+		t.Fatalf("Expected a WrongOwnerReferenceError error, got: %s", err)
 	}
 }
 
@@ -784,7 +784,7 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetSameOwner(t *testing.T) {
 
 // TestCreateAssociatedObjectsDuplicateTrafficTargetNoOwner tests a case where
 // and existing traffictarget object exists but has a wrong owner reference.
-// It's an exception case and we expect a conflict error.
+// It's an exception case and we expect the appropriate error to be returned.
 func TestCreateAssociatedObjectsDuplicateTrafficTargetNoOwner(t *testing.T) {
 	// Fixtures
 	cluster := buildCluster("minikube-a")
@@ -815,8 +815,8 @@ func TestCreateAssociatedObjectsDuplicateTrafficTargetNoOwner(t *testing.T) {
 		t.Fatalf("Expected an error here, none received")
 	}
 
-	if !errors.IsConflict(err) {
-		t.Fatalf("Expected a conflict error, got: %s", err)
+	if !shippererrors.IsWrongOwnerReferenceError(err) {
+		t.Fatalf("Expected a WrongOwnerReferenceError error, got: %s", err)
 	}
 }
 
@@ -881,7 +881,7 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetSameOwner(t *testing.T) {
 
 // TestCreateAssociatedObjectsDuplicateCapacityTargetNoOwner tests a case where
 // a capacitytarget object already exists but it has a wrong owner reference.
-// It's an exception and we expect a conflict error.
+// It's an exception and we expect the appropriate error to be returned.
 func TestCreateAssociatedObjectsDuplicateCapacityTargetNoOwner(t *testing.T) {
 	// Fixtures
 	cluster := buildCluster("minikube-a")
@@ -911,8 +911,8 @@ func TestCreateAssociatedObjectsDuplicateCapacityTargetNoOwner(t *testing.T) {
 		t.Fatalf("Expected an error here, none received")
 	}
 
-	if !errors.IsConflict(err) {
-		t.Fatalf("Expected a conflict error, got: %s", err)
+	if !shippererrors.IsWrongOwnerReferenceError(err) {
+		t.Fatalf("Expected a WrongOwnerReferenceError error, got: %s", err)
 	}
 }
 
