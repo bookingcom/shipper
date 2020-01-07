@@ -88,12 +88,6 @@ func (e KubeclientError) WithCoreV1Kind(kind string) KubeclientError {
 	return e.WithKind(corev1.SchemeGroupVersion.WithKind(kind))
 }
 
-type kubeobj interface {
-	GetName() string
-	GetNamespace() string
-	GroupVersionKind() schema.GroupVersionKind
-}
-
 func NewKubeclientErrorFromObject(verb KubeclientVerb, obj kubeobj, err error) KubeclientError {
 	return NewKubeclientError(verb, obj.GetNamespace(), obj.GetName(), err)
 }

@@ -5,7 +5,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 type UnexpectedObjectCountFromSelectorError struct {
@@ -58,10 +57,15 @@ func NewMultipleOwnerReferencesError(name string, references int) MultipleOwnerR
 		name, references))
 }
 
-type WrongOwnerReferenceError string
+type WrongOwnerReferenceError struct {
+	object kubeobj
+	owner  kubeobj
+}
 
 func (e WrongOwnerReferenceError) Error() string {
-	return string(e)
+	return fmt.Sprintf(`%s "%s/%s" does not belong to %s "%s/%s"`,
+		e.object.GroupVersionKind().Kind, e.object.GetNamespace(), e.object.GetName(),
+		e.owner.GroupVersionKind().Kind, e.owner.GetNamespace(), e.owner.GetName())
 }
 
 func (e WrongOwnerReferenceError) ShouldRetry() bool {
@@ -73,13 +77,11 @@ func IsWrongOwnerReferenceError(err error) bool {
 	return ok
 }
 
-func NewWrongOwnerReferenceError(name string, expectedUID, gotUID types.UID) WrongOwnerReferenceError {
-	return WrongOwnerReferenceError(fmt.Sprintf(
-		"the owner Release for InstallationTarget %q is gone; expected UID %s but got %s",
-		name,
-		expectedUID,
-		gotUID,
-	))
+func NewWrongOwnerReferenceError(object, owner kubeobj) WrongOwnerReferenceError {
+	return WrongOwnerReferenceError{
+		object: object,
+		owner:  owner,
+	}
 }
 
 type InvalidChartError struct {
