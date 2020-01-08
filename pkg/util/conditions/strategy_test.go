@@ -103,7 +103,7 @@ func TestFalseToFalse(t *testing.T) {
 	sc.SetFalse(ct, StrategyConditionsUpdate{
 		Step:               0,
 		LastTransitionTime: createTime,
-		Reason:             ClustersNotReady,
+		Reason:             "ClustersNotReady",
 	})
 
 	testTransitionAndUpdateTimes(t, sc, ct, createTime, updateTime)
@@ -185,7 +185,7 @@ func TestUnknownToFalse(t *testing.T) {
 	sc.SetFalse(
 		ct,
 		StrategyConditionsUpdate{
-			Reason:             ClustersNotReady,
+			Reason:             "ClustersNotReady",
 			Step:               0,
 			LastTransitionTime: transitionTime,
 		})
@@ -209,7 +209,7 @@ func TestContenderStateWaitingForCapacity(t *testing.T) {
 		shipper.ReleaseStrategyCondition{
 			Type:   shipper.StrategyConditionContenderAchievedCapacity,
 			Status: corev1.ConditionFalse,
-			Reason: ClustersNotReady,
+			Reason: "ClustersNotReady",
 			Step:   step1,
 		},
 		shipper.ReleaseStrategyCondition{
@@ -256,7 +256,7 @@ func TestContenderStateWaitingForTraffic(t *testing.T) {
 		shipper.ReleaseStrategyCondition{
 			Type:   shipper.StrategyConditionContenderAchievedCapacity,
 			Status: corev1.ConditionTrue,
-			Reason: ClustersNotReady,
+			Reason: "ClustersNotReady",
 			Step:   step1,
 		},
 		shipper.ReleaseStrategyCondition{
