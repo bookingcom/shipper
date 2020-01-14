@@ -173,6 +173,16 @@ func TestTrafficShiftingWithPodsNotReady(t *testing.T) {
 		},
 		&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
+				Name:      "pod-also-ready",
+				Namespace: shippertesting.TestNamespace,
+				Labels: map[string]string{
+					shipper.AppLabel:     shippertesting.TestApp,
+					shipper.ReleaseLabel: ttName,
+				},
+			},
+		},
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
 				Name:      "pod-not-ready",
 				Namespace: shippertesting.TestNamespace,
 				Labels: map[string]string{
@@ -194,17 +204,20 @@ func TestTrafficShiftingWithPodsNotReady(t *testing.T) {
 		Clusters: []*shipper.ClusterTrafficStatus{
 			{
 				Name:            clusterA,
-				AchievedTraffic: 5,
+				AchievedTraffic: 7,
 				Conditions: []shipper.ClusterTrafficCondition{
 					{
 						Type:   shipper.ClusterConditionTypeOperational,
 						Status: corev1.ConditionTrue,
 					},
 					{
-						Type:    shipper.ClusterConditionTypeReady,
-						Status:  corev1.ConditionFalse,
-						Reason:  PodsNotReady,
-						Message: "1 out of 2 pods are not ready. this might require intervention, check the CapacityTarget for more information",
+						Type:   shipper.ClusterConditionTypeReady,
+						Status: corev1.ConditionFalse,
+						Reason: PodsNotReady,
+						Message: fmt.Sprintf(
+							"1 out of 3 pods designated to receive traffic are not ready. this might require intervention, try `kubectl describe ct %s` for more information",
+							ttName,
+						),
 					},
 				},
 			},
@@ -232,7 +245,7 @@ func TestTrafficShiftingWithPodsNotReady(t *testing.T) {
 				trafficTarget: tt,
 				status:        status,
 				podsByCluster: map[string]podStatus{
-					clusterA: {withTraffic: 2},
+					clusterA: {withTraffic: len(pods)},
 				},
 			},
 		},

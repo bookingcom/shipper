@@ -36,10 +36,11 @@ import (
 const (
 	AgentName = "traffic-controller"
 
-	ClustersNotReady = "ClustersNotReady"
-	InProgress       = "InProgress"
-	InternalError    = "InternalError"
-	PodsNotReady     = "PodsNotReady"
+	ClustersNotReady   = "ClustersNotReady"
+	InProgress         = "InProgress"
+	InternalError      = "InternalError"
+	PodsNotInEndpoints = "PodsNotInEndpoints"
+	PodsNotReady       = "PodsNotReady"
 
 	TrafficTargetConditionChanged  = "TrafficTargetConditionChanged"
 	ClusterTrafficConditionChanged = "ClusterTrafficConditionChanged"
@@ -388,6 +389,9 @@ func (c *Controller) processTrafficTargetOnCluster(
 	}
 
 	if trafficStatus.podsToShift != nil {
+		// If we have pods to shift, our job can only be done after the
+		// change is made and observed, so we definitely still in
+		// progress.
 		err := shiftPodLabels(clientset, trafficStatus.podsToShift)
 		if err != nil {
 			readyCond = trafficutil.NewClusterTrafficCondition(
@@ -398,22 +402,39 @@ func (c *Controller) processTrafficTargetOnCluster(
 			)
 
 			return err
-		} else {
-			readyCond = trafficutil.NewClusterTrafficCondition(
-				shipper.ClusterConditionTypeReady,
-				corev1.ConditionFalse,
-				InProgress,
-				"",
-			)
 		}
-	} else {
+
+		readyCond = trafficutil.NewClusterTrafficCondition(
+			shipper.ClusterConditionTypeReady,
+			corev1.ConditionFalse,
+			InProgress,
+			"",
+		)
+	} else if trafficStatus.podsNotReady > 0 {
+		// All the pods have been shifted, made it to endpoints, but
+		// some aren't ready.
+		msg := fmt.Sprintf(
+			"%d out of %d pods designated to receive traffic are not ready. this might require intervention, try `kubectl describe ct %s` for more information",
+			trafficStatus.podsNotReady, trafficStatus.podsLabeled, releaseName)
 		readyCond = trafficutil.NewClusterTrafficCondition(
 			shipper.ClusterConditionTypeReady,
 			corev1.ConditionFalse,
 			PodsNotReady,
-			fmt.Sprintf(
-				"%d out of %d pods are not ready. this might require intervention, check the CapacityTarget for more information",
-				trafficStatus.podsReady, trafficStatus.podsLabeled),
+			msg,
+		)
+	} else {
+		// All the pods have been shifted, but not enough of them are
+		// ready, and there are none not ready in endpoints, which
+		// means that they haven't made it there yet, or that the
+		// service selector does not match any pods.
+		msg := fmt.Sprintf(
+			"%d out of %d pods designated to receive traffic are not yet in endpoints",
+			trafficStatus.podsLabeled-trafficStatus.podsReady, trafficStatus.podsLabeled)
+		readyCond = trafficutil.NewClusterTrafficCondition(
+			shipper.ClusterConditionTypeReady,
+			corev1.ConditionFalse,
+			PodsNotInEndpoints,
+			msg,
 		)
 	}
 
