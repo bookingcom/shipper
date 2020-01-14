@@ -17,6 +17,7 @@ type trafficShiftingStatus struct {
 	ready                 bool
 	achievedTrafficWeight uint32
 	podsReady             int
+	podsNotReady          int
 	podsLabeled           int
 	podsToShift           map[string][]*corev1.Pod
 }
@@ -44,7 +45,7 @@ func buildTrafficShiftingStatus(
 		shipper.ReleaseLabel: releaseName,
 	}).AsSelector()
 
-	podsByTrafficStatus, podsInRelease, podsReady := summarizePods(
+	podsByTrafficStatus, podsInRelease, podsReady, podsNotReady := summarizePods(
 		appPods, endpoints, releaseSelector)
 
 	releaseTargetWeight := releaseTargetWeights[releaseName]
@@ -80,6 +81,7 @@ func buildTrafficShiftingStatus(
 	return trafficShiftingStatus{
 		achievedTrafficWeight: achievedWeight,
 		podsReady:             podsReady,
+		podsNotReady:          podsNotReady,
 		podsLabeled:           podsLabeledForTraffic,
 		ready:                 ready,
 		podsToShift:           podsToShift,
@@ -132,7 +134,7 @@ func summarizePods(
 	pods []*corev1.Pod,
 	endpoints *corev1.Endpoints,
 	releaseSelector labels.Selector,
-) (map[string][]*corev1.Pod, int, int) {
+) (map[string][]*corev1.Pod, int, int, int) {
 	podsInRelease := make(map[string]struct{})
 	podsByTrafficStatus := make(map[string][]*corev1.Pod)
 
@@ -158,6 +160,7 @@ func summarizePods(
 	}
 
 	podsReady := 0
+	podsNotReady := 0
 	for podName, podReady := range podReadiness {
 		_, belongsToRelease := podsInRelease[podName]
 
@@ -167,10 +170,12 @@ func summarizePods(
 
 		if podReady {
 			podsReady++
+		} else {
+			podsNotReady++
 		}
 	}
 
-	return podsByTrafficStatus, len(podsInRelease), podsReady
+	return podsByTrafficStatus, len(podsInRelease), podsReady, podsNotReady
 }
 
 // markAddressReadiness updates podReadiness  by marking
