@@ -276,6 +276,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 	var strategyPatches []ExecutorResult
 	var trans []ReleaseStrategyStateTransition
 	var relinfo *releaseInfo
+	var stepAchieved bool
 
 	// we keep baseRel as a comparison baseline in order to figure out if
 	// we even have to send an update
@@ -356,7 +357,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 	)
 	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
-	strategyPatches, trans, err = c.ensureReleaseState(relinfo)
+	stepAchieved, strategyPatches, trans, err = c.ensureReleaseState(relinfo)
 	if err != nil {
 		releaseStrategyExecutedCond := releaseutil.NewReleaseCondition(
 			shipper.ReleaseConditionTypeStrategyExecuted,
@@ -377,6 +378,40 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 		"",
 	)
 	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
+
+	if stepAchieved {
+		strategy := rel.Spec.Environment.Strategy
+		targetStep := rel.Spec.TargetStep
+		isLastStep := int(targetStep) == len(strategy.Steps)-1
+		previouslyAchievedStep := rel.Status.AchievedStep
+
+		if previouslyAchievedStep == nil || targetStep != previouslyAchievedStep.Step {
+			// we validate that it fits in the len() of
+			// Strategy.Steps early in the process
+			targetStepName := strategy.Steps[targetStep].Name
+			rel.Status.AchievedStep = &shipper.AchievedStep{
+				Step: targetStep,
+				Name: targetStepName,
+			}
+			c.recorder.Eventf(
+				rel,
+				corev1.EventTypeNormal,
+				"StrategyApplied",
+				"step [%d] finished",
+				targetStep,
+			)
+		}
+
+		if isLastStep {
+			condition := releaseutil.NewReleaseCondition(
+				shipper.ReleaseConditionTypeComplete,
+				corev1.ConditionTrue,
+				"",
+				"",
+			)
+			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
+		}
+	}
 
 	for _, t := range trans {
 		c.recorder.Eventf(
@@ -421,27 +456,27 @@ func (c *Controller) applicationReleases(rel *shipper.Release) ([]*shipper.Relea
 	return releases, nil
 }
 
-func (c *Controller) ensureReleaseState(relinfo *releaseInfo) ([]ExecutorResult, []ReleaseStrategyStateTransition, error) {
+func (c *Controller) ensureReleaseState(relinfo *releaseInfo) (bool, []ExecutorResult, []ReleaseStrategyStateTransition, error) {
 	releases, err := c.applicationReleases(relinfo.release)
 	if err != nil {
-		return nil, nil, err
+		return false, nil, nil, err
 	}
 	prev, succ, err := releaseutil.GetSiblingReleases(relinfo.release, releases)
 	if err != nil {
-		return nil, nil, err
+		return false, nil, nil, err
 	}
 
 	var relinfoPrev, relinfoSucc *releaseInfo
 	if prev != nil {
 		relinfoPrev, err = c.buildReleaseInfo(prev)
 		if err != nil {
-			return nil, nil, err
+			return false, nil, nil, err
 		}
 	}
 	if succ != nil {
 		relinfoSucc, err = c.buildReleaseInfo(succ)
 		if err != nil {
-			return nil, nil, err
+			return false, nil, nil, err
 		}
 	}
 
@@ -451,9 +486,9 @@ func (c *Controller) ensureReleaseState(relinfo *releaseInfo) ([]ExecutorResult,
 	// see pkg/util/conditions/strategy.go for more details.
 	hasIncumbent := len(releases) > 1
 
-	executor := NewStrategyExecutor(relinfo, relinfoPrev, relinfoSucc, c.recorder, hasIncumbent)
+	executor := NewStrategyExecutor(relinfo, relinfoPrev, relinfoSucc, hasIncumbent)
 
-	patches, trans, err := executor.Execute()
+	complete, patches, trans, err := executor.Execute()
 
 	if len(patches) == 0 {
 		klog.V(4).Infof("Strategy verified for release %q, nothing to patch", controller.MetaKey(relinfo.release))
@@ -461,7 +496,7 @@ func (c *Controller) ensureReleaseState(relinfo *releaseInfo) ([]ExecutorResult,
 		klog.V(4).Infof("Strategy has been executed for release %q, applying patches", controller.MetaKey(relinfo.release))
 	}
 
-	return patches, trans, err
+	return complete, patches, trans, err
 }
 
 func (c *Controller) applyPatch(namespace string, patch ExecutorResult) error {

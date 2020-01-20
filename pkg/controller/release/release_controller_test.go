@@ -323,6 +323,7 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 				{Type: shipper.ReleaseConditionTypeStrategyExecuted, Status: corev1.ConditionTrue},
 			},
+			Strategy: &shipper.ReleaseStrategyStatus{},
 		},
 		Spec: shipper.ReleaseSpec{
 			TargetStep: 2,
@@ -520,6 +521,7 @@ func (f *fixture) buildContender(namespace string, relName string, replicaCount 
 			Conditions: []shipper.ReleaseCondition{
 				{Type: shipper.ReleaseConditionTypeBlocked, Status: corev1.ConditionFalse},
 			},
+			Strategy: &shipper.ReleaseStrategyStatus{},
 		},
 		Spec: shipper.ReleaseSpec{
 			TargetStep: 0,
@@ -722,15 +724,6 @@ func (f *fixture) expectReleaseWaitingForCommand(rel *shipper.Release, step int3
 	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 	newStatus := map[string]interface{}{
 		"status": shipper.ReleaseStatus{
-			AchievedStep: &shipper.AchievedStep{
-				Step: step,
-				Name: rel.Spec.Environment.Strategy.Steps[step].Name,
-			},
-			Conditions: []shipper.ReleaseCondition{
-				{Type: shipper.ReleaseConditionTypeBlocked, Status: corev1.ConditionFalse},
-				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-				{Type: shipper.ReleaseConditionTypeStrategyExecuted, Status: corev1.ConditionTrue},
-			},
 			Strategy: &shipper.ReleaseStrategyStatus{
 				State: shipper.ReleaseStrategyState{
 					WaitingForInstallation: shipper.StrategyStateFalse,
@@ -1035,12 +1028,13 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipp
 		)
 	}
 
-	r.Status.Strategy = &shipper.ReleaseStrategyStatus{
-		Conditions: strategyConditions.AsReleaseStrategyConditions(),
-		State:      strategyConditions.AsReleaseStrategyState(r.Spec.TargetStep, true, false),
-	}
 	newStatus := map[string]interface{}{
-		"status": r.Status,
+		"status": shipper.ReleaseStatus{
+			Strategy: &shipper.ReleaseStrategyStatus{
+				Conditions: strategyConditions.AsReleaseStrategyConditions(),
+				State:      strategyConditions.AsReleaseStrategyState(r.Spec.TargetStep, true, false),
+			},
+		},
 	}
 	patch, _ = json.Marshal(newStatus)
 	action = kubetesting.NewPatchAction(
@@ -1133,12 +1127,13 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipper.TrafficTarget, r *shipper
 		)
 	}
 
-	r.Status.Strategy = &shipper.ReleaseStrategyStatus{
-		Conditions: strategyConditions.AsReleaseStrategyConditions(),
-		State:      strategyConditions.AsReleaseStrategyState(r.Spec.TargetStep, true, false),
-	}
 	newStatus := map[string]interface{}{
-		"status": r.Status,
+		"status": shipper.ReleaseStatus{
+			Strategy: &shipper.ReleaseStrategyStatus{
+				Conditions: strategyConditions.AsReleaseStrategyConditions(),
+				State:      strategyConditions.AsReleaseStrategyState(r.Spec.TargetStep, true, false),
+			},
+		},
 	}
 	patch, _ = json.Marshal(newStatus)
 	action = kubetesting.NewPatchAction(
@@ -1161,16 +1156,6 @@ func (f *fixture) expectReleaseReleased(rel *shipper.Release, targetStep int32) 
 	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 	newStatus := map[string]interface{}{
 		"status": shipper.ReleaseStatus{
-			AchievedStep: &shipper.AchievedStep{
-				Step: targetStep,
-				Name: rel.Spec.Environment.Strategy.Steps[targetStep].Name,
-			},
-			Conditions: []shipper.ReleaseCondition{
-				{Type: shipper.ReleaseConditionTypeBlocked, Status: corev1.ConditionFalse},
-				{Type: shipper.ReleaseConditionTypeComplete, Status: corev1.ConditionTrue},
-				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-				{Type: shipper.ReleaseConditionTypeStrategyExecuted, Status: corev1.ConditionTrue},
-			},
 			Strategy: &shipper.ReleaseStrategyStatus{
 				State: shipper.ReleaseStrategyState{
 					WaitingForInstallation: shipper.StrategyStateFalse,
@@ -1217,11 +1202,11 @@ func (f *fixture) expectReleaseReleased(rel *shipper.Release, targetStep int32) 
 
 	f.expectedEvents = []string{
 		fmt.Sprintf("Normal StrategyApplied step [%d] finished", targetStep),
-		"Normal ReleaseConditionChanged [] -> [Complete True]",
 		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForCapacity" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
 		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForCommand" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
 		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForInstallation" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
 		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s/%s" had its state "WaitingForTraffic" transitioned to "False"`, rel.GetNamespace(), rel.GetName()),
+		"Normal ReleaseConditionChanged [] -> [Complete True]",
 	}
 }
 
@@ -1235,22 +1220,16 @@ func (f *fixture) expectInstallationNotReady(rel *shipper.Release, achievedStepI
 
 	gvr := shipper.SchemeGroupVersion.WithResource("releases")
 
-	var achievedStep *shipper.AchievedStep
-	if achievedStepIndex != nil {
-		achievedStep = &shipper.AchievedStep{
-			Step: *achievedStepIndex,
-			Name: rel.Spec.Environment.Strategy.Steps[*achievedStepIndex].Name,
-		}
-	}
+	// var achievedStep *shipper.AchievedStep
+	// if achievedStepIndex != nil {
+	// 	achievedStep = &shipper.AchievedStep{
+	// 		Step: *achievedStepIndex,
+	// 		Name: rel.Spec.Environment.Strategy.Steps[*achievedStepIndex].Name,
+	// 	}
+	// }
 
 	newStatus := map[string]interface{}{
 		"status": shipper.ReleaseStatus{
-			AchievedStep: achievedStep,
-			Conditions: []shipper.ReleaseCondition{
-				{Type: shipper.ReleaseConditionTypeBlocked, Status: corev1.ConditionFalse},
-				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-				{Type: shipper.ReleaseConditionTypeStrategyExecuted, Status: corev1.ConditionTrue},
-			},
 			Strategy: &shipper.ReleaseStrategyStatus{
 				State: shipper.ReleaseStrategyState{
 					WaitingForInstallation: shipper.StrategyStateTrue,
@@ -1285,23 +1264,17 @@ func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, ac
 
 	var newStatus map[string]interface{}
 
-	var achievedStep *shipper.AchievedStep
-	if achievedStepIndex != 0 {
-		achievedStep = &shipper.AchievedStep{
-			Step: achievedStepIndex,
-			Name: rel.Spec.Environment.Strategy.Steps[achievedStepIndex].Name,
-		}
-	}
+	// var achievedStep *shipper.AchievedStep
+	// if achievedStepIndex != 0 {
+	// 	achievedStep = &shipper.AchievedStep{
+	// 		Step: achievedStepIndex,
+	// 		Name: rel.Spec.Environment.Strategy.Steps[achievedStepIndex].Name,
+	// 	}
+	// }
 
 	if role == Contender {
 		newStatus = map[string]interface{}{
 			"status": shipper.ReleaseStatus{
-				AchievedStep: achievedStep,
-				Conditions: []shipper.ReleaseCondition{
-					{Type: shipper.ReleaseConditionTypeBlocked, Status: corev1.ConditionFalse},
-					{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-					{Type: shipper.ReleaseConditionTypeStrategyExecuted, Status: corev1.ConditionTrue},
-				},
 				Strategy: &shipper.ReleaseStrategyStatus{
 					State: shipper.ReleaseStrategyState{
 						WaitingForInstallation: shipper.StrategyStateFalse,
@@ -1334,12 +1307,6 @@ func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, ac
 	} else {
 		newStatus = map[string]interface{}{
 			"status": shipper.ReleaseStatus{
-				AchievedStep: achievedStep,
-				Conditions: []shipper.ReleaseCondition{
-					{Type: shipper.ReleaseConditionTypeBlocked, Status: corev1.ConditionFalse},
-					{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-					{Type: shipper.ReleaseConditionTypeStrategyExecuted, Status: corev1.ConditionTrue},
-				},
 				Strategy: &shipper.ReleaseStrategyStatus{
 					State: shipper.ReleaseStrategyState{
 						WaitingForInstallation: shipper.StrategyStateFalse,
@@ -1399,23 +1366,17 @@ func (f *fixture) expectTrafficNotReady(relpair releaseInfoPair, targetStep, ach
 	rel := relpair.contender.release
 	var newStatus map[string]interface{}
 
-	var achievedStep *shipper.AchievedStep
-	if achievedStepIndex != 0 {
-		achievedStep = &shipper.AchievedStep{
-			Step: achievedStepIndex,
-			Name: rel.Spec.Environment.Strategy.Steps[achievedStepIndex].Name,
-		}
-	}
+	// var achievedStep *shipper.AchievedStep
+	// if achievedStepIndex != 0 {
+	// 	achievedStep = &shipper.AchievedStep{
+	// 		Step: achievedStepIndex,
+	// 		Name: rel.Spec.Environment.Strategy.Steps[achievedStepIndex].Name,
+	// 	}
+	// }
 
 	if role == Contender {
 		newStatus = map[string]interface{}{
 			"status": shipper.ReleaseStatus{
-				AchievedStep: achievedStep,
-				Conditions: []shipper.ReleaseCondition{
-					{Type: shipper.ReleaseConditionTypeBlocked, Status: corev1.ConditionFalse},
-					{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-					{Type: shipper.ReleaseConditionTypeStrategyExecuted, Status: corev1.ConditionTrue},
-				},
 				Strategy: &shipper.ReleaseStrategyStatus{
 					State: shipper.ReleaseStrategyState{
 						WaitingForInstallation: shipper.StrategyStateFalse,
@@ -1453,12 +1414,6 @@ func (f *fixture) expectTrafficNotReady(relpair releaseInfoPair, targetStep, ach
 	} else {
 		newStatus = map[string]interface{}{
 			"status": shipper.ReleaseStatus{
-				AchievedStep: achievedStep,
-				Conditions: []shipper.ReleaseCondition{
-					{Type: shipper.ReleaseConditionTypeBlocked, Status: corev1.ConditionFalse},
-					{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
-					{Type: shipper.ReleaseConditionTypeStrategyExecuted, Status: corev1.ConditionTrue},
-				},
 				Strategy: &shipper.ReleaseStrategyStatus{
 					State: shipper.ReleaseStrategyState{
 						WaitingForInstallation: shipper.StrategyStateFalse,
