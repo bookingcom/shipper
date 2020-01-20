@@ -23,8 +23,8 @@ type TrafficTargetOutdatedResult struct {
 }
 
 type ReleaseUpdateResult struct {
-	Name      string
-	NewStatus *shipper.ReleaseStatus
+	Name              string
+	NewStrategyStatus *shipper.ReleaseStrategyStatus
 }
 
 type ReleaseAnnotationUpdateResult struct {
@@ -36,44 +36,22 @@ func (c *CapacityTargetOutdatedResult) PatchSpec() (string, schema.GroupVersionK
 	patch := make(map[string]interface{})
 	patch["spec"] = c.NewSpec
 	b, _ := json.Marshal(patch)
-	return c.Name, schema.GroupVersionKind{
-		Group:   shipper.SchemeGroupVersion.Group,
-		Version: shipper.SchemeGroupVersion.Version,
-		Kind:    "CapacityTarget",
-	}, b
+	return c.Name, shipper.SchemeGroupVersion.WithKind("CapacityTarget"), b
 }
 
 func (c *TrafficTargetOutdatedResult) PatchSpec() (string, schema.GroupVersionKind, []byte) {
 	patch := make(map[string]interface{})
 	patch["spec"] = c.NewSpec
 	b, _ := json.Marshal(patch)
-	return c.Name, schema.GroupVersionKind{
-		Group:   shipper.SchemeGroupVersion.Group,
-		Version: shipper.SchemeGroupVersion.Version,
-		Kind:    "TrafficTarget",
-	}, b
+	return c.Name, shipper.SchemeGroupVersion.WithKind("TrafficTarget"), b
 }
 
 func (r *ReleaseUpdateResult) PatchSpec() (string, schema.GroupVersionKind, []byte) {
-	patch := make(map[string]interface{})
-	patch["status"] = r.NewStatus
+	patch := map[string]interface{}{
+		"status": map[string]interface{}{
+			"strategy": r.NewStrategyStatus,
+		},
+	}
 	b, _ := json.Marshal(patch)
-	return r.Name, schema.GroupVersionKind{
-		Group:   shipper.SchemeGroupVersion.Group,
-		Version: shipper.SchemeGroupVersion.Version,
-		Kind:    "Release",
-	}, b
-}
-
-func (r *ReleaseAnnotationUpdateResult) PatchSpec() (string, schema.GroupVersionKind, []byte) {
-	patch := make(map[string]interface{})
-	meta := make(map[string]interface{})
-	meta["annotations"] = r.NewAnnotations
-	patch["metadata"] = meta
-	b, _ := json.Marshal(patch)
-	return r.Name, schema.GroupVersionKind{
-		Group:   shipper.SchemeGroupVersion.Group,
-		Version: shipper.SchemeGroupVersion.Version,
-		Kind:    "Release",
-	}, b
+	return r.Name, shipper.SchemeGroupVersion.WithKind("Release"), b
 }

@@ -129,18 +129,16 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*releaseInfo, error) 
 		releaseErrors.Append(err)
 	}
 
-	relinfo := &releaseInfo{
-		release:            rel,
-		installationTarget: it,
-		trafficTarget:      tt,
-		capacityTarget:     ct,
-	}
-
 	if releaseErrors.Any() {
 		return nil, releaseErrors.Flatten()
 	}
 
-	return relinfo, nil
+	return &releaseInfo{
+		release:            rel,
+		installationTarget: it,
+		trafficTarget:      tt,
+		capacityTarget:     ct,
+	}, nil
 }
 
 func releaseHasClusters(rel *shipper.Release) bool {
