@@ -296,12 +296,19 @@ func genReleaseStrategyStateEnforcer(curr, succ *releaseInfo) PipelineStep {
 */
 
 func (e *StrategyExecutor) Execute() (bool, []ExecutorResult, []ReleaseStrategyStateTransition, error) {
-	strategy := e.curr.release.Spec.Environment.Strategy
-	targetStep := e.curr.release.Spec.TargetStep
-	if targetStep >= int32(len(strategy.Steps)) {
-		err := fmt.Errorf("no step %d in strategy for Release %q",
-			targetStep, controller.MetaKey(e.curr.release))
-		return false, nil, nil, shippererrors.NewUnrecoverableError(err)
+	// Validation step: ensuring all release specs are pointing to a
+	// meaningful strategy stage.
+	for _, relinfo := range []*releaseInfo{e.prev, e.curr, e.succ} {
+		if relinfo == nil {
+			continue
+		}
+		strategy := relinfo.release.Spec.Environment.Strategy
+		targetStep := relinfo.release.Spec.TargetStep
+		if targetStep >= int32(len(strategy.Steps)) {
+			err := fmt.Errorf("no step %d in strategy for Release %q",
+				targetStep, controller.MetaKey(relinfo.release))
+			return false, nil, nil, shippererrors.NewUnrecoverableError(err)
+		}
 	}
 
 	var releaseStrategyConditions []shipper.ReleaseStrategyCondition

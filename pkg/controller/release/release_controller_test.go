@@ -2232,7 +2232,7 @@ func TestContenderReleaseIsInstalled(t *testing.T) {
 	f.run()
 }
 
-func TestApplicationExposesStrategyFailure(t *testing.T) {
+func TestApplicationExposesStrategyFailureIndexOutOfBounds(t *testing.T) {
 	namespace := "test-namespace"
 	incumbentName, contenderName := "test-incumbent", "test-contender"
 	app := buildApplication(namespace, "test-app")
@@ -2295,6 +2295,97 @@ func TestApplicationExposesStrategyFailure(t *testing.T) {
 		incumbent.installationTarget.DeepCopy(),
 		incumbent.capacityTarget.DeepCopy(),
 		incumbent.trafficTarget.DeepCopy(),
+	)
+
+	f.actions = append(f.actions, kubetesting.NewUpdateAction(
+		shipper.SchemeGroupVersion.WithResource("releases"),
+		namespace,
+		expectedRel))
+
+	f.filter = f.filter.Extend(actionfilter{
+		[]string{"update"},
+		[]string{"releases"},
+	})
+	f.expectedEvents = append(f.expectedEvents,
+		fmt.Sprintf("Normal ReleaseConditionChanged [] -> [Scheduled True], [] -> [StrategyExecuted False StrategyExecutionFailed %s]", missingStepMsg))
+
+	f.run()
+}
+
+func TestApplicationExposesStrategyFailureSuccessorIndexOutOfBounds(t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+	app := buildApplication(namespace, "test-app")
+
+	cluster := buildCluster("minikube")
+
+	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+	f.cycles = 1
+
+	totalReplicaCount := int32(1)
+	contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+	incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+	missingStepMsg := fmt.Sprintf("failed to execute strategy: \"no step 2 in strategy for Release \\\"%s/%s\\\"\"", contender.release.Namespace, contender.release.Name)
+
+	// We define 2 steps and will intentionally set target step index out of this bound
+	strategyStaging := shipper.RolloutStrategy{
+		Steps: []shipper.RolloutStrategyStep{
+			{
+				Name:     "staging",
+				Capacity: shipper.RolloutStrategyStepValue{Incumbent: 100, Contender: 1},
+				Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 100, Contender: 0},
+			},
+			{
+				Name:     "full on",
+				Capacity: shipper.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+				Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+			},
+		},
+	}
+
+	// clean up conditions as incumbent helper gives us some extras
+	incumbent.release.Status.Conditions = []shipper.ReleaseCondition{
+		{
+			Type:   shipper.ReleaseConditionTypeBlocked,
+			Status: corev1.ConditionFalse,
+		},
+	}
+
+	contender.release.Spec.Environment.Strategy = &strategyStaging
+	contender.release.Spec.TargetStep = 2 // out of bound index
+
+	expectedRel := incumbent.release.DeepCopy()
+	expectedRel.Status.Conditions = []shipper.ReleaseCondition{
+		{
+			Type:   shipper.ReleaseConditionTypeBlocked,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   shipper.ReleaseConditionTypeScheduled,
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:    shipper.ReleaseConditionTypeStrategyExecuted,
+			Status:  corev1.ConditionFalse,
+			Reason:  conditions.StrategyExecutionFailed,
+			Message: missingStepMsg,
+		},
+	}
+
+	// we change the order of incumbent and contender here: we want to
+	// ensure we're safe when an incumbent steps in first and then triggers
+	// it's successor processing.
+	f.addObjects(
+		incumbent.release.DeepCopy(),
+		incumbent.installationTarget.DeepCopy(),
+		incumbent.capacityTarget.DeepCopy(),
+		incumbent.trafficTarget.DeepCopy(),
+
+		contender.release.DeepCopy(),
+		contender.installationTarget.DeepCopy(),
+		contender.capacityTarget.DeepCopy(),
+		contender.trafficTarget.DeepCopy(),
 	)
 
 	f.actions = append(f.actions, kubetesting.NewUpdateAction(
