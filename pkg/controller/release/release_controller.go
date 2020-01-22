@@ -273,7 +273,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 	}
 
 	var condition *shipper.ReleaseCondition
-	var strategyPatches []ExecutorResult
+	var strategyPatches []StrategyPatch
 	var trans []ReleaseStrategyStateTransition
 	var relinfo *releaseInfo
 	var stepAchieved bool
@@ -281,7 +281,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 	// we keep baseRel as a comparison baseline in order to figure out if
 	// we even have to send an update
 	baseRel := rel.DeepCopy()
-	patches := make([]ExecutorResult, 0)
+	patches := make([]StrategyPatch, 0)
 
 	diff := diffutil.NewMultiDiff()
 	defer func() {
@@ -456,7 +456,7 @@ func (c *Controller) applicationReleases(rel *shipper.Release) ([]*shipper.Relea
 	return releases, nil
 }
 
-func (c *Controller) ensureReleaseState(relinfo *releaseInfo) (bool, []ExecutorResult, []ReleaseStrategyStateTransition, error) {
+func (c *Controller) ensureReleaseState(relinfo *releaseInfo) (bool, []StrategyPatch, []ReleaseStrategyStateTransition, error) {
 	releases, err := c.applicationReleases(relinfo.release)
 	if err != nil {
 		return false, nil, nil, err
@@ -499,7 +499,7 @@ func (c *Controller) ensureReleaseState(relinfo *releaseInfo) (bool, []ExecutorR
 	return complete, patches, trans, err
 }
 
-func (c *Controller) applyPatch(namespace string, patch ExecutorResult) error {
+func (c *Controller) applyPatch(namespace string, patch StrategyPatch) error {
 	name, gvk, b := patch.PatchSpec()
 
 	var err error
