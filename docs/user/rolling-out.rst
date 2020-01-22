@@ -29,7 +29,7 @@ Here's the Application object we'll use:
     template:
       chart:
         name: nginx
-        repoUrl: https://storage.googleapis.com/shipper-demo
+        repoUrl: https://raw.githubusercontent.com/bookingcom/shipper/master/test/e2e/testdata
         version: 0.0.1
       clusterRequirements:
         regions:

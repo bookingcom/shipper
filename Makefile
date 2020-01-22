@@ -6,7 +6,6 @@ DOCKER_REGISTRY ?= docker.io
 IMAGE_TAG ?= latest
 SHIPPER_IMAGE ?= $(DOCKER_REGISTRY)/bookingcom/shipper:$(IMAGE_TAG)
 SHIPPER_STATE_METRICS_IMAGE ?= $(DOCKER_REGISTRY)/bookingcom/shipper-state-metrics:$(IMAGE_TAG)
-HELM_IMAGE ?= $(DOCKER_REGISTRY)/bookingcom/shipper-helm:$(IMAGE_TAG)
 
 # Defines the namespace where you want shipper to run.
 SHIPPER_NAMESPACE ?= shipper-system
@@ -76,7 +75,7 @@ export CGO_ENABLED := 0
 # working on shipper, or via CI scripts.
 
 KUBECTL ?= kubectl -n $(SHIPPER_NAMESPACE)
-.PHONY: setup install install-shipper install-shipper-state-metrics install-helm e2e restart logs lint test vendor verify-codegen update-codegen clean
+.PHONY: setup install install-shipper install-shipper-state-metrics e2e restart logs lint test vendor verify-codegen update-codegen clean
 
 # Set up shipper clusters with `shipperctl`. This is probably the first thing
 # you should do when starting to work on shipper, as most of everything else
@@ -95,20 +94,14 @@ install-shipper: build/shipper.image.$(IMAGE_TAG) build/shipper.deployment.$(IMA
 install-shipper-state-metrics: build/shipper-state-metrics.image.$(IMAGE_TAG) build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
 	$(KUBECTL) apply -f build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
 
-# Install a helm chart repository server with test charts. This is useful
-# mostly for end-to-end tests.
-install-helm: build/helm.image.$(IMAGE_TAG)
-	$(KUBECTL) apply -f ci/helm.service.yaml
-	sed s=\<IMAGE\>=$(shell cat build/helm.image.$(IMAGE_TAG))= ci/helm.deployment.yaml | $(KUBECTL) apply -f -
-
 # Run all end-to-end tests. It does all the work necessary to get the current
 # version of shipper on your working directory running in kubernetes, so just
 # running `make -j e2e` should get you up and running immediately. Do remember
 # do setup your clusters with `make setup` though.
-e2e: install install-helm build/e2e.test
+e2e: install build/e2e.test
 	./build/e2e.test --e2e --kubeconfig ~/.kube/config \
-		--testcharts http://$(shell $(KUBECTL) get service helm -o jsonpath='{.spec.clusterIP}'):8879 \
 		--appcluster $(SHIPPER_CLUSTER) \
+		--testcharts $(TEST_HELM_REPO_URL) \
 		$(E2E_FLAGS)
 
 # Delete all pods in $(SHIPPER_NAMESPACE), to force kubernetes to spawn new
@@ -194,7 +187,7 @@ build/%.tar.gz: build/%
 # $(SHIPPER_IMAGE).
 IMAGE_NAME_WITH_TAG = $($(subst -,_,$(shell echo $* | tr '[:lower:]' '[:upper:]'))_IMAGE)
 
-# The shipper, shipper-state-metrics and helm targets here are phony and
+# The shipper and shipper-state-metrics targets here are phony and
 # supposed to be used directly, as a shorthand. They call their close cousins
 # in `build/%.image.$(IMAGE_TAG)`, that are *not* phony, as they output the
 # fully qualified name to an image that's immutable to a file. This serves two
@@ -207,20 +200,11 @@ IMAGE_NAME_WITH_TAG = $($(subst -,_,$(shell echo $* | tr '[:lower:]' '[:upper:]'
 #   build` from being called at all, as it just tells us that all layers have
 #   already been cached and it didn't generate a new image.
 
-.PHONY: shipper shipper-state-metrics helm
+.PHONY: shipper shipper-state-metrics
 shipper: build/shipper.image.$(IMAGE_TAG)
 shipper-state-metrics: build/shipper-state-metrics.image.$(IMAGE_TAG)
-helm: build/helm.image.$(IMAGE_TAG)
 
-# These two targets actually get built by the more general
-# `build/%.image.$(IMAGE_TAG)` just below, but we need to add the binaries as
-# dependencies. We can't add them directly to the general rule because the helm
-# image does not have any binaries that it depends on.
-build/shipper.image.$(IMAGE_TAG): build/shipper.linux-amd64
-build/shipper-state-metrics.image.$(IMAGE_TAG): build/shipper-state-metrics.linux-amd64
-build/helm.image.$(IMAGE_TAG): test/e2e/testdata
-
-build/%.image.$(IMAGE_TAG): Dockerfile.%
+build/%.image.$(IMAGE_TAG): Dockerfile.% build/%.linux-amd64
 	docker build -f Dockerfile.$* -t $(IMAGE_NAME_WITH_TAG) --build-arg HTTP_PROXY=$(HTTP_PROXY) --build-arg HTTPS_PROXY=$(HTTPS_PROXY) .
 	docker push $(IMAGE_NAME_WITH_TAG)
 	docker inspect --format='{{index .RepoDigests 0}}' $(IMAGE_NAME_WITH_TAG) > $@

@@ -1,5 +1,0 @@
-FROM alpine/helm:2.14.3
-
-ADD test/e2e/testdata /charts
-
-ENTRYPOINT helm serve --repo-path /charts --address 0.0.0.0:$HELM_SERVICE_PORT --url http://$HELM_SERVICE_HOST:$HELM_SERVICE_PORT
