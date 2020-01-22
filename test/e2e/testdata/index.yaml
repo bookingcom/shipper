@@ -1,0 +1,51 @@
+apiVersion: v1
+entries:
+  broken-image:
+  - apiVersion: v1
+    created: "2020-01-21T15:44:52.139312+01:00"
+    description: This chart does not work because it references an invalid docker
+      image
+    digest: d299bb164e70e1717b4f9ca1c79eb9894f79fb7e64e6b1367f8d36caaba5d4b3
+    name: broken-image
+    urls:
+    - broken-image-0.0.1.tgz
+    version: 0.0.1
+  invalid-chart-template:
+  - apiVersion: v1
+    created: "2020-01-21T15:44:52.140056+01:00"
+    description: This chart does not render because it references a missing template
+    digest: bbe3055963135ec59b96d202a38fa706638a71923d594938cebc2d6a1423de46
+    name: invalid-chart-template
+    urls:
+    - invalid-chart-template-0.0.1.tgz
+    version: 0.0.1
+  nginx:
+  - apiVersion: v1
+    appVersion: 1.14.2
+    created: "2020-01-21T15:44:52.141236+01:00"
+    description: Chart for the nginx server, with minor tweaks for use as a Shipper
+      demo
+    digest: 16ee8f96e107460e4c0076ea0b6993a03780d7cf771b47145b4eb32e11a76d08
+    home: http://www.nginx.org
+    name: nginx
+    urls:
+    - nginx-0.0.1.tgz
+    version: 0.0.1
+  test-nginx:
+  - apiVersion: v1
+    created: "2020-01-21T15:44:52.143172+01:00"
+    description: A basic chart for nginx
+    digest: 30b7033edaaf51ef8fad5abce5bc7895cfad22f7a30f0e95dc75e2c574f8af1f
+    name: test-nginx
+    urls:
+    - test-nginx-0.0.2.tgz
+    version: 0.0.2
+  - apiVersion: v1
+    created: "2020-01-21T15:44:52.14214+01:00"
+    description: A basic chart for nginx
+    digest: db8f2ed6c6cc0f2429060d2b01439fa90b1e923bed9add02e80adcf4d255a117
+    name: test-nginx
+    urls:
+    - test-nginx-0.0.1.tgz
+    version: 0.0.1
+generated: "2020-01-21T15:44:52.134934+01:00"
