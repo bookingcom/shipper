@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
 const (
@@ -395,6 +397,43 @@ func TestFetch(t *testing.T) {
 				t.Fatalf("unexpected chart version: %s, want: %s", chart.Metadata.Version, testCase.wantver)
 			}
 		})
+	}
+}
+
+func TestFetchChartVersionsTimesOut(t *testing.T) {
+	cache := NewTestCache("test-cache")
+	repo, err := NewRepo(
+		"https://chart.example.com",
+		cache,
+		func(url string) ([]byte, error) {
+			ch := make(chan struct{})
+			<-ch
+			return nil, fmt.Errorf("I am supposed to wait forever")
+		},
+	)
+	if err != nil {
+		t.Fatalf("failed to initialize repo: %s", err)
+	}
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	go repo.Start(stopCh)
+
+	chartspec := &shipper.Chart{
+		Name:    "sample",
+		Version: "0.0.1",
+		RepoURL: "https://chart.example.com",
+	}
+
+	_, err = repo.FetchChartVersions(chartspec)
+	if err == nil {
+		t.Fatalf("Expected to receive an error, got: nil")
+	}
+
+	var resolveErr shippererrors.ChartVersionResolveError
+
+	if !errors.As(err, &resolveErr) {
+		t.Fatalf("unexpected error type returned: expected: ChartVersionResolveError, got: %#v", err)
 	}
 }
 

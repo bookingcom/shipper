@@ -33,9 +33,11 @@ import (
 
 const (
 	RepoIndexRefreshPeriod = 10 * time.Second
+	RepoFetchIndexTimeout  = 15 * time.Second
 )
 
 var (
+	ErrFetchIndexTimeout = errors.New("timed out to fetch chart repo index")
 	ErrInvalidConstraint = errors.New("invalid constraint")
 	ErrNoneMatching      = errors.New("no matching version found")
 )
@@ -141,7 +143,11 @@ func (r *Repo) ResolveVersion(chartspec *shipper.Chart) (*repo.ChartVersion, err
 
 func (r *Repo) FetchChartVersions(chartspec *shipper.Chart) (repo.ChartVersions, error) {
 
-	<-r.indexResolved
+	select {
+	case <-r.indexResolved:
+	case <-time.After(RepoFetchIndexTimeout):
+		return nil, shippererrors.NewChartVersionResolveError(chartspec, ErrFetchIndexTimeout)
+	}
 
 	vs, ok := r.index.Load().(*repo.IndexFile).Entries[chartspec.Name]
 	if !ok {
