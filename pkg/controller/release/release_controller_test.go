@@ -1536,6 +1536,7 @@ func TestContenderDoNothingClusterCapacityNotReady(t *testing.T) {
 	brokenCluster := buildCluster("broken-capacity-cluster")
 
 	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+	f.cycles = 1
 
 	totalReplicaCount := int32(10)
 	contender := f.buildContender(namespace, contenderName, totalReplicaCount)
@@ -2121,6 +2122,7 @@ func TestIncumbentCapacityShouldNotDecreaseWithRolloutBlock(t *testing.T) {
 	cluster := buildCluster("minikube")
 
 	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy(), rolloutBlock.DeepCopy())
+	f.cycles = 1
 
 	totalReplicaCount := int32(3)
 	contender := f.buildContender(namespace, contenderName, totalReplicaCount)
