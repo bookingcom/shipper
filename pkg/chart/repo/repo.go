@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	// Importing this yaml package is a very crucial point:
@@ -33,23 +32,21 @@ import (
 
 const (
 	RepoIndexRefreshPeriod = 10 * time.Second
-	RepoFetchIndexTimeout  = 15 * time.Second
+	RepoFetchIndexTimeout  = 2 * time.Second
 )
 
-var (
-	ErrFetchIndexTimeout = errors.New("timed out to fetch chart repo index")
-	ErrInvalidConstraint = errors.New("invalid constraint")
-	ErrNoneMatching      = errors.New("no matching version found")
-)
+var ErrFetchNoResponseYet = errors.New("no response from chart repo yet")
 
 type Repo struct {
-	repoURL       string
-	indexURL      string
-	cache         Cache
-	fetcher       RemoteFetcher
-	index         atomic.Value
-	indexResolved chan struct{}
-	resolveOnce   sync.Once
+	repoURL  string
+	indexURL string
+	cache    Cache
+	fetcher  RemoteFetcher
+	mutex    sync.RWMutex
+	index    *repo.IndexFile
+	lastErr  error
+	resolved chan struct{}
+	once     sync.Once
 }
 
 func NewRepo(repoURL string, cache Cache, fetcher RemoteFetcher) (*Repo, error) {
@@ -63,11 +60,11 @@ func NewRepo(repoURL string, cache Cache, fetcher RemoteFetcher) (*Repo, error) 
 	indexURL := parsed.String()
 
 	r := &Repo{
-		repoURL:       repoURL,
-		indexURL:      indexURL,
-		cache:         cache,
-		fetcher:       fetcher,
-		indexResolved: make(chan struct{}),
+		repoURL:  repoURL,
+		indexURL: indexURL,
+		cache:    cache,
+		fetcher:  fetcher,
+		resolved: make(chan struct{}),
 	}
 
 	return r, nil
@@ -82,7 +79,11 @@ func (r *Repo) Start(stopCh <-chan struct{}) {
 }
 
 func (r *Repo) refreshIndex() error {
-	data, err := r.fetcher(r.indexURL)
+	var data []byte
+	var err error
+	var index *repo.IndexFile
+
+	data, err = r.fetcher(r.indexURL)
 	if err != nil {
 		_, cacheErr := r.cache.Fetch("index.yaml")
 		if cacheErr != nil {
@@ -95,37 +96,46 @@ func (r *Repo) refreshIndex() error {
 				shippererrors.NewNoCachedChartRepoIndexError(
 					fmt.Errorf("failed to fetch %q: %v", r.indexURL, cacheErr),
 				))
-			return multiError
+			err = multiError
+			goto AtomicSave
 		}
-		return shippererrors.NewChartRepoIndexError(
+		err = shippererrors.NewChartRepoIndexError(
 			fmt.Errorf("failed to fetch %q: %v", r.indexURL, err),
 		)
+		goto AtomicSave
 	}
 
-	index, err := loadIndexData(data)
+	index, err = loadIndexData(data)
 	if err != nil {
-		return shippererrors.NewChartRepoIndexError(
+		err = shippererrors.NewChartRepoIndexError(
 			fmt.Errorf("failed to load index file: %v", err),
 		)
+		goto AtomicSave
 	}
 
-	oldindex, ok := r.index.Load().(*repo.IndexFile)
-	if ok && oldindex != nil {
-		if len(oldindex.Entries) != 0 && len(index.Entries) == 0 {
-			return shippererrors.NewChartRepoIndexError(
+	if r.index != nil {
+		if len(r.index.Entries) != 0 && len(index.Entries) == 0 {
+			err = shippererrors.NewChartRepoIndexError(
 				fmt.Errorf("the new index contains no entries whereas the previous fetch returned a non-empty result"),
 			)
+			goto AtomicSave
 		}
 	}
 
-	r.index.Store(index)
-
-	// close indexResolved once
-	r.resolveOnce.Do(func() {
-		close(r.indexResolved)
+	// marking the repo index as at-least-once-resolved
+	r.once.Do(func() {
+		close(r.resolved)
 	})
 
-	return nil
+AtomicSave:
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	r.lastErr = err
+	if err == nil {
+		r.index = index
+	}
+
+	return err
 }
 
 func (r *Repo) ResolveVersion(chartspec *shipper.Chart) (*repo.ChartVersion, error) {
@@ -144,12 +154,20 @@ func (r *Repo) ResolveVersion(chartspec *shipper.Chart) (*repo.ChartVersion, err
 func (r *Repo) FetchChartVersions(chartspec *shipper.Chart) (repo.ChartVersions, error) {
 
 	select {
-	case <-r.indexResolved:
+	case <-r.resolved:
 	case <-time.After(RepoFetchIndexTimeout):
-		return nil, shippererrors.NewChartVersionResolveError(chartspec, ErrFetchIndexTimeout)
+		// fresh repo returns this error until it gets resolved
+		return nil, shippererrors.NewNoCachedChartRepoIndexError(ErrFetchNoResponseYet)
 	}
 
-	vs, ok := r.index.Load().(*repo.IndexFile).Entries[chartspec.Name]
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+
+	if r.index == nil {
+		return nil, r.lastErr
+	}
+
+	vs, ok := r.index.Entries[chartspec.Name]
 	if !ok {
 		return nil, shippererrors.NewChartVersionResolveError(chartspec, repo.ErrNoChartName)
 	}
