@@ -430,10 +430,10 @@ func TestFetchChartVersionsTimesOut(t *testing.T) {
 		t.Fatalf("Expected to receive an error, got: nil")
 	}
 
-	var resolveErr shippererrors.ChartVersionResolveError
+	var resolveErr shippererrors.NoCachedChartRepoIndexError
 
 	if !errors.As(err, &resolveErr) {
-		t.Fatalf("unexpected error type returned: expected: ChartVersionResolveError, got: %#v", err)
+		t.Fatalf("unexpected error type returned: expected: NoCachedChartRepoIndexError, got: %#v", err)
 	}
 }
 
