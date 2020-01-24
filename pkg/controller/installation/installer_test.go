@@ -21,6 +21,15 @@ import (
 
 var restConfig *rest.Config
 
+func newInstaller(it *shipper.InstallationTarget) (*Installer, error) {
+	objects, err := FetchAndRenderChart(localFetchChart, it)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewInstaller(it, objects), nil
+}
+
 // TestInstaller tests the installation process using a Installer directly.
 func TestInstaller(t *testing.T) {
 	// First install.
@@ -42,7 +51,7 @@ func ImplTestInstaller(t *testing.T, kubeObjects []runtime.Object) {
 	chart := buildChart(appName, "0.0.1", repoUrl)
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	configMapAnchor := anchor.CreateConfigMapAnchor(it)
-	installer, err := NewInstaller(localFetchChart, it)
+	installer, err := newInstaller(it)
 	if err != nil {
 		t.Fatalf("could not initialize the installer: %s", err)
 	}
@@ -186,7 +195,7 @@ func TestInstallerBrokenChartTarball(t *testing.T) {
 	chart := buildChart(appName, "invalid-tarball", repoUrl)
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-	_, err := NewInstaller(localFetchChart, it)
+	_, err := newInstaller(it)
 	if err == nil {
 		t.Fatal("NewInstaller should fail, invalid tarball")
 	}
@@ -204,7 +213,7 @@ func TestInstallerChartTarballBrokenService(t *testing.T) {
 	chart := buildChart(appName, "0.0.1-broken-service", repoUrl)
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-	_, err := NewInstaller(localFetchChart, it)
+	_, err := newInstaller(it)
 	if err == nil {
 		t.Fatal("NewInstaller should fail, broken service")
 	}
@@ -223,7 +232,7 @@ func TestInstallerChartTarballInvalidDeploymentName(t *testing.T) {
 	chart := buildChart(appName, "invalid-deployment-name", repoUrl)
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-	_, err := NewInstaller(localFetchChart, it)
+	_, err := newInstaller(it)
 	if err == nil {
 		t.Fatal("NewInstaller should fail, invalid deployment name")
 	}
@@ -245,7 +254,7 @@ func TestInstallerBrokenChartContents(t *testing.T) {
 	chart := buildChart(appName, "invalid-k8s-objects", repoUrl)
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-	_, err := NewInstaller(localFetchChart, it)
+	_, err := newInstaller(it)
 	if err == nil {
 		t.Fatal("NewInstaller should fail, invalid k8s objects")
 	}
@@ -260,7 +269,7 @@ func TestInstallerSingleServiceNoLB(t *testing.T) {
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	configMapAnchor := anchor.CreateConfigMapAnchor(it)
-	installer, err := NewInstaller(localFetchChart, it)
+	installer, err := newInstaller(it)
 	if err != nil {
 		t.Fatalf("could not initialize the installer: %s", err)
 	}
@@ -308,7 +317,7 @@ func TestInstallerSingleServiceWithLB(t *testing.T) {
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	configMapAnchor := anchor.CreateConfigMapAnchor(it)
-	installer, err := NewInstaller(localFetchChart, it)
+	installer, err := newInstaller(it)
 	if err != nil {
 		t.Fatalf("could not initialize the installer: %s", err)
 	}
@@ -355,7 +364,7 @@ func TestInstallerMultiServiceNoLB(t *testing.T) {
 	chart := buildChart(appName, "multi-service-no-lb", repoUrl)
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
-	_, err := NewInstaller(localFetchChart, it)
+	_, err := newInstaller(it)
 	if err == nil {
 		t.Fatal("Expected an error, none raised")
 	}
@@ -375,7 +384,7 @@ func TestInstallerMultiServiceWithLB(t *testing.T) {
 
 	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
 	configMapAnchor := anchor.CreateConfigMapAnchor(it)
-	installer, err := NewInstaller(localFetchChart, it)
+	installer, err := newInstaller(it)
 	if err != nil {
 		t.Fatalf("could not initialize the installer: %s", err)
 	}
@@ -427,7 +436,7 @@ func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
 	it := buildInstallationTarget("nginx", "nginx", []string{cluster.Name}, &chart)
 
 	configMapAnchor := anchor.CreateConfigMapAnchor(it)
-	installer, err := NewInstaller(localFetchChart, it)
+	installer, err := newInstaller(it)
 	if err != nil {
 		t.Fatalf("could not initialize the installer: %s", err)
 	}
@@ -482,7 +491,7 @@ func TestInstallerServiceWithReleaseNoWorkaround(t *testing.T) {
 	// Disabling the helm workaround
 	delete(it.ObjectMeta.Labels, shipper.HelmWorkaroundLabel)
 
-	_, err := NewInstaller(localFetchChart, it)
+	_, err := newInstaller(it)
 	if err == nil {
 		t.Fatal("Expected error, none raised")
 	}
@@ -533,7 +542,7 @@ func TestInstallerNoOverride(t *testing.T) {
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, "test-namespace-reviews-api"),
 	}
 
-	installer, err := NewInstaller(localFetchChart, it)
+	installer, err := newInstaller(it)
 	if err != nil {
 		t.Fatalf("could not initialize the installer: %s", err)
 	}

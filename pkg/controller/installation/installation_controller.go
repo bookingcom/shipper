@@ -301,7 +301,7 @@ func (c *Controller) processInstallationTarget(it *shipper.InstallationTarget) (
 	diff := diffutil.NewMultiDiff()
 	defer c.reportConditionChange(it, InstallationTargetConditionChanged, diff)
 
-	installer, err := NewInstaller(c.chartFetcher, it)
+	objects, err := FetchAndRenderChart(c.chartFetcher, it)
 	if err != nil {
 		it.Status.Conditions = targetutil.TransitionToNotOperational(
 			diff, it.Status.Conditions,
@@ -311,6 +311,7 @@ func (c *Controller) processInstallationTarget(it *shipper.InstallationTarget) (
 
 	it.Status.Conditions = targetutil.TransitionToOperational(diff, it.Status.Conditions)
 
+	installer := NewInstaller(it, objects)
 	newClusterStatuses := make([]*shipper.ClusterInstallationStatus, 0, len(it.Spec.Clusters))
 	clusterErrors := shippererrors.NewMultiError()
 
