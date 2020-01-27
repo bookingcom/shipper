@@ -117,6 +117,7 @@ func (i *Installer) install(
 	}
 
 	ownerReference := anchor.ConfigMapAnchorToOwnerReference(createdConfigMap)
+	resourceClients := make(map[string]dynamic.ResourceInterface)
 
 	for _, preparedObj := range i.objects {
 		obj := &unstructured.Unstructured{}
@@ -129,15 +130,21 @@ func (i *Installer) install(
 		namespace := obj.GetNamespace()
 		gvk := obj.GroupVersionKind()
 
-		resourceClient, err := i.buildResourceClient(
-			cluster,
-			client,
-			restConfig,
-			dynamicClientBuilderFunc,
-			&gvk,
-		)
-		if err != nil {
-			return err
+		resourceClient, ok := resourceClients[gvk.String()]
+		if !ok {
+			var err error
+			resourceClient, err = i.buildResourceClient(
+				cluster,
+				client,
+				restConfig,
+				dynamicClientBuilderFunc,
+				&gvk,
+			)
+			if err != nil {
+				return err
+			}
+
+			resourceClients[gvk.String()] = resourceClient
 		}
 
 		// "fetch-and-create-or-update" strategy in here; this is required to
