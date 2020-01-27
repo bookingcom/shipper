@@ -407,7 +407,6 @@ func TestInstallerMultiServiceWithLB(t *testing.T) {
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "0.0.1-anchor"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, nil),
 		shippertesting.NewDiscoveryAction("services"),
-		shippertesting.NewDiscoveryAction("services"),
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
 
@@ -460,7 +459,6 @@ func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
 	expectedActions := []kubetesting.Action{
 		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "0.1.0-anchor"),
 		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, nil),
-		shippertesting.NewDiscoveryAction("services"),
 		shippertesting.NewDiscoveryAction("services"),
 		shippertesting.NewDiscoveryAction("deployments"),
 	}
