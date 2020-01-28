@@ -2,6 +2,7 @@ package traffic
 
 import (
 	"math"
+	"sort"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -137,6 +138,10 @@ func summarizePods(
 ) (map[string][]*corev1.Pod, int, int, int) {
 	podsInRelease := make(map[string]struct{})
 	podsByTrafficStatus := make(map[string][]*corev1.Pod)
+
+	sort.Slice(pods, func(i, j int) bool {
+		return pods[i].Name < pods[j].Name
+	})
 
 	for _, pod := range pods {
 		if !releaseSelector.Matches(labels.Set(pod.Labels)) {
