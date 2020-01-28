@@ -328,7 +328,7 @@ func assertPodTraffic(
 
 	pods, err := meta.ExtractList(list)
 	if err != nil {
-		t.Errorf("could not extrat list of Pods: %s", err)
+		t.Errorf("could not extract list of Pods: %s", err)
 		return
 	}
 
