@@ -2820,6 +2820,9 @@ func TestIncumbentOutOfRangeTargetStep(t *testing.T) {
 	)
 
 	f.expectReleaseWaitingForCommand(contender.release, step)
+	f.expectedEvents = append(f.expectedEvents,
+		fmt.Sprintf(`Normal ReleaseConditionChanged [StrategyExecuted True] -> [StrategyExecuted False StrategyExecutionFailed failed to execute strategy: "Release %s/%s target step is inconsistent: unexpected value %d (expected: 0)"]`,
+			namespace, incumbentName, 2))
 
 	f.run()
 }
@@ -2994,6 +2997,58 @@ func TestUnhealthyTrafficAndCapacityIncumbentConvergesConsistently(t *testing.T)
 
 	f.expectedEvents = append(f.expectedEvents,
 		`Normal ReleaseConditionChanged [] -> [StrategyExecuted True]`)
+
+	f.run()
+}
+
+func TestControllerDetectInconsistentTargetStep(t *testing.T) {
+	namespace := "test-namespace"
+	app := buildApplication(namespace, "test-app")
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+
+	cluster := buildCluster("minikube")
+
+	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+	f.cycles = 1
+
+	totalReplicaCount := int32(10)
+	contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+	incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+	contender.release.Spec.TargetStep = 2
+	incumbent.release.Spec.TargetStep = 1
+
+	f.addObjects(
+		incumbent.release.DeepCopy(),
+		incumbent.installationTarget.DeepCopy(),
+		incumbent.capacityTarget.DeepCopy(),
+		incumbent.trafficTarget.DeepCopy(),
+
+		contender.release.DeepCopy(),
+		contender.installationTarget.DeepCopy(),
+		contender.capacityTarget.DeepCopy(),
+		contender.trafficTarget.DeepCopy(),
+	)
+
+	expected := incumbent.release.DeepCopy()
+	condStrategyExecuted := releaseutil.NewReleaseCondition(
+		shipper.ReleaseConditionTypeStrategyExecuted,
+		corev1.ConditionFalse,
+		"StrategyExecutionFailed",
+		"failed to execute strategy: \"Release test-namespace/test-incumbent target step is inconsistent: unexpected value 1 (expected: 2)\"",
+	)
+	releaseutil.SetReleaseCondition(&expected.Status, *condStrategyExecuted)
+
+	f.actions = []kubetesting.Action{
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			incumbent.release.GetNamespace(),
+			expected),
+	}
+
+	f.expectedEvents = append(f.expectedEvents,
+		fmt.Sprintf("Normal ReleaseConditionChanged [StrategyExecuted True] -> [StrategyExecuted False StrategyExecutionFailed failed to execute strategy: \"Release test-namespace/test-incumbent target step is inconsistent: unexpected value 1 (expected: 2)\"]"),
+	)
 
 	f.run()
 }
