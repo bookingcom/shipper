@@ -420,6 +420,20 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 		}
 	}
 	if succ != nil {
+		// If there is a successor to the current release, we have to ensure
+		// it's spec points to the last strategy step.
+		if !releaseutil.IsLastStrategyStep(relinfo.release) {
+			// In practice, this situation most likely means an
+			// external modification to the current release object,
+			// which can potentially cause some harmful consequences
+			// like: a historical release gets activated.
+			return nil, nil, shippererrors.NewInconsistentReleaseTargetStep(
+				controller.MetaKey(relinfo.release),
+				relinfo.release.Spec.TargetStep,
+				int32(len(relinfo.release.Spec.Environment.Strategy.Steps)-1),
+			)
+		}
+
 		relinfoSucc, err = c.buildReleaseInfo(succ)
 		if err != nil {
 			return nil, nil, err
