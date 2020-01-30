@@ -194,3 +194,26 @@ func NewNotWorkingOnStrategyError(contenderReleaseKey string) NotWorkingOnStrate
 		contenderReleaseKey: contenderReleaseKey,
 	}
 }
+
+type InconsistentReleaseTargetStep struct {
+	relKey         string
+	gotTargetStep  int32
+	wantTargetStep int32
+}
+
+func (e InconsistentReleaseTargetStep) Error() string {
+	return fmt.Sprintf("Release %s target step is inconsistent: unexpected value %d (expected: %d)",
+		e.relKey, e.gotTargetStep, e.wantTargetStep)
+}
+
+func (e InconsistentReleaseTargetStep) ShouldRetry() bool {
+	return false
+}
+
+func NewInconsistentReleaseTargetStep(relKey string, gotTargetStep, wantTargetStep int32) InconsistentReleaseTargetStep {
+	return InconsistentReleaseTargetStep{
+		relKey:         relKey,
+		gotTargetStep:  gotTargetStep,
+		wantTargetStep: wantTargetStep,
+	}
+}
