@@ -6,7 +6,7 @@ metadata:
     shipper-lb: production
     shipper-app: nginx
     shipper-owned-by: nginx
-    app.kubernetes.io/managed-by: Tiller
+    app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: nginx
     app.kubernetes.io/instance: nginx
     helm.sh/chart: nginx-0.1.0

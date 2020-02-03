@@ -20,10 +20,10 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/Masterminds/semver"
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/repo"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/helm/pkg/chartutil"
-	"k8s.io/helm/pkg/proto/hapi/chart"
-	"k8s.io/helm/pkg/repo"
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -330,7 +330,7 @@ func loadChartData(data []byte) (*chart.Chart, error) {
 		return nil, fmt.Errorf("no body content")
 	}
 
-	return chartutil.LoadArchive(bytes.NewBuffer(data))
+	return loader.LoadArchive(bytes.NewBuffer(data))
 
 }
 
@@ -344,7 +344,7 @@ func url2name(v string) string {
 }
 
 func chart2file(cv *repo.ChartVersion) string {
-	name, version := cv.GetName(), cv.GetVersion()
+	name, version := cv.Name, cv.Version
 	name = strings.Replace(name, "/", "-", -1)
 	version = strings.Replace(version, "/", "-", -1)
 
@@ -356,8 +356,8 @@ func newChart(cv *repo.ChartVersion) (*shipper.Chart, error) {
 		return nil, fmt.Errorf("chart version is missing URLs")
 	}
 	return &shipper.Chart{
-		Name:    cv.GetName(),
-		Version: cv.GetVersion(),
+		Name:    cv.Name,
+		Version: cv.Version,
 		RepoURL: cv.URLs[0],
 	}, nil
 }

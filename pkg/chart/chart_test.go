@@ -6,9 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"k8s.io/helm/pkg/chartutil"
-
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	"helm.sh/helm/v3/pkg/chart/loader"
 )
 
 func TestRender(t *testing.T) {
@@ -18,7 +17,7 @@ func TestRender(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	chart, err := chartutil.LoadArchive(chartFile)
+	chart, err := loader.LoadArchive(chartFile)
 	if err != nil {
 		t.Fatal(err)
 	}

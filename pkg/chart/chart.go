@@ -1,57 +1,47 @@
 package chart
 
 import (
-	"fmt"
 	"regexp"
 	"sort"
 	"strings"
 
-	"k8s.io/helm/pkg/chartutil"
-	"k8s.io/helm/pkg/engine"
-	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
-	"k8s.io/helm/pkg/timeconv"
-
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v3/pkg/engine"
 )
 
 // Render renders a chart, with the given values. It returns a list of rendered
 // Kubernetes objects.
-func Render(chart *helmchart.Chart, name, ns string, shipperValues *shipper.ChartValues) ([]string, error) {
-	chartConfig := &helmchart.Config{}
-	if shipperValues != nil {
-		values := chartutil.Values(*shipperValues)
-
-		var yaml string
-		yaml, err := values.YAML()
-		if err != nil {
-			return nil, err
-		}
-		chartConfig = &helmchart.Config{Raw: yaml}
-	}
-
-	if err := chartutil.ProcessRequirementsEnabled(chart, chartConfig); err != nil {
-		return nil, err
-	}
-
-	if err := chartutil.ProcessRequirementsImportValues(chart); err != nil {
-		return nil, err
-	}
-
-	chartOptions := chartutil.ReleaseOptions{
+func Render(chart *chart.Chart, name, ns string, shipperValues *shipper.ChartValues) ([]string, error) {
+	options := chartutil.ReleaseOptions{
 		Name:      name,
-		Time:      timeconv.Now(),
 		Namespace: ns,
 		IsInstall: true,
 	}
 
-	helmValues, err := chartutil.ToRenderValues(chart, chartConfig, chartOptions)
+	var values map[string]interface{}
+	if shipperValues != nil {
+		values = *shipperValues
+	}
+
+	renderValues, err := chartutil.ToRenderValues(
+		chart,
+		values,
+		options,
+		chartutil.DefaultCapabilities,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	rendered, err := engine.New().Render(chart, helmValues)
+	if err := chartutil.ProcessDependencies(chart, renderValues); err != nil {
+		return nil, err
+	}
+
+	rendered, err := engine.Render(chart, renderValues)
 	if err != nil {
-		return nil, fmt.Errorf("could not render the chart: %s", err)
+		return nil, err
 	}
 
 	objects := CollectObjects(rendered)

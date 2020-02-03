@@ -5,12 +5,12 @@ import (
 	"sort"
 	"strings"
 
+	"helm.sh/helm/v3/pkg/chart"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/record"
-	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -587,7 +587,7 @@ func (s *Scheduler) fetchChartAndExtractReplicaCount(rel *shipper.Release) (int3
 	return int32(replicas), nil
 }
 
-func extractReplicasFromChartForRel(chart *helmchart.Chart, rel *shipper.Release) (int32, error) {
+func extractReplicasFromChartForRel(chart *chart.Chart, rel *shipper.Release) (int32, error) {
 	owners := rel.OwnerReferences
 	if l := len(owners); l != 1 {
 		return 0, shippererrors.NewMultipleOwnerReferencesError(rel.Name, l)

@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/chart/loader"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/helm/pkg/chartutil"
-	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
@@ -30,7 +30,7 @@ func init() {
 	releaseutil.ConditionsShouldDiscardTimestamps = true
 }
 
-var localFetchChart = func(chartspec *shipper.Chart) (*helmchart.Chart, error) {
+var localFetchChart = func(chartspec *shipper.Chart) (*chart.Chart, error) {
 	data, err := ioutil.ReadFile(
 		path.Join(
 			"testdata",
@@ -41,7 +41,7 @@ var localFetchChart = func(chartspec *shipper.Chart) (*helmchart.Chart, error) {
 	}
 	buf := bytes.NewBuffer(data)
 
-	return chartutil.LoadArchive(buf)
+	return loader.LoadArchive(buf)
 }
 
 func buildRelease() *shipper.Release {

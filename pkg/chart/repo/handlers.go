@@ -1,8 +1,8 @@
 package repo
 
 import (
-	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
-	"k8s.io/helm/pkg/repo"
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/repo"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	errors "github.com/bookingcom/shipper/pkg/errors"
@@ -10,7 +10,7 @@ import (
 
 type ChartVersionResolver func(*shipper.Chart) (*repo.ChartVersion, error)
 
-type ChartFetcher func(*shipper.Chart) (*helmchart.Chart, error)
+type ChartFetcher func(*shipper.Chart) (*chart.Chart, error)
 
 func ResolveChartVersionFunc(c *Catalog) ChartVersionResolver {
 	return func(chartspec *shipper.Chart) (*repo.ChartVersion, error) {
@@ -24,7 +24,7 @@ func ResolveChartVersionFunc(c *Catalog) ChartVersionResolver {
 }
 
 func FetchChartFunc(c *Catalog) ChartFetcher {
-	return func(chartspec *shipper.Chart) (*helmchart.Chart, error) {
+	return func(chartspec *shipper.Chart) (*chart.Chart, error) {
 		repo, err := c.CreateRepoIfNotExist(chartspec.RepoURL)
 		if err != nil {
 			return nil, err
