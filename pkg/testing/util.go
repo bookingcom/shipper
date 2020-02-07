@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pmezard/go-difflib/difflib"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	kubetesting "k8s.io/client-go/testing"
@@ -99,7 +100,7 @@ func ShallowCheckAction(expected, actual kubetesting.Action, t *testing.T) {
 // CheckAction compares two individual actions and calls Errorf on t if it finds
 // a difference.
 func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
-	if !reflect.DeepEqual(expected, actual) {
+	if !equality.Semantic.DeepEqual(expected, actual) {
 		prettyExpected := prettyPrintAction(expected)
 		prettyActual := prettyPrintAction(actual)
 

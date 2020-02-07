@@ -903,7 +903,7 @@ func (f *fixture) expectReleaseScheduled(release *shipper.Release, clusters []*s
 	)
 }
 
-func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipper.Release, value uint, totalReplicaCount uint, role role) {
+func (f *fixture) expectCapacityStatusPatch(step int32, ct *shipper.CapacityTarget, r *shipper.Release, value uint, totalReplicaCount uint, role role) {
 	f.filter = f.filter.Extend(actionfilter{
 		[]string{"patch"},
 		[]string{"releases", "capacitytargets"},
@@ -920,8 +920,6 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipp
 	patch, _ := json.Marshal(newSpec)
 	action := kubetesting.NewPatchAction(gvr, ct.GetNamespace(), ct.GetName(), types.MergePatchType, patch)
 	f.actions = append(f.actions, action)
-
-	step := r.Spec.TargetStep
 
 	var strategyConditions conditions.StrategyConditionsMap
 
@@ -986,7 +984,7 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipp
 		"status": shipper.ReleaseStatus{
 			Strategy: &shipper.ReleaseStrategyStatus{
 				Conditions: strategyConditions.AsReleaseStrategyConditions(),
-				State:      strategyConditions.AsReleaseStrategyState(r.Spec.TargetStep, true, false),
+				State:      strategyConditions.AsReleaseStrategyState(step, true, false),
 			},
 		},
 	}
@@ -1004,7 +1002,7 @@ func (f *fixture) expectCapacityStatusPatch(ct *shipper.CapacityTarget, r *shipp
 	}
 }
 
-func (f *fixture) expectTrafficStatusPatch(tt *shipper.TrafficTarget, r *shipper.Release, value uint32, role role) {
+func (f *fixture) expectTrafficStatusPatch(step int32, tt *shipper.TrafficTarget, r *shipper.Release, value uint32, role role) {
 	f.filter = f.filter.Extend(actionfilter{
 		[]string{"patch"},
 		[]string{"releases", "traffictargets"},
@@ -1021,8 +1019,6 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipper.TrafficTarget, r *shipper
 	patch, _ := json.Marshal(newSpec)
 	action := kubetesting.NewPatchAction(gvr, tt.GetNamespace(), tt.GetName(), types.MergePatchType, patch)
 	f.actions = append(f.actions, action)
-
-	step := r.Spec.TargetStep
 
 	var strategyConditions conditions.StrategyConditionsMap
 
@@ -1087,7 +1083,7 @@ func (f *fixture) expectTrafficStatusPatch(tt *shipper.TrafficTarget, r *shipper
 		"status": shipper.ReleaseStatus{
 			Strategy: &shipper.ReleaseStrategyStatus{
 				Conditions: strategyConditions.AsReleaseStrategyConditions(),
-				State:      strategyConditions.AsReleaseStrategyState(r.Spec.TargetStep, true, false),
+				State:      strategyConditions.AsReleaseStrategyState(step, true, false),
 			},
 		},
 	}
@@ -1225,7 +1221,6 @@ func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, ac
 	})
 
 	gvr := shipper.SchemeGroupVersion.WithResource("releases")
-	rel := relpair.contender.release
 
 	var newStatus map[string]interface{}
 
@@ -1237,6 +1232,7 @@ func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, ac
 	// 	}
 	// }
 
+	var rel *shipper.Release
 	if role == Contender {
 		newStatus = map[string]interface{}{
 			"status": shipper.ReleaseStatus{
@@ -1269,6 +1265,8 @@ func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, ac
 				},
 			},
 		}
+		rel = relpair.contender.release
+
 	} else {
 		newStatus = map[string]interface{}{
 			"status": shipper.ReleaseStatus{
@@ -1316,6 +1314,8 @@ func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, ac
 				},
 			},
 		}
+
+		rel = relpair.incumbent.release
 	}
 
 	patch, _ := json.Marshal(newStatus)
@@ -1330,7 +1330,6 @@ func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, ac
 
 func (f *fixture) expectTrafficNotReady(relpair releaseInfoPair, targetStep, achievedStepIndex int32, role role, brokenClusterName string) {
 	gvr := shipper.SchemeGroupVersion.WithResource("releases")
-	rel := relpair.contender.release
 	var newStatus map[string]interface{}
 
 	// var achievedStep *shipper.AchievedStep
@@ -1341,6 +1340,7 @@ func (f *fixture) expectTrafficNotReady(relpair releaseInfoPair, targetStep, ach
 	// 	}
 	// }
 
+	var rel *shipper.Release
 	if role == Contender {
 		newStatus = map[string]interface{}{
 			"status": shipper.ReleaseStatus{
@@ -1378,6 +1378,8 @@ func (f *fixture) expectTrafficNotReady(relpair releaseInfoPair, targetStep, ach
 				},
 			},
 		}
+
+		rel = relpair.contender.release
 	} else {
 		newStatus = map[string]interface{}{
 			"status": shipper.ReleaseStatus{
@@ -1420,6 +1422,8 @@ func (f *fixture) expectTrafficNotReady(relpair releaseInfoPair, targetStep, ach
 				},
 			},
 		}
+
+		rel = relpair.incumbent.release
 	}
 
 	patch, _ := json.Marshal(newStatus)
@@ -1680,7 +1684,7 @@ func TestContenderCapacityShouldIncrease(t *testing.T) {
 
 	ct := contender.capacityTarget.DeepCopy()
 	r := contender.release.DeepCopy()
-	f.expectCapacityStatusPatch(ct, r, 50, uint(totalReplicaCount), Contender)
+	f.expectCapacityStatusPatch(contender.release.Spec.TargetStep, ct, r, 50, uint(totalReplicaCount), Contender)
 	f.run()
 }
 
@@ -1721,7 +1725,7 @@ func TestContenderCapacityShouldIncreaseWithRolloutBlockOverride(t *testing.T) {
 
 	ct := contender.capacityTarget.DeepCopy()
 	r := contender.release.DeepCopy()
-	f.expectCapacityStatusPatch(ct, r, 50, uint(totalReplicaCount), Contender)
+	f.expectCapacityStatusPatch(contender.release.Spec.TargetStep, ct, r, 50, uint(totalReplicaCount), Contender)
 	overrideEvent := fmt.Sprintf("%s RolloutBlockOverridden %s", corev1.EventTypeNormal, rolloutBlockKey)
 	f.expectedEvents = append([]string{overrideEvent}, f.expectedEvents...)
 	f.run()
@@ -1808,7 +1812,7 @@ func TestContenderTrafficShouldIncrease(t *testing.T) {
 
 	tt := contender.trafficTarget.DeepCopy()
 	r := contender.release.DeepCopy()
-	f.expectTrafficStatusPatch(tt, r, 50, Contender)
+	f.expectTrafficStatusPatch(contender.release.Spec.TargetStep, tt, r, 50, Contender)
 	f.run()
 }
 
@@ -1852,7 +1856,7 @@ func TestContenderTrafficShouldIncreaseWithRolloutBlockOverride(t *testing.T) {
 
 	tt := contender.trafficTarget.DeepCopy()
 	r := contender.release.DeepCopy()
-	f.expectTrafficStatusPatch(tt, r, 50, Contender)
+	f.expectTrafficStatusPatch(contender.release.Spec.TargetStep, tt, r, 50, Contender)
 	overrideEvent := fmt.Sprintf("%s RolloutBlockOverridden %s", corev1.EventTypeNormal, rolloutBlockKey)
 	f.expectedEvents = append([]string{overrideEvent}, f.expectedEvents...)
 	f.run()
@@ -1921,6 +1925,7 @@ func TestIncumbentTrafficShouldDecrease(t *testing.T) {
 	contender.capacityTarget.Spec.Clusters[0].Percent = 50
 	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
 	contender.trafficTarget.Spec.Clusters[0].Weight = 50
+	contender.release.Status.AchievedStep = &shipper.AchievedStep{Step: 1}
 
 	f.addObjects(
 		contender.release.DeepCopy(),
@@ -1935,8 +1940,8 @@ func TestIncumbentTrafficShouldDecrease(t *testing.T) {
 	)
 
 	tt := incumbent.trafficTarget.DeepCopy()
-	r := contender.release.DeepCopy()
-	f.expectTrafficStatusPatch(tt, r, 50, Incumbent)
+	r := incumbent.release.DeepCopy()
+	f.expectTrafficStatusPatch(contender.release.Spec.TargetStep, tt, r, 50, Incumbent)
 	f.run()
 }
 
@@ -1976,8 +1981,8 @@ func TestIncumbentTrafficShouldDecreaseWithRolloutBlockOverride(t *testing.T) {
 	)
 
 	tt := incumbent.trafficTarget.DeepCopy()
-	r := contender.release.DeepCopy()
-	f.expectTrafficStatusPatch(tt, r, 50, Incumbent)
+	r := incumbent.release.DeepCopy()
+	f.expectTrafficStatusPatch(contender.release.Spec.TargetStep, tt, r, 50, Incumbent)
 	overrideEvent := fmt.Sprintf("%s RolloutBlockOverridden %s", corev1.EventTypeNormal, rolloutBlockKey)
 	f.expectedEvents = append([]string{overrideEvent}, f.expectedEvents...)
 	f.run()
@@ -2047,6 +2052,7 @@ func TestIncumbentCapacityShouldDecrease(t *testing.T) {
 	contender.capacityTarget.Spec.Clusters[0].Percent = 50
 	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
 	contender.trafficTarget.Spec.Clusters[0].Weight = 50
+	contender.release.Status.AchievedStep = &shipper.AchievedStep{Step: 1}
 
 	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
 
@@ -2063,8 +2069,8 @@ func TestIncumbentCapacityShouldDecrease(t *testing.T) {
 	)
 
 	tt := incumbent.capacityTarget.DeepCopy()
-	r := contender.release.DeepCopy()
-	f.expectCapacityStatusPatch(tt, r, 50, uint(totalReplicaCount), Incumbent)
+	r := incumbent.release.DeepCopy()
+	f.expectCapacityStatusPatch(contender.release.Spec.TargetStep, tt, r, 50, uint(totalReplicaCount), Incumbent)
 	f.run()
 }
 
@@ -2106,8 +2112,8 @@ func TestIncumbentCapacityShouldDecreaseWithRolloutBlockOverride(t *testing.T) {
 	)
 
 	tt := incumbent.capacityTarget.DeepCopy()
-	r := contender.release.DeepCopy()
-	f.expectCapacityStatusPatch(tt, r, 50, uint(totalReplicaCount), Incumbent)
+	r := incumbent.release.DeepCopy()
+	f.expectCapacityStatusPatch(contender.release.Spec.TargetStep, tt, r, 50, uint(totalReplicaCount), Incumbent)
 	overrideEvent := fmt.Sprintf("%s RolloutBlockOverridden %s", corev1.EventTypeNormal, rolloutBlockKey)
 	f.expectedEvents = append([]string{overrideEvent}, f.expectedEvents...)
 	f.run()
@@ -2168,6 +2174,7 @@ func TestContenderReleasePhaseIsWaitingForCommandForFinalStepState(t *testing.T)
 	cluster := buildCluster("minikube")
 
 	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+	f.cycles = 1
 
 	totalReplicaCount := int32(10)
 	contender := f.buildContender(namespace, contenderName, totalReplicaCount)
@@ -2204,6 +2211,7 @@ func TestContenderReleaseIsInstalled(t *testing.T) {
 	cluster := buildCluster("minikube")
 
 	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+	f.cycles = 1
 
 	totalReplicaCount := int32(10)
 	contender := f.buildContender(namespace, contenderName, totalReplicaCount)
@@ -2322,13 +2330,15 @@ func TestApplicationExposesStrategyFailureSuccessorIndexOutOfBounds(t *testing.T
 	cluster := buildCluster("minikube")
 
 	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
-	f.cycles = 1
+	// we're testing 2 cycles because we expect contender and incumbent patches
+	// to be issued independently
+	f.cycles = 2
 
 	totalReplicaCount := int32(1)
 	contender := f.buildContender(namespace, contenderName, totalReplicaCount)
 	incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
 
-	missingStepMsg := fmt.Sprintf("failed to execute strategy: \"no step 2 in strategy for Release \\\"%s/%s\\\"\"", contender.release.Namespace, contender.release.Name)
+	missingStepMsg := fmt.Sprintf("failed to execute strategy: \"no step 2 in strategy for Release \\\"%s/%s\\\"\"", namespace, contenderName)
 
 	// We define 2 steps and will intentionally set target step index out of this bound
 	strategyStaging := shipper.RolloutStrategy{
@@ -2357,8 +2367,24 @@ func TestApplicationExposesStrategyFailureSuccessorIndexOutOfBounds(t *testing.T
 	contender.release.Spec.Environment.Strategy = &strategyStaging
 	contender.release.Spec.TargetStep = 2 // out of bound index
 
-	expectedRel := incumbent.release.DeepCopy()
-	expectedRel.Status.Conditions = []shipper.ReleaseCondition{
+	expectedIncumbent := incumbent.release.DeepCopy()
+	expectedIncumbent.Status.Conditions = []shipper.ReleaseCondition{
+		{
+			Type:   shipper.ReleaseConditionTypeBlocked,
+			Status: corev1.ConditionFalse,
+		},
+		{
+			Type:   shipper.ReleaseConditionTypeScheduled,
+			Status: corev1.ConditionTrue,
+		},
+		{
+			Type:    shipper.ReleaseConditionTypeStrategyExecuted,
+			Status:  corev1.ConditionTrue,
+		},
+	}
+
+	expectedContender := contender.release.DeepCopy()
+	expectedContender.Status.Conditions = []shipper.ReleaseCondition{
 		{
 			Type:   shipper.ReleaseConditionTypeBlocked,
 			Status: corev1.ConditionFalse,
@@ -2390,17 +2416,26 @@ func TestApplicationExposesStrategyFailureSuccessorIndexOutOfBounds(t *testing.T
 		contender.trafficTarget.DeepCopy(),
 	)
 
-	f.actions = append(f.actions, kubetesting.NewUpdateAction(
-		shipper.SchemeGroupVersion.WithResource("releases"),
-		namespace,
-		expectedRel))
+	f.actions = append(f.actions,
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			namespace,
+			expectedIncumbent,
+		),
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			namespace,
+			expectedContender,
+		),
+	)
 
 	f.filter = f.filter.Extend(actionfilter{
 		[]string{"update"},
 		[]string{"releases"},
 	})
 	f.expectedEvents = append(f.expectedEvents,
-		fmt.Sprintf("Normal ReleaseConditionChanged [] -> [Scheduled True], [] -> [StrategyExecuted False StrategyExecutionFailed %s]", missingStepMsg))
+		`Normal ReleaseConditionChanged [] -> [Scheduled True], [] -> [StrategyExecuted True]`,
+		fmt.Sprintf(`Normal ReleaseConditionChanged [] -> [Scheduled True], [] -> [StrategyExecuted False StrategyExecutionFailed %s]`, missingStepMsg))
 
 	f.run()
 }
