@@ -11,3 +11,10 @@ func HasEmptyEnvironment(rel *shipper.Release) bool {
 		len(rel.Spec.Environment.ClusterRequirements.Regions) == 0 &&
 		len(rel.Spec.Environment.ClusterRequirements.Capabilities) == 0
 }
+
+func ReleaseAchievedTargetStep(rel *shipper.Release) bool {
+	if rel == nil || rel.Status.AchievedStep == nil {
+		return false
+	}
+	return rel.Status.AchievedStep.Step == rel.Spec.TargetStep
+}

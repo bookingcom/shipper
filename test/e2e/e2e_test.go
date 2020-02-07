@@ -363,6 +363,84 @@ func TestRolloutAllIn(t *testing.T) {
 	f.checkReadyPods(contender.GetName(), targetReplicas)
 }
 
+// TestBrokenRolloutAllIn tests that a contender that doesn't achieve it's
+// target step won't replace a healhty incumbent.
+func TestBrokenRolloutAllIn(t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+	t.Parallel()
+
+	targetReplicas := 4
+	ns, err := setupNamespace(t.Name())
+	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(ns.GetName())
+	}()
+
+	app := newApplication(ns.GetName(), appName, &allIn)
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Chart.Name = "test-nginx"
+	app.Spec.Template.Chart.Version = "0.0.1"
+
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
+	if err != nil {
+		t.Fatalf("could not create application %q: %q", appName, err)
+	}
+
+	t.Logf("waiting for a new release for new application %q", appName)
+	incumbent := f.waitForRelease(appName, 0)
+	relName := incumbent.GetName()
+	t.Logf("waiting for release %q to complete", relName)
+	f.waitForComplete(incumbent.GetName())
+	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
+	f.checkReadyPods(relName, targetReplicas)
+
+	circuitBreaker := 0
+	failed := true
+	for circuitBreaker <= 10 {
+		circuitBreaker++
+		// refetch so that the update has a fresh version to work with
+		app, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Get(app.GetName(), metav1.GetOptions{})
+		if err != nil {
+			t.Logf("could not refetch app: %q", err)
+			continue
+		}
+
+		app.Spec.Template.Values = &shipper.ChartValues{
+			"replicaCount": targetReplicas,
+			"image":        map[string]interface{}{"tag": "broken"},
+		}
+		_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Update(app)
+		if err != nil {
+			t.Logf("could not update application %q: %q", appName, err)
+			continue
+		}
+		failed = false
+		break
+	}
+
+	if failed {
+		t.Fatalf("failed to update app")
+	}
+
+	t.Logf("waiting for contender release to appear after editing app %q", app.GetName())
+	contender := f.waitForRelease(appName, 1)
+
+	// this is a sanity check that the contender is indeed broken
+	t.Logf("checking that contender %q has %d pods", contender.GetName(), 0)
+	f.checkReadyPods(contender.GetName(), 0)
+
+	t.Logf("checking that incumbent %q still has %d pods", incumbent.GetName(), targetReplicas)
+	f.checkReadyPods(incumbent.GetName(), targetReplicas)
+}
+
 func TestRolloutAllInWithRolloutBlockOverride(t *testing.T) {
 	if !*runEndToEnd {
 		t.Skip("skipping end-to-end tests: --e2e is false")

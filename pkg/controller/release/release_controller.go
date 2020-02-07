@@ -357,7 +357,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 	)
 	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
-	stepAchieved, strategyPatches, trans, err = c.ensureReleaseState(relinfo)
+	stepAchieved, strategyPatches, trans, err = c.executeReleaseStrategy(relinfo)
 	if err != nil {
 		releaseStrategyExecutedCond := releaseutil.NewReleaseCondition(
 			shipper.ReleaseConditionTypeStrategyExecuted,
@@ -386,8 +386,6 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 		previouslyAchievedStep := rel.Status.AchievedStep
 
 		if previouslyAchievedStep == nil || targetStep != previouslyAchievedStep.Step {
-			// we validate that it fits in the len() of
-			// Strategy.Steps early in the process
 			targetStepName := strategy.Steps[targetStep].Name
 			rel.Status.AchievedStep = &shipper.AchievedStep{
 				Step: targetStep,
@@ -456,7 +454,7 @@ func (c *Controller) applicationReleases(rel *shipper.Release) ([]*shipper.Relea
 	return releases, nil
 }
 
-func (c *Controller) ensureReleaseState(relinfo *releaseInfo) (bool, []StrategyPatch, []ReleaseStrategyStateTransition, error) {
+func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo) (bool, []StrategyPatch, []ReleaseStrategyStateTransition, error) {
 	releases, err := c.applicationReleases(relinfo.release)
 	if err != nil {
 		return false, nil, nil, err
@@ -480,13 +478,7 @@ func (c *Controller) ensureReleaseState(relinfo *releaseInfo) (bool, []StrategyP
 		}
 	}
 
-	//TODO: this flag is deprecated, we keep it here for the sake of gradual
-	//changes. The flag propagates as deep as strategy conditions
-	//consolidation functions
-	// see pkg/util/conditions/strategy.go for more details.
-	hasIncumbent := len(releases) > 1
-
-	executor := NewStrategyExecutor(relinfo, relinfoPrev, relinfoSucc, hasIncumbent)
+	executor := NewStrategyExecutor(relinfoPrev, relinfo, relinfoSucc)
 
 	complete, patches, trans, err := executor.Execute()
 
