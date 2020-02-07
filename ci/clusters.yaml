@@ -1,5 +1,6 @@
 managementClusters:
-- name: microk8s
+- name: kind-kind
 applicationClusters:
-- name: microk8s
+- name: kind-kind
   region: local
+  apimaster: kubernetes.default:443
