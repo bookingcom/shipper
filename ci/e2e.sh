@@ -1,13 +1,15 @@
 #!/bin/bash -x
 
-# Setup shipper's clusters in microk8s
+kubectl config use-context kind-mgmt
+
+# Setup shipper's clusters
 make setup
 
 # Run the e2e tests, save exit code for later
 make -j e2e \
 	TEST_HELM_REPO_URL=${TEST_HELM_REPO_URL:=https://raw.githubusercontent.com/bookingcom/shipper/${TRAVIS_COMMIT}/test/e2e/testdata} \
 	DOCKER_REGISTRY=${DOCKER_REGISTRY:=registry:5000} \
-	E2E_FLAGS="--test.v" \
+	E2E_FLAGS="--test.v"
 
 TEST_STATUS=$?
 

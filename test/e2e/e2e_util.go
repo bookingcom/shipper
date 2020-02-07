@@ -75,7 +75,7 @@ func (f *fixture) checkReadyPods(relName string, expectedCount int) []corev1.Pod
 }
 
 func (f *fixture) checkEndpointActivePods(epName string, pods []corev1.Pod) {
-	ep, err := kubeClient.CoreV1().Endpoints(f.namespace).Get(epName, metav1.GetOptions{})
+	ep, err := appKubeClient.CoreV1().Endpoints(f.namespace).Get(epName, metav1.GetOptions{})
 	if err != nil {
 		f.t.Fatalf("could not fetch endpoint %q: %q", epName, err)
 	}
@@ -284,6 +284,11 @@ func poll(timeout time.Duration, waitCondition func() (bool, error)) error {
 
 func setupNamespace(name string) (*corev1.Namespace, error) {
 	newNs := testNamespace(name)
+	_, err := appKubeClient.CoreV1().Namespaces().Create(newNs)
+	if err != nil {
+		return nil, err
+	}
+
 	return kubeClient.CoreV1().Namespaces().Create(newNs)
 }
 

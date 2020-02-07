@@ -1,6 +1,5 @@
 managementClusters:
-- name: kind-kind
+- name: kind-mgmt
 applicationClusters:
-- name: kind-kind
+- name: kind-app
   region: local
-  apimaster: kubernetes.default:443

@@ -20,7 +20,7 @@ SHIPPER_CLUSTERS_YAML ?= ci/clusters.yaml
 # that errors out, or returns nothing, you probably need to run `make setup`
 # first. This value needs to be present in the `applicationClusters` section in
 # $(SHIPPER_CLUSTERS_YAML).
-SHIPPER_CLUSTER ?= kind-kind
+SHIPPER_CLUSTER ?= kind-app
 
 # Defines optional flags to pass to `build/e2e.test` when running end-to-end
 # tests. Useful flags are "-inspectfailed" (keep namespaces used for tests that
