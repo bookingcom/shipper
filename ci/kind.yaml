@@ -7,6 +7,3 @@ containerdConfigPatches:
     endpoint = ["http://registry:5000"]
 nodes:
 - role: control-plane
-  extraPortMappings:
-  - containerPort: 6443
-    hostPort: 443

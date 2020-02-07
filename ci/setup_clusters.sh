@@ -1,26 +1,47 @@
 #!/bin/bash -ex
 
-# desired cluster name; default is "kind"
-KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-kind}"
-
 # create registry container unless it already exists
 reg_name='kind-registry'
 reg_port='5000'
-running="$(docker inspect -f '{{.State.Running}}' "${reg_name}" 2>/dev/null || true)"
-if [ "${running}" != 'true' ]; then
-	docker run \
-		-d --restart=always -p "${reg_port}:5000" --name "${reg_name}" \
-		registry:2
-fi
+docker run \
+	-d --restart=always -p "${reg_port}:5000" --name "${reg_name}" \
+	registry:2
 
-kind create cluster --name $KIND_CLUSTER_NAME --config ci/kind.yaml --image kindest/node:v1.15.7
+PIDS=""
 
-# add the registry to /etc/hosts on each node
-ip_fmt='{{.NetworkSettings.IPAddress}}'
-cmd="echo $(docker inspect -f "${ip_fmt}" "${reg_name}") registry >> /etc/hosts"
-for node in $(kind get nodes --name "${KIND_CLUSTER_NAME}"); do
-	docker exec "${node}" sh -c "${cmd}"
+create_cluster () {
+	local CLUSTER=$1
+	local CONFIG=/tmp/kind/$CLUSTER
+
+	kind create cluster \
+		--name $CLUSTER \
+		--config ci/kind.yaml \
+		--image kindest/node:v1.15.7 \
+		--kubeconfig $CONFIG \
+		--quiet
+
+	# get a kubeconfig with an actual ip address instead of 127.0.0.1
+	kind get kubeconfig --name $CLUSTER --internal > $CONFIG
+
+	# add the registry to /etc/hosts on each node
+	ip_fmt='{{.NetworkSettings.IPAddress}}'
+	cmd="echo $(docker inspect -f "${ip_fmt}" "${reg_name}") registry >> /etc/hosts"
+	for node in $(kind get nodes --name "${CLUSTER}"); do
+		docker exec "${node}" sh -c "${cmd}"
+	done
+}
+
+for CLUSTER in mgmt app; do
+	create_cluster $CLUSTER & PIDS="$PIDS $!"
 done
+
+wait $PIDS
+
+mkdir -p ~/.kube
+KUBECONFIG=$(find /tmp/kind -type f | tr \\n ':') kubectl config view --flatten > ~/.kube/config
+
+echo $KUBECONFIG
+cat ~/.kube/config
 
 # add the registry to /etc/hosts on the host
 echo "127.0.0.1 registry kubernetes.default" | sudo tee -a /etc/hosts

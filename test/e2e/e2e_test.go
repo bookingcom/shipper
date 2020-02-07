@@ -1510,7 +1510,7 @@ func TestDeletedDeploymentsAreReinstalled(t *testing.T) {
 
 	deploymentName := fmt.Sprintf("%s-%s", rel.GetName(), newApp.Spec.Template.Chart.Name)
 	t.Logf("deleting deployment %q", deploymentName)
-	err = kubeClient.AppsV1().Deployments(ns.GetName()).Delete(deploymentName, nil)
+	err = appKubeClient.AppsV1().Deployments(ns.GetName()).Delete(deploymentName, nil)
 	if err != nil {
 		t.Fatalf("could not delete deployment %q: %q", deploymentName, err)
 	}
