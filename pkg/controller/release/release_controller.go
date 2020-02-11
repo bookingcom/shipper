@@ -273,15 +273,13 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 	}
 
 	var condition *shipper.ReleaseCondition
-	var strategyPatches []StrategyPatch
-	var trans []ReleaseStrategyStateTransition
 	var relinfo *releaseInfo
-	var stepAchieved bool
+	var patches []StrategyPatch
+	var execRel *shipper.Release
 
 	// we keep baseRel as a comparison baseline in order to figure out if
 	// we even have to send an update
 	baseRel := rel.DeepCopy()
-	patches := make([]StrategyPatch, 0)
 
 	diff := diffutil.NewMultiDiff()
 	defer func() {
@@ -357,7 +355,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 	)
 	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
-	stepAchieved, strategyPatches, trans, err = c.executeReleaseStrategy(relinfo)
+	execRel, patches, err = c.executeReleaseStrategy(relinfo, diff)
 	if err != nil {
 		releaseStrategyExecutedCond := releaseutil.NewReleaseCondition(
 			shipper.ReleaseConditionTypeStrategyExecuted,
@@ -369,59 +367,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 
 		goto ApplyChanges
 	}
-	patches = append(patches, strategyPatches...)
-
-	condition = releaseutil.NewReleaseCondition(
-		shipper.ReleaseConditionTypeStrategyExecuted,
-		corev1.ConditionTrue,
-		"",
-		"",
-	)
-	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
-
-	if stepAchieved {
-		strategy := rel.Spec.Environment.Strategy
-		targetStep := rel.Spec.TargetStep
-		isLastStep := int(targetStep) == len(strategy.Steps)-1
-		previouslyAchievedStep := rel.Status.AchievedStep
-
-		if previouslyAchievedStep == nil || targetStep != previouslyAchievedStep.Step {
-			targetStepName := strategy.Steps[targetStep].Name
-			rel.Status.AchievedStep = &shipper.AchievedStep{
-				Step: targetStep,
-				Name: targetStepName,
-			}
-			c.recorder.Eventf(
-				rel,
-				corev1.EventTypeNormal,
-				"StrategyApplied",
-				"step [%d] finished",
-				targetStep,
-			)
-		}
-
-		if isLastStep {
-			condition := releaseutil.NewReleaseCondition(
-				shipper.ReleaseConditionTypeComplete,
-				corev1.ConditionTrue,
-				"",
-				"",
-			)
-			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
-		}
-	}
-
-	for _, t := range trans {
-		c.recorder.Eventf(
-			rel,
-			corev1.EventTypeNormal,
-			"ReleaseStateTransitioned",
-			"Release %q had its state %q transitioned to %q",
-			shippercontroller.MetaKey(rel),
-			t.State,
-			t.New,
-		)
-	}
+	rel = execRel
 
 ApplyChanges:
 
@@ -454,41 +400,122 @@ func (c *Controller) applicationReleases(rel *shipper.Release) ([]*shipper.Relea
 	return releases, nil
 }
 
-func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo) (bool, []StrategyPatch, []ReleaseStrategyStateTransition, error) {
-	releases, err := c.applicationReleases(relinfo.release)
+func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil.MultiDiff) (*shipper.Release, []StrategyPatch, error) {
+	rel := relinfo.release.DeepCopy()
+
+	releases, err := c.applicationReleases(rel)
 	if err != nil {
-		return false, nil, nil, err
+		return nil, nil, err
 	}
-	prev, succ, err := releaseutil.GetSiblingReleases(relinfo.release, releases)
+	prev, succ, err := releaseutil.GetSiblingReleases(rel, releases)
 	if err != nil {
-		return false, nil, nil, err
+		return nil, nil, err
 	}
 
 	var relinfoPrev, relinfoSucc *releaseInfo
 	if prev != nil {
 		relinfoPrev, err = c.buildReleaseInfo(prev)
 		if err != nil {
-			return false, nil, nil, err
+			return nil, nil, err
 		}
 	}
 	if succ != nil {
 		relinfoSucc, err = c.buildReleaseInfo(succ)
 		if err != nil {
-			return false, nil, nil, err
+			return nil, nil, err
 		}
 	}
 
-	executor := NewStrategyExecutor(relinfoPrev, relinfo, relinfoSucc)
-
-	complete, patches, trans, err := executor.Execute()
-
-	if len(patches) == 0 {
-		klog.V(4).Infof("Strategy verified for release %q, nothing to patch", controller.MetaKey(relinfo.release))
+	isHead := succ == nil
+	var strategy *shipper.RolloutStrategy
+	var targetStep int32
+	// A head release uses it's local spec-defined strategy, any other release
+	// follows it's successor state, therefore looking into the forecoming spec.
+	if isHead {
+		strategy = rel.Spec.Environment.Strategy
+		targetStep = rel.Spec.TargetStep
 	} else {
-		klog.V(4).Infof("Strategy has been executed for release %q, applying patches", controller.MetaKey(relinfo.release))
+		strategy = succ.Spec.Environment.Strategy
+		targetStep = succ.Spec.TargetStep
 	}
 
-	return complete, patches, trans, err
+	// Looks like a malformed input. Informing about a problem and bailing out.
+	if targetStep >= int32(len(strategy.Steps)) {
+		err := fmt.Errorf("no step %d in strategy for Release %q",
+			targetStep, controller.MetaKey(rel))
+		return nil, nil, shippererrors.NewUnrecoverableError(err)
+	}
+
+	executor := NewStrategyExecutor(strategy, targetStep)
+
+	complete, patches, trans := executor.Execute(relinfoPrev, relinfo, relinfoSucc)
+
+	if len(patches) == 0 {
+		klog.V(4).Infof("Strategy verified for release %q, nothing to patch", controller.MetaKey(rel))
+	} else {
+		klog.V(4).Infof("Strategy has been executed for release %q, applying patches", controller.MetaKey(rel))
+	}
+
+	condition := releaseutil.NewReleaseCondition(
+		shipper.ReleaseConditionTypeStrategyExecuted,
+		corev1.ConditionTrue,
+		"",
+		"",
+	)
+	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
+
+	isLastStep := int(targetStep) == len(strategy.Steps)-1
+	prevStep := rel.Status.AchievedStep
+
+	if complete {
+		var achievedStep int32
+		var achievedStepName string
+		if isHead {
+			achievedStep = targetStep
+			achievedStepName = strategy.Steps[achievedStep].Name
+		} else {
+			achievedStep = int32(len(rel.Spec.Environment.Strategy.Steps)) - 1
+			achievedStepName = rel.Spec.Environment.Strategy.Steps[achievedStep].Name
+
+		}
+		if prevStep == nil || achievedStep != prevStep.Step {
+			rel.Status.AchievedStep = &shipper.AchievedStep{
+				Step: achievedStep,
+				Name: achievedStepName,
+			}
+			c.recorder.Eventf(
+				rel,
+				corev1.EventTypeNormal,
+				"StrategyApplied",
+				"step [%d] finished",
+				achievedStep,
+			)
+		}
+
+		if isLastStep {
+			condition := releaseutil.NewReleaseCondition(
+				shipper.ReleaseConditionTypeComplete,
+				corev1.ConditionTrue,
+				"",
+				"",
+			)
+			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
+		}
+	}
+
+	for _, t := range trans {
+		c.recorder.Eventf(
+			rel,
+			corev1.EventTypeNormal,
+			"ReleaseStateTransitioned",
+			"Release %q had its state %q transitioned to %q",
+			shippercontroller.MetaKey(rel),
+			t.State,
+			t.New,
+		)
+	}
+
+	return rel, patches, nil
 }
 
 func (c *Controller) applyPatch(namespace string, patch StrategyPatch) error {

@@ -54,6 +54,16 @@ var vanguard = shipper.RolloutStrategy{
 	},
 }
 
+var fullon = shipper.RolloutStrategy{
+	Steps: []shipper.RolloutStrategyStep{
+		{
+			Name:     "full on",
+			Capacity: shipper.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+			Traffic:  shipper.RolloutStrategyStepValue{Incumbent: 0, Contender: 100},
+		},
+	},
+}
+
 type role int
 
 const (
@@ -726,7 +736,7 @@ func (f *fixture) expectReleaseWaitingForCommand(rel *shipper.Release, step int3
 		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s" had its state "WaitingForCommand" transitioned to "True"`, relKey),
 		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s" had its state "WaitingForInstallation" transitioned to "False"`, relKey),
 		fmt.Sprintf(`Normal ReleaseStateTransitioned Release "%s" had its state "WaitingForTraffic" transitioned to "False"`, relKey),
-		fmt.Sprintf(`Normal ReleaseConditionChanged [] -> [Scheduled True], [] -> [StrategyExecuted True]`),
+		`Normal ReleaseConditionChanged [] -> [Scheduled True], [] -> [StrategyExecuted True]`,
 	}
 }
 
@@ -2338,8 +2348,6 @@ func TestApplicationExposesStrategyFailureSuccessorIndexOutOfBounds(t *testing.T
 	contender := f.buildContender(namespace, contenderName, totalReplicaCount)
 	incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
 
-	missingStepMsg := fmt.Sprintf("failed to execute strategy: \"no step 2 in strategy for Release \\\"%s/%s\\\"\"", namespace, contenderName)
-
 	// We define 2 steps and will intentionally set target step index out of this bound
 	strategyStaging := shipper.RolloutStrategy{
 		Steps: []shipper.RolloutStrategyStep{
@@ -2379,7 +2387,9 @@ func TestApplicationExposesStrategyFailureSuccessorIndexOutOfBounds(t *testing.T
 		},
 		{
 			Type:    shipper.ReleaseConditionTypeStrategyExecuted,
-			Status:  corev1.ConditionTrue,
+			Status:  corev1.ConditionFalse,
+			Reason:  conditions.StrategyExecutionFailed,
+			Message: fmt.Sprintf(`failed to execute strategy: "no step 2 in strategy for Release \"%s/%s\""`, namespace, incumbentName),
 		},
 	}
 
@@ -2397,7 +2407,7 @@ func TestApplicationExposesStrategyFailureSuccessorIndexOutOfBounds(t *testing.T
 			Type:    shipper.ReleaseConditionTypeStrategyExecuted,
 			Status:  corev1.ConditionFalse,
 			Reason:  conditions.StrategyExecutionFailed,
-			Message: missingStepMsg,
+			Message: fmt.Sprintf(`failed to execute strategy: "no step 2 in strategy for Release \"%s/%s\""`, namespace, contenderName),
 		},
 	}
 
@@ -2434,8 +2444,11 @@ func TestApplicationExposesStrategyFailureSuccessorIndexOutOfBounds(t *testing.T
 		[]string{"releases"},
 	})
 	f.expectedEvents = append(f.expectedEvents,
-		`Normal ReleaseConditionChanged [] -> [Scheduled True], [] -> [StrategyExecuted True]`,
-		fmt.Sprintf(`Normal ReleaseConditionChanged [] -> [Scheduled True], [] -> [StrategyExecuted False StrategyExecutionFailed %s]`, missingStepMsg))
+		fmt.Sprintf(`Normal ReleaseConditionChanged [] -> [Scheduled True], [] -> [StrategyExecuted False StrategyExecutionFailed %s]`,
+			fmt.Sprintf(`failed to execute strategy: "no step 2 in strategy for Release \"%s/%s\""`, namespace, incumbentName)),
+		fmt.Sprintf(`Normal ReleaseConditionChanged [] -> [Scheduled True], [] -> [StrategyExecuted False StrategyExecutionFailed %s]`,
+			fmt.Sprintf(`failed to execute strategy: "no step 2 in strategy for Release \"%s/%s\""`, namespace, contenderName)),
+	)
 
 	f.run()
 }
@@ -2767,6 +2780,52 @@ func TestControllerChooseClustersSkipsUnschedulable(t *testing.T) {
 		),
 		"Normal ReleaseConditionChanged [Scheduled False] -> [Scheduled True], [] -> [StrategyExecuted True]",
 	)
+
+	f.run()
+}
+
+func TestIncumbentOutOfRangeTargetStep(t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+
+	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+	f.cycles = 2
+
+	totalReplicaCount := int32(10)
+	contender := f.buildContender(namespace, contenderName, totalReplicaCount)
+	incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
+
+	// Incumbent spec contains only 1 strategy step but we intentionally
+	// specify an out-of-range index in order to test if it carefully
+	// handles indices.
+	incumbent.release.Spec.TargetStep = 2
+	incumbent.release.Spec.Environment.Strategy = &fullon
+	incumbent.release.Status.AchievedStep.Step = 0
+	incumbent.trafficTarget.Spec.Clusters[0].Weight = 50
+	incumbent.capacityTarget.Spec.Clusters[0].Percent = 50
+	incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+
+	step := int32(1)
+	contender.release.Spec.TargetStep = step
+	contender.capacityTarget.Spec.Clusters[0].Percent = 50
+	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = totalReplicaCount
+	contender.trafficTarget.Spec.Clusters[0].Weight = 50
+
+	f.addObjects(
+		contender.release.DeepCopy(),
+		contender.installationTarget.DeepCopy(),
+		contender.capacityTarget.DeepCopy(),
+		contender.trafficTarget.DeepCopy(),
+
+		incumbent.release.DeepCopy(),
+		incumbent.installationTarget.DeepCopy(),
+		incumbent.capacityTarget.DeepCopy(),
+		incumbent.trafficTarget.DeepCopy(),
+	)
+
+	f.expectReleaseWaitingForCommand(contender.release, step)
 
 	f.run()
 }
