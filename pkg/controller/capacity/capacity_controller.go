@@ -26,7 +26,6 @@ import (
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
-	"github.com/bookingcom/shipper/pkg/controller/capacity/builder"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	capacityutil "github.com/bookingcom/shipper/pkg/util/capacity"
 	clusterstatusutil "github.com/bookingcom/shipper/pkg/util/clusterstatus"
@@ -189,12 +188,10 @@ func (c *Controller) processCapacityTargetOnCluster(
 	var (
 		availableReplicas int32
 		sadPods           []shipper.PodStatus
-		reports           []shipper.ClusterCapacityReport
 	)
 
 	defer func() {
 		status.SadPods = sadPods
-		status.Reports = reports
 		status.AvailableReplicas = availableReplicas
 		status.AchievedPercent = c.calculatePercentageFromAmount(
 			spec.TotalReplicaCount, availableReplicas)
@@ -223,12 +220,8 @@ func (c *Controller) processCapacityTargetOnCluster(
 		"",
 		"")
 
-	report := buildReport(deployment.Name, pods)
-
-	// availableReplicas and reports will be used by the defer at the top
-	// of this func
+	// availableReplicas will be used by the defer at the top of this func
 	availableReplicas = deployment.Status.AvailableReplicas
-	reports = []shipper.ClusterCapacityReport{*report}
 
 	desiredReplicas := int32(replicas.CalculateDesiredReplicaCount(uint(spec.TotalReplicaCount), float64(spec.Percent)))
 	if deployment.Spec.Replicas == nil || desiredReplicas != *deployment.Spec.Replicas {
@@ -514,20 +507,6 @@ func (c *Controller) reportConditionChange(ct *shipper.CapacityTarget, reason st
 	if !diff.IsEmpty() {
 		c.recorder.Event(ct, corev1.EventTypeNormal, reason, diff.String())
 	}
-}
-
-func buildReport(ownerName string, podsList []*corev1.Pod) *shipper.ClusterCapacityReport {
-	sort.Slice(podsList, func(i, j int) bool {
-		return podsList[i].Name < podsList[j].Name
-	})
-
-	reportBuilder := builder.NewReport(ownerName)
-
-	for _, pod := range podsList {
-		reportBuilder.AddPod(pod)
-	}
-
-	return reportBuilder.Build()
 }
 
 func getDeploymentCondition(

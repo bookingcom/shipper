@@ -353,47 +353,12 @@ type CapacityTargetStatus struct {
 	Conditions         []TargetCondition       `json:"conditions,omitempty"`
 }
 
-type ClusterCapacityReportContainerBreakdownExample struct {
-	Pod     string  `json:"pod"`
-	Message *string `json:"message,omitempty"`
-}
-
-type ClusterCapacityReportContainerStateBreakdown struct {
-	Count   uint32                                         `json:"count"`
-	Example ClusterCapacityReportContainerBreakdownExample `json:"example"`
-	Reason  string                                         `json:"reason,omitempty"`
-	Type    string                                         `json:"type"`
-}
-
-type ClusterCapacityReportContainerBreakdown struct {
-	Name   string                                         `json:"name"`
-	States []ClusterCapacityReportContainerStateBreakdown `json:"states"`
-}
-
-type ClusterCapacityReportBreakdown struct {
-	Containers []ClusterCapacityReportContainerBreakdown `json:"containers,omitempty"`
-	Count      uint32                                    `json:"count"`
-	Reason     string                                    `json:"reason,omitempty"`
-	Status     string                                    `json:"status"`
-	Type       string                                    `json:"type"`
-}
-
-type ClusterCapacityReportOwner struct {
-	Name string `json:"name"`
-}
-
-type ClusterCapacityReport struct {
-	Owner     ClusterCapacityReportOwner       `json:"owner"`
-	Breakdown []ClusterCapacityReportBreakdown `json:"breakdown,omitempty"`
-}
-
 type ClusterCapacityStatus struct {
 	Name              string                     `json:"name"`
 	AvailableReplicas int32                      `json:"availableReplicas"`
 	AchievedPercent   int32                      `json:"achievedPercent"`
 	SadPods           []PodStatus                `json:"sadPods,omitempty"`
 	Conditions        []ClusterCapacityCondition `json:"conditions,omitempty"`
-	Reports           []ClusterCapacityReport    `json:"reports,omitempty"`
 }
 
 type ClusterConditionType string
