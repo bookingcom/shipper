@@ -60,14 +60,6 @@ func buildSuccessStatus(name string, clusters []shipper.ClusterCapacityTarget) s
 				ClusterCapacityOperational,
 				ClusterCapacityReady,
 			},
-			Reports: []shipper.ClusterCapacityReport{
-				{
-					Owner: shipper.ClusterCapacityReportOwner{
-						Name: name,
-					},
-					Breakdown: []shipper.ClusterCapacityReportBreakdown{},
-				},
-			},
 		})
 	}
 

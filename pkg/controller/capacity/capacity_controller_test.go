@@ -132,14 +132,6 @@ func TestCapacityShiftingPodsNotSadButNotAvailable(t *testing.T) {
 						Reason: InProgress,
 					},
 				},
-				Reports: []shipper.ClusterCapacityReport{
-					{
-						Owner: shipper.ClusterCapacityReportOwner{
-							Name: ctName,
-						},
-						Breakdown: []shipper.ClusterCapacityReportBreakdown{},
-					},
-				},
 			},
 		},
 		Conditions: []shipper.TargetCondition{
@@ -187,34 +179,6 @@ func TestCapacityShiftingSadPods(t *testing.T) {
 	sadPod := buildSadPodForDeployment(deployment)
 	objects := []runtime.Object{deployment, sadPod}
 
-	reports := []shipper.ClusterCapacityReport{
-		{
-			Owner: shipper.ClusterCapacityReportOwner{Name: ctName},
-			Breakdown: []shipper.ClusterCapacityReportBreakdown{
-				{
-					Type:   "Ready",
-					Status: string(corev1.ConditionFalse),
-					Reason: "ExpectedFail",
-					Count:  1,
-					Containers: []shipper.ClusterCapacityReportContainerBreakdown{
-						{
-							Name: "app",
-							States: []shipper.ClusterCapacityReportContainerStateBreakdown{
-								{
-									Count: 1,
-									Example: shipper.ClusterCapacityReportContainerBreakdownExample{
-										Pod: "foobar-deadbeef",
-									},
-									Reason: "ExpectedFail",
-									Type:   "Waiting",
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
 	status := shipper.CapacityTargetStatus{
 		Clusters: []shipper.ClusterCapacityStatus{
 			{
@@ -237,7 +201,6 @@ func TestCapacityShiftingSadPods(t *testing.T) {
 						Containers: sadPod.Status.ContainerStatuses,
 					},
 				},
-				Reports: reports,
 			},
 		},
 		Conditions: []shipper.TargetCondition{
