@@ -39,16 +39,18 @@ type Extra struct {
 func (p *Pipeline) Process(strategy *shipper.RolloutStrategy, step int32, extra Extra, cond conditions.StrategyConditionsMap) (bool, []StrategyPatch, []ReleaseStrategyStateTransition) {
 	var patches []StrategyPatch
 	var trans []ReleaseStrategyStateTransition
+	var complete = true
 	for _, stage := range *p {
 		cont, steppatches, steptrans := stage(strategy, step, extra, cond)
 		patches = append(patches, steppatches...)
 		trans = append(trans, steptrans...)
 		if cont == PipelineBreak {
-			return false, patches, trans
+			complete = false
+			break
 		}
 	}
 
-	return true, patches, trans
+	return complete, patches, trans
 }
 
 type StrategyExecutor struct {
@@ -135,7 +137,20 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (bool, []Strat
 		pipeline.Enqueue(genReleaseStrategyStateEnforcer(curr, nil))
 	}
 
-	return pipeline.Process(e.strategy, e.step, extra, cond)
+	complete, patches, trans := pipeline.Process(e.strategy, e.step, extra, cond)
+
+	alterPatches := make([]StrategyPatch, 0, len(patches))
+Patch:
+	for _, patch := range patches {
+		for _, obj := range []interface{}{curr.release, curr.capacityTarget, curr.trafficTarget} {
+			if patch.Alters(obj) {
+				alterPatches = append(alterPatches, patch)
+				continue Patch
+			}
+		}
+	}
+
+	return complete, alterPatches, trans
 }
 
 func genInstallationEnforcer(curr, succ *releaseInfo) PipelineStep {
@@ -151,19 +166,15 @@ func genInstallationEnforcer(curr, succ *releaseInfo) PipelineStep {
 				},
 			)
 
-			patches := make([]StrategyPatch, 0, 1)
-			relPatch := buildContenderStrategyConditionsPatch(
+			patch := buildContenderStrategyConditionsPatch(
 				curr.release.Name,
 				cond,
 				targetStep,
 				extra.IsLastStep,
 				extra.HasIncumbent,
 			)
-			if relPatch.Alters(curr.release) {
-				patches = append(patches, relPatch)
-			}
 
-			return PipelineBreak, patches, nil
+			return PipelineBreak, []StrategyPatch{patch}, nil
 		}
 
 		cond.SetTrue(
@@ -195,7 +206,7 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 		if achieved, newSpec, clustersNotReady := checkCapacity(curr.capacityTarget, capacityWeight); !achieved {
 			klog.Infof("Release %q %s", controller.MetaKey(curr.release), "hasn't achieved capacity yet")
 
-			var patches []StrategyPatch
+			patches := make([]StrategyPatch, 0, 2)
 
 			cond.SetFalse(
 				condType,
@@ -211,9 +222,7 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 				NewSpec: newSpec,
 				Name:    curr.release.Name,
 			}
-			if ctPatch.Alters(curr.capacityTarget) {
-				patches = append(patches, ctPatch)
-			}
+			patches = append(patches, ctPatch)
 
 			relPatch := buildContenderStrategyConditionsPatch(
 				curr.release.Name,
@@ -222,9 +231,7 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 				extra.IsLastStep,
 				extra.HasIncumbent,
 			)
-			if relPatch.Alters(curr.release) {
-				patches = append(patches, relPatch)
-			}
+			patches = append(patches, relPatch)
 
 			return PipelineBreak, patches, nil
 		}
@@ -260,7 +267,7 @@ func genTrafficEnforcer(curr, succ *releaseInfo) PipelineStep {
 		if achieved, newSpec, reason := checkTraffic(curr.trafficTarget, uint32(trafficWeight)); !achieved {
 			klog.Infof("Release %q %s", controller.MetaKey(curr.release), "hasn't achieved traffic yet")
 
-			var patches []StrategyPatch
+			patches := make([]StrategyPatch, 0, 2)
 
 			cond.SetFalse(
 				condType,
@@ -276,9 +283,7 @@ func genTrafficEnforcer(curr, succ *releaseInfo) PipelineStep {
 				NewSpec: newSpec,
 				Name:    curr.release.Name,
 			}
-			if ttPatch.Alters(curr.trafficTarget) {
-				patches = append(patches, ttPatch)
-			}
+			patches = append(patches, ttPatch)
 
 			relPatch := buildContenderStrategyConditionsPatch(
 				curr.release.Name,
@@ -287,9 +292,7 @@ func genTrafficEnforcer(curr, succ *releaseInfo) PipelineStep {
 				extra.IsLastStep,
 				extra.HasIncumbent,
 			)
-			if relPatch.Alters(curr.release) {
-				patches = append(patches, relPatch)
-			}
+			patches = append(patches, relPatch)
 
 			return PipelineBreak, patches, nil
 		}
@@ -310,8 +313,8 @@ func genTrafficEnforcer(curr, succ *releaseInfo) PipelineStep {
 
 func genReleaseStrategyStateEnforcer(curr, succ *releaseInfo) PipelineStep {
 	return func(strategy *shipper.RolloutStrategy, targetStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
-		var patches []StrategyPatch
 		var releaseStrategyStateTransitions []ReleaseStrategyStateTransition
+		patches := make([]StrategyPatch, 0, 1)
 
 		relStatus := curr.release.Status.DeepCopy()
 
@@ -340,9 +343,7 @@ func genReleaseStrategyStateEnforcer(curr, succ *releaseInfo) PipelineStep {
 			extra.HasIncumbent,
 		)
 
-		if relPatch.Alters(curr.release) {
-			patches = append(patches, relPatch)
-		}
+		patches = append(patches, relPatch)
 
 		return PipelineContinue, patches, releaseStrategyStateTransitions
 	}
