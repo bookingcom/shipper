@@ -55,7 +55,7 @@ func (p *TrafficTargetSpecPatch) PatchSpec() (string, schema.GroupVersionKind, [
 }
 
 func (p *TrafficTargetSpecPatch) Alters(o interface{}) bool {
-	// CapacityTargetSpecPatch is an altering one by it's nature: it's only
+	// TrafficTargetSpecPatch is an altering one by it's nature: it's only
 	// being created if a capacity target adjustment is required. Therefore
 	// we're saving a few peanuts and moving on with always-apply strategy.
 	return !p.IsEmpty()

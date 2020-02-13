@@ -1242,7 +1242,8 @@ func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, ac
 	// 	}
 	// }
 
-	var rel *shipper.Release
+	rel := relpair.contender.release
+
 	if role == Contender {
 		newStatus = map[string]interface{}{
 			"status": shipper.ReleaseStatus{
@@ -1275,8 +1276,6 @@ func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, ac
 				},
 			},
 		}
-		rel = relpair.contender.release
-
 	} else {
 		newStatus = map[string]interface{}{
 			"status": shipper.ReleaseStatus{
@@ -1324,8 +1323,6 @@ func (f *fixture) expectCapacityNotReady(relpair releaseInfoPair, targetStep, ac
 				},
 			},
 		}
-
-		rel = relpair.incumbent.release
 	}
 
 	patch, _ := json.Marshal(newStatus)
@@ -1350,7 +1347,8 @@ func (f *fixture) expectTrafficNotReady(relpair releaseInfoPair, targetStep, ach
 	// 	}
 	// }
 
-	var rel *shipper.Release
+	rel := relpair.contender.release
+
 	if role == Contender {
 		newStatus = map[string]interface{}{
 			"status": shipper.ReleaseStatus{
@@ -1388,8 +1386,6 @@ func (f *fixture) expectTrafficNotReady(relpair releaseInfoPair, targetStep, ach
 				},
 			},
 		}
-
-		rel = relpair.contender.release
 	} else {
 		newStatus = map[string]interface{}{
 			"status": shipper.ReleaseStatus{
@@ -1432,8 +1428,6 @@ func (f *fixture) expectTrafficNotReady(relpair releaseInfoPair, targetStep, ach
 				},
 			},
 		}
-
-		rel = relpair.incumbent.release
 	}
 
 	patch, _ := json.Marshal(newStatus)
@@ -1483,15 +1477,15 @@ func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.
 	incumbent.capacityTarget.Spec.Clusters[0].Percent = 100
 
 	f.addObjects(
-		incumbent.release.DeepCopy(),
-		incumbent.installationTarget.DeepCopy(),
-		incumbent.capacityTarget.DeepCopy(),
-		incumbent.trafficTarget.DeepCopy(),
-
 		contender.release.DeepCopy(),
 		contender.installationTarget.DeepCopy(),
 		contender.capacityTarget.DeepCopy(),
 		contender.trafficTarget.DeepCopy(),
+
+		incumbent.release.DeepCopy(),
+		incumbent.installationTarget.DeepCopy(),
+		incumbent.capacityTarget.DeepCopy(),
+		incumbent.trafficTarget.DeepCopy(),
 	)
 	var step int32 = 0
 	f.expectReleaseWaitingForCommand(contender.release, step)
@@ -1950,7 +1944,7 @@ func TestIncumbentTrafficShouldDecrease(t *testing.T) {
 	)
 
 	tt := incumbent.trafficTarget.DeepCopy()
-	r := incumbent.release.DeepCopy()
+	r := contender.release.DeepCopy()
 	f.expectTrafficStatusPatch(contender.release.Spec.TargetStep, tt, r, 50, Incumbent)
 	f.run()
 }
@@ -1991,7 +1985,7 @@ func TestIncumbentTrafficShouldDecreaseWithRolloutBlockOverride(t *testing.T) {
 	)
 
 	tt := incumbent.trafficTarget.DeepCopy()
-	r := incumbent.release.DeepCopy()
+	r := contender.release.DeepCopy()
 	f.expectTrafficStatusPatch(contender.release.Spec.TargetStep, tt, r, 50, Incumbent)
 	overrideEvent := fmt.Sprintf("%s RolloutBlockOverridden %s", corev1.EventTypeNormal, rolloutBlockKey)
 	f.expectedEvents = append([]string{overrideEvent}, f.expectedEvents...)
@@ -2079,7 +2073,7 @@ func TestIncumbentCapacityShouldDecrease(t *testing.T) {
 	)
 
 	tt := incumbent.capacityTarget.DeepCopy()
-	r := incumbent.release.DeepCopy()
+	r := contender.release.DeepCopy()
 	f.expectCapacityStatusPatch(contender.release.Spec.TargetStep, tt, r, 50, uint(totalReplicaCount), Incumbent)
 	f.run()
 }
@@ -2122,7 +2116,7 @@ func TestIncumbentCapacityShouldDecreaseWithRolloutBlockOverride(t *testing.T) {
 	)
 
 	tt := incumbent.capacityTarget.DeepCopy()
-	r := incumbent.release.DeepCopy()
+	r := contender.release.DeepCopy()
 	f.expectCapacityStatusPatch(contender.release.Spec.TargetStep, tt, r, 50, uint(totalReplicaCount), Incumbent)
 	overrideEvent := fmt.Sprintf("%s RolloutBlockOverridden %s", corev1.EventTypeNormal, rolloutBlockKey)
 	f.expectedEvents = append([]string{overrideEvent}, f.expectedEvents...)
@@ -2826,6 +2820,184 @@ func TestIncumbentOutOfRangeTargetStep(t *testing.T) {
 	)
 
 	f.expectReleaseWaitingForCommand(contender.release, step)
+
+	f.run()
+}
+
+func TestUnhealthyTrafficAndCapacityIncumbentConvergesConsistently(t *testing.T) {
+	namespace := "test-namespace"
+	incumbentName, contenderName := "test-incumbent", "test-contender"
+	app := buildApplication(namespace, "test-app")
+	cluster := buildCluster("minikube")
+	brokenCluster := buildCluster("broken-cluster")
+
+	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+	replicaCount := int32(4)
+
+	contender := f.buildContender(namespace, contenderName, replicaCount)
+	incumbent := f.buildIncumbent(namespace, incumbentName, replicaCount)
+
+	addCluster(incumbent, brokenCluster)
+
+	// Mark contender as fully healthy
+	var step int32 = 2
+	contender.release.Spec.TargetStep = step
+	contender.capacityTarget.Spec.Clusters[0].Percent = 100
+	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = replicaCount
+	contender.trafficTarget.Spec.Clusters[0].Weight = 100
+	contender.release.Status.AchievedStep = &shipper.AchievedStep{Step: 2}
+
+	incumbent.trafficTarget.Spec.Clusters[0].Weight = 0
+	incumbent.trafficTarget.Spec.Clusters[1].Weight = 0
+	incumbent.trafficTarget.Status.Clusters = []*shipper.ClusterTrafficStatus{
+		{
+			AchievedTraffic: 50,
+		},
+		{
+			AchievedTraffic: 0,
+		},
+	}
+	incumbent.trafficTarget.Status.Conditions, _ = targetutil.SetTargetCondition(
+		incumbent.trafficTarget.Status.Conditions,
+		targetutil.NewTargetCondition(
+			shipper.TargetConditionTypeReady,
+			corev1.ConditionFalse,
+			ClustersNotReady, "[broken-cluster]",
+		),
+	)
+	incumbent.capacityTarget.Spec.Clusters[0].Name = "broken-cluster"
+	incumbent.capacityTarget.Spec.Clusters[0].Percent = 0
+	incumbent.capacityTarget.Spec.Clusters[0].TotalReplicaCount = replicaCount
+	incumbent.capacityTarget.Spec.Clusters[1].Name = "minikube"
+	incumbent.capacityTarget.Spec.Clusters[1].Percent = 0
+	incumbent.capacityTarget.Spec.Clusters[1].TotalReplicaCount = 0
+	incumbent.capacityTarget.Status.Conditions, _ = targetutil.SetTargetCondition(
+		incumbent.capacityTarget.Status.Conditions,
+		targetutil.NewTargetCondition(
+			shipper.TargetConditionTypeReady,
+			corev1.ConditionFalse,
+			ClustersNotReady, "[broken-cluster]"))
+	incumbent.capacityTarget.Status.Clusters = []shipper.ClusterCapacityStatus{
+		{
+			AvailableReplicas: 42, // anything but spec-matching
+			AchievedPercent:   42, // anything but spec-matching
+		},
+		{
+			AvailableReplicas: 0,
+			AchievedPercent:   0,
+		},
+	}
+
+	expected := contender.release.DeepCopy()
+	condScheduled := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeScheduled, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&expected.Status, *condScheduled)
+	condStrategyExecuted := releaseutil.NewReleaseCondition(shipper.ReleaseConditionTypeStrategyExecuted, corev1.ConditionTrue, "", "")
+	releaseutil.SetReleaseCondition(&expected.Status, *condStrategyExecuted)
+
+	f.addObjects(
+		contender.release.DeepCopy(),
+		contender.installationTarget.DeepCopy(),
+		contender.capacityTarget.DeepCopy(),
+		contender.trafficTarget.DeepCopy(),
+
+		incumbent.release.DeepCopy(),
+		incumbent.installationTarget.DeepCopy(),
+		incumbent.capacityTarget.DeepCopy(),
+		incumbent.trafficTarget.DeepCopy(),
+	)
+
+	f.actions = append(f.actions,
+		kubetesting.NewUpdateAction(
+			shipper.SchemeGroupVersion.WithResource("releases"),
+			contender.release.GetNamespace(),
+			expected))
+
+	var patch []byte
+
+	newContenderStatus := map[string]interface{}{
+		"status": shipper.ReleaseStatus{
+			Strategy: &shipper.ReleaseStrategyStatus{
+				State: shipper.ReleaseStrategyState{
+					WaitingForInstallation: shipper.StrategyStateFalse,
+					WaitingForCommand:      shipper.StrategyStateFalse,
+					WaitingForTraffic:      shipper.StrategyStateTrue,
+					WaitingForCapacity:     shipper.StrategyStateFalse,
+				},
+				Conditions: []shipper.ReleaseStrategyCondition{
+					shipper.ReleaseStrategyCondition{
+						Type:   shipper.StrategyConditionContenderAchievedCapacity,
+						Status: corev1.ConditionTrue,
+						Step:   step,
+					},
+					shipper.ReleaseStrategyCondition{
+						Type:   shipper.StrategyConditionContenderAchievedInstallation,
+						Status: corev1.ConditionTrue,
+						Step:   step,
+					},
+					shipper.ReleaseStrategyCondition{
+						Type:   shipper.StrategyConditionContenderAchievedTraffic,
+						Status: corev1.ConditionTrue,
+						Step:   step,
+					},
+					shipper.ReleaseStrategyCondition{
+						Type:    shipper.StrategyConditionIncumbentAchievedTraffic,
+						Status:  corev1.ConditionFalse,
+						Step:    step,
+						Reason:  ClustersNotReady,
+						Message: fmt.Sprintf("release \"test-incumbent\" hasn't achieved traffic in clusters: [broken-cluster]. for more details try `kubectl describe tt test-incumbent`"),
+					},
+				},
+			},
+		},
+	}
+	patch, _ = json.Marshal(newContenderStatus)
+
+	f.actions = append(f.actions, kubetesting.NewPatchAction(
+		shipper.SchemeGroupVersion.WithResource("releases"),
+		contender.release.GetNamespace(),
+		contender.release.GetName(),
+		types.MergePatchType,
+		patch,
+	))
+
+	newIncumbentStatus := map[string]interface{}{
+		"status": shipper.ReleaseStatus{
+			Strategy: &shipper.ReleaseStrategyStatus{
+				State: shipper.ReleaseStrategyState{
+					WaitingForInstallation: shipper.StrategyStateFalse,
+					WaitingForCommand:      shipper.StrategyStateFalse,
+					WaitingForTraffic:      shipper.StrategyStateFalse,
+					WaitingForCapacity:     shipper.StrategyStateTrue,
+				},
+				Conditions: []shipper.ReleaseStrategyCondition{
+					shipper.ReleaseStrategyCondition{
+						Type:    shipper.StrategyConditionContenderAchievedCapacity,
+						Status:  corev1.ConditionFalse,
+						Step:    step,
+						Reason:  ClustersNotReady,
+						Message: fmt.Sprintf("release \"test-incumbent\" hasn't achieved capacity in clusters: [broken-cluster]. for more details try `kubectl describe ct test-incumbent`"),
+					},
+					shipper.ReleaseStrategyCondition{
+						Type:   shipper.StrategyConditionContenderAchievedInstallation,
+						Status: corev1.ConditionTrue,
+						Step:   step,
+					},
+				},
+			},
+		},
+	}
+	patch, _ = json.Marshal(newIncumbentStatus)
+
+	f.actions = append(f.actions, kubetesting.NewPatchAction(
+		shipper.SchemeGroupVersion.WithResource("releases"),
+		incumbent.release.GetNamespace(),
+		incumbent.release.GetName(),
+		types.MergePatchType,
+		patch,
+	))
+
+	f.expectedEvents = append(f.expectedEvents,
+		`Normal ReleaseConditionChanged [] -> [Scheduled True], [] -> [StrategyExecuted True]`)
 
 	f.run()
 }

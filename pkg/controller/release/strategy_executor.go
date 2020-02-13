@@ -32,14 +32,15 @@ func (p *Pipeline) Enqueue(step PipelineStep) {
 }
 
 type Extra struct {
-	IsLastStep   bool
-	HasIncumbent bool
+	IsLastStep bool
+	HasTail    bool
+	Initiator  *shipper.Release
 }
 
 func (p *Pipeline) Process(strategy *shipper.RolloutStrategy, step int32, extra Extra, cond conditions.StrategyConditionsMap) (bool, []StrategyPatch, []ReleaseStrategyStateTransition) {
 	var patches []StrategyPatch
 	var trans []ReleaseStrategyStateTransition
-	var complete = true
+	complete := true
 	for _, stage := range *p {
 		cont, steppatches, steptrans := stage(strategy, step, extra, cond)
 		patches = append(patches, steppatches...)
@@ -89,7 +90,6 @@ func NewStrategyExecutor(strategy *shipper.RolloutStrategy, step int32) *Strateg
 
 func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (bool, []StrategyPatch, []ReleaseStrategyStateTransition) {
 	isHead, hasTail := succ == nil, prev != nil
-	hasIncumbent := prev != nil || succ != nil
 
 	// There is no really a point in making any changes until the successor
 	// has completed it's transition, therefore we're hoilding off and aborting
@@ -104,6 +104,9 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (bool, []Strat
 		}
 	}
 
+	// This pre-fill is super important, otherwise conditions will be sorted
+	// in a wrong order and corresponding patches will override wrong
+	// conditions.
 	var releaseStrategyConditions []shipper.ReleaseStrategyCondition
 	if curr.release.Status.Strategy != nil {
 		releaseStrategyConditions = curr.release.Status.Strategy.Conditions
@@ -111,46 +114,31 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (bool, []Strat
 	cond := conditions.NewStrategyConditions(releaseStrategyConditions...)
 
 	// the last step is slightly special from others: at this moment shipper
-	// no longer waits for a command but marks a release as complete.
+	// is no longer waiting for a command but marks a release as complete.
 	isLastStep := int(e.step) == len(e.strategy.Steps)-1
 	// The reason because isHead is not included in the extra set is mainly
 	// because the pipeline is picking up 2 distinct tuples of releases
 	// (curr+succ) and (prev+curr), therefore isHead is supposed to be
 	// calculated by enforcers.
 	extra := Extra{
-		HasIncumbent: hasIncumbent,
-		IsLastStep:   isLastStep,
+		Initiator:  curr.release,
+		IsLastStep: isLastStep,
+		HasTail:    hasTail,
 	}
 
 	pipeline := NewPipeline()
-	if isHead {
-		pipeline.Enqueue(genInstallationEnforcer(curr, nil))
-	}
+	pipeline.Enqueue(genInstallationEnforcer(curr, nil))
 	pipeline.Enqueue(genCapacityEnforcer(curr, succ))
 	pipeline.Enqueue(genTrafficEnforcer(curr, succ))
-
+	if hasTail {
+		pipeline.Enqueue(genTrafficEnforcer(prev, curr))
+		pipeline.Enqueue(genCapacityEnforcer(prev, curr))
+	}
 	if isHead {
-		if hasTail {
-			pipeline.Enqueue(genTrafficEnforcer(prev, curr))
-			pipeline.Enqueue(genCapacityEnforcer(prev, curr))
-		}
 		pipeline.Enqueue(genReleaseStrategyStateEnforcer(curr, nil))
 	}
 
-	complete, patches, trans := pipeline.Process(e.strategy, e.step, extra, cond)
-
-	alterPatches := make([]StrategyPatch, 0, len(patches))
-Patch:
-	for _, patch := range patches {
-		for _, obj := range []interface{}{curr.release, curr.capacityTarget, curr.trafficTarget} {
-			if patch.Alters(obj) {
-				alterPatches = append(alterPatches, patch)
-				continue Patch
-			}
-		}
-	}
-
-	return complete, alterPatches, trans
+	return pipeline.Process(e.strategy, e.step, extra, cond)
 }
 
 func genInstallationEnforcer(curr, succ *releaseInfo) PipelineStep {
@@ -166,15 +154,19 @@ func genInstallationEnforcer(curr, succ *releaseInfo) PipelineStep {
 				},
 			)
 
-			patch := buildContenderStrategyConditionsPatch(
-				curr.release.Name,
+			patches := make([]StrategyPatch, 0, 1)
+			relPatch := buildContenderStrategyConditionsPatch(
+				extra.Initiator.Name,
 				cond,
 				targetStep,
 				extra.IsLastStep,
-				extra.HasIncumbent,
+				extra.HasTail,
 			)
+			if relPatch.Alters(extra.Initiator) {
+				patches = append(patches, relPatch)
+			}
 
-			return PipelineBreak, []StrategyPatch{patch}, nil
+			return PipelineBreak, patches, nil
 		}
 
 		cond.SetTrue(
@@ -194,13 +186,17 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 		var condType shipper.StrategyConditionType
 		var capacityWeight int32
 		isHead := succ == nil
+		isInitiator := releasesIdentical(extra.Initiator, curr.release)
 
-		if isHead {
-			capacityWeight = strategy.Steps[targetStep].Capacity.Contender
+		if isInitiator {
 			condType = shipper.StrategyConditionContenderAchievedCapacity
 		} else {
-			capacityWeight = strategy.Steps[targetStep].Capacity.Incumbent
 			condType = shipper.StrategyConditionIncumbentAchievedCapacity
+		}
+		if isHead {
+			capacityWeight = strategy.Steps[targetStep].Capacity.Contender
+		} else {
+			capacityWeight = strategy.Steps[targetStep].Capacity.Incumbent
 		}
 
 		if achieved, newSpec, clustersNotReady := checkCapacity(curr.capacityTarget, capacityWeight); !achieved {
@@ -222,16 +218,20 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 				NewSpec: newSpec,
 				Name:    curr.release.Name,
 			}
-			patches = append(patches, ctPatch)
+			if ctPatch.Alters(curr.capacityTarget) {
+				patches = append(patches, ctPatch)
+			}
 
 			relPatch := buildContenderStrategyConditionsPatch(
-				curr.release.Name,
+				extra.Initiator.Name,
 				cond,
 				targetStep,
 				extra.IsLastStep,
-				extra.HasIncumbent,
+				extra.HasTail,
 			)
-			patches = append(patches, relPatch)
+			if relPatch.Alters(extra.Initiator) {
+				patches = append(patches, relPatch)
+			}
 
 			return PipelineBreak, patches, nil
 		}
@@ -243,6 +243,8 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 			conditions.StrategyConditionsUpdate{
 				Step:               targetStep,
 				LastTransitionTime: time.Now(),
+				Reason:             "",
+				Message:            "",
 			},
 		)
 
@@ -255,13 +257,17 @@ func genTrafficEnforcer(curr, succ *releaseInfo) PipelineStep {
 		var condType shipper.StrategyConditionType
 		var trafficWeight int32
 		isHead := succ == nil
+		isInitiator := releasesIdentical(extra.Initiator, curr.release)
 
-		if isHead {
-			trafficWeight = strategy.Steps[targetStep].Traffic.Contender
+		if isInitiator {
 			condType = shipper.StrategyConditionContenderAchievedTraffic
 		} else {
-			trafficWeight = strategy.Steps[targetStep].Traffic.Incumbent
 			condType = shipper.StrategyConditionIncumbentAchievedTraffic
+		}
+		if isHead {
+			trafficWeight = strategy.Steps[targetStep].Traffic.Contender
+		} else {
+			trafficWeight = strategy.Steps[targetStep].Traffic.Incumbent
 		}
 
 		if achieved, newSpec, reason := checkTraffic(curr.trafficTarget, uint32(trafficWeight)); !achieved {
@@ -283,16 +289,20 @@ func genTrafficEnforcer(curr, succ *releaseInfo) PipelineStep {
 				NewSpec: newSpec,
 				Name:    curr.release.Name,
 			}
-			patches = append(patches, ttPatch)
+			if ttPatch.Alters(curr.trafficTarget) {
+				patches = append(patches, ttPatch)
+			}
 
 			relPatch := buildContenderStrategyConditionsPatch(
-				curr.release.Name,
+				extra.Initiator.Name,
 				cond,
 				targetStep,
 				extra.IsLastStep,
-				extra.HasIncumbent,
+				extra.HasTail,
 			)
-			patches = append(patches, relPatch)
+			if relPatch.Alters(extra.Initiator) {
+				patches = append(patches, relPatch)
+			}
 
 			return PipelineBreak, patches, nil
 		}
@@ -320,7 +330,7 @@ func genReleaseStrategyStateEnforcer(curr, succ *releaseInfo) PipelineStep {
 
 		newReleaseStrategyState := cond.AsReleaseStrategyState(
 			targetStep,
-			extra.HasIncumbent,
+			extra.HasTail,
 			extra.IsLastStep,
 		)
 
@@ -336,14 +346,16 @@ func genReleaseStrategyStateEnforcer(curr, succ *releaseInfo) PipelineStep {
 				releaseStrategyStateTransitions)
 
 		relPatch := buildContenderStrategyConditionsPatch(
-			curr.release.Name,
+			extra.Initiator.Name,
 			cond,
 			targetStep,
 			extra.IsLastStep,
-			extra.HasIncumbent,
+			extra.HasTail,
 		)
 
-		patches = append(patches, relPatch)
+		if relPatch.Alters(extra.Initiator) {
+			patches = append(patches, relPatch)
+		}
 
 		return PipelineContinue, patches, releaseStrategyStateTransitions
 	}
@@ -391,4 +403,14 @@ func valueOrUnknown(v shipper.StrategyState) shipper.StrategyState {
 		v = shipper.StrategyStateUnknown
 	}
 	return v
+}
+
+// This method is a super basic helper and should not be re-used as a reliable
+// release similarity checker
+func releasesIdentical(r1, r2 *shipper.Release) bool {
+	if r1 == nil || r2 == nil {
+		return r1 == r2
+	}
+	return r1.Namespace == r2.Namespace &&
+		r1.Name == r2.Name
 }
