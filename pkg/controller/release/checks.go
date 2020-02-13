@@ -26,20 +26,25 @@ func checkCapacity(
 
 	clustersNotReadyMap := make(map[string]struct{})
 	for _, spec := range ct.Spec.Clusters {
+		t := spec
 		if spec.Percent != stepCapacity {
-			t := shipper.ClusterCapacityTarget{
+			t = shipper.ClusterCapacityTarget{
 				Name:              spec.Name,
 				Percent:           stepCapacity,
 				TotalReplicaCount: spec.TotalReplicaCount,
 			}
-			newSpec.Clusters = append(newSpec.Clusters, t)
 
 			clustersNotReadyMap[spec.Name] = struct{}{}
 			canProceed = false
 		}
+		newSpec.Clusters = append(newSpec.Clusters, t)
 	}
 
 	if canProceed {
+		// We return an empty new spec if cluster spec check went fine
+		// so far.
+		newSpec = nil
+
 		if ct.Status.ObservedGeneration >= ct.Generation {
 			canProceed, reason = targetutil.IsReady(ct.Status.Conditions)
 		} else {
@@ -69,11 +74,7 @@ func checkCapacity(
 		reason = fmt.Sprintf("%v", clustersNotReady)
 	}
 
-	if len(newSpec.Clusters) > 0 {
-		return canProceed, newSpec, reason
-	} else {
-		return canProceed, nil, reason
-	}
+	return canProceed, newSpec, reason
 }
 
 func checkTraffic(
@@ -90,19 +91,24 @@ func checkTraffic(
 
 	clustersNotReadyMap := make(map[string]struct{})
 	for _, spec := range tt.Spec.Clusters {
+		t := spec
 		if spec.Weight != stepTrafficWeight {
-			t := shipper.ClusterTrafficTarget{
+			t = shipper.ClusterTrafficTarget{
 				Name:   spec.Name,
 				Weight: stepTrafficWeight,
 			}
-			newSpec.Clusters = append(newSpec.Clusters, t)
 
 			clustersNotReadyMap[spec.Name] = struct{}{}
 			canProceed = false
 		}
+		newSpec.Clusters = append(newSpec.Clusters, t)
 	}
 
 	if canProceed {
+		// We return an empty new spec if cluster spec check went fine
+		// so far.
+		newSpec = nil
+
 		if tt.Status.ObservedGeneration >= tt.Generation {
 			canProceed, reason = targetutil.IsReady(tt.Status.Conditions)
 		} else {
@@ -132,9 +138,5 @@ func checkTraffic(
 		reason = fmt.Sprintf("%v", clustersNotReady)
 	}
 
-	if len(newSpec.Clusters) > 0 {
-		return canProceed, newSpec, reason
-	} else {
-		return canProceed, nil, reason
-	}
+	return canProceed, newSpec, reason
 }

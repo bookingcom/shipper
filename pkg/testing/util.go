@@ -209,18 +209,20 @@ func prettyPrintAction(a kubetesting.Action) string {
 	verb := a.GetVerb()
 	gvk := a.GetResource()
 	ns := a.GetNamespace()
+	extra := ""
 
-	template := fmt.Sprintf("Verb: %s\nGVK: %s\nNamespace: %s\n--------\n%%s", verb, gvk.String(), ns)
+	template := fmt.Sprintf("Verb: %s\nGVK: %s\nNamespace: %s\n%%s--------\n%%s", verb, gvk.String(), ns)
 
 	switch action := a.(type) {
 
 	case kubetesting.CreateActionImpl:
+		extra := fmt.Sprintf("Name: %s\n", action.Name)
 		obj, err := yaml.Marshal(action.GetObject())
 		if err != nil {
 			panic(fmt.Sprintf("could not marshal %+v: %q", action.GetObject(), err))
 		}
 
-		return fmt.Sprintf(template, string(obj))
+		return fmt.Sprintf(template, extra, string(obj))
 
 	case kubetesting.UpdateActionImpl:
 		obj, err := yaml.Marshal(action.GetObject())
@@ -228,30 +230,31 @@ func prettyPrintAction(a kubetesting.Action) string {
 			panic(fmt.Sprintf("could not marshal %+v: %q", action.GetObject(), err))
 		}
 
-		return fmt.Sprintf(template, string(obj))
+		return fmt.Sprintf(template, extra, string(obj))
 
 	case kubetesting.PatchActionImpl:
+		extra = fmt.Sprintf("Name: %s\n", action.Name)
 		patch := prettyPrintActionPatch(action)
-		return fmt.Sprintf(template, patch)
+		return fmt.Sprintf(template, extra, patch)
 
 	case kubetesting.GetActionImpl:
 		message := fmt.Sprintf("(no object body: GET %s)", action.GetName())
-		return fmt.Sprintf(template, message)
+		return fmt.Sprintf(template, extra, message)
 
 	case kubetesting.ListActionImpl:
 		message := fmt.Sprintf("(no object body: GET %s)", action.GetKind())
-		return fmt.Sprintf(template, message)
+		return fmt.Sprintf(template, extra, message)
 
 	case kubetesting.WatchActionImpl:
 		return fmt.Sprintf(template, "(no object body: WATCH)")
 
 	case kubetesting.DeleteActionImpl:
 		message := fmt.Sprintf("(no object body: DELETE %s)", action.GetName())
-		return fmt.Sprintf(template, message)
+		return fmt.Sprintf(template, extra, message)
 
 	case kubetesting.ActionImpl:
 		message := fmt.Sprintf("(no object body: %s %s)", action.GetVerb(), action.GetResource())
-		return fmt.Sprintf(template, message)
+		return fmt.Sprintf(template, extra, message)
 	}
 
 	panic(fmt.Sprintf("unknown action! patch printAction to support %T %+v", a, a))

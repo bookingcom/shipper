@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/labels"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -476,7 +476,6 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 		} else {
 			achievedStep = int32(len(rel.Spec.Environment.Strategy.Steps)) - 1
 			achievedStepName = rel.Spec.Environment.Strategy.Steps[achievedStep].Name
-
 		}
 		if prevStep == nil || achievedStep != prevStep.Step {
 			rel.Status.AchievedStep = &shipper.AchievedStep{
