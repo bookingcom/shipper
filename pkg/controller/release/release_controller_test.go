@@ -2842,10 +2842,42 @@ func TestUnhealthyTrafficAndCapacityIncumbentConvergesConsistently(t *testing.T)
 	// Mark contender as fully healthy
 	var step int32 = 2
 	contender.release.Spec.TargetStep = step
+	contender.release.Status.AchievedStep = &shipper.AchievedStep{Step: 2}
+	contender.release.Status = shipper.ReleaseStatus{
+		Conditions: []shipper.ReleaseCondition{
+			{Type: shipper.ReleaseConditionTypeBlocked, Status: corev1.ConditionFalse},
+			{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
+		},
+		Strategy: &shipper.ReleaseStrategyStatus{
+			State: shipper.ReleaseStrategyState{
+				WaitingForInstallation: shipper.StrategyStateFalse,
+				WaitingForCommand:      shipper.StrategyStateFalse,
+				WaitingForTraffic:      shipper.StrategyStateFalse,
+				WaitingForCapacity:     shipper.StrategyStateFalse,
+			},
+			Conditions: []shipper.ReleaseStrategyCondition{
+				shipper.ReleaseStrategyCondition{
+					Type:   shipper.StrategyConditionContenderAchievedCapacity,
+					Status: corev1.ConditionTrue,
+					Step:   step,
+				},
+				shipper.ReleaseStrategyCondition{
+					Type:   shipper.StrategyConditionContenderAchievedInstallation,
+					Status: corev1.ConditionTrue,
+					Step:   step,
+				},
+				shipper.ReleaseStrategyCondition{
+					Type:   shipper.StrategyConditionContenderAchievedTraffic,
+					Status: corev1.ConditionTrue,
+					Step:   step,
+				},
+			},
+		},
+	}
+
 	contender.capacityTarget.Spec.Clusters[0].Percent = 100
 	contender.capacityTarget.Spec.Clusters[0].TotalReplicaCount = replicaCount
 	contender.trafficTarget.Spec.Clusters[0].Weight = 100
-	contender.release.Status.AchievedStep = &shipper.AchievedStep{Step: 2}
 
 	incumbent.trafficTarget.Spec.Clusters[0].Weight = 0
 	incumbent.trafficTarget.Spec.Clusters[1].Weight = 0
@@ -2960,44 +2992,8 @@ func TestUnhealthyTrafficAndCapacityIncumbentConvergesConsistently(t *testing.T)
 		patch,
 	))
 
-	newIncumbentStatus := map[string]interface{}{
-		"status": shipper.ReleaseStatus{
-			Strategy: &shipper.ReleaseStrategyStatus{
-				State: shipper.ReleaseStrategyState{
-					WaitingForInstallation: shipper.StrategyStateFalse,
-					WaitingForCommand:      shipper.StrategyStateFalse,
-					WaitingForTraffic:      shipper.StrategyStateFalse,
-					WaitingForCapacity:     shipper.StrategyStateTrue,
-				},
-				Conditions: []shipper.ReleaseStrategyCondition{
-					shipper.ReleaseStrategyCondition{
-						Type:    shipper.StrategyConditionContenderAchievedCapacity,
-						Status:  corev1.ConditionFalse,
-						Step:    step,
-						Reason:  ClustersNotReady,
-						Message: fmt.Sprintf("release \"test-incumbent\" hasn't achieved capacity in clusters: [broken-cluster]. for more details try `kubectl describe ct test-incumbent`"),
-					},
-					shipper.ReleaseStrategyCondition{
-						Type:   shipper.StrategyConditionContenderAchievedInstallation,
-						Status: corev1.ConditionTrue,
-						Step:   step,
-					},
-				},
-			},
-		},
-	}
-	patch, _ = json.Marshal(newIncumbentStatus)
-
-	f.actions = append(f.actions, kubetesting.NewPatchAction(
-		shipper.SchemeGroupVersion.WithResource("releases"),
-		incumbent.release.GetNamespace(),
-		incumbent.release.GetName(),
-		types.MergePatchType,
-		patch,
-	))
-
 	f.expectedEvents = append(f.expectedEvents,
-		`Normal ReleaseConditionChanged [] -> [Scheduled True], [] -> [StrategyExecuted True]`)
+		`Normal ReleaseConditionChanged [] -> [StrategyExecuted True]`)
 
 	f.run()
 }

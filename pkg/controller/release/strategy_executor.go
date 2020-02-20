@@ -127,14 +127,17 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (bool, []Strat
 	}
 
 	pipeline := NewPipeline()
-	pipeline.Enqueue(genInstallationEnforcer(curr, nil))
+	if isHead {
+		pipeline.Enqueue(genInstallationEnforcer(curr, nil))
+	}
 	pipeline.Enqueue(genCapacityEnforcer(curr, succ))
 	pipeline.Enqueue(genTrafficEnforcer(curr, succ))
-	if hasTail {
-		pipeline.Enqueue(genTrafficEnforcer(prev, curr))
-		pipeline.Enqueue(genCapacityEnforcer(prev, curr))
-	}
+
 	if isHead {
+		if hasTail {
+			pipeline.Enqueue(genTrafficEnforcer(prev, curr))
+			pipeline.Enqueue(genCapacityEnforcer(prev, curr))
+		}
 		pipeline.Enqueue(genReleaseStrategyStateEnforcer(curr, nil))
 	}
 
