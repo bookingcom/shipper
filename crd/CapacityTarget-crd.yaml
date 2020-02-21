@@ -4,6 +4,23 @@ metadata:
   # name must match the spec fields below, and be in the form: <plural>.<group>
   name: capacitytargets.shipper.booking.com
 spec:
+  additionalPrinterColumns:
+  - JSONPath: .status.conditions[?(.type=="Operational")].status
+    description: Whether the capacity target is operational.
+    name: Operational
+    type: string
+  - JSONPath: .status.conditions[?(.type=="Ready")].status
+    description: Whether the capacity target is ready.
+    name: Ready
+    type: string
+  - JSONPath: .status.conditions[?(.status=="False")].message
+    description: Reason for the capactiy target to not be ready or operational.
+    name: Reason
+    type: string
+  - JSONPath: .metadata.creationTimestamp
+    description: The capacity target's age.
+    name: Age
+    type: date
   # group name to use for REST API: /apis/<group>/<version>
   group: shipper.booking.com
   # version name to use for REST API: /apis/<group>/<version>

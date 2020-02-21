@@ -1,6 +1,8 @@
 package clusterstatus
 
 import (
+	"fmt"
+
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -21,7 +23,7 @@ func IsClusterTrafficReady(conditions []shipper.ClusterTrafficCondition) bool {
 	return readyCond.Status == corev1.ConditionTrue
 }
 
-func IsClusterCapacityReady(conditions []shipper.ClusterCapacityCondition) bool {
+func IsClusterCapacityReady(conditions []shipper.ClusterCapacityCondition) (bool, string) {
 	var readyCond shipper.ClusterCapacityCondition
 	for _, c := range conditions {
 		if c.Type == shipper.ClusterConditionTypeReady {
@@ -30,7 +32,17 @@ func IsClusterCapacityReady(conditions []shipper.ClusterCapacityCondition) bool 
 		}
 	}
 
-	return readyCond.Status == corev1.ConditionTrue
+	if readyCond.Status != corev1.ConditionTrue {
+		msg := readyCond.Reason
+
+		if readyCond.Message != "" {
+			msg = fmt.Sprintf("%s %s", msg, readyCond.Message)
+		}
+
+		return false, msg
+	}
+
+	return true, ""
 }
 
 func IsClusterInstallationReady(conditions []shipper.ClusterInstallationCondition) bool {

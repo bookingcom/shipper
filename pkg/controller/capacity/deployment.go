@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -93,4 +94,65 @@ func (c Controller) calculatePercentageFromAmount(total, amount int32) int32 {
 	result := float64(amount) / float64(total) * 100
 
 	return int32(math.Ceil(result))
+}
+
+type sadContainerSummary struct {
+	pods    int
+	reasons map[string]struct{}
+}
+
+func summarizeSadPods(sadPods []shipper.PodStatus) string {
+	summary := make(map[string]*sadContainerSummary)
+
+	for _, sadPod := range sadPods {
+		summarizeContainers(sadPod.InitContainers, summary)
+		summarizeContainers(sadPod.Containers, summary)
+	}
+
+	containers := make([]string, 0, len(summary))
+	for c, _ := range summary {
+		containers = append(containers, c)
+	}
+
+	sort.Strings(containers)
+
+	summaryStrs := make([]string, 0, len(summary))
+	for _, container := range containers {
+		summary := summary[container]
+		reasons := make([]string, 0, len(summary.reasons))
+		for r, _ := range summary.reasons {
+			reasons = append(reasons, r)
+		}
+
+		sort.Strings(reasons)
+
+		summaryStrs = append(summaryStrs, fmt.Sprintf("%dx%q containers with %v", summary.pods, container, reasons))
+	}
+
+	return strings.Join(summaryStrs, "; ")
+}
+
+func summarizeContainers(containers []corev1.ContainerStatus, summary map[string]*sadContainerSummary) {
+	for _, container := range containers {
+		if container.Ready {
+			continue
+		}
+
+		sadContainer, ok := summary[container.Name]
+		if !ok {
+			sadContainer = &sadContainerSummary{
+				reasons: make(map[string]struct{}),
+			}
+
+			summary[container.Name] = sadContainer
+		}
+
+		sadContainer.pods++
+
+		if state := container.State.Waiting; state != nil {
+			sadContainer.reasons[state.Reason] = struct{}{}
+		} else if state := container.State.Terminated; state != nil {
+			sadContainer.reasons[state.Reason] = struct{}{}
+		}
+	}
 }

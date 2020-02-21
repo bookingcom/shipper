@@ -148,7 +148,7 @@ func TestCapacityShiftingPodsNotSadButNotAvailable(t *testing.T) {
 				Type:    shipper.TargetConditionTypeReady,
 				Status:  corev1.ConditionFalse,
 				Reason:  ClustersNotReady,
-				Message: fmt.Sprintf("%v", []string{clusterA}),
+				Message: fmt.Sprintf("%s: InProgress", clusterA),
 			},
 		},
 	}
@@ -192,11 +192,25 @@ func TestCapacityShiftingSadPods(t *testing.T) {
 			Owner: shipper.ClusterCapacityReportOwner{Name: ctName},
 			Breakdown: []shipper.ClusterCapacityReportBreakdown{
 				{
-					Type:       "Ready",
-					Status:     string(corev1.ConditionFalse),
-					Reason:     "ExpectedFail",
-					Count:      1,
-					Containers: []shipper.ClusterCapacityReportContainerBreakdown{},
+					Type:   "Ready",
+					Status: string(corev1.ConditionFalse),
+					Reason: "ExpectedFail",
+					Count:  1,
+					Containers: []shipper.ClusterCapacityReportContainerBreakdown{
+						{
+							Name: "app",
+							States: []shipper.ClusterCapacityReportContainerStateBreakdown{
+								{
+									Count: 1,
+									Example: shipper.ClusterCapacityReportContainerBreakdownExample{
+										Pod: "foobar-deadbeef",
+									},
+									Reason: "ExpectedFail",
+									Type:   "Waiting",
+								},
+							},
+						},
+					},
 				},
 			},
 		},
@@ -213,13 +227,14 @@ func TestCapacityShiftingSadPods(t *testing.T) {
 						Type:    shipper.ClusterConditionTypeReady,
 						Status:  corev1.ConditionFalse,
 						Reason:  PodsNotReady,
-						Message: "1 out of 10 pods are not Ready. this might require intervention, check SadPods in this object for more information",
+						Message: `1/10: 1x"app" containers with [ExpectedFail]`,
 					},
 				},
 				SadPods: []shipper.PodStatus{
 					{
-						Name:      sadPod.Name,
-						Condition: sadPod.Status.Conditions[0],
+						Name:       sadPod.Name,
+						Condition:  sadPod.Status.Conditions[0],
+						Containers: sadPod.Status.ContainerStatuses,
 					},
 				},
 				Reports: reports,
@@ -231,7 +246,7 @@ func TestCapacityShiftingSadPods(t *testing.T) {
 				Type:    shipper.TargetConditionTypeReady,
 				Status:  corev1.ConditionFalse,
 				Reason:  ClustersNotReady,
-				Message: fmt.Sprintf("%v", []string{clusterA}),
+				Message: fmt.Sprintf(`%s: PodsNotReady 1/10: 1x"app" containers with [ExpectedFail]`, clusterA),
 			},
 		},
 	}
