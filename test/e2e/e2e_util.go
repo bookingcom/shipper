@@ -284,12 +284,24 @@ func poll(timeout time.Duration, waitCondition func() (bool, error)) error {
 
 func setupNamespace(name string) (*corev1.Namespace, error) {
 	newNs := testNamespace(name)
-	_, err := appKubeClient.CoreV1().Namespaces().Create(newNs)
+
+	// We create a test namespace once in the management cluster, and once
+	// in the application cluster. Sometimes, in development, both of these
+	// happen to be the same, so the second time we try to create the ns
+	// it'll error out with "namespace foobar already exists", so if that
+	// happens we'll just ignore it.
+
+	ns, err := appKubeClient.CoreV1().Namespaces().Create(newNs)
 	if err != nil {
 		return nil, err
 	}
 
-	return kubeClient.CoreV1().Namespaces().Create(newNs)
+	_, err = kubeClient.CoreV1().Namespaces().Create(newNs)
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return nil, err
+	}
+
+	return ns, nil
 }
 
 func teardownNamespace(name string) {
