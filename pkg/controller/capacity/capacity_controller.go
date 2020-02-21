@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -309,10 +310,11 @@ func (c *Controller) processCapacityTargetOnCluster(
 	} else if l := len(sadPods); l > 0 {
 		// We ran out of conditions to look at, but we have pods that
 		// aren't Ready, so that's one reason to be concerned.
+		summary := summarizeSadPods(sadPods)
 		reason = PodsNotReady
 		msg = fmt.Sprintf(
-			"%d out of %d pods are not Ready. this might require intervention, check SadPods in this object for more information",
-			l, desiredReplicas,
+			"%d/%d: %s",
+			l, desiredReplicas, summary,
 		)
 	} else {
 		// None of the existing pods are non-Ready, and we presumably
@@ -400,19 +402,21 @@ func (c *Controller) processCapacityTarget(ct *shipper.CapacityTarget) (*shipper
 	ct.Status.Clusters = newClusterStatuses
 	ct.Status.ObservedGeneration = ct.Generation
 
-	clustersNotReady := []string{}
+	notReadyReasons := []string{}
 	for _, clusterStatus := range ct.Status.Clusters {
-		if !clusterstatusutil.IsClusterCapacityReady(clusterStatus.Conditions) {
-			clustersNotReady = append(clustersNotReady, clusterStatus.Name)
+		ready, reason := clusterstatusutil.IsClusterCapacityReady(clusterStatus.Conditions)
+		if !ready {
+			notReadyReasons = append(notReadyReasons,
+				fmt.Sprintf("%s: %s", clusterStatus.Name, reason))
 		}
 	}
 
-	if len(clustersNotReady) == 0 {
+	if len(notReadyReasons) == 0 {
 		ct.Status.Conditions = targetutil.TransitionToReady(diff, ct.Status.Conditions)
 	} else {
 		ct.Status.Conditions = targetutil.TransitionToNotReady(
 			diff, ct.Status.Conditions,
-			ClustersNotReady, fmt.Sprintf("%v", clustersNotReady))
+			ClustersNotReady, strings.Join(notReadyReasons, "; "))
 	}
 
 	return ct, clusterErrors.Flatten()

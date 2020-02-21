@@ -124,6 +124,17 @@ func buildSadPodForDeployment(deployment *appsv1.Deployment) *corev1.Pod {
 					Message: "This failure is meant to happen!",
 				},
 			},
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:  "app",
+					Ready: false,
+					State: corev1.ContainerState{
+						Waiting: &corev1.ContainerStateWaiting{
+							Reason: "ExpectedFail",
+						},
+					},
+				},
+			},
 		},
 	}
 }

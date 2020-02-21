@@ -64,5 +64,31 @@ var CapacityTarget = &apiextensionv1beta1.CustomResourceDefinition{
 				},
 			},
 		},
+		AdditionalPrinterColumns: []apiextensionv1beta1.CustomResourceColumnDefinition{
+			apiextensionv1beta1.CustomResourceColumnDefinition{
+				Name:        "Operational",
+				Type:        "string",
+				Description: "Whether the capactiy target is operational.",
+				JSONPath:    `.status.conditions[?(.type=="Operational")].status`,
+			},
+			apiextensionv1beta1.CustomResourceColumnDefinition{
+				Name:        "Ready",
+				Type:        "string",
+				Description: "Whether the capactiy target is ready.",
+				JSONPath:    `.status.conditions[?(.type=="Ready")].status`,
+			},
+			apiextensionv1beta1.CustomResourceColumnDefinition{
+				Name:        "Reason",
+				Type:        "string",
+				Description: "Reason for the capactiy target to not be ready or operational.",
+				JSONPath:    `.status.conditions[?(.status=="False")].message`,
+			},
+			apiextensionv1beta1.CustomResourceColumnDefinition{
+				Name:        "Age",
+				Type:        "date",
+				Description: "The capactiy target's age.",
+				JSONPath:    ".metadata.creationTimestamp",
+			},
+		},
 	},
 }
