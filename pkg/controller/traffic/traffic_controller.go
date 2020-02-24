@@ -338,7 +338,7 @@ func (c *Controller) processTrafficTargetOnCluster(
 		c.reportConditionChange(tt, ClusterTrafficConditionChanged, diff)
 	}()
 
-	clientset, err := c.clusterClientStore.GetClient(spec.Name, AgentName)
+	clientset, err := c.clusterClientStore.GetApplicationClusterClientset(spec.Name, AgentName)
 	if err != nil {
 		operationalCond = trafficutil.NewClusterTrafficCondition(
 			shipper.ClusterConditionTypeOperational,
@@ -395,7 +395,8 @@ func (c *Controller) processTrafficTargetOnCluster(
 		// If we have pods to shift, our job can only be done after the
 		// change is made and observed, so we definitely still in
 		// progress.
-		err := shiftPodLabels(clientset, trafficStatus.podsToShift)
+		client := clientset.GetKubeClient()
+		err := shiftPodLabels(client, trafficStatus.podsToShift)
 		if err != nil {
 			readyCond = trafficutil.NewClusterTrafficCondition(
 				shipper.ClusterConditionTypeReady,
@@ -444,11 +445,12 @@ func (c *Controller) processTrafficTargetOnCluster(
 	return nil
 }
 
-func (c *Controller) getClusterObjects(cluster, ns, appName string) ([]*corev1.Pod, *corev1.Endpoints, error) {
-	informerFactory, err := c.clusterClientStore.GetInformerFactory(cluster)
+func (c *Controller) getClusterObjects(clusterName, ns, appName string) ([]*corev1.Pod, *corev1.Endpoints, error) {
+	clientset, err := c.clusterClientStore.GetApplicationClusterClientset(clusterName, AgentName)
 	if err != nil {
 		return nil, nil, err
 	}
+	informerFactory := clientset.GetKubeInformerFactory()
 
 	appSelector := labels.Set{shipper.AppLabel: appName}.AsSelector()
 	appPods, err := informerFactory.Core().V1().Pods().Lister().

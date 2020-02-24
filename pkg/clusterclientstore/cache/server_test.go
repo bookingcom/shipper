@@ -147,7 +147,7 @@ func TestReplacement(t *testing.T) {
 	}
 }
 
-func newCluster(name string) *cluster {
+func newCluster(name string) *Cluster {
 	kubeClient := kubefake.NewSimpleClientset()
 
 	const noResyncPeriod time.Duration = 0

@@ -2,15 +2,15 @@ package cache
 
 type CacheServer interface {
 	Serve()
-	Store(*cluster)
-	Fetch(string) (*cluster, bool)
+	Store(*Cluster)
+	Fetch(string) (*Cluster, bool)
 	Remove(string)
 	Count() int
 	Stop()
 }
 
 type server struct {
-	clusters map[string]*cluster
+	clusters map[string]*Cluster
 	ch       ch
 }
 
@@ -18,9 +18,9 @@ type ch struct {
 	stop chan struct{}
 
 	request  chan string
-	response chan *cluster
+	response chan *Cluster
 
-	store  chan *cluster
+	store  chan *Cluster
 	remove chan string
 
 	countReq chan struct{}
@@ -29,14 +29,14 @@ type ch struct {
 
 func NewServer() *server {
 	return &server{
-		clusters: map[string]*cluster{},
+		clusters: map[string]*Cluster{},
 		ch: ch{
 			stop: make(chan struct{}),
 
 			request:  make(chan string),
-			response: make(chan *cluster),
+			response: make(chan *Cluster),
 
-			store:  make(chan *cluster),
+			store:  make(chan *Cluster),
 			remove: make(chan string),
 
 			countReq: make(chan struct{}),
@@ -87,11 +87,11 @@ func (s *server) Serve() {
 	}
 }
 
-func (s *server) Store(new *cluster) {
+func (s *server) Store(new *Cluster) {
 	s.ch.store <- new
 }
 
-func (s *server) Fetch(clusterName string) (*cluster, bool) {
+func (s *server) Fetch(clusterName string) (*Cluster, bool) {
 	s.ch.request <- clusterName
 	cluster := <-s.ch.response
 	return cluster, cluster != nil

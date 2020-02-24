@@ -23,6 +23,7 @@ import (
 	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
+	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/controller"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
@@ -47,6 +48,7 @@ const (
 // strategy.
 type Controller struct {
 	clientset shipperclient.Interface
+	store     clusterclientstore.Interface
 
 	applicationLister  shipperlisters.ApplicationLister
 	applicationsSynced cache.InformerSynced
@@ -91,6 +93,7 @@ type ReleaseStrategyStateTransition struct {
 
 func NewController(
 	clientset shipperclient.Interface,
+	store clusterclientstore.Interface,
 	informerFactory shipperinformers.SharedInformerFactory,
 	chartFetcher shipperrepo.ChartFetcher,
 	recorder record.EventRecorder,
@@ -108,6 +111,7 @@ func NewController(
 
 	controller := &Controller{
 		clientset: clientset,
+		store:     store,
 
 		applicationLister:  applicationInformer.Lister(),
 		applicationsSynced: applicationInformer.Informer().HasSynced,

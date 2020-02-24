@@ -145,6 +145,7 @@ type fixture struct {
 	cycles          int
 	objects         []runtime.Object
 	clientset       *shipperfake.Clientset
+	store           *shippertesting.FakeClusterClientStore
 	informerFactory shipperinformers.SharedInformerFactory
 	recorder        *record.FakeRecorder
 
@@ -223,6 +224,7 @@ func (f *fixture) run() {
 func (f *fixture) newController() *Controller {
 	return NewController(
 		f.clientset,
+		f.store,
 		f.informerFactory,
 		localFetchChart,
 		f.recorder,

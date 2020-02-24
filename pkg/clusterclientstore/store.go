@@ -18,6 +18,8 @@ import (
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperinformer "github.com/bookingcom/shipper/pkg/client/informers/externalversions/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore/cache"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
@@ -27,13 +29,17 @@ const AgentName = "clusterclientstore"
 
 // This enables tests to inject an appropriate fake client, which allows us to
 // use the real cluster client store in unit tests.
-type ClientBuilderFunc func(string, string, *rest.Config) (kubernetes.Interface, error)
+type KubeClientBuilderFunc func(string, string, *rest.Config) (kubernetes.Interface, error)
+type ShipperClientBuilderFunc func(string, string, *rest.Config) (shipperclientset.Interface, error)
 
 type Store struct {
-	ns          string
-	buildClient ClientBuilderFunc
-	restTimeout *time.Duration
-	cache       cache.CacheServer
+	ns                 string
+	buildKubeClient    KubeClientBuilderFunc
+	buildShipperClient ShipperClientBuilderFunc
+	restTimeout        *time.Duration
+	cache              cache.CacheServer
+
+	shipperInformerFactory shipperinformers.SharedInformerFactory
 
 	secretInformer  corev1informer.SecretInformer
 	clusterInformer shipperinformer.ClusterInformer
@@ -50,24 +56,30 @@ type Store struct {
 	subscriptionRegisterFuncs []SubscriptionRegisterFunc
 }
 
+var _ Interface = (*Store)(nil)
+
 // NewStore creates a new client store that will use the specified informers to
 // maintain a cache of clientsets, rest.Configs, and informers for target
 // clusters.
 func NewStore(
-	buildClient ClientBuilderFunc,
+	buildKubeClient KubeClientBuilderFunc,
+	buildShipperClient ShipperClientBuilderFunc,
 	secretInformer corev1informer.SecretInformer,
-	clusterInformer shipperinformer.ClusterInformer,
+	shipperInformerFactory shipperinformers.SharedInformerFactory,
 	ns string,
 	restTimeout *time.Duration,
 ) *Store {
 	s := &Store{
-		ns:          ns,
-		buildClient: buildClient,
-		restTimeout: restTimeout,
-		cache:       cache.NewServer(),
+		ns:                 ns,
+		buildKubeClient:    buildKubeClient,
+		buildShipperClient: buildShipperClient,
+		restTimeout:        restTimeout,
+		cache:              cache.NewServer(),
+
+		shipperInformerFactory: shipperInformerFactory,
 
 		secretInformer:  secretInformer,
-		clusterInformer: clusterInformer,
+		clusterInformer: shipperInformerFactory.Shipper().V1alpha1().Clusters(),
 
 		secretWorkqueue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Client Store Secrets"),
 		clusterWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Client Store Clusters"),
@@ -136,6 +148,41 @@ func (s *Store) GetConfig(clusterName string) (*rest.Config, error) {
 	}
 
 	return cluster.GetConfig()
+}
+
+func (s *Store) GetApplicationClusterClientset(clusterName, userAgent string) (ClientsetInterface, error) {
+	cluster, ok := s.cache.Fetch(clusterName)
+	if !ok {
+		return nil, shippererrors.NewClusterNotInStoreError(clusterName)
+	}
+
+	config, err := cluster.GetConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	kubeClient, err := cluster.GetClient(userAgent)
+	if err != nil {
+		return nil, err
+	}
+
+	kubeInformerFactory, err := cluster.GetInformerFactory()
+	if err != nil {
+		return nil, err
+	}
+
+	shipperClient, err := s.buildShipperClient(clusterName, userAgent, config)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewStoreClientset(
+		config,
+		kubeClient,
+		kubeInformerFactory,
+		shipperClient,
+		s.shipperInformerFactory,
+	), nil
 }
 
 // GetInformerFactory returns an informer factory for the specified
@@ -276,7 +323,7 @@ func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
 		return shippererrors.NewClusterClientBuild(cluster.Name, err)
 	}
 
-	informerClient, err := s.buildClient(cluster.Name, AgentName, informerConfig)
+	informerClient, err := s.buildKubeClient(cluster.Name, AgentName, informerConfig)
 	if err != nil {
 		return shippererrors.NewClusterClientBuild(cluster.Name, err)
 	}
@@ -294,7 +341,7 @@ func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
 		checksum,
 		config,
 		informerFactory,
-		s.buildClient,
+		s.buildKubeClient,
 		func() {
 			// If/when the informer cache finishes syncing, bind all of the event handler
 			// callbacks from the controllers if it does not finish (because the cluster
@@ -306,6 +353,55 @@ func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
 
 	s.cache.Store(newCachedCluster)
 	return nil
+}
+
+// StoreClientset is supposed to be a short-lived container for a set of
+// client connections. As it is effectively caching clients and factories, it's
+// the caller's responsibility to ensure these objects are not stall.
+type StoreClientset struct {
+	config *rest.Config
+
+	kubeClient          kubernetes.Interface
+	kubeInformerFactory kubeinformers.SharedInformerFactory
+
+	shipperClient          shipperclientset.Interface
+	shipperInformerFactory shipperinformers.SharedInformerFactory
+}
+
+var _ ClientsetInterface = (*StoreClientset)(nil)
+
+// NewStoreClientset is a dummy constructor forcing all components to be
+// present.
+func NewStoreClientset(config *rest.Config, kubeClient kubernetes.Interface,
+	kubeInformerFactory kubeinformers.SharedInformerFactory, shipperClient shipperclientset.Interface,
+	shipperInformerFactory shipperinformers.SharedInformerFactory) *StoreClientset {
+	return &StoreClientset{
+		config:                 config,
+		kubeClient:             kubeClient,
+		kubeInformerFactory:    kubeInformerFactory,
+		shipperClient:          shipperClient,
+		shipperInformerFactory: shipperInformerFactory,
+	}
+}
+
+func (c *StoreClientset) GetConfig() *rest.Config {
+	return c.config
+}
+
+func (c *StoreClientset) GetKubeClient() kubernetes.Interface {
+	return c.kubeClient
+}
+
+func (c *StoreClientset) GetKubeInformerFactory() kubeinformers.SharedInformerFactory {
+	return c.kubeInformerFactory
+}
+
+func (c *StoreClientset) GetShipperClient() shipperclientset.Interface {
+	return c.shipperClient
+}
+
+func (c *StoreClientset) GetShipperInformerFactory() shipperinformers.SharedInformerFactory {
+	return c.shipperInformerFactory
 }
 
 // TODO(btyler): error here or let any invalid data get picked up by errors from

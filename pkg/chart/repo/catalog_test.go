@@ -91,7 +91,7 @@ func TestCreateRepoIfNotExist(t *testing.T) {
 			if (err == nil && testCase.err != nil) ||
 				(err != nil && testCase.err == nil) ||
 				(err != nil && err.Error() != testCase.err.Error()) {
-				t.Fatalf("Unexpected error on calling NewCatalog: %q, want: %q", err, testCase.err)
+				t.Fatalf("Unexpected error on calling NewCatalog(): got: %q, want: %q", err, testCase.err)
 			}
 		})
 	}

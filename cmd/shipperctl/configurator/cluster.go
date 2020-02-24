@@ -273,17 +273,17 @@ func NewClusterConfigurator(clusterConfiguration *config.ClusterConfiguration, k
 		return nil, err
 	}
 
-	clientset, err := client.NewKubeClient(restConfig, AgentName, nil)
+	clientset, err := client.NewKubeClient(AgentName, restConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	shipperClient, err := client.NewShipperClient(restConfig, AgentName, nil)
+	shipperClient, err := client.NewShipperClient(AgentName, restConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	apiExtensionClient, err := client.NewApiExtensionClient(restConfig, AgentName, nil)
+	apiExtensionClient, err := client.NewApiExtensionClient(AgentName, restConfig)
 	if err != nil {
 		return nil, err
 	}

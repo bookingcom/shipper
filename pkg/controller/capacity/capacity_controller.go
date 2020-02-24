@@ -22,7 +22,7 @@ import (
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
@@ -52,19 +52,22 @@ const (
 
 // Controller is the controller implementation for CapacityTarget resources
 type Controller struct {
-	shipperclientset      clientset.Interface
-	clusterClientStore    clusterclientstore.Interface
+	clientset shipperclient.Interface
+	store     clusterclientstore.Interface
+
 	capacityTargetsLister listers.CapacityTargetLister
 	capacityTargetsSynced cache.InformerSynced
-	releasesLister        listers.ReleaseLister
-	releasesListerSynced  cache.InformerSynced
-	workqueue             workqueue.RateLimitingInterface
-	recorder              record.EventRecorder
+
+	releasesLister       listers.ReleaseLister
+	releasesListerSynced cache.InformerSynced
+
+	workqueue workqueue.RateLimitingInterface
+	recorder  record.EventRecorder
 }
 
 // NewController returns a new CapacityTarget controller.
 func NewController(
-	shipperclientset clientset.Interface,
+	clientset shipperclient.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
 	store clusterclientstore.Interface,
 	recorder record.EventRecorder,
@@ -75,14 +78,14 @@ func NewController(
 	releaseInformer := shipperInformerFactory.Shipper().V1alpha1().Releases()
 
 	controller := &Controller{
-		shipperclientset:      shipperclientset,
+		clientset:             clientset,
+		store:                 store,
 		capacityTargetsLister: capacityTargetInformer.Lister(),
 		capacityTargetsSynced: capacityTargetInformer.Informer().HasSynced,
 		releasesLister:        releaseInformer.Lister(),
 		releasesListerSynced:  releaseInformer.Informer().HasSynced,
 		workqueue:             workqueue.NewNamedRateLimitingQueue(shipperworkqueue.NewDefaultControllerRateLimiter(), "capacity_controller_capacitytargets"),
 		recorder:              recorder,
-		clusterClientStore:    store,
 	}
 
 	klog.Info("Setting up event handlers")
@@ -346,7 +349,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 	ct, err := c.processCapacityTarget(initialCT.DeepCopy())
 
 	if !reflect.DeepEqual(initialCT, ct) {
-		_, err := c.shipperclientset.ShipperV1alpha1().CapacityTargets(namespace).
+		_, err := c.clientset.ShipperV1alpha1().CapacityTargets(namespace).
 			UpdateStatus(ct)
 		if err != nil {
 			return shippererrors.NewKubeclientUpdateError(ct, err).
@@ -444,11 +447,12 @@ func (c *Controller) subscribeToDeployments(informerFactory kubeinformers.Shared
 	informerFactory.Core().V1().Pods().Informer()
 }
 
-func (c Controller) getClusterObjects(cluster, ns, appName, release string) (*appsv1.Deployment, []*corev1.Pod, error) {
-	informerFactory, err := c.clusterClientStore.GetInformerFactory(cluster)
+func (c Controller) getClusterObjects(clusterName, ns, appName, release string) (*appsv1.Deployment, []*corev1.Pod, error) {
+	appClientset, err := c.store.GetApplicationClusterClientset(clusterName, AgentName)
 	if err != nil {
 		return nil, nil, err
 	}
+	informerFactory := appClientset.GetKubeInformerFactory()
 
 	deploymentSelector := labels.Set{
 		shipper.AppLabel:     appName,
@@ -486,10 +490,11 @@ func (c Controller) getClusterObjects(cluster, ns, appName, release string) (*ap
 }
 
 func (c *Controller) patchDeploymentWithReplicaCount(deployment *appsv1.Deployment, clusterName string, replicaCount int32) (*appsv1.Deployment, error) {
-	targetClusterClient, err := c.clusterClientStore.GetClient(clusterName, AgentName)
+	appClientset, err := c.store.GetApplicationClusterClientset(clusterName, AgentName)
 	if err != nil {
 		return nil, err
 	}
+	targetClusterClient := appClientset.GetKubeClient()
 
 	patch := []byte(fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicaCount))
 
