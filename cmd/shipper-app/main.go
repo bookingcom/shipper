@@ -31,6 +31,7 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/chart/repo"
 	"github.com/bookingcom/shipper/pkg/client"
+	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
@@ -104,7 +105,7 @@ func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
 
-	baseRestCfg, err := clientcmd.BuildConfigFromFlags(*masterURL, *kubeconfig)
+	restCfg, err := prepareRestConfig()
 	if err != nil {
 		klog.Fatal(err)
 	}
@@ -112,8 +113,8 @@ func main() {
 	// These are only used in shared informers. Setting HTTP timeout here would
 	// affect watches which is undesirable. Instead, we leave it to client-go (see
 	// k8s.io/client-go/tools/cache) to govern watch durations.
-	informerKubeClient := client.NewKubeClientOrDie(baseRestCfg, "kube-shared-informer", nil)
-	informerShipperClient := client.NewShipperClientOrDie(baseRestCfg, "shipper-shared-informer", nil)
+	informerKubeClient := client.NewKubeClientOrDie("kube-shared-informer", restCfg)
+	informerShipperClient := client.NewShipperClientOrDie("shipper-shared-informer", restCfg)
 
 	stopCh := setupSignalHandler()
 	metricsReadyCh := make(chan struct{})
@@ -123,12 +124,11 @@ func main() {
 
 	shipperscheme.AddToScheme(scheme.Scheme)
 
+	kubeClient := client.NewKubeClientOrDie("event-broadcaster", restCfg)
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(klog.Infof)
-	func() {
-		kubeClient := client.NewKubeClientOrDie(baseRestCfg, "event-broadcaster", restTimeout)
-		broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
-	}()
+	broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{
+		Interface: kubeClient.CoreV1().Events("")})
 
 	recorder := func(component string) record.EventRecorder {
 		return broadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: component})
@@ -140,10 +140,15 @@ func main() {
 	store := clusterclientstore.NewStore(
 		func(clusterName string, ua string, config *rest.Config) (kubernetes.Interface, error) {
 			klog.V(8).Infof("Building a client for Cluster %q, UserAgent %q", clusterName, ua)
-			return client.NewKubeClient(config, ua, nil)
+			cp := rest.CopyConfig(config)
+			cp.Timeout = 0
+			return client.NewKubeClient(ua, cp)
+		},
+		func(_, ua string, config *rest.Config) (shipperclientset.Interface, error) {
+			return client.NewShipperClient(ua, config)
 		},
 		secretInformer,
-		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
+		shipperInformerFactory,
 		*ns,
 		restTimeout,
 	)
@@ -166,7 +171,7 @@ func main() {
 
 	cfg := &cfg{
 		enabledControllers: enabledControllers,
-		restCfg:            baseRestCfg,
+		restCfg:            restCfg,
 		restTimeout:        restTimeout,
 
 		kubeInformerFactory:    kubeInformerFactory,
@@ -359,9 +364,9 @@ func startInstallationController(cfg *cfg) (bool, error) {
 	}
 
 	c := installation.NewController(
-		client.NewShipperClientOrDie(cfg.restCfg, installation.AgentName, cfg.restTimeout),
-		cfg.shipperInformerFactory,
+		client.NewShipperClientOrDie(installation.AgentName, cfg.restCfg),
 		cfg.store,
+		cfg.shipperInformerFactory,
 		dynamicClientBuilderFunc,
 		cfg.chartFetcher,
 		cfg.recorder(installation.AgentName),
@@ -383,7 +388,7 @@ func startCapacityController(cfg *cfg) (bool, error) {
 	}
 
 	c := capacity.NewController(
-		client.NewShipperClientOrDie(cfg.restCfg, capacity.AgentName, cfg.restTimeout),
+		client.NewShipperClientOrDie(capacity.AgentName, cfg.restCfg),
 		cfg.shipperInformerFactory,
 		cfg.store,
 		cfg.recorder(capacity.AgentName),
@@ -403,7 +408,7 @@ func startTrafficController(cfg *cfg) (bool, error) {
 	}
 
 	c := traffic.NewController(
-		client.NewShipperClientOrDie(cfg.restCfg, traffic.AgentName, cfg.restTimeout),
+		client.NewShipperClientOrDie(traffic.AgentName, cfg.restCfg),
 		cfg.shipperInformerFactory,
 		cfg.store,
 		cfg.recorder(traffic.AgentName),
@@ -425,7 +430,7 @@ func startJanitorController(cfg *cfg) (bool, error) {
 	}
 
 	c := janitor.NewController(
-		client.NewShipperClientOrDie(cfg.restCfg, janitor.AgentName, cfg.restTimeout),
+		client.NewShipperClientOrDie(janitor.AgentName, cfg.restCfg),
 		cfg.shipperInformerFactory,
 		cfg.store,
 		cfg.recorder(janitor.AgentName),
@@ -438,4 +443,15 @@ func startJanitorController(cfg *cfg) (bool, error) {
 	}()
 
 	return true, nil
+}
+
+func prepareRestConfig() (*rest.Config, error) {
+	cfg, err := clientcmd.BuildConfigFromFlags(*masterURL, *kubeconfig)
+	if err != nil {
+		return nil, err
+	}
+	if restTimeout != nil {
+		cfg.Timeout = *restTimeout
+	}
+	return cfg, nil
 }

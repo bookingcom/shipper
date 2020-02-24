@@ -218,8 +218,8 @@ func assertClusterObjects(
 func runController(f *shippertesting.ControllerTestFixture) {
 	controller := NewController(
 		f.ShipperClient,
-		f.ShipperInformerFactory,
 		f.ClusterClientStore,
+		f.ShipperInformerFactory,
 		f.DynamicClientBuilder,
 		localFetchChart,
 		f.Recorder,

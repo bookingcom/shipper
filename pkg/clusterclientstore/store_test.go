@@ -15,6 +15,8 @@ import (
 	"k8s.io/client-go/rest"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shipperclient "github.com/bookingcom/shipper/pkg/client"
+	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
@@ -280,8 +282,11 @@ func (f *fixture) newStore() (*Store, kubeinformers.SharedInformerFactory, shipp
 		func(_ string, _ string, config *rest.Config) (kubernetes.Interface, error) {
 			return kubernetes.NewForConfig(config)
 		},
+		func(_, userAgent string, config *rest.Config) (shipperclientset.Interface, error) {
+			return shipperclient.NewShipperClient(userAgent, config)
+		},
 		kubeInformerFactory.Core().V1().Secrets(),
-		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
+		shipperInformerFactory,
 		shipper.ShipperNamespace,
 		f.restTimeout,
 	)

@@ -30,6 +30,7 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/chart/repo"
 	"github.com/bookingcom/shipper/pkg/client"
+	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperscheme "github.com/bookingcom/shipper/pkg/client/clientset/versioned/scheme"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
@@ -113,7 +114,7 @@ func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
 
-	baseRestCfg, err := clientcmd.BuildConfigFromFlags(*masterURL, *kubeconfig)
+	restCfg, err := prepareRestConfig()
 	if err != nil {
 		klog.Fatal(err)
 	}
@@ -121,8 +122,8 @@ func main() {
 	// These are only used in shared informers. Setting HTTP timeout here would
 	// affect watches which is undesirable. Instead, we leave it to client-go (see
 	// k8s.io/client-go/tools/cache) to govern watch durations.
-	informerKubeClient := client.NewKubeClientOrDie(baseRestCfg, "kube-shared-informer", nil)
-	informerShipperClient := client.NewShipperClientOrDie(baseRestCfg, "shipper-shared-informer", nil)
+	informerKubeClient := client.NewKubeClientOrDie("kube-shared-informer", restCfg)
+	informerShipperClient := client.NewShipperClientOrDie("shipper-shared-informer", restCfg)
 
 	stopCh := setupSignalHandler()
 	metricsReadyCh := make(chan struct{})
@@ -135,7 +136,7 @@ func main() {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(klog.Infof)
 	func() {
-		kubeClient := client.NewKubeClientOrDie(baseRestCfg, "event-broadcaster", restTimeout)
+		kubeClient := client.NewKubeClientOrDie("event-broadcaster", restCfg)
 		broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 	}()
 
@@ -149,10 +150,13 @@ func main() {
 	store := clusterclientstore.NewStore(
 		func(clusterName string, ua string, config *rest.Config) (kubernetes.Interface, error) {
 			klog.V(8).Infof("Building a client for Cluster %q, UserAgent %q", clusterName, ua)
-			return client.NewKubeClient(config, ua, nil)
+			return client.NewKubeClient(ua, config)
+		},
+		func(_, ua string, config *rest.Config) (shipperclientset.Interface, error) {
+			return client.NewShipperClient(ua, config)
 		},
 		secretInformer,
-		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
+		shipperInformerFactory,
 		*ns,
 		restTimeout,
 	)
@@ -189,7 +193,7 @@ func main() {
 
 	cfg := &cfg{
 		enabledControllers: enabledControllers,
-		restCfg:            baseRestCfg,
+		restCfg:            restCfg,
 		restTimeout:        restTimeout,
 
 		kubeInformerFactory:    kubeInformerFactory,
@@ -374,7 +378,7 @@ func startApplicationController(cfg *cfg) (bool, error) {
 	}
 
 	c := application.NewController(
-		client.NewShipperClientOrDie(cfg.restCfg, application.AgentName, cfg.restTimeout),
+		client.NewShipperClientOrDie(application.AgentName, cfg.restCfg),
 		cfg.shipperInformerFactory,
 		cfg.chartVersionResolver,
 		cfg.recorder(application.AgentName),
@@ -396,7 +400,8 @@ func startReleaseController(cfg *cfg) (bool, error) {
 	}
 
 	c := release.NewController(
-		client.NewShipperClientOrDie(cfg.restCfg, release.AgentName, cfg.restTimeout),
+		client.NewShipperClientOrDie(release.AgentName, cfg.restCfg),
+		cfg.store,
 		cfg.shipperInformerFactory,
 		cfg.chartFetcher,
 		cfg.recorder(release.AgentName),
@@ -418,7 +423,7 @@ func startRolloutBlockController(cfg *cfg) (bool, error) {
 	}
 
 	c := rolloutblock.NewController(
-		client.NewShipperClientOrDie(cfg.restCfg, rolloutblock.AgentName, cfg.restTimeout),
+		client.NewShipperClientOrDie(rolloutblock.AgentName, cfg.restCfg),
 		cfg.shipperInformerFactory,
 		cfg.recorder(rolloutblock.AgentName),
 	)
@@ -443,7 +448,7 @@ func startWebhook(cfg *cfg) (bool, error) {
 		cfg.webhookBindPort,
 		cfg.webhookKeyPath,
 		cfg.webhookCertPath,
-		client.NewShipperClientOrDie(cfg.restCfg, webhook.AgentName, cfg.restTimeout),
+		client.NewShipperClientOrDie(webhook.AgentName, cfg.restCfg),
 		cfg.shipperInformerFactory)
 
 	cfg.wg.Add(1)
@@ -468,4 +473,15 @@ func parseFloat64Slice(str string) []float64 {
 	}
 
 	return float64Slice
+}
+
+func prepareRestConfig() (*rest.Config, error) {
+	cfg, err := clientcmd.BuildConfigFromFlags(*masterURL, *kubeconfig)
+	if err != nil {
+		return nil, err
+	}
+	if restTimeout != nil {
+		cfg.Timeout = *restTimeout
+	}
+	return cfg, nil
 }

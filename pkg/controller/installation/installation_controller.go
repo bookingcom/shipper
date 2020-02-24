@@ -56,20 +56,24 @@ const (
 // Controller is a Kubernetes controller that processes InstallationTarget
 // objects.
 type Controller struct {
-	shipperclientset   shipperclient.Interface
-	clusterClientStore clusterclientstore.Interface
+	clientset shipperclient.Interface
+	store     clusterclientstore.Interface
 
-	workqueue workqueue.RateLimitingInterface
+	appLister shipperlisters.ApplicationLister
+	appSynced cache.InformerSynced
 
-	appLister                 shipperlisters.ApplicationLister
-	appSynced                 cache.InformerSynced
 	installationTargetsLister shipperlisters.InstallationTargetLister
 	installationTargetsSynced cache.InformerSynced
-	clusterLister             shipperlisters.ClusterLister
-	clusterSynced             cache.InformerSynced
-	releaseLister             shipperlisters.ReleaseLister
-	releaseSynced             cache.InformerSynced
-	dynamicClientBuilderFunc  DynamicClientBuilderFunc
+
+	clusterLister shipperlisters.ClusterLister
+	clusterSynced cache.InformerSynced
+
+	releaseLister shipperlisters.ReleaseLister
+	releaseSynced cache.InformerSynced
+
+	dynamicClientBuilderFunc DynamicClientBuilderFunc
+
+	workqueue workqueue.RateLimitingInterface
 
 	chartFetcher shipperrepo.ChartFetcher
 
@@ -78,9 +82,9 @@ type Controller struct {
 
 // NewController returns a new Installation controller.
 func NewController(
-	shipperclientset shipperclient.Interface,
-	shipperInformerFactory shipperinformers.SharedInformerFactory,
+	clientset shipperclient.Interface,
 	store clusterclientstore.Interface,
+	shipperInformerFactory shipperinformers.SharedInformerFactory,
 	dynamicClientBuilderFunc DynamicClientBuilderFunc,
 	chartFetcher shipperrepo.ChartFetcher,
 	recorder record.EventRecorder,
@@ -92,10 +96,10 @@ func NewController(
 	applicationInformer := shipperInformerFactory.Shipper().V1alpha1().Applications()
 
 	controller := &Controller{
+		clientset:                 clientset,
 		appLister:                 applicationInformer.Lister(),
 		appSynced:                 applicationInformer.Informer().HasSynced,
-		shipperclientset:          shipperclientset,
-		clusterClientStore:        store,
+		store:                     store,
 		clusterLister:             clusterInformer.Lister(),
 		clusterSynced:             clusterInformer.Informer().HasSynced,
 		releaseLister:             releaseInformer.Lister(),
@@ -228,7 +232,7 @@ func (c *Controller) syncHandler(key string) error {
 	if !reflect.DeepEqual(initialIT, it) {
 		// NOTE(jgreff): we can't use .UpdateStatus() because we also
 		// need to update .Spec.CanOverride
-		_, err := c.shipperclientset.ShipperV1alpha1().InstallationTargets(namespace).Update(it)
+		_, err := c.clientset.ShipperV1alpha1().InstallationTargets(namespace).Update(it)
 		if err != nil {
 			return shippererrors.NewKubeclientUpdateError(it, err).
 				WithShipperKind("InstallationTarget")
@@ -445,15 +449,12 @@ func (c *Controller) processInstallationTargetOnCluster(
 }
 
 func (c *Controller) GetClusterAndConfig(clusterName string) (kubernetes.Interface, *rest.Config, error) {
-	client, err := c.clusterClientStore.GetClient(clusterName, AgentName)
+	clusterset, err := c.store.GetApplicationClusterClientset(clusterName, AgentName)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	referenceConfig, err := c.clusterClientStore.GetConfig(clusterName)
-	if err != nil {
-		return nil, nil, err
-	}
+	client := clusterset.GetKubeClient()
+	referenceConfig := clusterset.GetConfig()
 
 	// The client store is just like an informer cache: it's a shared pointer to a
 	// read-only struct, so copy it before mutating.

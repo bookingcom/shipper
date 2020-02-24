@@ -7,6 +7,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
+	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 )
 
@@ -18,6 +20,8 @@ type FakeClusterClientStore struct {
 	subscriptionCallbacks []clusterclientstore.SubscriptionRegisterFunc
 	eventHandlerCallbacks []clusterclientstore.EventHandlerRegisterFunc
 }
+
+var _ clusterclientstore.Interface = (*FakeClusterClientStore)(nil)
 
 func NewFakeClusterClientStore(clusters map[string]*FakeCluster) *FakeClusterClientStore {
 	return &FakeClusterClientStore{clusters: clusters}
@@ -52,19 +56,41 @@ func (s *FakeClusterClientStore) Run(stopCh <-chan struct{}) {
 	}
 }
 
-func (s *FakeClusterClientStore) GetClient(clusterName string, ua string) (kubernetes.Interface, error) {
-	cluster, ok := s.clusters[clusterName]
-	if !ok {
+func (s *FakeClusterClientStore) GetApplicationClusterClientset(clusterName, ua string) (clusterclientstore.ClientsetInterface, error) {
+	if _, ok := s.clusters[clusterName]; !ok {
 		return nil, fmt.Errorf("no client for cluster %q", clusterName)
 	}
-
-	return cluster.Client, nil
+	return NewFakeClusterClientset(s.clusters[clusterName]), nil
 }
 
-func (s *FakeClusterClientStore) GetConfig(clusterName string) (*rest.Config, error) {
-	return &rest.Config{}, nil
+type FakeClusterClientset struct {
+	cluster *FakeCluster
 }
 
-func (s *FakeClusterClientStore) GetInformerFactory(clusterName string) (informers.SharedInformerFactory, error) {
-	return s.clusters[clusterName].InformerFactory, nil
+var _ clusterclientstore.ClientsetInterface = (*FakeClusterClientset)(nil)
+
+func NewFakeClusterClientset(cluster *FakeCluster) *FakeClusterClientset {
+	return &FakeClusterClientset{
+		cluster: cluster,
+	}
+}
+
+func (fs *FakeClusterClientset) GetConfig() *rest.Config {
+	return &rest.Config{}
+}
+
+func (fs *FakeClusterClientset) GetKubeClient() kubernetes.Interface {
+	return fs.cluster.Client
+}
+
+func (fs *FakeClusterClientset) GetKubeInformerFactory() informers.SharedInformerFactory {
+	return fs.cluster.InformerFactory
+}
+
+func (fs *FakeClusterClientset) GetShipperClient() shipperclientset.Interface {
+	return nil
+}
+
+func (fs *FakeClusterClientset) GetShipperInformerFactory() shipperinformers.SharedInformerFactory {
+	return nil
 }

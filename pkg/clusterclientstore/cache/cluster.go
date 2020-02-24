@@ -23,8 +23,8 @@ func NewCluster(
 	informerFactory kubeinformers.SharedInformerFactory,
 	buildClient func(string, string, *rest.Config) (kubernetes.Interface, error),
 	cacheSyncCb func(),
-) *cluster {
-	return &cluster{
+) *Cluster {
+	return &Cluster{
 		state:           StateNotReady,
 		name:            name,
 		checksum:        checksum,
@@ -38,7 +38,7 @@ func NewCluster(
 	}
 }
 
-type cluster struct {
+type Cluster struct {
 	name string
 
 	stateMut sync.RWMutex
@@ -58,7 +58,7 @@ type cluster struct {
 	stopCh chan struct{}
 }
 
-func (c *cluster) IsReady() bool {
+func (c *Cluster) IsReady() bool {
 	c.stateMut.RLock()
 	defer c.stateMut.RUnlock()
 	return c.state == StateReady
@@ -67,7 +67,7 @@ func (c *cluster) IsReady() bool {
 // GetClient returns a client for the user agent specified by ua. If a client
 // doesn't exist for that user agent, one will be created by calling the
 // buildClient func.
-func (c *cluster) GetClient(ua string) (kubernetes.Interface, error) {
+func (c *Cluster) GetClient(ua string) (kubernetes.Interface, error) {
 	if !c.IsReady() {
 		return nil, shippererrors.NewClusterNotReadyError(c.name)
 	}
@@ -89,7 +89,7 @@ func (c *cluster) GetClient(ua string) (kubernetes.Interface, error) {
 	return client, nil
 }
 
-func (c *cluster) GetConfig() (*rest.Config, error) {
+func (c *Cluster) GetConfig() (*rest.Config, error) {
 	if !c.IsReady() {
 		return c.config, shippererrors.NewClusterNotReadyError(c.name)
 	}
@@ -97,7 +97,7 @@ func (c *cluster) GetConfig() (*rest.Config, error) {
 	return c.config, nil
 }
 
-func (c *cluster) GetChecksum() (string, error) {
+func (c *Cluster) GetChecksum() (string, error) {
 	if !c.IsReady() {
 		return c.checksum, shippererrors.NewClusterNotReadyError(c.name)
 	}
@@ -105,7 +105,7 @@ func (c *cluster) GetChecksum() (string, error) {
 	return c.checksum, nil
 }
 
-func (c *cluster) GetInformerFactory() (kubeinformers.SharedInformerFactory, error) {
+func (c *Cluster) GetInformerFactory() (kubeinformers.SharedInformerFactory, error) {
 	if !c.IsReady() {
 		return nil, shippererrors.NewClusterNotReadyError(c.name)
 	}
@@ -116,7 +116,7 @@ func (c *cluster) GetInformerFactory() (kubeinformers.SharedInformerFactory, err
 // This will block until the cache syncs. If the cache is never going to sync
 // (because you gave it an invalid hostname, for instance) it will hang around
 // until this cluster is Shutdown() and replaced by a new one.
-func (c *cluster) WaitForInformerCache() {
+func (c *Cluster) WaitForInformerCache() {
 	// No defer unlock here to keep cache sync out of lock scope.
 	c.stateMut.Lock()
 	if c.state != StateNotReady {
@@ -153,14 +153,14 @@ func (c *cluster) WaitForInformerCache() {
 	}
 }
 
-func (c *cluster) Shutdown() {
+func (c *Cluster) Shutdown() {
 	c.stateMut.Lock()
 	c.state = StateTerminated
 	close(c.stopCh)
 	c.stateMut.Unlock()
 }
 
-func (c *cluster) Match(other *cluster) bool {
+func (c *Cluster) Match(other *Cluster) bool {
 	if other == nil {
 		return false
 	}
