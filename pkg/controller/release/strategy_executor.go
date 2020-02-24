@@ -2,8 +2,12 @@ package release
 
 import (
 	"fmt"
+	"github.com/bookingcom/shipper/pkg/util/replicas"
+	targetutil "github.com/bookingcom/shipper/pkg/util/target"
+	"math"
 	"time"
 
+	intstrutil "k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -202,8 +206,121 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 			capacityWeight = strategy.Steps[targetStep].Capacity.Incumbent
 		}
 
-		if achieved, newSpec, clustersNotReady := checkCapacity(curr.capacityTarget, capacityWeight); !achieved {
-			klog.Infof("Release %q %s", controller.MetaKey(curr.release), "hasn't achieved capacity yet")
+		klog.Infof("HILLA want to achieve this weight %d", capacityWeight)
+		totalReplicaCount := getTotalDesiredReplicaCount(curr, succ)
+		ruPointer := strategy.RollingUpdate
+		var maxSurgeValue intstrutil.IntOrString
+		if ruPointer != nil {
+			maxSurgeValue = ruPointer.MaxSurge
+		} else {
+			maxSurgeValue = intstrutil.FromInt(2)
+		}
+
+		surge, err := intstrutil.GetValueFromIntOrPercent(intstrutil.ValueOrDefault(&maxSurgeValue, intstrutil.FromInt(1)), int(totalReplicaCount), true)
+		if err != nil {
+			klog.Infof("HILLA got this error %s", err)
+		}
+		// compare target and achieved step to know which direction to go
+		var achievedStep int32 = 0
+		if curr.release.Status.AchievedStep != nil {
+			achievedStep = curr.release.Status.AchievedStep.Step
+		} else {
+			// did not achieve any step
+			achievedStep = curr.release.Spec.TargetStep
+		}
+		var progress bool
+		if isHead {
+			if targetStep > achievedStep || targetStep == achievedStep {
+				// progressing a release, new capacity should be old capacity + surge
+				progress = true
+			} else {
+				// reverting a release, new capacity should be old capacity - surge
+				progress = false
+			}
+		} else {
+			if succ.release.Status.AchievedStep == nil {
+				// did not achieve any step
+				progress = false
+			} else {
+				achievedStep = succ.release.Status.AchievedStep.Step
+				succTargetStep := succ.release.Spec.TargetStep
+				if succTargetStep > achievedStep {
+					// successor is progressing, current should not
+					progress = false
+				} else if succTargetStep == achievedStep {
+					// successor is not head, current should not progress
+					progress = false
+				} else {
+					// successor is stepping backward, current should step forward
+					progress = true
+				}
+			}
+		}
+
+		//klog.Infof("HILLA isHead %s, target step %d achievedStep %d, progressing? %s", isHead, targetStep, achievedStep, progress)
+		stepCapacity := make(map[string]int32)
+		ct := curr.capacityTarget
+		for _, spec := range ct.Spec.Clusters {
+			var status shipper.ClusterCapacityStatus // TODO HILLA: will the clusters be sorted in the same order in spec and in status?
+			for _, s := range ct.Status.Clusters {
+				if s.Name == spec.Name {
+					status = s
+					break
+				}
+			}
+			// surge is amount of pods. now we need to calculate the amount of pods we currently have
+			// ct.spec.clusters[*].percent is how much we should have by now.
+			// this value can be different for each cluster :facepalm: (though it shouldn't)
+			capacity := replicas.CalculateDesiredReplicaCount(uint(spec.TotalReplicaCount), float64(spec.Percent)) //int32(math.Ceil(float64(spec.TotalReplicaCount) * (float64(spec.Percent) / 100.0)))
+			var newCapacity float64
+
+			if progress {
+				newCapacity = float64(capacity + uint(surge))
+			} else {
+				// Here we need to decreed surge pods from CURRENT capacity, not from desired capacity
+				availableReplicas := status.AvailableReplicas
+				//klog.Infof("HILLA available replicas %d", availableReplicas)
+				newCapacity = float64(availableReplicas - int32(surge))
+				// don't drop too low!
+				newCapacityWight := int32(newCapacity / float64(spec.TotalReplicaCount) * 100)
+				klog.Infof("newCapacityWight is %d, desired capacity weight is %d", newCapacityWight, capacityWeight)
+				if newCapacityWight < capacityWeight {
+					//newCapacity = math.Ceil(float64(spec.TotalReplicaCount) * (float64(capacityWeight) / 100.0))
+					newCapacity = float64(replicas.CalculateDesiredReplicaCount(uint(spec.TotalReplicaCount), float64(capacityWeight)))
+				}
+			}
+			if newCapacity > float64(spec.TotalReplicaCount) {
+				newCapacity = float64(spec.TotalReplicaCount)
+			}
+			if newCapacity < 0.0 {
+				newCapacity = 0.0
+			}
+			klog.Infof("HILLA old capacity %d, surge %s, new capacity is %.1f pods, total replica count is %d pods", capacity, surge, newCapacity, spec.TotalReplicaCount)
+			// newCapacity is number of pods, now we translate it to percent
+			newPercent := int32(math.Ceil(newCapacity / float64(spec.TotalReplicaCount) * 100.0))
+			if progress && newPercent > capacityWeight {
+				newPercent = capacityWeight
+			}
+			stepCapacity[spec.Name] = newPercent
+			//klog.Infof("HILLA new capacity is %d percent", stepCapacity[spec.Name])
+		}
+
+		// check if ct is ready! If it's not ready - leave it alone and let it get ready!!!
+		if ct.Status.ObservedGeneration >= ct.Generation {
+			ctReady, _ := targetutil.IsReady(ct.Status.Conditions)
+			klog.Infof("HILLA checking if ct is ready", ctReady)
+			if !ctReady {
+				//klog.Infof("HILLA Capacity Target is not ready because %s", reason)
+				return PipelineBreak, nil, nil
+			}
+		} else {
+			// definitally not ready!
+			klog.Infof("HILLA Capacity Target is not ready because status gen is %d, gen is %d", ct.Status.ObservedGeneration, ct.Generation)
+			return PipelineBreak, nil, nil
+		}
+		//if achieved, newSpec, clustersNotReady := checkCapacity(curr.capacityTarget, capacityWeight); !achieved {
+		if achieved, newSpec, clustersNotReady := checkCapacityHilla(curr.capacityTarget, stepCapacity); !achieved {
+			klog.Infof("HILLA Release %q %s", controller.MetaKey(curr.release), "hasn't achieved capacity yet")
 
 			patches := make([]StrategyPatch, 0, 2)
 
@@ -322,6 +439,28 @@ func genTrafficEnforcer(curr, succ *releaseInfo) PipelineStep {
 
 		return PipelineContinue, nil, nil
 	}
+}
+
+func getTotalDesiredReplicaCount(curr *releaseInfo, succ *releaseInfo) int64 {
+	isHead := succ == nil
+	currValues := *curr.release.Spec.Environment.Values
+	rcInterface := currValues["replicaCount"]
+	totalReplicaCount, ok := rcInterface.(int64)
+	if !ok {
+		totalReplicaCount = 0
+	}
+	//klog.Infof("HILLA got this curr replica count: ", totalReplicaCount)
+
+	if !isHead {
+		succValues := *succ.release.Spec.Environment.Values
+		if succRcInterface, ok := succValues["replicaCount"]; ok {
+			if succRc, ok := succRcInterface.(int64); ok {
+				//klog.Infof("HILLA got this succ replica count: ", succRc)
+				totalReplicaCount += succRc
+			}
+		}
+	}
+	return totalReplicaCount
 }
 
 func genReleaseStrategyStateEnforcer(curr, succ *releaseInfo) PipelineStep {

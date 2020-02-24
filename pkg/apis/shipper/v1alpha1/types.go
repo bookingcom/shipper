@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	"encoding/json"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -246,7 +247,36 @@ type RegionRequirement struct {
 }
 
 type RolloutStrategy struct {
-	Steps []RolloutStrategyStep `json:"steps"`
+	Steps         []RolloutStrategyStep `json:"steps"`
+	RollingUpdate *RollingUpdate        `json:"rollingUpdate,omitempty"`
+}
+
+// RollingUpdate is the spec to control the desired behavior of rolling update.
+type RollingUpdate struct {
+	// The minimum number of pods that can get traffic during the update.
+	// Value can be an absolute number (ex: 5) or a percentage of total desired pods (ex: 10%).
+	// Absolute number is calculated from percentage by rounding up.
+	// This can not be 0 if MaxSurge is 0. //FIXME: HILLA WHAT??
+	// By default, a fixed value of 1 is used.
+	// Example: when this is set to 30%, during a rollout there would be at least 30%
+	// of desired pods (from contender and incumbent) that receive traffic at all times.
+	// Imitially, the traffic will be given to incumbent Pods, and as the rollouts progress
+	// and more contender Pods will be spinned up, traffic will gradually shift to contender Pods
+	// +optional
+	MinTraffic intstr.IntOrString `json:"minTraffic,omitempty"`
+
+	// The maximum number of pods that can be scheduled above the original number of
+	// pods.
+	// Value can be an absolute number (ex: 5) or a percentage of total pods at
+	// the start of the update (ex: 10%). This can not be 0 if MinTraffic is 0. //FIXME: HILLA WHAT??
+	// Absolute number is calculated from percentage by rounding up.
+	// By default, a value of 2 is used.
+	// Example: when this is set to 30%, the new Release can be scaled up by 30%
+	// only. Once old pods have been killed,
+	// new Release can be scaled up further, ensuring that total number of pods running
+	// at any time during the update is at most 130% of original pods.
+	// +optional
+	MaxSurge intstr.IntOrString `json:"maxSurge,omitempty"`
 }
 
 type RolloutStrategyStep struct {

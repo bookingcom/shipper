@@ -2,6 +2,7 @@ package release
 
 import (
 	"fmt"
+	"k8s.io/klog"
 	"sort"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -75,6 +76,72 @@ func checkCapacity(
 	}
 
 	return canProceed, newSpec, reason
+}
+
+func checkCapacityHilla(
+	ct *shipper.CapacityTarget,
+	stepCapacitys map[string]int32,
+) (
+	bool,
+	*shipper.CapacityTargetSpec,
+	string,
+) {
+	canProceed := true
+	newSpec := &shipper.CapacityTargetSpec{}
+	reason := ""
+
+	clustersNotReadyMap := make(map[string]struct{})
+	for _, spec := range ct.Spec.Clusters {
+		stepCapacity := stepCapacitys[spec.Name]
+		if spec.Percent != stepCapacity {
+			t := shipper.ClusterCapacityTarget{
+				Name:              spec.Name,
+				Percent:           stepCapacity,
+				TotalReplicaCount: spec.TotalReplicaCount,
+			}
+			newSpec.Clusters = append(newSpec.Clusters, t)
+
+			clustersNotReadyMap[spec.Name] = struct{}{}
+			canProceed = false
+		}
+	}
+
+	if canProceed {
+		if ct.Status.ObservedGeneration >= ct.Generation {
+			canProceed, reason = targetutil.IsReady(ct.Status.Conditions)
+		} else {
+			canProceed = false
+
+			clustersNotReady := make([]string, 0)
+			for _, spec := range ct.Spec.Clusters {
+				clustersNotReady = append(clustersNotReady, spec.Name)
+			}
+
+			// We need a sorted order, otherwise it will trigger
+			// unnecessary etcd update operations
+			sort.Strings(clustersNotReady)
+
+			reason = fmt.Sprintf("%v", clustersNotReady)
+		}
+	} else {
+		clustersNotReady := make([]string, 0)
+		for c, _ := range clustersNotReadyMap {
+			clustersNotReady = append(clustersNotReady, c)
+		}
+
+		// We need a sorted order, otherwise it will trigger
+		// unnecessary etcd update operations
+		sort.Strings(clustersNotReady)
+
+		reason = fmt.Sprintf("%v", clustersNotReady)
+	}
+
+	klog.Infof("HILLA can proceed?? %s", canProceed)
+	if len(newSpec.Clusters) > 0 {
+		return canProceed, newSpec, reason
+	} else {
+		return canProceed, nil, reason
+	}
 }
 
 func checkTraffic(
