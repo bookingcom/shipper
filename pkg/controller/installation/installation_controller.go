@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -343,19 +344,21 @@ func (c *Controller) processInstallationTarget(it *shipper.InstallationTarget) (
 		it.Spec.CanOverride = false
 	}
 
-	clustersNotReady := []string{}
+	notReadyReasons := []string{}
 	for _, clusterStatus := range it.Status.Clusters {
-		if !clusterstatusutil.IsClusterInstallationReady(clusterStatus.Conditions) {
-			clustersNotReady = append(clustersNotReady, clusterStatus.Name)
+		ready, reason := clusterstatusutil.IsClusterInstallationReady(clusterStatus.Conditions)
+		if !ready {
+			notReadyReasons = append(notReadyReasons,
+				fmt.Sprintf("%s: %s", clusterStatus.Name, reason))
 		}
 	}
 
-	if len(clustersNotReady) == 0 {
+	if len(notReadyReasons) == 0 {
 		it.Status.Conditions = targetutil.TransitionToReady(diff, it.Status.Conditions)
 	} else {
 		it.Status.Conditions = targetutil.TransitionToNotReady(
 			diff, it.Status.Conditions,
-			ClustersNotReady, fmt.Sprintf("%v", clustersNotReady))
+			ClustersNotReady, strings.Join(notReadyReasons, "; "))
 	}
 
 	return it, clusterErrors.Flatten()

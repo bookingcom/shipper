@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -290,19 +291,21 @@ func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.T
 	tt.Status.Clusters = newClusterStatuses
 	tt.Status.ObservedGeneration = tt.Generation
 
-	clustersNotReady := []string{}
+	notReadyReasons := []string{}
 	for _, clusterStatus := range tt.Status.Clusters {
-		if !clusterstatusutil.IsClusterTrafficReady(clusterStatus.Conditions) {
-			clustersNotReady = append(clustersNotReady, clusterStatus.Name)
+		ready, reason := clusterstatusutil.IsClusterTrafficReady(clusterStatus.Conditions)
+		if !ready {
+			notReadyReasons = append(notReadyReasons,
+				fmt.Sprintf("%s: %s", clusterStatus.Name, reason))
 		}
 	}
 
-	if len(clustersNotReady) == 0 {
+	if len(notReadyReasons) == 0 {
 		tt.Status.Conditions = targetutil.TransitionToReady(diff, tt.Status.Conditions)
 	} else {
 		tt.Status.Conditions = targetutil.TransitionToNotReady(
 			diff, tt.Status.Conditions,
-			ClustersNotReady, fmt.Sprintf("%v", clustersNotReady))
+			ClustersNotReady, strings.Join(notReadyReasons, "; "))
 	}
 
 	return tt, clusterErrors.Flatten()
@@ -414,8 +417,8 @@ func (c *Controller) processTrafficTargetOnCluster(
 		// All the pods have been shifted, made it to endpoints, but
 		// some aren't ready.
 		msg := fmt.Sprintf(
-			"%d out of %d pods designated to receive traffic are not ready. this might require intervention, try `kubectl describe ct %s` for more information",
-			trafficStatus.podsNotReady, trafficStatus.podsLabeled, releaseName)
+			"%d/%d pods designated to receive traffic are not ready",
+			trafficStatus.podsNotReady, trafficStatus.podsLabeled)
 		readyCond = trafficutil.NewClusterTrafficCondition(
 			shipper.ClusterConditionTypeReady,
 			corev1.ConditionFalse,
@@ -428,7 +431,7 @@ func (c *Controller) processTrafficTargetOnCluster(
 		// means that they haven't made it there yet, or that the
 		// service selector does not match any pods.
 		msg := fmt.Sprintf(
-			"%d out of %d pods designated to receive traffic are not yet in endpoints",
+			"%d/%d pods designated to receive traffic are not yet in endpoints",
 			trafficStatus.podsLabeled-trafficStatus.podsReady, trafficStatus.podsLabeled)
 		readyCond = trafficutil.NewClusterTrafficCondition(
 			shipper.ClusterConditionTypeReady,

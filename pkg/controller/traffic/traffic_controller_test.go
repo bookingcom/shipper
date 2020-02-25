@@ -211,13 +211,10 @@ func TestTrafficShiftingWithPodsNotReady(t *testing.T) {
 						Status: corev1.ConditionTrue,
 					},
 					{
-						Type:   shipper.ClusterConditionTypeReady,
-						Status: corev1.ConditionFalse,
-						Reason: PodsNotReady,
-						Message: fmt.Sprintf(
-							"1 out of 3 pods designated to receive traffic are not ready. this might require intervention, try `kubectl describe ct %s` for more information",
-							ttName,
-						),
+						Type:    shipper.ClusterConditionTypeReady,
+						Status:  corev1.ConditionFalse,
+						Reason:  PodsNotReady,
+						Message: "1/3 pods designated to receive traffic are not ready",
 					},
 				},
 			},
@@ -231,7 +228,7 @@ func TestTrafficShiftingWithPodsNotReady(t *testing.T) {
 				Type:    shipper.TargetConditionTypeReady,
 				Status:  corev1.ConditionFalse,
 				Reason:  ClustersNotReady,
-				Message: fmt.Sprintf("%v", []string{clusterA}),
+				Message: fmt.Sprintf("%s: PodsNotReady 1/3 pods designated to receive traffic are not ready", clusterA),
 			},
 		},
 	}

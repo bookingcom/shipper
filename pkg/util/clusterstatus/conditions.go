@@ -11,7 +11,7 @@ import (
 // IsCapacityReady, IsTrafficReady means there's opportunity to merge those
 // conditions into a single type, or wrap them in an interface.
 
-func IsClusterTrafficReady(conditions []shipper.ClusterTrafficCondition) bool {
+func IsClusterTrafficReady(conditions []shipper.ClusterTrafficCondition) (bool, string) {
 	var readyCond shipper.ClusterTrafficCondition
 	for _, c := range conditions {
 		if c.Type == shipper.ClusterConditionTypeReady {
@@ -20,7 +20,17 @@ func IsClusterTrafficReady(conditions []shipper.ClusterTrafficCondition) bool {
 		}
 	}
 
-	return readyCond.Status == corev1.ConditionTrue
+	if readyCond.Status != corev1.ConditionTrue {
+		msg := readyCond.Reason
+
+		if readyCond.Message != "" {
+			msg = fmt.Sprintf("%s %s", msg, readyCond.Message)
+		}
+
+		return false, msg
+	}
+
+	return true, ""
 }
 
 func IsClusterCapacityReady(conditions []shipper.ClusterCapacityCondition) (bool, string) {
@@ -45,7 +55,7 @@ func IsClusterCapacityReady(conditions []shipper.ClusterCapacityCondition) (bool
 	return true, ""
 }
 
-func IsClusterInstallationReady(conditions []shipper.ClusterInstallationCondition) bool {
+func IsClusterInstallationReady(conditions []shipper.ClusterInstallationCondition) (bool, string) {
 	var readyCond shipper.ClusterInstallationCondition
 	for _, c := range conditions {
 		if c.Type == shipper.ClusterConditionTypeReady {
@@ -54,5 +64,15 @@ func IsClusterInstallationReady(conditions []shipper.ClusterInstallationConditio
 		}
 	}
 
-	return readyCond.Status == corev1.ConditionTrue
+	if readyCond.Status != corev1.ConditionTrue {
+		msg := readyCond.Reason
+
+		if readyCond.Message != "" {
+			msg = fmt.Sprintf("%s %s", msg, readyCond.Message)
+		}
+
+		return false, msg
+	}
+
+	return true, ""
 }
