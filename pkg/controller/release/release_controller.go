@@ -738,11 +738,13 @@ func reasonForReleaseCondition(err error) string {
 		return "RolloutBlock"
 	case shippererrors.ChartRepoInternalError:
 		return "ChartRepoInternal"
+	case shippererrors.NoCachedChartRepoIndexError:
+		return "NoCachedChartRepoIndex"
 	}
 
 	if shippererrors.IsKubeclientError(err) {
 		return "FailedAPICall"
 	}
 
-	return "unknown error! tell Shipper devs to classify it"
+	return fmt.Sprintf("unknown error %T! tell Shipper devs to classify it", err)
 }
