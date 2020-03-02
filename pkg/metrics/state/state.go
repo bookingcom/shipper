@@ -1,4 +1,4 @@
-package main
+package state
 
 import (
 	"strings"
@@ -45,27 +45,6 @@ var (
 		nil,
 	)
 
-	itsDesc = prometheus.NewDesc(
-		fqn("installationtargets"),
-		"Number of InstallationTarget objects",
-		[]string{"namespace"},
-		nil,
-	)
-
-	ctsDesc = prometheus.NewDesc(
-		fqn("capacitytargets"),
-		"Number of CapacityTarget objects",
-		[]string{"namespace"},
-		nil,
-	)
-
-	ttsDesc = prometheus.NewDesc(
-		fqn("traffictargets"),
-		"Number of TrafficTarget objects",
-		[]string{"namespace"},
-		nil,
-	)
-
 	clustersDesc = prometheus.NewDesc(
 		fqn("clusters"),
 		"Number of Cluster objects",
@@ -83,51 +62,42 @@ var (
 
 var everything = labels.Everything()
 
-type ShipperStateMetrics struct {
-	appsLister     shipperlisters.ApplicationLister
-	relsLister     shipperlisters.ReleaseLister
-	itsLister      shipperlisters.InstallationTargetLister
-	ctsLister      shipperlisters.CapacityTargetLister
-	ttsLister      shipperlisters.TrafficTargetLister
-	clustersLister shipperlisters.ClusterLister
-	rbLister       shipperlisters.RolloutBlockLister
+type Metrics struct {
+	AppsLister     shipperlisters.ApplicationLister
+	RelsLister     shipperlisters.ReleaseLister
+	ClustersLister shipperlisters.ClusterLister
+	RbLister       shipperlisters.RolloutBlockLister
 
-	nssLister     kubelisters.NamespaceLister
-	secretsLister kubelisters.SecretLister
+	NssLister     kubelisters.NamespaceLister
+	SecretsLister kubelisters.SecretLister
 
-	shipperNs string
+	ShipperNs string
 
-	releaseDurationBuckets []float64
+	ReleaseDurationBuckets []float64
 }
 
-func (ssm ShipperStateMetrics) Collect(ch chan<- prometheus.Metric) {
+func (ssm Metrics) Collect(ch chan<- prometheus.Metric) {
 	ssm.collectApplications(ch)
 	ssm.collectReleases(ch)
-	ssm.collectInstallationTargets(ch)
-	ssm.collectCapacityTargets(ch)
-	ssm.collectTrafficTargets(ch)
 	ssm.collectClusters(ch)
 	ssm.collectRolloutBlocks(ch)
 }
 
-func (ssm ShipperStateMetrics) Describe(ch chan<- *prometheus.Desc) {
+func (ssm Metrics) Describe(ch chan<- *prometheus.Desc) {
 	ch <- appsDesc
 	ch <- relsDesc
-	ch <- itsDesc
-	ch <- ctsDesc
-	ch <- ttsDesc
 	ch <- clustersDesc
 	ch <- rolloutblocksDesc
 }
 
-func (ssm ShipperStateMetrics) collectApplications(ch chan<- prometheus.Metric) {
-	nss, err := getNamespaces(ssm.nssLister)
+func (ssm Metrics) collectApplications(ch chan<- prometheus.Metric) {
+	nss, err := getNamespaces(ssm.NssLister)
 	if err != nil {
 		klog.Warningf("collect Namespaces: %s", err)
 		return
 	}
 
-	apps, err := ssm.appsLister.List(everything)
+	apps, err := ssm.AppsLister.List(everything)
 	if err != nil {
 		klog.Warningf("collect Applications: %s", err)
 		return
@@ -150,8 +120,8 @@ func (ssm ShipperStateMetrics) collectApplications(ch chan<- prometheus.Metric) 
 	}
 }
 
-func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
-	rels, err := ssm.relsLister.List(everything)
+func (ssm Metrics) collectReleases(ch chan<- prometheus.Metric) {
+	rels, err := ssm.RelsLister.List(everything)
 	if err != nil {
 		klog.Warningf("collect Releases: %s", err)
 		return
@@ -234,112 +204,22 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 	for condition, ages := range relAgesByCondition {
 		count := uint64(len(ages))
 		sum := Sum(ages)
-		histogram := MakeHistogram(ages, ssm.releaseDurationBuckets)
+		histogram := MakeHistogram(ages, ssm.ReleaseDurationBuckets)
 
 		ch <- prometheus.MustNewConstHistogram(relDurationDesc, count,
 			sum, histogram, condition)
 	}
 }
 
-func (ssm ShipperStateMetrics) collectInstallationTargets(ch chan<- prometheus.Metric) {
-	nss, err := getNamespaces(ssm.nssLister)
-	if err != nil {
-		klog.Warningf("collect Namespaces: %s", err)
-		return
-	}
-
-	its, err := ssm.itsLister.List(everything)
-	if err != nil {
-		klog.Warningf("collect InstallationTargets: %s", err)
-		return
-	}
-
-	itsPerNamespace := make(map[string]float64)
-	for _, it := range its {
-		itsPerNamespace[it.Namespace]++
-	}
-
-	klog.V(4).Infof("its: %v", itsPerNamespace)
-
-	for _, ns := range nss {
-		n, ok := itsPerNamespace[ns.Name]
-		if !ok {
-			n = 0
-		}
-
-		ch <- prometheus.MustNewConstMetric(itsDesc, prometheus.GaugeValue, n, ns.Name)
-	}
-}
-
-func (ssm ShipperStateMetrics) collectCapacityTargets(ch chan<- prometheus.Metric) {
-	nss, err := getNamespaces(ssm.nssLister)
-	if err != nil {
-		klog.Warningf("collect Namespaces: %s", err)
-		return
-	}
-
-	cts, err := ssm.ctsLister.List(everything)
-	if err != nil {
-		klog.Warningf("collect CapacityTargets: %s", err)
-		return
-	}
-
-	ctsPerNamespace := make(map[string]float64)
-	for _, it := range cts {
-		ctsPerNamespace[it.Namespace]++
-	}
-
-	klog.V(4).Infof("cts: %v", ctsPerNamespace)
-
-	for _, ns := range nss {
-		n, ok := ctsPerNamespace[ns.Name]
-		if !ok {
-			n = 0
-		}
-
-		ch <- prometheus.MustNewConstMetric(ctsDesc, prometheus.GaugeValue, n, ns.Name)
-	}
-}
-
-func (ssm ShipperStateMetrics) collectTrafficTargets(ch chan<- prometheus.Metric) {
-	nss, err := getNamespaces(ssm.nssLister)
-	if err != nil {
-		klog.Warningf("collect Namespaces: %s", err)
-		return
-	}
-
-	tts, err := ssm.ttsLister.List(everything)
-	if err != nil {
-		klog.Warningf("collect TrafficTargets: %s", err)
-		return
-	}
-
-	ttsPerNamespace := make(map[string]float64)
-	for _, it := range tts {
-		ttsPerNamespace[it.Namespace]++
-	}
-
-	klog.V(4).Infof("tts: %v", ttsPerNamespace)
-
-	for _, ns := range nss {
-		n, ok := ttsPerNamespace[ns.Name]
-		if !ok {
-			n = 0
-		}
-
-		ch <- prometheus.MustNewConstMetric(ttsDesc, prometheus.GaugeValue, n, ns.Name)
-	}
-}
-
-func (ssm ShipperStateMetrics) collectClusters(ch chan<- prometheus.Metric) {
-	clusters, err := ssm.clustersLister.List(everything)
+func (ssm Metrics) collectClusters(ch chan<- prometheus.Metric) {
+	clusters, err := ssm.ClustersLister.List(everything)
 	if err != nil {
 		klog.Warningf("collect Clusters: %s", err)
 		return
 	}
 
 	for _, cluster := range clusters {
-		_, err := ssm.secretsLister.Secrets(ssm.shipperNs).Get(cluster.Name)
+		_, err := ssm.SecretsLister.Secrets(ssm.ShipperNs).Get(cluster.Name)
 
 		hasSecret := "true"
 		if kerrors.IsNotFound(err) {
@@ -355,14 +235,14 @@ func (ssm ShipperStateMetrics) collectClusters(ch chan<- prometheus.Metric) {
 	}
 }
 
-func (ssm ShipperStateMetrics) collectRolloutBlocks(ch chan<- prometheus.Metric) {
-	nss, err := getNamespaces(ssm.nssLister)
+func (ssm Metrics) collectRolloutBlocks(ch chan<- prometheus.Metric) {
+	nss, err := getNamespaces(ssm.NssLister)
 	if err != nil {
 		klog.Errorf("collect Namespaces: %s", err)
 		return
 	}
 
-	rolloutBlocks, err := ssm.rbLister.List(everything)
+	rolloutBlocks, err := ssm.RbLister.List(everything)
 	if err != nil {
 		klog.Errorf("collect RolloutBlocks: %s", err)
 		return

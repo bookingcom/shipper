@@ -6,7 +6,6 @@ DOCKER_REGISTRY ?= docker.io
 IMAGE_TAG ?= latest
 SHIPPER_MGMT_IMAGE ?= $(DOCKER_REGISTRY)/bookingcom/shipper-mgmt:$(IMAGE_TAG)
 SHIPPER_APP_IMAGE ?= $(DOCKER_REGISTRY)/bookingcom/shipper-app:$(IMAGE_TAG)
-SHIPPER_STATE_METRICS_IMAGE ?= $(DOCKER_REGISTRY)/bookingcom/shipper-state-metrics:$(IMAGE_TAG)
 
 # Defines the namespace where you want shipper to run.
 SHIPPER_NAMESPACE ?= shipper-system
@@ -51,7 +50,7 @@ SHIPPER_VERSION ?= $(shell git describe --tags --dirty)
 PKG := pkg/**/* vendor/**/*
 
 # The binaries we want to build from `cmd/`.
-BINARIES := shipper-mgmt shipper-app shipperctl shipper-state-metrics
+BINARIES := shipper-mgmt shipper-app shipperctl
 
 # The operating systems we support. This gets used by `go build` as the `GOOS`
 # environment variable.
@@ -77,10 +76,10 @@ export CGO_ENABLED := 0
 
 KUBECTL ?= kubectl -n $(SHIPPER_NAMESPACE)
 
-.PHONY: install install-shipper install-shipper-mgmt install-shipper-app install-shipper-state-metrics
+.PHONY: install install-shipper install-shipper-mgmt install-shipper-app
 
 # Install shipper in kubernetes, by applying all the required deployment yamls.
-install: install-shipper install-shipper-state-metrics
+install: install-shipper
 install-shipper: install-shipper-app install-shipper-mgmt
 
 install-shipper-app: build/shipper-app.image.$(IMAGE_TAG) build/shipper-app.deployment.$(IMAGE_TAG).yaml
@@ -88,9 +87,6 @@ install-shipper-app: build/shipper-app.image.$(IMAGE_TAG) build/shipper-app.depl
 
 install-shipper-mgmt: build/shipper-mgmt.image.$(IMAGE_TAG) build/shipper-mgmt.deployment.$(IMAGE_TAG).yaml
 	$(KUBECTL) apply -f build/shipper-mgmt.deployment.$(IMAGE_TAG).yaml
-
-install-shipper-state-metrics: build/shipper-state-metrics.image.$(IMAGE_TAG) build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
-	$(KUBECTL) apply -f build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
 
 .PHONY: setup e2e restart logs lint test vendor verify-codegen update-codegen clean
 
@@ -157,15 +153,11 @@ clean:
 .PHONY: build-bin build-yaml build-images build-all
 SHA = $(if $(shell which sha256sum),sha256sum,shasum -a 256)
 build-bin: $(foreach bin,$(BINARIES),build/$(bin).$(GOOS)-amd64)
-build-yaml: build/shipper-mgmt.deployment.$(IMAGE_TAG).yaml build/shipper-app.deployment.$(IMAGE_TAG).yaml build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
-build-images: build/shipper.image.$(IMAGE_TAG) build/shipper-state-metrics.image.$(IMAGE_TAG)
+build-yaml: build/shipper-mgmt.deployment.$(IMAGE_TAG).yaml build/shipper-app.deployment.$(IMAGE_TAG).yaml
 build-all: $(foreach os,$(OS),build/shipperctl.$(os)-amd64.tar.gz) build/sha256sums.txt build-yaml build-images
 
 build:
 	mkdir -p build
-
-build/shipper-state-metrics.%-amd64: cmd/shipper-state-metrics/*.go $(PKG)
-	GOOS=$* GOARCH=amd64 go build $(LDFLAGS) -o build/shipper-state-metrics.$*-amd64 cmd/shipper-state-metrics/*.go
 
 build/shipper-mgmt.%-amd64: cmd/shipper-mgmt/*.go $(PKG)
 	GOOS=$* GOARCH=amd64 go build $(LDFLAGS) -o build/shipper-mgmt.$*-amd64 cmd/shipper-mgmt/*.go
@@ -199,11 +191,10 @@ build/%.tar.gz: build/%
 # $(SHIPPER_IMAGE).
 IMAGE_NAME_WITH_TAG = $($(subst -,_,$(shell echo $* | tr '[:lower:]' '[:upper:]'))_IMAGE)
 
-# The shipper and shipper-state-metrics targets here are phony and
-# supposed to be used directly, as a shorthand. They call their close cousins
-# in `build/%.image.$(IMAGE_TAG)`, that are *not* phony, as they output the
-# fully qualified name to an image that's immutable to a file. This serves two
-# purposes:
+# The targets here are phony and supposed to be used directly, as a shorthand.
+# They call their close cousins in `build/%.image.$(IMAGE_TAG)`, that are *not*
+# phony, as they output the fully qualified name to an image that's immutable
+# to a file. This serves two purposes:
 #
 #   - there's no need to manually delete pods from kubernetes to get new images
 #   running, as we can use the digest in deployments so `make install` always
@@ -212,9 +203,8 @@ IMAGE_NAME_WITH_TAG = $($(subst -,_,$(shell echo $* | tr '[:lower:]' '[:upper:]'
 #   build` from being called at all, as it just tells us that all layers have
 #   already been cached and it didn't generate a new image.
 
-.PHONY: shipper-mgmt shipper-app shipper-state-metrics
+.PHONY: shipper-mgmt shipper-app
 shipper: build/shipper-mgmt.image.$(IMAGE_TAG) build/shipper-app.image.$(IMAGE_TAG)
-shipper-state-metrics: build/shipper-state-metrics.image.$(IMAGE_TAG)
 
 build/%.image.$(IMAGE_TAG): Dockerfile.% build/%.linux-amd64
 	docker build -f Dockerfile.$* -t $(IMAGE_NAME_WITH_TAG) --build-arg HTTP_PROXY=$(HTTP_PROXY) --build-arg HTTPS_PROXY=$(HTTPS_PROXY) .

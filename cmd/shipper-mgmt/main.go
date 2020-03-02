@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -37,6 +38,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller/rolloutblock"
 	"github.com/bookingcom/shipper/pkg/metrics/instrumentedclient"
 	shippermetrics "github.com/bookingcom/shipper/pkg/metrics/prometheus"
+	statemetrics "github.com/bookingcom/shipper/pkg/metrics/state"
 	"github.com/bookingcom/shipper/pkg/webhook"
 )
 
@@ -65,14 +67,16 @@ var (
 	webhookKeyPath      = flag.String("webhook-key", "", "Path to the TLS private key for the webhook controller.")
 	webhookBindAddr     = flag.String("webhook-addr", "0.0.0.0", "Addr to bind the webhook controller.")
 	webhookBindPort     = flag.String("webhook-port", "9443", "Port to bind the webhook controller.")
+	relDurationBuckets  = flag.String("release-duration-buckets", "15,30,45,60,120", "Comma-separated list of buckets for the shipper_objects_release_durations histogram, in seconds")
 )
 
 type metricsCfg struct {
 	readyCh chan struct{}
 
-	wqMetrics   *shippermetrics.PrometheusWorkqueueProvider
-	restLatency *shippermetrics.RESTLatencyMetric
-	restResult  *shippermetrics.RESTResultMetric
+	wqMetrics    *shippermetrics.PrometheusWorkqueueProvider
+	restLatency  *shippermetrics.RESTLatencyMetric
+	restResult   *shippermetrics.RESTResultMetric
+	stateMetrics statemetrics.Metrics
 }
 
 type cfg struct {
@@ -169,6 +173,20 @@ func main() {
 		stopCh,
 	)
 
+	ssm := statemetrics.Metrics{
+		AppsLister:     shipperInformerFactory.Shipper().V1alpha1().Applications().Lister(),
+		RelsLister:     shipperInformerFactory.Shipper().V1alpha1().Releases().Lister(),
+		ClustersLister: shipperInformerFactory.Shipper().V1alpha1().Clusters().Lister(),
+		RbLister:       shipperInformerFactory.Shipper().V1alpha1().RolloutBlocks().Lister(),
+
+		NssLister:     kubeInformerFactory.Core().V1().Namespaces().Lister(),
+		SecretsLister: kubeInformerFactory.Core().V1().Secrets().Lister(),
+
+		ShipperNs: *ns,
+
+		ReleaseDurationBuckets: parseFloat64Slice(*relDurationBuckets),
+	}
+
 	cfg := &cfg{
 		enabledControllers: enabledControllers,
 		restCfg:            baseRestCfg,
@@ -197,10 +215,11 @@ func main() {
 		stopCh: stopCh,
 
 		metrics: &metricsCfg{
-			readyCh:     metricsReadyCh,
-			wqMetrics:   shippermetrics.NewProvider(),
-			restLatency: shippermetrics.NewRESTLatencyMetric(),
-			restResult:  shippermetrics.NewRESTResultMetric(),
+			readyCh:      metricsReadyCh,
+			wqMetrics:    shippermetrics.NewProvider(),
+			restLatency:  shippermetrics.NewRESTLatencyMetric(),
+			restResult:   shippermetrics.NewRESTResultMetric(),
+			stateMetrics: ssm,
 		},
 	}
 
@@ -229,6 +248,7 @@ func runMetrics(cfg *metricsCfg) {
 	prometheus.MustRegister(cfg.wqMetrics.GetMetrics()...)
 	prometheus.MustRegister(cfg.restLatency.Summary, cfg.restResult.Counter)
 	prometheus.MustRegister(instrumentedclient.GetMetrics()...)
+	prometheus.MustRegister(cfg.stateMetrics)
 
 	srv := http.Server{
 		Addr: *metricsAddr,
@@ -433,4 +453,19 @@ func startWebhook(cfg *cfg) (bool, error) {
 	}()
 
 	return true, nil
+}
+
+func parseFloat64Slice(str string) []float64 {
+	strSlice := strings.Split(str, ",")
+	float64Slice := make([]float64, len(strSlice))
+
+	for i, b := range strSlice {
+		n, err := strconv.ParseFloat(b, 64)
+		if err != nil {
+			klog.Fatal(err)
+		}
+		float64Slice[i] = n
+	}
+
+	return float64Slice
 }

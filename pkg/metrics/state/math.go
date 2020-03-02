@@ -1,4 +1,4 @@
-package main
+package state
 
 func MakeHistogram(input []float64, buckets []float64) map[float64]uint64 {
 	histogram := make(map[float64]uint64)
