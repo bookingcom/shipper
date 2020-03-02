@@ -4,7 +4,8 @@
 # private registry available to you.
 DOCKER_REGISTRY ?= docker.io
 IMAGE_TAG ?= latest
-SHIPPER_IMAGE ?= $(DOCKER_REGISTRY)/bookingcom/shipper:$(IMAGE_TAG)
+SHIPPER_MGMT_IMAGE ?= $(DOCKER_REGISTRY)/bookingcom/shipper-mgmt:$(IMAGE_TAG)
+SHIPPER_APP_IMAGE ?= $(DOCKER_REGISTRY)/bookingcom/shipper-app:$(IMAGE_TAG)
 SHIPPER_STATE_METRICS_IMAGE ?= $(DOCKER_REGISTRY)/bookingcom/shipper-state-metrics:$(IMAGE_TAG)
 
 # Defines the namespace where you want shipper to run.
@@ -50,7 +51,7 @@ SHIPPER_VERSION ?= $(shell git describe --tags --dirty)
 PKG := pkg/**/* vendor/**/*
 
 # The binaries we want to build from `cmd/`.
-BINARIES := shipper shipperctl shipper-state-metrics
+BINARIES := shipper-mgmt shipper-app shipperctl shipper-state-metrics
 
 # The operating systems we support. This gets used by `go build` as the `GOOS`
 # environment variable.
@@ -75,7 +76,23 @@ export CGO_ENABLED := 0
 # working on shipper, or via CI scripts.
 
 KUBECTL ?= kubectl -n $(SHIPPER_NAMESPACE)
-.PHONY: setup install install-shipper install-shipper-state-metrics e2e restart logs lint test vendor verify-codegen update-codegen clean
+
+.PHONY: install install-shipper install-shipper-mgmt install-shipper-app install-shipper-state-metrics
+
+# Install shipper in kubernetes, by applying all the required deployment yamls.
+install: install-shipper install-shipper-state-metrics
+install-shipper: install-shipper-app install-shipper-mgmt
+
+install-shipper-app: build/shipper-app.image.$(IMAGE_TAG) build/shipper-app.deployment.$(IMAGE_TAG).yaml
+	$(KUBECTL) apply -f build/shipper-app.deployment.$(IMAGE_TAG).yaml
+
+install-shipper-mgmt: build/shipper-mgmt.image.$(IMAGE_TAG) build/shipper-mgmt.deployment.$(IMAGE_TAG).yaml
+	$(KUBECTL) apply -f build/shipper-mgmt.deployment.$(IMAGE_TAG).yaml
+
+install-shipper-state-metrics: build/shipper-state-metrics.image.$(IMAGE_TAG) build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
+	$(KUBECTL) apply -f build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
+
+.PHONY: setup e2e restart logs lint test vendor verify-codegen update-codegen clean
 
 # Set up shipper clusters with `shipperctl`. This is probably the first thing
 # you should do when starting to work on shipper, as most of everything else
@@ -85,14 +102,6 @@ setup: $(SHIPPER_CLUSTERS_YAML) build/shipperctl.$(GOOS)-amd64
 		-f $(SHIPPER_CLUSTERS_YAML) \
 		--shipper-system-namespace $(SHIPPER_NAMESPACE) \
 		$(SETUP_FLAGS)
-
-# Install shipper in kubernetes, by applying all the required deployment yamls.
-install: install-shipper install-shipper-state-metrics
-install-shipper: build/shipper.image.$(IMAGE_TAG) build/shipper.deployment.$(IMAGE_TAG).yaml
-	$(KUBECTL) apply -f build/shipper.deployment.$(IMAGE_TAG).yaml
-
-install-shipper-state-metrics: build/shipper-state-metrics.image.$(IMAGE_TAG) build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
-	$(KUBECTL) apply -f build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
 
 # Run all end-to-end tests. It does all the work necessary to get the current
 # version of shipper on your working directory running in kubernetes, so just
@@ -148,7 +157,7 @@ clean:
 .PHONY: build-bin build-yaml build-images build-all
 SHA = $(if $(shell which sha256sum),sha256sum,shasum -a 256)
 build-bin: $(foreach bin,$(BINARIES),build/$(bin).$(GOOS)-amd64)
-build-yaml:  build/shipper.deployment.$(IMAGE_TAG).yaml build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
+build-yaml: build/shipper-mgmt.deployment.$(IMAGE_TAG).yaml build/shipper-app.deployment.$(IMAGE_TAG).yaml build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
 build-images: build/shipper.image.$(IMAGE_TAG) build/shipper-state-metrics.image.$(IMAGE_TAG)
 build-all: $(foreach os,$(OS),build/shipperctl.$(os)-amd64.tar.gz) build/sha256sums.txt build-yaml build-images
 
@@ -158,8 +167,11 @@ build:
 build/shipper-state-metrics.%-amd64: cmd/shipper-state-metrics/*.go $(PKG)
 	GOOS=$* GOARCH=amd64 go build $(LDFLAGS) -o build/shipper-state-metrics.$*-amd64 cmd/shipper-state-metrics/*.go
 
-build/shipper.%-amd64: cmd/shipper/*.go $(PKG)
-	GOOS=$* GOARCH=amd64 go build $(LDFLAGS) -o build/shipper.$*-amd64 cmd/shipper/*.go
+build/shipper-mgmt.%-amd64: cmd/shipper-mgmt/*.go $(PKG)
+	GOOS=$* GOARCH=amd64 go build $(LDFLAGS) -o build/shipper-mgmt.$*-amd64 cmd/shipper-mgmt/*.go
+
+build/shipper-app.%-amd64: cmd/shipper-app/*.go $(PKG)
+	GOOS=$* GOARCH=amd64 go build $(LDFLAGS) -o build/shipper-app.$*-amd64 cmd/shipper-app/*.go
 
 build/shipperctl.%-amd64: cmd/shipperctl/*.go $(PKG)
 	GOOS=$* GOARCH=amd64 go build $(LDFLAGS) -o build/shipperctl.$*-amd64 cmd/shipperctl/*.go
@@ -200,8 +212,8 @@ IMAGE_NAME_WITH_TAG = $($(subst -,_,$(shell echo $* | tr '[:lower:]' '[:upper:]'
 #   build` from being called at all, as it just tells us that all layers have
 #   already been cached and it didn't generate a new image.
 
-.PHONY: shipper shipper-state-metrics
-shipper: build/shipper.image.$(IMAGE_TAG)
+.PHONY: shipper-mgmt shipper-app shipper-state-metrics
+shipper: build/shipper-mgmt.image.$(IMAGE_TAG) build/shipper-app.image.$(IMAGE_TAG)
 shipper-state-metrics: build/shipper-state-metrics.image.$(IMAGE_TAG)
 
 build/%.image.$(IMAGE_TAG): Dockerfile.% build/%.linux-amd64

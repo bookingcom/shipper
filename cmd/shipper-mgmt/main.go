@@ -14,8 +14,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
 	corev1informers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -35,12 +33,8 @@ import (
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/controller/application"
-	"github.com/bookingcom/shipper/pkg/controller/capacity"
-	"github.com/bookingcom/shipper/pkg/controller/installation"
-	"github.com/bookingcom/shipper/pkg/controller/janitor"
 	"github.com/bookingcom/shipper/pkg/controller/release"
 	"github.com/bookingcom/shipper/pkg/controller/rolloutblock"
-	"github.com/bookingcom/shipper/pkg/controller/traffic"
 	"github.com/bookingcom/shipper/pkg/metrics/instrumentedclient"
 	shippermetrics "github.com/bookingcom/shipper/pkg/metrics/prometheus"
 	"github.com/bookingcom/shipper/pkg/webhook"
@@ -49,11 +43,7 @@ import (
 var controllers = []string{
 	"application",
 	"release",
-	"installation",
-	"capacity",
-	"traffic",
 	"rolloutblock",
-	"janitor",
 	"webhook",
 }
 
@@ -352,11 +342,7 @@ func buildInitializers() map[string]initFunc {
 	controllers := map[string]initFunc{}
 	controllers["application"] = startApplicationController
 	controllers["release"] = startReleaseController
-	controllers["installation"] = startInstallationController
-	controllers["capacity"] = startCapacityController
-	controllers["traffic"] = startTrafficController
 	controllers["rolloutblock"] = startRolloutBlockController
-	controllers["janitor"] = startJanitorController
 	controllers["webhook"] = startWebhook
 	return controllers
 }
@@ -394,87 +380,6 @@ func startReleaseController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		cfg.chartFetcher,
 		cfg.recorder(release.AgentName),
-	)
-
-	cfg.wg.Add(1)
-	go func() {
-		c.Run(cfg.workers, cfg.stopCh)
-		cfg.wg.Done()
-	}()
-
-	return true, nil
-}
-
-func startInstallationController(cfg *cfg) (bool, error) {
-	enabled := cfg.enabledControllers["installation"]
-	if !enabled {
-		return false, nil
-	}
-
-	dynamicClientBuilderFunc := func(gvk *schema.GroupVersionKind, config *rest.Config, cluster *shipper.Cluster) dynamic.Interface {
-		config.APIPath = dynamic.LegacyAPIPathResolverFunc(*gvk)
-		config.GroupVersion = &schema.GroupVersion{Group: gvk.Group, Version: gvk.Version}
-
-		if cfg.restTimeout != nil {
-			config.Timeout = *cfg.restTimeout
-		}
-
-		dynamicClient, newClientErr := dynamic.NewForConfig(config)
-		if newClientErr != nil {
-			klog.Fatal(newClientErr)
-		}
-		return dynamicClient
-	}
-
-	c := installation.NewController(
-		client.NewShipperClientOrDie(cfg.restCfg, installation.AgentName, cfg.restTimeout),
-		cfg.shipperInformerFactory,
-		cfg.store,
-		dynamicClientBuilderFunc,
-		cfg.chartFetcher,
-		cfg.recorder(installation.AgentName),
-	)
-
-	cfg.wg.Add(1)
-	go func() {
-		c.Run(cfg.workers, cfg.stopCh)
-		cfg.wg.Done()
-	}()
-
-	return true, nil
-}
-
-func startCapacityController(cfg *cfg) (bool, error) {
-	enabled := cfg.enabledControllers["capacity"]
-	if !enabled {
-		return false, nil
-	}
-
-	c := capacity.NewController(
-		client.NewShipperClientOrDie(cfg.restCfg, capacity.AgentName, cfg.restTimeout),
-		cfg.shipperInformerFactory,
-		cfg.store,
-		cfg.recorder(capacity.AgentName),
-	)
-	cfg.wg.Add(1)
-	go func() {
-		c.Run(cfg.workers, cfg.stopCh)
-		cfg.wg.Done()
-	}()
-	return true, nil
-}
-
-func startTrafficController(cfg *cfg) (bool, error) {
-	enabled := cfg.enabledControllers["traffic"]
-	if !enabled {
-		return false, nil
-	}
-
-	c := traffic.NewController(
-		client.NewShipperClientOrDie(cfg.restCfg, traffic.AgentName, cfg.restTimeout),
-		cfg.shipperInformerFactory,
-		cfg.store,
-		cfg.recorder(traffic.AgentName),
 	)
 
 	cfg.wg.Add(1)
@@ -524,28 +429,6 @@ func startWebhook(cfg *cfg) (bool, error) {
 	cfg.wg.Add(1)
 	go func() {
 		c.Run(cfg.stopCh)
-		cfg.wg.Done()
-	}()
-
-	return true, nil
-}
-
-func startJanitorController(cfg *cfg) (bool, error) {
-	enabled := cfg.enabledControllers["janitor"]
-	if !enabled {
-		return false, nil
-	}
-
-	c := janitor.NewController(
-		client.NewShipperClientOrDie(cfg.restCfg, janitor.AgentName, cfg.restTimeout),
-		cfg.shipperInformerFactory,
-		cfg.store,
-		cfg.recorder(janitor.AgentName),
-	)
-
-	cfg.wg.Add(1)
-	go func() {
-		c.Run(cfg.workers, cfg.stopCh)
 		cfg.wg.Done()
 	}()
 

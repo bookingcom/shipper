@@ -1,14 +1,16 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: shipper
+  name: shipper-app
   namespace: shipper-system
   labels:
     app: shipper
+    component: shipper-app
 spec:
   selector:
     matchLabels:
       app: shipper
+      component: shipper-app
   strategy:
     rollingUpdate:
       maxSurge: 1
@@ -18,34 +20,19 @@ spec:
     metadata:
       labels:
         app: shipper
+        component: shipper-app
       annotations:
         prometheus.io/scrape_port: '8889'
     spec:
       containers:
-      - name: shipper
+      - name: shipper-app
         image: <IMAGE>
         imagePullPolicy: Always
         args:
-          - "-webhook-cert"
-          - "/etc/webhook/certs/tls.crt"
-          - "-webhook-key"
-          - "/etc/webhook/certs/tls.key"
-          - "-webhook-port"
-          - "9443"
           - "-v"
           - "4"
           - "-logtostderr"
         ports:
         - name: metrics
           containerPort: 8889
-        - name: webhook
-          containerPort: 9443
-        volumeMounts:
-        - mountPath: /etc/webhook/certs
-          name: webhook-certs
-          readOnly: true
       serviceAccountName: shipper-management-cluster
-      volumes:
-      - name: webhook-certs
-        secret:
-          secretName: shipper-validating-webhook

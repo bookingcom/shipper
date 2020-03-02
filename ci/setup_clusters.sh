@@ -40,8 +40,5 @@ wait $PIDS
 mkdir -p ~/.kube
 KUBECONFIG=$(find /tmp/kind -type f | tr \\n ':') kubectl config view --flatten > ~/.kube/config
 
-echo $KUBECONFIG
-cat ~/.kube/config
-
 # add the registry to /etc/hosts on the host
 echo "127.0.0.1 registry kubernetes.default" | sudo tee -a /etc/hosts

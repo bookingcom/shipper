@@ -17,8 +17,9 @@ TEST_STATUS=$?
 # releases
 rm -f build/*.latest.yaml
 
-# Output all of the logs from the shipper pod, for reference
-kubectl -n shipper-system logs $(kubectl -n shipper-system get pod -l app=shipper -o jsonpath='{.items[0].metadata.name}')
+# Output all of the logs from the shipper pods, for reference
+kubectl -n shipper-system logs $(kubectl -n shipper-system get pod -l component=shipper-app -o jsonpath='{.items[0].metadata.name}')
+kubectl -n shipper-system logs $(kubectl -n shipper-system get pod -l component=shipper-mgmt -o jsonpath='{.items[0].metadata.name}')
 
 # Exit with the exit code we got from the e2e tests
 exit $TEST_STATUS
