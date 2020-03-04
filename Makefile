@@ -81,10 +81,8 @@ KUBECTL ?= kubectl -n $(SHIPPER_NAMESPACE)
 # you should do when starting to work on shipper, as most of everything else
 # depends on having a management cluster talking to an application cluster.
 setup: $(SHIPPER_CLUSTERS_YAML) build/shipperctl.$(GOOS)-amd64
-	./build/shipperctl.$(GOOS)-amd64 admin clusters apply \
-		-f $(SHIPPER_CLUSTERS_YAML) \
-		--shipper-system-namespace $(SHIPPER_NAMESPACE) \
-		$(SETUP_FLAGS)
+	./build/shipperctl.$(GOOS)-amd64 clusters setup management -n $(SHIPPER_NAMESPACE) $(SETUP_FLAGS)
+	./build/shipperctl.$(GOOS)-amd64 clusters join -f $(SHIPPER_CLUSTERS_YAML) -n $(SHIPPER_NAMESPACE) $(SETUP_FLAGS)
 
 # Install shipper in kubernetes, by applying all the required deployment yamls.
 install: install-shipper install-shipper-state-metrics
