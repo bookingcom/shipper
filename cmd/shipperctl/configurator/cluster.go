@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	homedir "github.com/mitchellh/go-homedir"
 	certificatesv1beta1 "k8s.io/api/certificates/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -18,10 +17,10 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	client "github.com/bookingcom/shipper/pkg/client"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	"github.com/mitchellh/go-homedir"
 	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -204,30 +203,19 @@ func (c *Cluster) CopySecret(cluster *shipper.Cluster, newNamespace string, secr
 	return err
 }
 
-func (c *Cluster) CreateOrUpdateClusterWithConfig(configuration *config.ClusterConfiguration) error {
-	existingCluster, err := c.ShipperClient.ShipperV1alpha1().Clusters().Get(configuration.Name, metav1.GetOptions{})
+func (c *Cluster) CreateOrUpdateCluster(cluster *shipper.Cluster) error {
+	existingCluster, err := c.ShipperClient.ShipperV1alpha1().Clusters().Get(cluster.Name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return c.CreateClusterFromConfig(configuration)
+			_, err := c.ShipperClient.ShipperV1alpha1().Clusters().Create(cluster)
+			return err
 		} else {
 			return err
 		}
 	}
 
-	existingCluster.Spec = configuration.ClusterSpec
+	existingCluster.Spec = cluster.Spec
 	_, err = c.ShipperClient.ShipperV1alpha1().Clusters().Update(existingCluster)
-	return err
-}
-
-func (c *Cluster) CreateClusterFromConfig(configuration *config.ClusterConfiguration) error {
-	cluster := &shipper.Cluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: configuration.Name,
-		},
-		Spec: configuration.ClusterSpec,
-	}
-
-	_, err := c.ShipperClient.ShipperV1alpha1().Clusters().Create(cluster)
 	return err
 }
 
@@ -235,7 +223,8 @@ func (c *Cluster) CreateOrUpdateCRD(crd *apiextensionv1beta1.CustomResourceDefin
 	existingCrd, err := c.ApiExtensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(crd.Name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return c.CreateCrd(crd)
+			_, err := c.ApiExtensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd)
+			return err
 		} else {
 			return err
 		}
@@ -246,24 +235,16 @@ func (c *Cluster) CreateOrUpdateCRD(crd *apiextensionv1beta1.CustomResourceDefin
 	return err
 }
 
-func (c *Cluster) CreateCrd(crd *apiextensionv1beta1.CustomResourceDefinition) error {
-	_, err := c.ApiExtensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd)
-	return err
-}
-
-func NewClusterConfigurator(clusterConfiguration *config.ClusterConfiguration, kubeConfigFile string) (*Cluster, error) {
-	var context string
-	if clusterConfiguration.Context != "" {
-		context = clusterConfiguration.Context
-	} else {
-		context = clusterConfiguration.Name
-	}
-
-	restConfig, err := loadKubeConfig(context, kubeConfigFile)
+func NewClusterConfiguratorFromKubeConfig(kubeConfigFile, context string) (*Cluster, error) {
+	restConfig, err := loadKubeConfig(kubeConfigFile, context)
 	if err != nil {
 		return nil, err
 	}
 
+	return NewClusterConfigurator(restConfig)
+}
+
+func NewClusterConfigurator(restConfig *rest.Config) (*Cluster, error) {
 	clientset, err := client.NewKubeClient(AgentName, restConfig)
 	if err != nil {
 		return nil, err
@@ -287,20 +268,6 @@ func NewClusterConfigurator(clusterConfiguration *config.ClusterConfiguration, k
 	}
 
 	return configurator, nil
-}
-
-func loadKubeConfig(context, kubeConfigFile string) (*rest.Config, error) {
-	kubeConfigFilePath, err := homedir.Expand(kubeConfigFile)
-	if err != nil {
-		return nil, err
-	}
-
-	clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeConfigFilePath},
-		&clientcmd.ConfigOverrides{CurrentContext: context},
-	)
-
-	return clientConfig.ClientConfig()
 }
 
 func (c *Cluster) CreateCertificateSigningRequest(csr []byte) error {
@@ -495,4 +462,21 @@ func (c *Cluster) CreateOrUpdateValidatingWebhookService(namespace string) error
 	existingSerivce.Spec.Ports = service.Spec.Ports
 	_, err = c.KubeClient.CoreV1().Services(namespace).Update(existingSerivce)
 	return err
+}
+
+func loadKubeConfig(kubeConfig, context string) (*rest.Config, error) {
+	path, err := homedir.Expand(kubeConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	overrides := &clientcmd.ConfigOverrides{CurrentContext: context}
+	if context != "" {
+		overrides.CurrentContext = context
+	}
+
+	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		&clientcmd.ClientConfigLoadingRules{ExplicitPath: path},
+		overrides,
+	).ClientConfig()
 }
