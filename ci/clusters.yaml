@@ -1,5 +1,3 @@
-managementClusters:
-- name: kind-mgmt
 applicationClusters:
 - name: kind-app
   region: local
