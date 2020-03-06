@@ -251,7 +251,8 @@ func (s *Store) syncSecret(key string) error {
 	// Programmer error: secretInformer needs to be namespaced to only
 	// shipper's own namespace.
 	if ns != s.ns {
-		panic("client store secret workqueue should only contain secrets from the shipper namespace")
+		return shippererrors.NewUnrecoverableError(fmt.Errorf(
+			"client store secret workqueue should only contain secrets from the shipper namespace"))
 	}
 
 	secret, err := s.secretInformer.Lister().Secrets(s.ns).Get(name)
@@ -307,7 +308,8 @@ func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
 	checksum, ok := secret.GetAnnotations()[shipper.SecretChecksumAnnotation]
 	// Programmer error: this is filtered for at the informer level.
 	if !ok {
-		panic(fmt.Sprintf("Secret %q doesn't have a checksum annotation. this should be checked before calling 'create'", secret.Name))
+		return shippererrors.NewUnrecoverableError(fmt.Errorf(
+			"secret %q looks like a cluster secret but doesn't have a checksum", secret.Name))
 	}
 
 	config, err := buildConfig(cluster.Spec.APIMaster, secret, s.restTimeout)
