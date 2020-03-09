@@ -23,7 +23,7 @@ const (
 	PipelineContinue                      = true
 )
 
-type PipelineStep func(*shipper.RolloutStrategy, int32, Extra, conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition)
+type PipelineStep func(*shipper.RolloutStrategy, int32, int32, Extra, conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition)
 
 type Pipeline []PipelineStep
 
@@ -41,12 +41,12 @@ type Extra struct {
 	Initiator  *shipper.Release
 }
 
-func (p *Pipeline) Process(strategy *shipper.RolloutStrategy, step int32, extra Extra, cond conditions.StrategyConditionsMap) (bool, []StrategyPatch, []ReleaseStrategyStateTransition) {
+func (p *Pipeline) Process(strategy *shipper.RolloutStrategy, step int32, interStep int32, extra Extra, cond conditions.StrategyConditionsMap) (bool, []StrategyPatch, []ReleaseStrategyStateTransition) {
 	var patches []StrategyPatch
 	var trans []ReleaseStrategyStateTransition
 	complete := true
 	for _, stage := range *p {
-		cont, steppatches, steptrans := stage(strategy, step, extra, cond)
+		cont, steppatches, steptrans := stage(strategy, step, 0, extra, cond)
 		patches = append(patches, steppatches...)
 		trans = append(trans, steptrans...)
 		if cont == PipelineBreak {
@@ -145,11 +145,11 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (bool, []Strat
 		pipeline.Enqueue(genReleaseStrategyStateEnforcer(curr, nil))
 	}
 
-	return pipeline.Process(e.strategy, e.step, extra, cond)
+	return pipeline.Process(e.strategy, e.step, 0, extra, cond)
 }
 
 func genInstallationEnforcer(curr, succ *releaseInfo) PipelineStep {
-	return func(strategy *shipper.RolloutStrategy, targetStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
+	return func(strategy *shipper.RolloutStrategy, targetStep int32, interStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
 		if ready, clusters := checkInstallation(curr.installationTarget); !ready {
 			cond.SetFalse(
 				shipper.StrategyConditionContenderAchievedInstallation,
@@ -189,7 +189,7 @@ func genInstallationEnforcer(curr, succ *releaseInfo) PipelineStep {
 }
 
 func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
-	return func(strategy *shipper.RolloutStrategy, targetStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
+	return func(strategy *shipper.RolloutStrategy, targetStep int32, interStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
 		var condType shipper.StrategyConditionType
 		var capacityWeight int32
 		isHead := succ == nil
@@ -312,7 +312,7 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 		}
 
 		//if achieved, newSpec, clustersNotReady := checkCapacity(curr.capacityTarget, capacityWeight); !achieved {
-		if achieved, newSpec, clustersNotReady := checkCapacityHilla(curr.capacityTarget, stepCapacity); !achieved {
+		if achieved, newSpec, clustersNotReady := checkCapacity(curr.capacityTarget, stepCapacity); !achieved {
 			klog.Infof("Release %q %s", controller.MetaKey(curr.release), "hasn't achieved capacity yet")
 
 			patches := make([]StrategyPatch, 0, 2)
@@ -366,7 +366,7 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 }
 
 func genTrafficEnforcer(curr, succ *releaseInfo) PipelineStep {
-	return func(strategy *shipper.RolloutStrategy, targetStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
+	return func(strategy *shipper.RolloutStrategy, targetStep int32, interStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
 		var condType shipper.StrategyConditionType
 		var trafficWeight int32
 		isHead := succ == nil
@@ -460,7 +460,7 @@ func getReleaseReplicaCount(rel *releaseInfo) int64 {
 }
 
 func genReleaseStrategyStateEnforcer(curr, succ *releaseInfo) PipelineStep {
-	return func(strategy *shipper.RolloutStrategy, targetStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
+	return func(strategy *shipper.RolloutStrategy, targetStep int32, interStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
 		var releaseStrategyStateTransitions []ReleaseStrategyStateTransition
 		patches := make([]StrategyPatch, 0, 1)
 
