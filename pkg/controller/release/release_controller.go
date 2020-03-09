@@ -447,15 +447,23 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 	isHead := succ == nil
 	var strategy *shipper.RolloutStrategy
 	var targetStep int32
+	var achievedStep int32
 	// A head release uses it's local spec-defined strategy, any other release
 	// follows it's successor state, therefore looking into the forecoming spec.
 	if isHead {
 		strategy = rel.Spec.Environment.Strategy
 		targetStep = rel.Spec.TargetStep
+		if rel.Status.AchievedStep != nil {
+			achievedStep = rel.Status.AchievedStep.Step
+		}
 	} else {
 		strategy = succ.Spec.Environment.Strategy
 		targetStep = succ.Spec.TargetStep
+		if succ.Status.AchievedStep != nil {
+			achievedStep = succ.Status.AchievedStep.Step
+		}
 	}
+	progressing := targetStep >= achievedStep
 
 	// Looks like a malformed input. Informing about a problem and bailing out.
 	if targetStep >= int32(len(strategy.Steps)) {
@@ -466,7 +474,7 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 
 	executor := NewStrategyExecutor(strategy, targetStep)
 
-	complete, patches, trans := executor.Execute(relinfoPrev, relinfo, relinfoSucc)
+	complete, patches, trans := executor.Execute(relinfoPrev, relinfo, relinfoSucc, progressing)
 
 	if len(patches) == 0 {
 		klog.V(4).Infof("Strategy verified for release %q, nothing to patch", controller.MetaKey(rel))

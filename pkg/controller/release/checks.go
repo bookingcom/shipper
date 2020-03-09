@@ -2,7 +2,6 @@ package release
 
 import (
 	"fmt"
-	"k8s.io/klog"
 	"sort"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -71,7 +70,6 @@ func checkCapacity(
 		reason = fmt.Sprintf("%v", clustersNotReady)
 	}
 
-	klog.Infof("HILLA can proceed?? %s", canProceed)
 	if len(newSpec.Clusters) > 0 {
 		return canProceed, newSpec, reason
 	} else {
