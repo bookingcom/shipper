@@ -25,38 +25,26 @@ func (s *Store) secretWorker() {
 
 func (s *Store) bindEventHandlers() {
 	enqueueSecret := func(obj interface{}) { enqueueWorkItem(s.secretWorkqueue, obj) }
-	s.secretInformer.Informer().AddEventHandler(kubecache.FilteringResourceEventHandler{
-		FilterFunc: func(obj interface{}) bool {
+	s.secretInformer.Informer().AddEventHandler(kubecache.ResourceEventHandlerFuncs{
+		AddFunc: enqueueSecret,
+		UpdateFunc: func(_, newObj interface{}) {
+			enqueueSecret(newObj)
+		},
+		DeleteFunc: func(obj interface{}) {
 			secret, ok := obj.(*corev1.Secret)
 			if !ok {
-				return false
-			}
-			// This is a bit aggressive, but I think it makes sense; otherwise we get
-			// logs about the service account token.
-			_, ok = secret.GetAnnotations()[shipper.SecretChecksumAnnotation]
-			return ok
-		},
-		Handler: kubecache.ResourceEventHandlerFuncs{
-			AddFunc: enqueueSecret,
-			UpdateFunc: func(_, newObj interface{}) {
-				enqueueSecret(newObj)
-			},
-			DeleteFunc: func(obj interface{}) {
-				secret, ok := obj.(*corev1.Secret)
+				tombstone, ok := obj.(kubecache.DeletedFinalStateUnknown)
 				if !ok {
-					tombstone, ok := obj.(kubecache.DeletedFinalStateUnknown)
-					if !ok {
-						runtime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
-						return
-					}
-					secret, ok = tombstone.Obj.(*corev1.Secret)
-					if !ok {
-						runtime.HandleError(fmt.Errorf("tombstone contained object that is not a Secret %#v", obj))
-						return
-					}
+					runtime.HandleError(fmt.Errorf("couldn't get object from tombstone %#v", obj))
+					return
 				}
-				enqueueSecret(secret)
-			},
+				secret, ok = tombstone.Obj.(*corev1.Secret)
+				if !ok {
+					runtime.HandleError(fmt.Errorf("tombstone contained object that is not a Secret %#v", obj))
+					return
+				}
+			}
+			enqueueSecret(secret)
 		},
 	})
 
