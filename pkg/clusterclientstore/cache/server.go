@@ -14,6 +14,8 @@ type server struct {
 	ch       ch
 }
 
+var _ CacheServer = (*server)(nil)
+
 type ch struct {
 	stop chan struct{}
 
