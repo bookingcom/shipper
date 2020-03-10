@@ -136,7 +136,6 @@ func TestClientCreation(t *testing.T) {
 				t.Errorf("expected exactly %d clusters, found %d", len(clusterList), s.cache.Count())
 			}
 		})
-
 }
 
 func TestNoClientGeneration(t *testing.T) {
@@ -193,7 +192,9 @@ func TestInvalidClientCredentials(t *testing.T) {
 	f := newFixture(t)
 
 	f.addCluster(testClusterName)
-	f.addSecret(newSecret(testClusterName, []byte("crt"), []byte("key"), []byte("checksum")))
+	// This secret key is invalid and therefore the cache won't preserve the
+	// cluster
+	f.addSecret(newSecret(testClusterName, []byte("crt"), []byte("key")))
 
 	store := f.run()
 
@@ -203,9 +204,63 @@ func TestInvalidClientCredentials(t *testing.T) {
 		stopAfter(3*time.Second),
 	)
 
-	_, err := store.GetConfig(testClusterName)
-	if !shippererrors.IsClusterNotInStoreError(err) {
-		t.Errorf("expected NoSuchCluster for cluster called %q for invalid client credentials; instead got %v", testClusterName, err)
+	expErr := fmt.Errorf(
+		"cannot create client for cluster %q: tls: failed to find any PEM data in certificate input",
+		testClusterName)
+	err := store.syncCluster(testClusterName)
+	if !errEqual(err, expErr) {
+		t.Fatalf("unexpected error returned by `store.SyncCluster/0`: got: %s, want: %s",
+			err, expErr)
+	}
+}
+
+func TestReCacheClusterOnSecretUpdate(t *testing.T) {
+	f := newFixture(t)
+
+	f.addCluster(testClusterName)
+
+	f.addSecret(newSecret(testClusterName, []byte("crt"), []byte("key")))
+
+	store := f.run()
+
+	wait.PollUntil(
+		10*time.Millisecond,
+		func() (bool, error) { return true, nil },
+		stopAfter(3*time.Second),
+	)
+
+	_, ok := store.cache.Fetch(testClusterName)
+	if ok {
+		t.Fatalf("did not expect to fetch a cluster from the cache")
+	}
+
+	secret, err := store.secretInformer.Lister().Secrets(store.ns).Get(testClusterName)
+	if err != nil {
+		t.Fatalf("failed to fetch secret from lister: %s", err)
+	}
+	validSecret := newValidSecret(testClusterName)
+	secret.Data = validSecret.Data
+
+	client := f.kubeClient
+	_, err = client.CoreV1().Secrets(store.ns).Update(secret)
+	if err != nil {
+		t.Fatalf("failed to update secret: %s", err)
+	}
+
+	key := fmt.Sprintf("%s/%s", store.ns, testClusterName)
+	if err := store.syncSecret(key); err != nil {
+		t.Fatalf("unexpected error returned by `store.syncSecret/1`: %s", err)
+	}
+
+	cluster, ok := store.cache.Fetch(testClusterName)
+	if !ok {
+		t.Fatalf("expected to fetch a cluster from the cache")
+	}
+
+	secretChecksum := computeSecretChecksum(secret)
+	if clusterChecksum, _ := cluster.GetChecksum(); clusterChecksum != secretChecksum {
+		t.Fatalf("inconsistent cluster checksum: got: %s, want: %s",
+			clusterChecksum, secretChecksum)
 	}
 }
 
@@ -309,21 +364,18 @@ func (f *fixture) addCluster(name string) {
 }
 
 func newValidSecret(name string) *corev1.Secret {
-	crt, key, checksum, err := tlsPair.GetAll()
+	crt, key, _, err := tlsPair.GetAll()
 	if err != nil {
 		panic(fmt.Sprintf("could not read test TLS data from paths: %v: %v", tlsPair, err))
 	}
-	return newSecret(name, crt, key, checksum)
+	return newSecret(name, crt, key)
 }
 
-func newSecret(name string, crt, key, checksum []byte) *corev1.Secret {
+func newSecret(name string, crt, key []byte) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: shipper.ShipperNamespace,
-			Annotations: map[string]string{
-				shipper.SecretChecksumAnnotation: string(checksum),
-			},
 		},
 		Data: map[string][]byte{
 			corev1.TLSCertKey:       crt,
@@ -340,4 +392,11 @@ func stopAfter(t time.Duration) <-chan struct{} {
 		close(stopCh)
 	}()
 	return stopCh
+}
+
+func errEqual(e1, e2 error) bool {
+	if e1 == nil || e2 == nil {
+		return e1 == e2
+	}
+	return e1.Error() == e2.Error()
 }

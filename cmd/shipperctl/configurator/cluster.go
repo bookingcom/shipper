@@ -1,9 +1,7 @@
 package configurator
 
 import (
-	"encoding/hex"
 	"fmt"
-	"hash/crc32"
 	"time"
 
 	homedir "github.com/mitchellh/go-homedir"
@@ -185,17 +183,10 @@ func (c *Cluster) FetchCluster(clusterName string) (*shipper.Cluster, error) {
 }
 
 func (c *Cluster) CopySecret(cluster *shipper.Cluster, newNamespace string, secret *corev1.Secret) error {
-	hash := crc32.NewIEEE()
-	hash.Write(secret.Data["ca.crt"])
-	hash.Write(secret.Data["token"])
-
 	newSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cluster.Name,
 			Namespace: newNamespace,
-			Annotations: map[string]string{
-				shipper.SecretChecksumAnnotation: hex.EncodeToString(hash.Sum(nil)),
-			},
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
 					APIVersion: "shipper.booking.com/v1",
