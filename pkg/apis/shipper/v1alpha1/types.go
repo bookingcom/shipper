@@ -30,7 +30,6 @@ const (
 	ReleaseTemplateIterationAnnotation = "shipper.booking.com/release.template.iteration"
 	ReleaseClustersAnnotation          = "shipper.booking.com/release.clusters"
 
-	SecretChecksumAnnotation             = "shipper.booking.com/cluster-secret.checksum"
 	SecretClusterSkipTlsVerifyAnnotation = "shipper.booking.com/cluster-secret.insecure-tls-skip-verify"
 
 	RolloutBlocksOverrideAnnotation = "shipper.booking.com/rollout-block.override"

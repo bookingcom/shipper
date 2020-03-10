@@ -1,7 +1,9 @@
 package clusterclientstore
 
 import (
+	"encoding/hex"
 	"fmt"
+	"hash/crc32"
 	"strconv"
 	"time"
 
@@ -278,23 +280,17 @@ func (s *Store) syncSecret(key string) error {
 			WithShipperKind("Cluster")
 	}
 
-	checksum, ok := secret.GetAnnotations()[shipper.SecretChecksumAnnotation]
-	if !ok {
-		err := fmt.Errorf("secret %q looks like a cluster secret but doesn't have a checksum", key)
-		return shippererrors.NewUnrecoverableError(err)
-	}
-
-	cachedCluster, ok := s.cache.Fetch(secret.Name)
-	if ok {
-		existingChecksum, err := cachedCluster.GetChecksum()
-		// We don't want to regenerate the client if we already have one with the
-		// right properties (host or secret checksum) that's either ready (err == nil)
-		// or in the process of getting ready. Otherwise we'll refill the cache
-		// needlessly, or could even end up in a livelock where waiting for informer
-		// cache to fill takes longer than the resync period, and resync resets the
-		// informer.
+	if cachedCluster, ok := s.cache.Fetch(secret.Name); ok {
+		secretChecksum := computeSecretChecksum(secret)
+		clusterChecksum, err := cachedCluster.GetChecksum()
 		if err == nil || shippererrors.IsClusterNotReadyError(err) {
-			if existingChecksum == checksum {
+			// We don't want to regenerate the client if we already have one with the
+			// right properties (host or secret checksum) that's either ready (err == nil)
+			// or in the process of getting ready. Otherwise we'll refill the cache
+			// needlessly, or could even end up in a livelock where waiting for informer
+			// cache to fill takes longer than the resync period, and resync resets the
+			// informer.
+			if secretChecksum == clusterChecksum {
 				klog.Infof("Secret %q syncing but we already have a client based on the same checksum in the cache", key)
 				return nil
 			}
@@ -305,13 +301,6 @@ func (s *Store) syncSecret(key string) error {
 }
 
 func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
-	checksum, ok := secret.GetAnnotations()[shipper.SecretChecksumAnnotation]
-	// Programmer error: this is filtered for at the informer level.
-	if !ok {
-		return shippererrors.NewUnrecoverableError(fmt.Errorf(
-			"secret %q looks like a cluster secret but doesn't have a checksum", secret.Name))
-	}
-
 	config, err := buildConfig(cluster.Spec.APIMaster, secret, s.restTimeout)
 	if err != nil {
 		return shippererrors.NewClusterClientBuild(cluster.Name, err)
@@ -338,6 +327,7 @@ func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
 	}
 
 	clusterName := cluster.Name
+	checksum := computeSecretChecksum(secret)
 	newCachedCluster := cache.NewCluster(
 		clusterName,
 		checksum,
@@ -458,4 +448,14 @@ func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration)
 	}
 
 	return config, nil
+}
+
+func computeSecretChecksum(secret *corev1.Secret) string {
+	hash := crc32.NewIEEE()
+	for k, v := range secret.Data {
+		hash.Write([]byte(k))
+		hash.Write(v)
+	}
+	sum := hex.EncodeToString(hash.Sum(nil))
+	return sum
 }
