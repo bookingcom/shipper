@@ -219,6 +219,54 @@ func TestInstallerChartTarballBrokenService(t *testing.T) {
 	}
 }
 
+func TestInstallerServiceWithNoSelector(t *testing.T) {
+	cluster := buildCluster("minikube-a")
+	appName := "reviews-api"
+	testNs := "reviews-api"
+
+	chart := buildChart(appName, "no-service-selector", repoUrl)
+
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	configMapAnchor := anchor.CreateConfigMapAnchor(it)
+	installer, err := newInstaller(it)
+	if err != nil {
+		t.Fatalf("could not initialize the installer: %s", err)
+	}
+	svc := loadService("no-label-selector")
+	svc.SetOwnerReferences(append(svc.GetOwnerReferences(), anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)))
+
+	f := newFixture(objectsPerClusterMap{cluster.Name: nil})
+	fakeCluster := f.Clusters[cluster.Name]
+
+	expectedDynamicActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "services", Version: "v1"}, testNs, nil),
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, "0.0.1-reviews-api"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "deployments", Version: "v1", Group: "apps"}, testNs, nil),
+	}
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewGetAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, "0.0.1-anchor"),
+		kubetesting.NewCreateAction(schema.GroupVersionResource{Resource: "configmaps", Version: "v1"}, testNs, nil),
+		shippertesting.NewDiscoveryAction("services"),
+		shippertesting.NewDiscoveryAction("deployments"),
+	}
+
+	if err := installer.install(cluster, fakeCluster.Client, restConfig, f.DynamicClientBuilder); err != nil {
+		t.Fatal(err)
+	}
+
+	shippertesting.ShallowCheckActions(expectedDynamicActions, fakeCluster.DynamicClient.Actions(), t)
+	shippertesting.ShallowCheckActions(expectedActions, fakeCluster.Client.Actions(), t)
+
+	filteredActions := filterActions(fakeCluster.Client.Actions(), "create")
+	filteredActions = append(filteredActions, filterActions(fakeCluster.DynamicClient.Actions(), "create")...)
+
+	validateAction(t, filteredActions[0], "ConfigMap")
+	validateServiceCreateAction(t, svc, validateAction(t, filteredActions[1], "Service"))
+	validateDeploymentCreateAction(t, validateAction(t, filteredActions[2], "Deployment"), map[string]string{"app": "reviews-api"})
+}
+
 // TestInstallerChartTarballInvalidDeploymentName tests if the installation
 // process fails when the release contains a deployment that doesn't have a
 // name templated with the release's name.
