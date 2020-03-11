@@ -180,6 +180,11 @@ func patchService(it *shipper.InstallationTarget, s *corev1.Service) error {
 	}
 
 	s.Labels[shipper.LBLabel] = shipper.LBForProduction
+
+	// Make sure service selector is safely defined
+	if s.Spec.Selector == nil {
+		s.Spec.Selector = make(map[string]string)
+	}
 	s.Spec.Selector[shipper.AppLabel] = s.Labels[shipper.AppLabel]
 	s.Spec.Selector[shipper.PodTrafficStatusLabel] = shipper.Enabled
 
