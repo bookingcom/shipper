@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"hash/crc32"
+	"sort"
 	"strconv"
 	"time"
 
@@ -452,9 +453,16 @@ func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration)
 
 func computeSecretChecksum(secret *corev1.Secret) string {
 	hash := crc32.NewIEEE()
-	for k, v := range secret.Data {
+	keys := make([]string, len(secret.Data))
+	for k := range secret.Data {
+		keys = append(keys, k)
+	}
+	// in order to compute a reproducible hash, all key-value pairs should come
+	// in a deterministic order
+	sort.Strings(keys)
+	for _, k := range keys {
 		hash.Write([]byte(k))
-		hash.Write(v)
+		hash.Write(secret.Data[k])
 	}
 	sum := hex.EncodeToString(hash.Sum(nil))
 	return sum
