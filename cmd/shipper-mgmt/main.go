@@ -114,7 +114,7 @@ func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
 
-	restCfg, err := prepareRestConfig()
+	restCfg, err := clientcmd.BuildConfigFromFlags(*masterURL, *kubeconfig)
 	if err != nil {
 		klog.Fatal(err)
 	}
@@ -191,9 +191,14 @@ func main() {
 		ReleaseDurationBuckets: parseFloat64Slice(*relDurationBuckets),
 	}
 
+	controllerRestCfg := rest.CopyConfig(restCfg)
+	if restTimeout != nil {
+		controllerRestCfg.Timeout = *restTimeout
+	}
+
 	cfg := &cfg{
 		enabledControllers: enabledControllers,
-		restCfg:            restCfg,
+		restCfg:            controllerRestCfg,
 		restTimeout:        restTimeout,
 
 		kubeInformerFactory:    kubeInformerFactory,
@@ -473,15 +478,4 @@ func parseFloat64Slice(str string) []float64 {
 	}
 
 	return float64Slice
-}
-
-func prepareRestConfig() (*rest.Config, error) {
-	cfg, err := clientcmd.BuildConfigFromFlags(*masterURL, *kubeconfig)
-	if err != nil {
-		return nil, err
-	}
-	if restTimeout != nil {
-		cfg.Timeout = *restTimeout
-	}
-	return cfg, nil
 }

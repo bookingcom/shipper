@@ -105,7 +105,7 @@ func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
 
-	restCfg, err := prepareRestConfig()
+	restCfg, err := clientcmd.BuildConfigFromFlags(*masterURL, *kubeconfig)
 	if err != nil {
 		klog.Fatal(err)
 	}
@@ -139,10 +139,7 @@ func main() {
 	secretInformer := corev1informers.New(kubeInformerFactory, *ns, nil).Secrets()
 	store := clusterclientstore.NewStore(
 		func(clusterName string, ua string, config *rest.Config) (kubernetes.Interface, error) {
-			klog.V(8).Infof("Building a client for Cluster %q, UserAgent %q", clusterName, ua)
-			cp := rest.CopyConfig(config)
-			cp.Timeout = 0
-			return client.NewKubeClient(ua, cp)
+			return client.NewKubeClient(ua, config)
 		},
 		func(_, ua string, config *rest.Config) (shipperclientset.Interface, error) {
 			return client.NewShipperClient(ua, config)
@@ -169,9 +166,14 @@ func main() {
 		stopCh,
 	)
 
+	controllerRestCfg := rest.CopyConfig(restCfg)
+	if restTimeout != nil {
+		controllerRestCfg.Timeout = *restTimeout
+	}
+
 	cfg := &cfg{
 		enabledControllers: enabledControllers,
-		restCfg:            restCfg,
+		restCfg:            controllerRestCfg,
 		restTimeout:        restTimeout,
 
 		kubeInformerFactory:    kubeInformerFactory,
@@ -443,15 +445,4 @@ func startJanitorController(cfg *cfg) (bool, error) {
 	}()
 
 	return true, nil
-}
-
-func prepareRestConfig() (*rest.Config, error) {
-	cfg, err := clientcmd.BuildConfigFromFlags(*masterURL, *kubeconfig)
-	if err != nil {
-		return nil, err
-	}
-	if restTimeout != nil {
-		cfg.Timeout = *restTimeout
-	}
-	return cfg, nil
 }
