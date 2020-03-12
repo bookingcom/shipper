@@ -3,7 +3,7 @@ kind: Service
 metadata:
   name: nginx-staging
   labels:
-    app.kubernetes.io/managed-by: Tiller
+    app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: nginx
     app.kubernetes.io/instance: nginx
     helm.sh/chart: nginx-0.1.0

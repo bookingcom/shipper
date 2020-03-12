@@ -9,14 +9,14 @@ import (
 	"regexp"
 	"sort"
 
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/chart/loader"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/helm/pkg/chartutil"
-	"k8s.io/helm/pkg/proto/hapi/chart"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
@@ -81,7 +81,7 @@ var localFetchChart = func(chartspec *shipper.Chart) (*chart.Chart, error) {
 		return nil, err
 	}
 	buf := bytes.NewBuffer(data)
-	return chartutil.LoadArchive(buf)
+	return loader.LoadArchive(buf)
 }
 
 func loadService(variant string) *corev1.Service {

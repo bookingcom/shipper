@@ -5,7 +5,7 @@ pkg/chart/testdata/index.yaml
 docs/generated
 
 # Artifacts generated when building Shipper
-build/
+/build/
 
 # IntelliJ IDE auto generated files
 .idea/**

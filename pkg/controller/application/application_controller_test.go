@@ -6,14 +6,14 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver"
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/repo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
-	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
-	"k8s.io/helm/pkg/repo"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperrepo "github.com/bookingcom/shipper/pkg/chart/repo"
@@ -51,7 +51,7 @@ var localResolveChartVersion = func(chartspec *shipper.Chart) (*repo.ChartVersio
 		}
 	}
 	return &repo.ChartVersion{
-		Metadata: &helmchart.Metadata{
+		Metadata: &chart.Metadata{
 			Name:    chartspec.Name,
 			Version: resolvedVer,
 		},
@@ -1184,9 +1184,6 @@ func newApplication(name string) *shipper.Application {
 				Values:              &shipper.ChartValues{},
 				Strategy:            &vanguard,
 			},
-		},
-		Status: shipper.ApplicationStatus{
-			History: []string{},
 		},
 	}
 }
