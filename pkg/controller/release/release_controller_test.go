@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -293,6 +294,8 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 		f.t.Fatalf("The fixture is missing at least 1 Cluster object")
 	}
 
+	step, stepName := int32(2), "full on"
+
 	rolloutblocksOverrides := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 	rel := &shipper.Release{
 		TypeMeta: metav1.TypeMeta{
@@ -322,8 +325,8 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 		},
 		Status: shipper.ReleaseStatus{
 			AchievedStep: &shipper.AchievedStep{
-				Step: 2,
-				Name: "full on",
+				Step: step,
+				Name: stepName,
 			},
 			Conditions: []shipper.ReleaseCondition{
 				{Type: shipper.ReleaseConditionTypeBlocked, Status: corev1.ConditionFalse},
@@ -331,10 +334,34 @@ func (f *fixture) buildIncumbent(namespace string, relName string, replicaCount 
 				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionTrue},
 				{Type: shipper.ReleaseConditionTypeStrategyExecuted, Status: corev1.ConditionTrue},
 			},
-			Strategy: &shipper.ReleaseStrategyStatus{},
+			Strategy: &shipper.ReleaseStrategyStatus{
+				State: shipper.ReleaseStrategyState{
+					WaitingForInstallation: shipper.StrategyStateFalse,
+					WaitingForTraffic:      shipper.StrategyStateFalse,
+					WaitingForCapacity:     shipper.StrategyStateFalse,
+					WaitingForCommand:      shipper.StrategyStateFalse,
+				},
+				Conditions: []shipper.ReleaseStrategyCondition{
+					{
+						Type:   shipper.StrategyConditionContenderAchievedCapacity,
+						Status: corev1.ConditionTrue,
+						Step:   step,
+					},
+					{
+						Type:   shipper.StrategyConditionContenderAchievedInstallation,
+						Status: corev1.ConditionTrue,
+						Step:   step,
+					},
+					{
+						Type:   shipper.StrategyConditionContenderAchievedTraffic,
+						Status: corev1.ConditionTrue,
+						Step:   step,
+					},
+				},
+			},
 		},
 		Spec: shipper.ReleaseSpec{
-			TargetStep: 2,
+			TargetStep: step,
 			Environment: shipper.ReleaseEnvironment{
 				Strategy: &vanguard,
 				Chart: shipper.Chart{
@@ -994,7 +1021,7 @@ func (f *fixture) expectCapacityStatusPatch(step int32, ct *shipper.CapacityTarg
 		"status": shipper.ReleaseStatus{
 			Strategy: &shipper.ReleaseStrategyStatus{
 				Conditions: strategyConditions.AsReleaseStrategyConditions(),
-				State:      strategyConditions.AsReleaseStrategyState(step, true, false),
+				State:      strategyConditions.AsReleaseStrategyState(step, true, false, true),
 			},
 		},
 	}
@@ -1093,7 +1120,7 @@ func (f *fixture) expectTrafficStatusPatch(step int32, tt *shipper.TrafficTarget
 		"status": shipper.ReleaseStatus{
 			Strategy: &shipper.ReleaseStrategyStatus{
 				Conditions: strategyConditions.AsReleaseStrategyConditions(),
-				State:      strategyConditions.AsReleaseStrategyState(step, true, false),
+				State:      strategyConditions.AsReleaseStrategyState(step, true, false, true),
 			},
 		},
 	}
@@ -1468,6 +1495,7 @@ func TestContenderReleasePhaseIsWaitingForCommandForInitialStepState(t *testing.
 	incumbentName, contenderName := "test-incumbent", "test-contender"
 	app.Status.History = []string{incumbentName, contenderName}
 	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+	f.cycles = 1
 
 	totalReplicaCount := int32(10)
 	incumbent := f.buildIncumbent(namespace, incumbentName, totalReplicaCount)
@@ -3049,6 +3077,137 @@ func TestControllerDetectInconsistentTargetStep(t *testing.T) {
 	f.expectedEvents = append(f.expectedEvents,
 		fmt.Sprintf("Normal ReleaseConditionChanged [StrategyExecuted True] -> [StrategyExecuted False StrategyExecutionFailed failed to execute strategy: \"Release test-namespace/test-incumbent target step is inconsistent: unexpected value 1 (expected: 2)\"]"),
 	)
+
+	f.run()
+}
+
+// This test ensures we review historical release strategy conditions
+func TestUpdatesHistoricalReleaseStrategyStateConditions(t *testing.T) {
+	namespace := "test-namespace"
+	app := buildApplication(namespace, "test-app")
+	totalReplicaCount := int32(4)
+
+	cluster := buildCluster("minikube")
+	f := newFixture(t, app.DeepCopy(), cluster.DeepCopy())
+
+	step := int32(2)
+
+	// we are not interested in all updates happening in the loop and we expect
+	// the first one to update the very first release in the chain.
+	f.cycles = 1
+
+	// we instantiate 3 releases: in this case the first one will be left out of
+	// the "extended" (contender-incumbent) strategy executor loop and reviewed
+	// with a reduced amount of ensurer steps
+	relinfos := []*releaseInfo{
+		f.buildIncumbent(namespace, "pre-incumbent", totalReplicaCount),
+		f.buildIncumbent(namespace, "incumbent", totalReplicaCount),
+		// we create a full-on release intentionally, therefore we use
+		// buildIncumbent helper
+		f.buildContender(namespace, "contender", totalReplicaCount),
+	}
+
+	// make sure generation-sorted releases preserve the original order
+	for i, relinfo := range relinfos {
+		relinfo.release.ObjectMeta.Annotations[shipper.ReleaseGenerationAnnotation] = strconv.Itoa(i)
+	}
+
+	relinfos[0].capacityTarget.Spec.Clusters = []shipper.ClusterCapacityTarget{
+		{
+			Name:              cluster.Name,
+			Percent:           0,
+			TotalReplicaCount: totalReplicaCount,
+		},
+	}
+	relinfos[0].trafficTarget.Spec.Clusters = []shipper.ClusterTrafficTarget{
+		{
+			Name:   cluster.Name,
+			Weight: 0,
+		},
+	}
+
+	relinfos[2].capacityTarget.Spec.Clusters = []shipper.ClusterCapacityTarget{
+		{
+			Name:              cluster.Name,
+			Percent:           1,
+			TotalReplicaCount: totalReplicaCount,
+		},
+	}
+
+	// we intenitonally set one of the strategy conditions to an unready state
+	// and expect it to get fixed by the controller
+	preincumbent := relinfos[0].release
+	cond := conditions.NewStrategyConditions(preincumbent.Status.Strategy.Conditions...)
+	cond.SetFalse(
+		shipper.StrategyConditionContenderAchievedCapacity,
+		conditions.StrategyConditionsUpdate{
+			Reason: ClustersNotReady,
+			// this message is incomplete but it doesn't matter in the context
+			// of this test
+			Message: fmt.Sprintf("release %q hasn't achieved capacity in clusters: %s",
+				preincumbent.Name, cluster.Name),
+			Step:               step,
+			LastTransitionTime: time.Now(),
+		},
+	)
+	preincumbent.Status.Strategy = &shipper.ReleaseStrategyStatus{
+		Conditions: cond.AsReleaseStrategyConditions(),
+		State:      cond.AsReleaseStrategyState(step, false, true, false),
+	}
+
+	for _, relinfo := range relinfos {
+		f.addObjects(
+			relinfo.release.DeepCopy(),
+			relinfo.installationTarget.DeepCopy(),
+			relinfo.capacityTarget.DeepCopy(),
+			relinfo.trafficTarget.DeepCopy(),
+		)
+	}
+
+	expectedStatus := map[string]interface{}{
+		"status": shipper.ReleaseStatus{
+			Strategy: &shipper.ReleaseStrategyStatus{
+				State: shipper.ReleaseStrategyState{
+					WaitingForInstallation: shipper.StrategyStateFalse,
+					WaitingForCommand:      shipper.StrategyStateFalse,
+					WaitingForTraffic:      shipper.StrategyStateFalse,
+					WaitingForCapacity:     shipper.StrategyStateFalse,
+				},
+				Conditions: []shipper.ReleaseStrategyCondition{
+					shipper.ReleaseStrategyCondition{
+						Type:   shipper.StrategyConditionContenderAchievedCapacity,
+						Status: corev1.ConditionTrue,
+						Step:   step,
+					},
+					shipper.ReleaseStrategyCondition{
+						Type:   shipper.StrategyConditionContenderAchievedInstallation,
+						Status: corev1.ConditionTrue,
+						Step:   step,
+					},
+					shipper.ReleaseStrategyCondition{
+						Type:   shipper.StrategyConditionContenderAchievedTraffic,
+						Status: corev1.ConditionTrue,
+						Step:   step,
+					},
+				},
+			},
+		},
+	}
+	patch, _ := json.Marshal(expectedStatus)
+	f.actions = append(f.actions, kubetesting.NewPatchAction(
+		shipper.SchemeGroupVersion.WithResource("releases"),
+		preincumbent.GetNamespace(),
+		preincumbent.GetName(),
+		types.MergePatchType,
+		patch,
+	))
+
+	key := fmt.Sprintf("%s/%s", preincumbent.GetNamespace(), preincumbent.GetName())
+
+	f.expectedEvents = append(f.expectedEvents,
+		fmt.Sprintf(
+			"Normal ReleaseStateTransitioned Release %q had its state \"WaitingForCapacity\" transitioned to \"False\"",
+			key))
 
 	f.run()
 }
