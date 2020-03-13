@@ -53,11 +53,11 @@ func (f *ControllerTestFixture) DynamicClientBuilder(
 	kind *schema.GroupVersionKind,
 	restConfig *rest.Config,
 	cluster *shipper.Cluster,
-) dynamic.Interface {
+) (dynamic.Interface, error) {
 	if fdc, ok := f.Clusters[cluster.Name]; ok {
-		return fdc.DynamicClient
+		return fdc.DynamicClient, nil
 	}
-	panic(fmt.Sprintf(`couldn't find client for %q`, cluster.Name))
+	return nil, fmt.Errorf("couldn't find client for %q", cluster.Name)
 }
 
 func (f *ControllerTestFixture) Run(stopCh chan struct{}) {

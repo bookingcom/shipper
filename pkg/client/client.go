@@ -5,6 +5,8 @@ import (
 	"runtime"
 
 	apiextensionclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
@@ -38,6 +40,14 @@ func NewKubeClient(ua string, config *rest.Config) (*kubernetes.Clientset, error
 
 func NewKubeClientOrDie(ua string, config *rest.Config) *kubernetes.Clientset {
 	return kubernetes.NewForConfigOrDie(decorateConfig(config, ua))
+}
+
+func NewDynamicClient(ua string, config *rest.Config, gvk *schema.GroupVersionKind) (dynamic.Interface, error) {
+	config = decorateConfig(config, ua)
+	config.APIPath = dynamic.LegacyAPIPathResolverFunc(*gvk)
+	config.GroupVersion = &schema.GroupVersion{Group: gvk.Group, Version: gvk.Version}
+
+	return dynamic.NewForConfig(config)
 }
 
 func NewShipperClient(ua string, config *rest.Config) (*shipperclientset.Clientset, error) {

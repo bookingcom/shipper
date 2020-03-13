@@ -348,19 +348,8 @@ func startInstallationController(cfg *cfg) (bool, error) {
 		return false, nil
 	}
 
-	dynamicClientBuilderFunc := func(gvk *schema.GroupVersionKind, config *rest.Config, cluster *shipper.Cluster) dynamic.Interface {
-		config.APIPath = dynamic.LegacyAPIPathResolverFunc(*gvk)
-		config.GroupVersion = &schema.GroupVersion{Group: gvk.Group, Version: gvk.Version}
-
-		if cfg.restTimeout != nil {
-			config.Timeout = *cfg.restTimeout
-		}
-
-		dynamicClient, newClientErr := dynamic.NewForConfig(config)
-		if newClientErr != nil {
-			klog.Fatal(newClientErr)
-		}
-		return dynamicClient
+	dynamicClientBuilderFunc := func(gvk *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipper.Cluster) (dynamic.Interface, error) {
+		return client.NewDynamicClient(installation.AgentName, restConfig, gvk)
 	}
 
 	c := installation.NewController(
