@@ -261,7 +261,7 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 				},
 			},
 			Spec: shipper.InstallationTargetSpec{
-				Chart:       rel.Spec.Environment.Chart.DeepCopy(),
+				Chart:       rel.Spec.Environment.Chart,
 				Values:      rel.Spec.Environment.Values,
 				CanOverride: true,
 			},
@@ -594,7 +594,7 @@ func extractReplicasFromChartForRel(chart *helmchart.Chart, rel *shipper.Release
 	}
 
 	applicationName := owners[0].Name
-	rendered, err := shipperchart.Render(chart, applicationName, rel.Namespace, rel.Spec.Environment.Values)
+	rendered, err := shipperchart.Render(chart, applicationName, rel.Namespace, &rel.Spec.Environment.Values)
 	if err != nil {
 		return 0, shippererrors.NewBrokenChartSpecError(
 			&rel.Spec.Environment.Chart,

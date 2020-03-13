@@ -51,7 +51,7 @@ func init() {
 func TestSingleCluster(t *testing.T) {
 	clusters := []string{clusterA}
 	chart := buildChart(chartName, version, repoUrl)
-	it := buildInstallationTarget(shippertesting.TestNamespace, shippertesting.TestApp, clusters, &chart)
+	it := buildInstallationTarget(shippertesting.TestNamespace, shippertesting.TestApp, clusters, chart)
 
 	runInstallationControllerTest(t,
 		clusters,
@@ -72,7 +72,7 @@ func TestSingleCluster(t *testing.T) {
 func TestMultipleClusters(t *testing.T) {
 	clusters := []string{clusterA, clusterB}
 	chart := buildChart(chartName, version, repoUrl)
-	it := buildInstallationTarget(shippertesting.TestNamespace, shippertesting.TestApp, clusters, &chart)
+	it := buildInstallationTarget(shippertesting.TestNamespace, shippertesting.TestApp, clusters, chart)
 
 	runInstallationControllerTest(t,
 		clusters,
@@ -94,7 +94,7 @@ func TestMultipleClusters(t *testing.T) {
 func TestInvalidChart(t *testing.T) {
 	clusters := []string{}
 	chart := buildChart("reviews-api", "invalid-deployment-name", repoUrl)
-	it := buildInstallationTarget(shippertesting.TestNamespace, shippertesting.TestApp, clusters, &chart)
+	it := buildInstallationTarget(shippertesting.TestNamespace, shippertesting.TestApp, clusters, chart)
 
 	status := shipper.InstallationTargetStatus{
 		Conditions: []shipper.TargetCondition{

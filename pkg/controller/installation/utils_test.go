@@ -130,7 +130,7 @@ func newFixture(objectsPerCluster objectsPerClusterMap) *shippertesting.Controll
 	return f
 }
 
-func buildInstallationTarget(namespace, appName string, clusters []string, chart *shipper.Chart) *shipper.InstallationTarget {
+func buildInstallationTarget(namespace, appName string, clusters []string, chart shipper.Chart) *shipper.InstallationTarget {
 	return &shipper.InstallationTarget{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      appName,
