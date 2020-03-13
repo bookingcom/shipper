@@ -457,7 +457,7 @@ func newApplication(namespace, name string, strategy *shipper.RolloutStrategy) *
 				// target cluster we care about (or just panic if that cluster isn't
 				// listed).
 				ClusterRequirements: shipper.ClusterRequirements{Regions: []shipper.RegionRequirement{{Name: testRegion}}},
-				Values:              &shipper.ChartValues{},
+				Values:              shipper.ChartValues{},
 			},
 		},
 	}

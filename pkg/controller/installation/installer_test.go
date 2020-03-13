@@ -49,7 +49,7 @@ func ImplTestInstaller(t *testing.T, kubeObjects []runtime.Object) {
 	appName := "reviews-api"
 	testNs := "test-namespace"
 	chart := buildChart(appName, "0.0.1", repoUrl)
-	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, chart)
 	configMapAnchor := anchor.CreateConfigMapAnchor(it)
 	installer, err := newInstaller(it)
 	if err != nil {
@@ -194,7 +194,7 @@ func TestInstallerBrokenChartTarball(t *testing.T) {
 	// contains a broken tarball
 	chart := buildChart(appName, "invalid-tarball", repoUrl)
 
-	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, chart)
 	_, err := newInstaller(it)
 	if err == nil {
 		t.Fatal("NewInstaller should fail, invalid tarball")
@@ -212,7 +212,7 @@ func TestInstallerChartTarballBrokenService(t *testing.T) {
 	// contains invalid deployment and service templates
 	chart := buildChart(appName, "0.0.1-broken-service", repoUrl)
 
-	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, chart)
 	_, err := newInstaller(it)
 	if err == nil {
 		t.Fatal("NewInstaller should fail, broken service")
@@ -226,7 +226,7 @@ func TestInstallerServiceWithNoSelector(t *testing.T) {
 
 	chart := buildChart(appName, "no-service-selector", repoUrl)
 
-	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, chart)
 	configMapAnchor := anchor.CreateConfigMapAnchor(it)
 	installer, err := newInstaller(it)
 	if err != nil {
@@ -279,7 +279,7 @@ func TestInstallerChartTarballInvalidDeploymentName(t *testing.T) {
 	// contains invalid deployment and service templates
 	chart := buildChart(appName, "invalid-deployment-name", repoUrl)
 
-	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, chart)
 	_, err := newInstaller(it)
 	if err == nil {
 		t.Fatal("NewInstaller should fail, invalid deployment name")
@@ -301,7 +301,7 @@ func TestInstallerBrokenChartContents(t *testing.T) {
 	// invalid deployment and service templates.
 	chart := buildChart(appName, "invalid-k8s-objects", repoUrl)
 
-	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, chart)
 	_, err := newInstaller(it)
 	if err == nil {
 		t.Fatal("NewInstaller should fail, invalid k8s objects")
@@ -315,7 +315,7 @@ func TestInstallerSingleServiceNoLB(t *testing.T) {
 
 	chart := buildChart(appName, "single-service-no-lb", repoUrl)
 
-	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, chart)
 	configMapAnchor := anchor.CreateConfigMapAnchor(it)
 	installer, err := newInstaller(it)
 	if err != nil {
@@ -363,7 +363,7 @@ func TestInstallerSingleServiceWithLB(t *testing.T) {
 
 	chart := buildChart(appName, "single-service-with-lb", repoUrl)
 
-	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, chart)
 	configMapAnchor := anchor.CreateConfigMapAnchor(it)
 	installer, err := newInstaller(it)
 	if err != nil {
@@ -411,7 +411,7 @@ func TestInstallerMultiServiceNoLB(t *testing.T) {
 
 	chart := buildChart(appName, "multi-service-no-lb", repoUrl)
 
-	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, chart)
 	_, err := newInstaller(it)
 	if err == nil {
 		t.Fatal("Expected an error, none raised")
@@ -430,7 +430,7 @@ func TestInstallerMultiServiceWithLB(t *testing.T) {
 
 	chart := buildChart(appName, "multi-service-with-lb", repoUrl)
 
-	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, chart)
 	configMapAnchor := anchor.CreateConfigMapAnchor(it)
 	installer, err := newInstaller(it)
 	if err != nil {
@@ -480,7 +480,7 @@ func TestInstallerMultiServiceWithLBOffTheShelf(t *testing.T) {
 
 	chart := buildChart(appName, "0.1.0", repoUrl)
 
-	it := buildInstallationTarget("nginx", "nginx", []string{cluster.Name}, &chart)
+	it := buildInstallationTarget("nginx", "nginx", []string{cluster.Name}, chart)
 
 	configMapAnchor := anchor.CreateConfigMapAnchor(it)
 	installer, err := newInstaller(it)
@@ -532,7 +532,7 @@ func TestInstallerServiceWithReleaseNoWorkaround(t *testing.T) {
 	testNs := "reviews-api"
 
 	chart := buildChart(appName, "0.0.1", repoUrl)
-	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, chart)
 
 	// Disabling the helm workaround
 	delete(it.ObjectMeta.Labels, shipper.HelmWorkaroundLabel)
@@ -557,7 +557,7 @@ func TestInstallerNoOverride(t *testing.T) {
 	ownerLabel := "some-other-installation-target"
 
 	chart := buildChart(appName, "0.0.1", repoUrl)
-	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, &chart)
+	it := buildInstallationTarget(testNs, appName, []string{cluster.Name}, chart)
 	it.Spec.CanOverride = false
 
 	labels := map[string]string{

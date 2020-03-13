@@ -672,16 +672,8 @@ func (in *InstallationTargetSpec) DeepCopyInto(out *InstallationTargetSpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
-	if in.Chart != nil {
-		in, out := &in.Chart, &out.Chart
-		*out = new(Chart)
-		**out = **in
-	}
-	if in.Values != nil {
-		in, out := &in.Values, &out.Values
-		x := (*in).DeepCopy()
-		*out = &x
-	}
+	out.Chart = in.Chart
+	out.Values = in.Values.DeepCopy()
 	return
 }
 
@@ -830,11 +822,7 @@ func (in *ReleaseCondition) DeepCopy() *ReleaseCondition {
 func (in *ReleaseEnvironment) DeepCopyInto(out *ReleaseEnvironment) {
 	*out = *in
 	out.Chart = in.Chart
-	if in.Values != nil {
-		in, out := &in.Values, &out.Values
-		x := (*in).DeepCopy()
-		*out = &x
-	}
+	out.Values = in.Values.DeepCopy()
 	in.ClusterRequirements.DeepCopyInto(&out.ClusterRequirements)
 	if in.Strategy != nil {
 		in, out := &in.Strategy, &out.Strategy

@@ -123,7 +123,7 @@ func TestNewAppAllIn(t *testing.T) {
 	}()
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
-	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -167,7 +167,7 @@ func TestNewAppAllInWithRolloutBlockOverride(t *testing.T) {
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
 	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
-	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -209,7 +209,7 @@ func TestBlockNewAppWithRolloutBlock(t *testing.T) {
 	}
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
-	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -243,7 +243,7 @@ func TestNewAppAllInWithRolloutBlockNonExisting(t *testing.T) {
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
 	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", ns.GetName(), rolloutBlockName)
-	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -276,7 +276,7 @@ func TestBlockNewAppProgressWithRolloutBlock(t *testing.T) {
 	}()
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
-	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -313,7 +313,7 @@ func TestRolloutAllIn(t *testing.T) {
 	}()
 
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -385,7 +385,7 @@ func TestBrokenRolloutAllIn(t *testing.T) {
 	}()
 
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -413,7 +413,7 @@ func TestBrokenRolloutAllIn(t *testing.T) {
 			continue
 		}
 
-		app.Spec.Template.Values = &shipper.ChartValues{
+		app.Spec.Template.Values = shipper.ChartValues{
 			"replicaCount": targetReplicas,
 			"image":        map[string]interface{}{"tag": "broken"},
 		}
@@ -467,7 +467,7 @@ func TestRolloutAllInWithRolloutBlockOverride(t *testing.T) {
 
 	app := newApplication(ns.GetName(), appName, &allIn)
 	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
-	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -524,7 +524,7 @@ func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
 	}()
 
 	newApp := newApplication(ns.GetName(), appName, &vanguard)
-	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -580,7 +580,7 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int, t *t
 
 	newApp := newApplication(ns.GetName(), appName, &vanguard)
 	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
-	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -656,7 +656,7 @@ func testRolloutVanguard(targetReplicas int, t *testing.T) {
 
 	// start with allIn to jump through the first release
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -740,7 +740,7 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 	}()
 
 	app := newApplication(ns.GetName(), appName, &vanguard)
-	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -787,7 +787,7 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 	}()
 
 	app := newApplication(ns.GetName(), appName, &vanguard)
-	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -859,7 +859,7 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 
 	// start with allIn to jump through the first release
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -934,7 +934,7 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 
 	// start with allIn to jump through the first release
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -1041,7 +1041,7 @@ func TestNewApplicationAbort(t *testing.T) {
 	}()
 
 	app := newApplication(ns.GetName(), appName, &vanguard)
-	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -1102,7 +1102,7 @@ func TestRolloutAbort(t *testing.T) {
 
 	// start with allIn to jump through the first release
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -1210,7 +1210,7 @@ func TestNewRolloutBlockAddOverrides(t *testing.T) {
 
 	newApp := newApplication(namespace, appName, &allIn)
 	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
-	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -1276,7 +1276,7 @@ func TestNewGlobalRolloutBlockAddOverrides(t *testing.T) {
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
 	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
-	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -1337,7 +1337,7 @@ func TestNewRolloutBlockRemoveRelease(t *testing.T) {
 
 	app := newApplication(ns.GetName(), appName, &allIn)
 	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
-	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -1426,7 +1426,7 @@ func TestNewGlobalRolloutBlockRemoveRelease(t *testing.T) {
 
 	app := newApplication(testNamespace, appName, &allIn)
 	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
-	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -1493,7 +1493,7 @@ func TestDeletedDeploymentsAreReinstalled(t *testing.T) {
 	}()
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
-	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -1544,7 +1544,7 @@ func TestConsistentTrafficBalanceOnStraightFullOn(t *testing.T) {
 	app := newApplication(ns.GetName(), appName, &allIn)
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
-	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": 0}
+	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": 0}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -1565,7 +1565,7 @@ func TestConsistentTrafficBalanceOnStraightFullOn(t *testing.T) {
 	}
 
 	app.Spec.Template.Strategy = &vanguard
-	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": 2}
+	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": 2}
 	if _, err := shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Update(app); err != nil {
 		t.Fatalf("could not update app %q: %q", app.GetName(), err)
 	}
@@ -1605,7 +1605,7 @@ func TestMultipleAppsInNamespace(t *testing.T) {
 
 	for _, appName := range appNames {
 		newApp := newApplication(ns.GetName(), appName, &allIn)
-		newApp.Spec.Template.Values = &shipper.ChartValues{
+		newApp.Spec.Template.Values = shipper.ChartValues{
 			"replicaCount": targetReplicas,
 			"nameOverride": appName,
 		}

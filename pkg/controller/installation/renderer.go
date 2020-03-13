@@ -26,16 +26,16 @@ func FetchAndRenderChart(
 	chartFetcher shipperrepo.ChartFetcher,
 	it *shipper.InstallationTarget,
 ) ([]runtime.Object, error) {
-	chart, err := chartFetcher(it.Spec.Chart)
+	chart, err := chartFetcher(&it.Spec.Chart)
 	if err != nil {
-		return nil, err
+		return nil, shippererrors.NewRenderManifestError(err)
 	}
 
 	manifests, err := shipperchart.Render(
 		chart,
 		it.GetName(),
 		it.GetNamespace(),
-		it.Spec.Values,
+		&it.Spec.Values,
 	)
 
 	if err != nil {

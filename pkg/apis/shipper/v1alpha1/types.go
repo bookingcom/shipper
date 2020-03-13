@@ -223,9 +223,9 @@ type ReleaseCondition struct {
 type ReleaseEnvironment struct {
 	// Chart spec: name, version, repoURL
 	Chart Chart `json:"chart"`
+
 	// the inlined "values.yaml" to apply to the chart when rendering it
-	// XXX pointer here means it's null-able, do we want that?
-	Values *ChartValues `json:"values"`
+	Values ChartValues `json:"values"`
 
 	// requirements for target clusters for the deployment
 	ClusterRequirements ClusterRequirements `json:"clusterRequirements"`
@@ -316,11 +316,10 @@ type ClusterInstallationCondition struct {
 }
 
 type InstallationTargetSpec struct {
-	Clusters    []string `json:"clusters"`
-	CanOverride bool     `json:"canOverride"`
-	// XXX these are nullable because of migration
-	Chart  *Chart       `json:"chart"`
-	Values *ChartValues `json:"values,omitempty"`
+	Clusters    []string    `json:"clusters"`
+	CanOverride bool        `json:"canOverride"`
+	Chart       Chart       `json:"chart"`
+	Values      ChartValues `json:"values,omitempty"`
 }
 
 // +genclient
