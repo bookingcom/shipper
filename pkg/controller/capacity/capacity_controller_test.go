@@ -288,7 +288,7 @@ func assertDeploymentReplicas(
 ) {
 	deploymentGVR := appsv1.SchemeGroupVersion.WithResource("deployments")
 	ctKey := fmt.Sprintf("%s/%s", ct.Namespace, ct.Name)
-	object, err := cluster.Client.Tracker().Get(deploymentGVR, ct.Namespace, ct.Name)
+	object, err := cluster.KubeClient.Tracker().Get(deploymentGVR, ct.Namespace, ct.Name)
 	if err != nil {
 		t.Errorf(`could not Get Deployment %q: %s`, ctKey, err)
 		return

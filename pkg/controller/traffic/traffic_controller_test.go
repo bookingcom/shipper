@@ -314,7 +314,7 @@ func assertPodTraffic(
 ) {
 	podGVR := corev1.SchemeGroupVersion.WithResource("pods")
 	podGVK := corev1.SchemeGroupVersion.WithKind("Pod")
-	list, err := cluster.Client.Tracker().List(podGVR, podGVK, tt.Namespace)
+	list, err := cluster.KubeClient.Tracker().List(podGVR, podGVK, tt.Namespace)
 	if err != nil {
 		t.Errorf("could not List Pods in namespace %q: %s", tt.Namespace, err)
 		return
@@ -381,8 +381,8 @@ func runController(f *shippertesting.ControllerTestFixture) {
 	f.Run(stopCh)
 
 	for _, cluster := range f.Clusters {
-		kubeclient := cluster.Client
-		corev1Informers := cluster.InformerFactory.Core().V1()
+		kubeclient := cluster.KubeClient
+		corev1Informers := cluster.KubeInformerFactory.Core().V1()
 
 		endpointsList, err := corev1Informers.Endpoints().Lister().List(labels.Everything())
 		if err != nil {

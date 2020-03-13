@@ -226,7 +226,7 @@ func (f *fixture) newController() *Controller {
 		f.clientset,
 		f.store,
 		f.informerFactory,
-		localFetchChart,
+		shippertesting.LocalFetchChart,
 		f.recorder,
 	)
 }

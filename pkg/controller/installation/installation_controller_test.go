@@ -23,10 +23,7 @@ const (
 	clusterA = "cluster-a"
 	clusterB = "cluster-b"
 
-	// needs to match a file in
-	// "testdata/chart-cache/$repoUrl/$chartName-$version.tar.gz"
 	chartName = "nginx"
-	repoUrl   = "https://charts.example.com"
 	version   = "0.1.0"
 )
 
@@ -50,7 +47,7 @@ func init() {
 // objects rendered from the chart and reports  readiness.
 func TestSingleCluster(t *testing.T) {
 	clusters := []string{clusterA}
-	chart := buildChart(chartName, version, repoUrl)
+	chart := buildChart(chartName, version)
 	it := buildInstallationTarget(shippertesting.TestNamespace, shippertesting.TestApp, clusters, chart)
 
 	runInstallationControllerTest(t,
@@ -71,7 +68,7 @@ func TestSingleCluster(t *testing.T) {
 // for multiple clusters.
 func TestMultipleClusters(t *testing.T) {
 	clusters := []string{clusterA, clusterB}
-	chart := buildChart(chartName, version, repoUrl)
+	chart := buildChart(chartName, version)
 	it := buildInstallationTarget(shippertesting.TestNamespace, shippertesting.TestApp, clusters, chart)
 
 	runInstallationControllerTest(t,
@@ -93,7 +90,7 @@ func TestMultipleClusters(t *testing.T) {
 // installation traffic with the correct conditions when a chart is invalid.
 func TestInvalidChart(t *testing.T) {
 	clusters := []string{}
-	chart := buildChart("reviews-api", "invalid-deployment-name", repoUrl)
+	chart := buildChart("reviews-api", "invalid-deployment-name")
 	it := buildInstallationTarget(shippertesting.TestNamespace, shippertesting.TestApp, clusters, chart)
 
 	status := shipper.InstallationTargetStatus{
@@ -192,7 +189,7 @@ func assertClusterObjects(
 	// should always be present
 	configmapGVR := corev1.SchemeGroupVersion.WithResource("configmaps")
 	configmapName := anchor.CreateAnchorName(it)
-	_, err := cluster.Client.Tracker().Get(configmapGVR, it.Namespace, configmapName)
+	_, err := cluster.KubeClient.Tracker().Get(configmapGVR, it.Namespace, configmapName)
 	if err != nil {
 		t.Errorf(
 			`expected to get ConfigMap %q in cluster %q, but got error instead: %s`,
@@ -221,7 +218,7 @@ func runController(f *shippertesting.ControllerTestFixture) {
 		f.ClusterClientStore,
 		f.ShipperInformerFactory,
 		f.DynamicClientBuilder,
-		localFetchChart,
+		shippertesting.LocalFetchChart,
 		f.Recorder,
 	)
 

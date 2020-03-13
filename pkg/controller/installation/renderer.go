@@ -120,7 +120,7 @@ func prepareObjects(it *shipper.InstallationTarget, manifests []string) ([]runti
 				shipper.LBLabel, len(productionLBServices)))
 	}
 
-	err := patchService(it, productionLBServices[0])
+	err := patchLBService(it, productionLBServices[0])
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +155,7 @@ func patchDeployment(d *appsv1.Deployment, labelsToInject map[string]string) run
 	return d
 }
 
-func patchService(it *shipper.InstallationTarget, s *corev1.Service) error {
+func patchLBService(it *shipper.InstallationTarget, s *corev1.Service) error {
 	if relName, ok := s.Spec.Selector[shipper.HelmReleaseLabel]; ok {
 		v, ok := it.Labels[shipper.HelmWorkaroundLabel]
 		if ok && v == shipper.True {
