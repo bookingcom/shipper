@@ -1,10 +1,7 @@
 package release
 
 import (
-	"bytes"
 	"fmt"
-	"io/ioutil"
-	"path"
 	"sort"
 	"strings"
 	"testing"
@@ -15,8 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/helm/pkg/chartutil"
-	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
@@ -28,20 +23,6 @@ import (
 
 func init() {
 	releaseutil.ConditionsShouldDiscardTimestamps = true
-}
-
-var localFetchChart = func(chartspec *shipper.Chart) (*helmchart.Chart, error) {
-	data, err := ioutil.ReadFile(
-		path.Join(
-			"testdata",
-			fmt.Sprintf("%s-%s.tgz", chartspec.Name, chartspec.Version),
-		))
-	if err != nil {
-		return nil, err
-	}
-	buf := bytes.NewBuffer(data)
-
-	return chartutil.LoadArchive(buf)
 }
 
 func buildRelease() *shipper.Release {
@@ -209,7 +190,7 @@ func newScheduler(
 		capacityTargetLister,
 		trafficTargetLister,
 		rolloutBlockLister,
-		localFetchChart,
+		shippertesting.LocalFetchChart,
 		record.NewFakeRecorder(42))
 
 	stopCh := make(chan struct{})

@@ -50,7 +50,7 @@ func TestSuccessfulDeleteInstallationTarget(t *testing.T) {
 		),
 	}
 
-	actual := shippertesting.FilterActions(cluster.Client.Actions())
+	actual := shippertesting.FilterActions(cluster.KubeClient.Actions())
 	shippertesting.CheckActions(expectedActions, actual, t)
 }
 
@@ -91,7 +91,7 @@ func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
 	// existing installation target.
 	expectedActions := []kubetesting.Action{}
 
-	actual := shippertesting.FilterActions(cluster.Client.Actions())
+	actual := shippertesting.FilterActions(cluster.KubeClient.Actions())
 	shippertesting.CheckActions(expectedActions, actual, t)
 }
 
@@ -138,7 +138,7 @@ func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
 		),
 	}
 
-	actual := shippertesting.FilterActions(cluster.Client.Actions())
+	actual := shippertesting.FilterActions(cluster.KubeClient.Actions())
 	shippertesting.CheckActions(expectedActions, actual, t)
 }
 
@@ -181,7 +181,7 @@ func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
 		),
 	}
 
-	actual := shippertesting.FilterActions(cluster.Client.Actions())
+	actual := shippertesting.FilterActions(cluster.KubeClient.Actions())
 	shippertesting.CheckActions(expectedActions, actual, t)
 }
 

@@ -41,7 +41,7 @@ func (s *FakeClusterClientStore) AddEventHandlerCallback(c clusterclientstore.Ev
 
 func (s *FakeClusterClientStore) Run(stopCh <-chan struct{}) {
 	for name, cluster := range s.clusters {
-		informerFactory := cluster.InformerFactory
+		informerFactory := cluster.KubeInformerFactory
 
 		for _, subscriptionCallback := range s.subscriptionCallbacks {
 			subscriptionCallback(informerFactory)
@@ -80,17 +80,17 @@ func (fs *FakeClusterClientset) GetConfig() *rest.Config {
 }
 
 func (fs *FakeClusterClientset) GetKubeClient() kubernetes.Interface {
-	return fs.cluster.Client
+	return fs.cluster.KubeClient
 }
 
 func (fs *FakeClusterClientset) GetKubeInformerFactory() informers.SharedInformerFactory {
-	return fs.cluster.InformerFactory
+	return fs.cluster.KubeInformerFactory
 }
 
 func (fs *FakeClusterClientset) GetShipperClient() shipperclientset.Interface {
-	return nil
+	return fs.cluster.ShipperClient
 }
 
 func (fs *FakeClusterClientset) GetShipperInformerFactory() shipperinformers.SharedInformerFactory {
-	return nil
+	return fs.cluster.ShipperInformerFactory
 }

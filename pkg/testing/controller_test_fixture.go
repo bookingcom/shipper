@@ -3,19 +3,15 @@ package testing
 import (
 	"fmt"
 
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
-
-	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
-	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 )
 
 type ControllerTestFixture struct {
-	ShipperClient          *shipperfake.Clientset
-	ShipperInformerFactory shipperinformers.SharedInformerFactory
+	*FakeCluster
 
 	Clusters           map[string]*FakeCluster
 	ClusterClientStore *FakeClusterClientStore
@@ -26,15 +22,11 @@ type ControllerTestFixture struct {
 func NewControllerTestFixture() *ControllerTestFixture {
 	const recorderBufSize = 42
 
-	shipperClient := shipperfake.NewSimpleClientset()
-	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(
-		shipperClient, NoResyncPeriod)
-
 	store := NewFakeClusterClientStore(map[string]*FakeCluster{})
+	fakeCluster := NewNamedFakeCluster("mgmt")
 
 	return &ControllerTestFixture{
-		ShipperClient:          shipperClient,
-		ShipperInformerFactory: shipperInformerFactory,
+		FakeCluster: fakeCluster,
 
 		Clusters:           make(map[string]*FakeCluster),
 		ClusterClientStore: store,

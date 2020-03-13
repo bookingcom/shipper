@@ -1,8 +1,11 @@
 package testing
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"path"
 	"reflect"
 	"testing"
 	"time"
@@ -12,7 +15,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	kubetesting "k8s.io/client-go/testing"
+	"k8s.io/helm/pkg/chartutil"
+	"k8s.io/helm/pkg/proto/hapi/chart"
 	"sigs.k8s.io/yaml"
+
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 const (
@@ -27,6 +34,19 @@ const (
 
 	E2ETestNamespaceLabel = "shipper-e2e-test"
 )
+
+func LocalFetchChart(chartspec *shipper.Chart) (*chart.Chart, error) {
+	data, err := ioutil.ReadFile(
+		path.Join(
+			"testdata",
+			fmt.Sprintf("%s-%s.tgz", chartspec.Name, chartspec.Version),
+		))
+	if err != nil {
+		return nil, err
+	}
+	buf := bytes.NewBuffer(data)
+	return chartutil.LoadArchive(buf)
+}
 
 // CheckActions takes a slice of expected actions and a slice of observed
 // actions (typically obtained from fakeClient.Actions()) and compares them.
