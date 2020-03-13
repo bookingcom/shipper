@@ -134,6 +134,7 @@ func (sc StrategyConditionsMap) AsReleaseStrategyState(
 	step int32,
 	hasIncumbent bool,
 	isLastStep bool,
+	isHead bool,
 ) shipper.ReleaseStrategyState {
 
 	// States we don't know just yet are set to Unknown
@@ -209,6 +210,7 @@ func (sc StrategyConditionsMap) AsReleaseStrategyState(
 	}
 
 	waitingForCommandFlag := !isLastStep &&
+		isHead &&
 		!waitingForCapacity &&
 		!waitingForTraffic &&
 		achievedInstallation
