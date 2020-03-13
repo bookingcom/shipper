@@ -466,9 +466,9 @@ type ReleaseStrategyCondition struct {
 	Type               StrategyConditionType  `json:"type"`
 	Status             corev1.ConditionStatus `json:"status"`
 	LastTransitionTime metav1.Time            `json:"lastTransitionTime,omitempty"`
-	Reason             string                 `json:"reason,omitempty"`
-	Message            string                 `json:"message,omitempty"`
-	Step               int32                  `json:"step,omitempty"`
+	Reason             string                 `json:"reason"`
+	Message            string                 `json:"message"`
+	Step               int32                  `json:"step"`
 }
 
 type StrategyConditionType string
