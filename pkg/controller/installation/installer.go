@@ -21,7 +21,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/util/anchor"
 )
 
-type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipper.Cluster) dynamic.Interface
+type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipper.Cluster) (dynamic.Interface, error)
 
 // Installer is an object that knows how to install objects into Kubernetes
 // clusters.
@@ -80,7 +80,11 @@ func (i *Installer) buildResourceClient(
 		Resource: resource.Name,
 	}
 
-	dynamicClient := dynamicClientBuilder(gvk, restConfig, cluster)
+	dynamicClient, err := dynamicClientBuilder(gvk, restConfig, cluster)
+	if err != nil {
+		return nil, err
+	}
+
 	resourceClient := dynamicClient.Resource(gvr)
 	if resource.Namespaced {
 		return resourceClient.Namespace(i.installationTarget.Namespace), nil

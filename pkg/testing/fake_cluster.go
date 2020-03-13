@@ -1,6 +1,8 @@
 package testing
 
 import (
+	"fmt"
+
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -71,6 +73,12 @@ func (c *FakeCluster) InitializeDynamicClient(objects []runtime.Object) {
 	c.DynamicClient = fakedynamic.NewSimpleDynamicClient(scheme.Scheme, objects...)
 }
 
-func (c *FakeCluster) DynamicClientBuilder(kind *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipper.Cluster) dynamic.Interface {
-	return c.DynamicClient
+func (c *FakeCluster) DynamicClientBuilder(kind *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipper.Cluster) (dynamic.Interface, error) {
+	if c.DynamicClient == nil {
+		return nil, fmt.Errorf(
+			"cluster %q does not have an initialized DynamicClient. please call InitializeDynamicClient first",
+			c.Name)
+	}
+
+	return c.DynamicClient, nil
 }
