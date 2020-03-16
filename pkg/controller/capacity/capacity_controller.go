@@ -490,6 +490,7 @@ func (c Controller) getClusterObjects(clusterName, ns, appName, release string) 
 }
 
 func (c *Controller) patchDeploymentWithReplicaCount(deployment *appsv1.Deployment, clusterName string, replicaCount int32) (*appsv1.Deployment, error) {
+	klog.Infof("HILLA patching deployment %s to replica count %d", deployment.Name, replicaCount)
 	appClientset, err := c.store.GetApplicationClusterClientset(clusterName, AgentName)
 	if err != nil {
 		return nil, err

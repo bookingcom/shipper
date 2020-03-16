@@ -5,7 +5,6 @@ import (
 	"math"
 	"time"
 
-	intstrutil "k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -23,7 +22,7 @@ const (
 	PipelineContinue                      = true
 )
 
-type PipelineStep func(*shipper.RolloutStrategy, int32, int32, Extra, conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition)
+type PipelineStep func(*shipper.RolloutStrategy, int32, int32, Extra, conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition, bool)
 
 type Pipeline []PipelineStep
 
@@ -42,25 +41,27 @@ type Extra struct {
 	Progressing bool
 }
 
-func (p *Pipeline) Process(strategy *shipper.RolloutStrategy, step int32, virtualSteps int32, extra Extra, cond conditions.StrategyConditionsMap) (bool, []StrategyPatch, []ReleaseStrategyStateTransition) {
+func (p *Pipeline) Process(strategy *shipper.RolloutStrategy, step int32, virtualStep int32, extra Extra, cond conditions.StrategyConditionsMap) (bool, []StrategyPatch, []ReleaseStrategyStateTransition, bool) {
 	var patches []StrategyPatch
 	var trans []ReleaseStrategyStateTransition
 	complete := true
-	// TODO HILLA V step
-	var v int32
-	for v = 1; v <= virtualSteps; v++ {
-		for _, stage := range *p {
-			cont, steppatches, steptrans := stage(strategy, step, v, extra, cond)
-			patches = append(patches, steppatches...)
-			trans = append(trans, steptrans...)
-			if cont == PipelineBreak {
-				complete = false
-				break
-			}
+	completeVirtualSteps := false
+
+	for _, stage := range *p {
+		cont, steppatches, steptrans, isLastVirtualStep := stage(strategy, step, virtualStep, extra, cond)
+		patches = append(patches, steppatches...)
+		trans = append(trans, steptrans...)
+		if isLastVirtualStep {
+			klog.Infof("HILLA LAST STEPPPP!!! COMPLETE?!?! %v", complete)
+			completeVirtualSteps = true
+		}
+		if cont == PipelineBreak {
+			complete = false
+			break
 		}
 	}
 
-	return complete, patches, trans
+	return complete, patches, trans, completeVirtualSteps
 }
 
 type StrategyExecutor struct {
@@ -97,7 +98,7 @@ func NewStrategyExecutor(strategy *shipper.RolloutStrategy, step int32) *Strateg
 	7. Make necessary adjustments to the release object.
 */
 
-func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, progressing bool) (bool, []StrategyPatch, []ReleaseStrategyStateTransition) {
+func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, progressing bool) (bool, []StrategyPatch, []ReleaseStrategyStateTransition, bool) {
 	isHead, hasTail := succ == nil, prev != nil
 
 	// There is no really a point in making any changes until the successor
@@ -109,7 +110,8 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, progressing bo
 	// would create more noise than help really.
 	if !isHead {
 		if !releaseutil.ReleaseAchievedTargetStep(succ.release) {
-			return false, nil, nil
+			curr.release.Status.AchievedSubStep = 0
+			return false, nil, nil, false
 		}
 	}
 
@@ -152,12 +154,12 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, progressing bo
 	}
 
 	// TODO HILLA calculate the amount of virtual steps required to achieve target step
-	var virtualSteps int32 = 1
-	return pipeline.Process(e.strategy, e.step, virtualSteps, extra, cond)
+	var virtualStep int32 = curr.release.Status.AchievedSubStep + 1
+	return pipeline.Process(e.strategy, e.step, virtualStep, extra, cond)
 }
 
 func genInstallationEnforcer(curr, succ *releaseInfo) PipelineStep {
-	return func(strategy *shipper.RolloutStrategy, targetStep int32, virtualStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
+	return func(strategy *shipper.RolloutStrategy, targetStep int32, virtualStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition, bool) {
 		if ready, clusters := checkInstallation(curr.installationTarget); !ready {
 			cond.SetFalse(
 				shipper.StrategyConditionContenderAchievedInstallation,
@@ -181,7 +183,7 @@ func genInstallationEnforcer(curr, succ *releaseInfo) PipelineStep {
 				patches = append(patches, relPatch)
 			}
 
-			return PipelineBreak, patches, nil
+			return PipelineBreak, patches, nil, false
 		}
 
 		cond.SetTrue(
@@ -192,17 +194,25 @@ func genInstallationEnforcer(curr, succ *releaseInfo) PipelineStep {
 			},
 		)
 
-		return PipelineContinue, nil, nil
+		return PipelineContinue, nil, nil, false
 	}
 }
 
 func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
-	return func(strategy *shipper.RolloutStrategy, targetStep int32, virtualStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
+	return func(strategy *shipper.RolloutStrategy, targetStep int32, virtualStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition, bool) {
 		var condType shipper.StrategyConditionType
 		var capacityWeight int32
+		var baseWeight int32
+		var achievedStep int32
+		isLastVirtualStep := false
 		isHead := succ == nil
 		isInitiator := releasesIdentical(extra.Initiator, curr.release)
-
+		if curr.release.Status.AchievedStep != nil {
+			achievedStep = curr.release.Status.AchievedStep.Step
+		} else {
+			achievedStep = targetStep
+		}
+		//klog.Infof("HILLA achievedStep %d", achievedStep)
 		if isInitiator {
 			condType = shipper.StrategyConditionContenderAchievedCapacity
 		} else {
@@ -210,34 +220,43 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 		}
 		if isHead {
 			capacityWeight = strategy.Steps[targetStep].Capacity.Contender
+			baseWeight = strategy.Steps[achievedStep].Capacity.Contender
 		} else {
 			capacityWeight = strategy.Steps[targetStep].Capacity.Incumbent
+			baseWeight = strategy.Steps[achievedStep].Capacity.Incumbent
 		}
 
-		//klog.Infof("HILLA want to achieve this weight %d", capacityWeight)
-		surge, err := getMaxSurge(curr, succ, strategy)
+		//klog.Infof("HILLA processing release %s virtual step %d", curr.release.Name, virtualStep)
+		surge, err := getMaxSurge(curr, strategy)
 		if err != nil {
 			klog.Infof("HILLA got this error %s", err)
 		}
 		progress := extra.Progressing
 
-		klog.Infof("HILLA is progressing %v, is initiator %v", progress, isInitiator)
+		//klog.Infof("HILLA is progressing %v, is initiator %v", progress, isInitiator)
 		stepCapacity := make(map[string]int32)
 		ct := curr.capacityTarget
 		for _, spec := range ct.Spec.Clusters {
 			desiredCapacity := replicas.CalculateDesiredReplicaCount(uint(spec.TotalReplicaCount), float64(capacityWeight))
+			baseCapacity := replicas.CalculateDesiredReplicaCount(uint(spec.TotalReplicaCount), float64(baseWeight))
 			// surge is amount of pods. now we need to calculate the amount of pods we currently have
 			// ct.spec.clusters[*].percent is how much we should have by now.
 			// this value can be different for each cluster :facepalm: (though it shouldn't)
-			existingCapacity := replicas.CalculateDesiredReplicaCount(uint(spec.TotalReplicaCount), float64(spec.Percent)) //int32(math.Ceil(float64(spec.TotalReplicaCount) * (float64(spec.Percent) / 100.0)))
+			//existingCapacity := replicas.CalculateDesiredReplicaCount(uint(spec.TotalReplicaCount), float64(spec.Percent))
 			var newCapacity float64
 
+			var possibleCapacity float64
 			if (progress && isInitiator) || (!progress && !isInitiator) {
-				newCapacity = math.Min(float64(existingCapacity+surge), float64(desiredCapacity))
+				possibleCapacity = float64(int32(baseCapacity) + virtualStep*int32(surge))
+				newCapacity = math.Min(possibleCapacity, float64(desiredCapacity))
+				//newCapacity = math.Min(float64(existingCapacity), float64(desiredCapacity))
 			} else {
-				newCapacity = math.Max(float64(existingCapacity-surge), float64(desiredCapacity))
+				possibleCapacity = float64(int32(baseCapacity) - virtualStep*int32(surge))
+				newCapacity = math.Max(possibleCapacity, float64(desiredCapacity))
+				//newCapacity = math.Min(float64(existingCapacity), float64(desiredCapacity))
 			}
 
+			klog.Infof("HILLA base capacity %d, desired Capacity %d, possible Capacity %.1f, new Capacity %.1f", baseCapacity, desiredCapacity, possibleCapacity, newCapacity)
 			if newCapacity > float64(spec.TotalReplicaCount) {
 				newCapacity = float64(spec.TotalReplicaCount)
 			}
@@ -247,16 +266,19 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 			//klog.Infof("HILLA existingCapacity %d, surge %s, new capacity is %.1f pods, total replica count is %d pods", existingCapacity, surge, newCapacity, spec.TotalReplicaCount)
 			// newCapacity is number of pods, now we translate it to percent
 			newPercent := int32(math.Ceil(newCapacity / float64(getReleaseReplicaCount(curr)) * 100.0))
-			if progress && newPercent > capacityWeight {
+			if (progress && isInitiator) || (!progress && !isInitiator) && newPercent > capacityWeight {
 				newPercent = capacityWeight
 			}
 			stepCapacity[spec.Name] = newPercent
-			klog.Infof("HILLA new capacity is %d percent", stepCapacity[spec.Name])
+			if isHead && newPercent == capacityWeight {
+				isLastVirtualStep = true
+			}
+			//klog.Infof("HILLA new capacity is %d percent", stepCapacity[spec.Name])
 		}
 
 		// check if ct is ready! If it's not ready - leave it alone and let it get ready!!!
 		if !isRelReady(curr) {
-			return PipelineBreak, nil, nil
+			return PipelineBreak, nil, nil, false
 		}
 
 		//if achieved, newSpec, clustersNotReady := checkCapacity(curr.capacityTarget, capacityWeight); !achieved {
@@ -294,10 +316,18 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 				patches = append(patches, relPatch)
 			}
 
-			return PipelineBreak, patches, nil
+			return PipelineBreak, patches, nil, false
+		} else if achievedStep != targetStep {
+			curr.release.Status.AchievedSubStep = virtualStep
 		}
 
-		klog.Infof("Release %q %s", controller.MetaKey(curr.release), "has achieved capacity")
+		if !isLastVirtualStep {
+			klog.Infof("HILLA Release %q has achieved virtual step %d", controller.MetaKey(curr.release), virtualStep)
+
+			return PipelineContinue, nil, nil, isLastVirtualStep
+		}
+
+		klog.Infof("HILLA Release %q %s", controller.MetaKey(curr.release), "has achieved capacity")
 
 		cond.SetTrue(
 			condType,
@@ -309,30 +339,32 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 			},
 		)
 
-		return PipelineContinue, nil, nil
+		return PipelineContinue, nil, nil, isLastVirtualStep
 	}
 }
 
-func getMaxSurge(curr *releaseInfo, succ *releaseInfo, strategy *shipper.RolloutStrategy) (uint, error) {
-	totalReplicaCount := getTotalDesiredReplicaCount(curr, succ)
-	ruPointer := strategy.RollingUpdate
-	var maxSurgeValue intstrutil.IntOrString
-	if ruPointer != nil {
-		maxSurgeValue = ruPointer.MaxSurge
-	} else {
-		maxSurgeValue = intstrutil.FromString("100%")
-	}
-
-	surge, err := intstrutil.GetValueFromIntOrPercent(intstrutil.ValueOrDefault(&maxSurgeValue, intstrutil.FromString("100%")), int(totalReplicaCount), true)
-	return uint(surge), err
+func getMaxSurge(rel *releaseInfo, strategy *shipper.RolloutStrategy) (uint, error) {
+	return 2, nil
+	//totalReplicaCount := getReleaseReplicaCount(rel)
+	//ruPointer := strategy.RollingUpdate
+	//var maxSurgeValue intstrutil.IntOrString
+	//if ruPointer != nil {
+	//	maxSurgeValue = ruPointer.MaxSurge
+	//} else {
+	//	maxSurgeValue = intstrutil.FromString("100%")
+	//}
+	//
+	//surge, err := intstrutil.GetValueFromIntOrPercent(intstrutil.ValueOrDefault(&maxSurgeValue, intstrutil.FromString("100%")), int(totalReplicaCount), true)
+	//return uint(surge), err
 }
 
 func genTrafficEnforcer(curr, succ *releaseInfo) PipelineStep {
-	return func(strategy *shipper.RolloutStrategy, targetStep int32, virtualStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
+	return func(strategy *shipper.RolloutStrategy, targetStep int32, virtualStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition, bool) {
 		var condType shipper.StrategyConditionType
 		var trafficWeight int32
 		isHead := succ == nil
 		isInitiator := releasesIdentical(extra.Initiator, curr.release)
+		isLastVirtualStep := false
 
 		if isInitiator {
 			condType = shipper.StrategyConditionContenderAchievedTraffic
@@ -379,7 +411,7 @@ func genTrafficEnforcer(curr, succ *releaseInfo) PipelineStep {
 				patches = append(patches, relPatch)
 			}
 
-			return PipelineBreak, patches, nil
+			return PipelineBreak, patches, nil, isLastVirtualStep
 		}
 
 		klog.Infof("Release %q %s", controller.MetaKey(curr.release), "has achieved traffic")
@@ -392,7 +424,7 @@ func genTrafficEnforcer(curr, succ *releaseInfo) PipelineStep {
 			},
 		)
 
-		return PipelineContinue, nil, nil
+		return PipelineContinue, nil, nil, isLastVirtualStep
 	}
 }
 
@@ -422,7 +454,7 @@ func getReleaseReplicaCount(rel *releaseInfo) int64 {
 }
 
 func genReleaseStrategyStateEnforcer(curr, succ *releaseInfo) PipelineStep {
-	return func(strategy *shipper.RolloutStrategy, targetStep int32, virtualStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
+	return func(strategy *shipper.RolloutStrategy, targetStep int32, virtualStep int32, extra Extra, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition, bool) {
 		var releaseStrategyStateTransitions []ReleaseStrategyStateTransition
 		patches := make([]StrategyPatch, 0, 1)
 
@@ -457,7 +489,7 @@ func genReleaseStrategyStateEnforcer(curr, succ *releaseInfo) PipelineStep {
 			patches = append(patches, relPatch)
 		}
 
-		return PipelineContinue, patches, releaseStrategyStateTransitions
+		return PipelineContinue, patches, releaseStrategyStateTransitions, false
 	}
 }
 

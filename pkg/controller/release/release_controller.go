@@ -474,7 +474,7 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 
 	executor := NewStrategyExecutor(strategy, targetStep)
 
-	complete, patches, trans := executor.Execute(relinfoPrev, relinfo, relinfoSucc, progressing)
+	complete, patches, trans, completeVirtualSteps := executor.Execute(relinfoPrev, relinfo, relinfoSucc, progressing)
 
 	if len(patches) == 0 {
 		klog.V(4).Infof("Strategy verified for release %q, nothing to patch", controller.MetaKey(rel))
@@ -493,9 +493,11 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 	isLastStep := int(targetStep) == len(strategy.Steps)-1
 	prevStep := rel.Status.AchievedStep
 
-	if complete {
+	klog.Infof("HILLA :: complete: %v completeVirtualSteps: %v", complete, completeVirtualSteps)
+	if complete && completeVirtualSteps {
 		var achievedStep int32
 		var achievedStepName string
+
 		if isHead {
 			achievedStep = targetStep
 			achievedStepName = strategy.Steps[achievedStep].Name
@@ -504,10 +506,14 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 			achievedStepName = rel.Spec.Environment.Strategy.Steps[achievedStep].Name
 		}
 		if prevStep == nil || achievedStep != prevStep.Step {
+			klog.Infof("HILLAAAAA")
+
 			rel.Status.AchievedStep = &shipper.AchievedStep{
 				Step: achievedStep,
 				Name: achievedStepName,
 			}
+			klog.Infof("HILLA release %s has reached target step %d and has substep of %d in the status and in the relinfo %d", rel.Name, targetStep, rel.Status.AchievedSubStep, relinfo.release.Status.AchievedSubStep)
+			rel.Status.AchievedSubStep = 0
 			c.recorder.Eventf(
 				rel,
 				corev1.EventTypeNormal,
@@ -515,6 +521,10 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 				"step [%d] finished",
 				achievedStep,
 			)
+		} else {
+			//var virtualStep int32 = relinfo.release.Status.AchievedSubStep + 1
+			//klog.Infof("HILLA release %s has substep of %d in the status and in the relinfo %d", rel.Name, rel.Status.AchievedSubStep, relinfo.release.Status.AchievedSubStep)
+			//rel.Status.AchievedSubStep = relinfo.release.Status.AchievedSubStep
 		}
 
 		if isLastStep {
@@ -527,6 +537,11 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 		}
 	}
+	if complete && !completeVirtualSteps {
+		klog.Infof("HILLAAAAAA release %s has substep of %d in the status and in the relinfo %d", rel.Name, rel.Status.AchievedSubStep, relinfo.release.Status.AchievedSubStep)
+		rel.Status.AchievedSubStep = relinfo.release.Status.AchievedSubStep
+	}
+	//rel.Status.AchievedSubStep = 0
 
 	for _, t := range trans {
 		c.recorder.Eventf(

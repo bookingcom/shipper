@@ -195,9 +195,10 @@ type ReleaseSpec struct {
 
 // this will likely grow into a struct with interesting fields
 type ReleaseStatus struct {
-	AchievedStep *AchievedStep          `json:"achievedStep,omitempty"`
-	Strategy     *ReleaseStrategyStatus `json:"strategy,omitempty"`
-	Conditions   []ReleaseCondition     `json:"conditions,omitempty"`
+	AchievedStep    *AchievedStep          `json:"achievedStep,omitempty"`
+	AchievedSubStep int32                  `json:"achievedSubStep,omitempty"`
+	Strategy        *ReleaseStrategyStatus `json:"strategy,omitempty"`
+	Conditions      []ReleaseCondition     `json:"conditions,omitempty"`
 }
 
 type AchievedStep struct {
