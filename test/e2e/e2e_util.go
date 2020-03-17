@@ -488,6 +488,13 @@ func createRolloutBlock(namespace, name string) (*shipper.RolloutBlock, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		// RolloutBlocks frequently take a little bit to propagate to
+		// Shipper's informers, making tests fail for no good reason.
+		// Since we have found no way to verify that they have
+		// propagated, we use the good ol' sleep as the second best
+		// thing.
+		time.Sleep(1 * time.Second)
 	}
 
 	return rb, nil
