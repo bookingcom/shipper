@@ -110,7 +110,7 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, progressing bo
 	// would create more noise than help really.
 	if !isHead {
 		if !releaseutil.ReleaseAchievedTargetStep(succ.release) {
-			curr.release.Status.AchievedSubStep = 0
+			//curr.release.Status.AchievedSubStepp = 0
 			return false, nil, nil, false
 		}
 	}
@@ -153,9 +153,122 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, progressing bo
 		pipeline.Enqueue(genReleaseStrategyStateEnforcer(curr, nil))
 	}
 
-	// TODO HILLA calculate the amount of virtual steps required to achieve target step
-	var virtualStep int32 = curr.release.Status.AchievedSubStep + 1
+	virtualStep := e.getNextSubStep(prev, curr, succ, progressing)
 	return pipeline.Process(e.strategy, e.step, virtualStep, extra, cond)
+}
+
+func (e *StrategyExecutor) getNextSubStep(prev, curr, succ *releaseInfo, progressing bool) int32 {
+	// TODO HILLA find a way for curr and prev to wait for each other
+	isHead := succ == nil
+	var virtualStep int32 = 1 //curr.release.Status.AchievedSubStepp.SubStep + 1
+	if curr.release.Status.AchievedStep != nil {
+		if isHead {
+			//ct := curr.capacityTarget
+			//achievedStep := e.step
+			//if curr.release.Status.AchievedStep != nil {
+			currentStep, achieved := e.virtualStep(curr, progressing, isHead)
+			incumbentStep, incumbentAchieved := e.virtualStep(prev, !progressing, !isHead)
+			isReady := isRelReady(curr) && isRelReady(prev)
+			if isReady && achieved && incumbentAchieved && currentStep == incumbentStep {
+				virtualStep = currentStep + 1
+			} else {
+				virtualStep = currentStep
+			}
+
+			//if achieved && !isReady {
+			//	virtualStep = currentStep
+			//} else if achieved && isReady {
+			//	virtualStep = currentStep + 1
+			//} else if !isReady {
+			//	virtualStep = currentStep
+			//} else {
+			//	virtualStep = currentStep + 1
+			//}
+			klog.Infof("HILLA CONTENDER NEXT Virtual STEP IS %d, incumbent is in step %d, did it achieve it? %v", virtualStep, incumbentStep, incumbentAchieved)
+			//}
+		} else {
+			//must match successor!
+			//virtualStep = succ.release.Status.AchievedSubStepp
+
+			//ct := curr.capacityTarget
+			//achievedStep := e.step
+			//if curr.release.Status.AchievedStep != nil {
+			//rel := succ
+			//achievedStep = rel.release.Status.AchievedStep.Step
+			//baseCapacity := rel.release.Spec.Environment.Strategy.Steps[achievedStep].Capacity.Incumbent
+			//baseCapacityAchieved := replicas.CalculateDesiredReplicaCount(uint(getReleaseReplicaCount(rel)), float64(baseCapacity))
+			//surge, err := getMaxSurge(rel, e.strategy)
+			//if err != nil {
+			//	klog.Infof("HILLA got this error %s", err.Error())
+			//	//return false, nil, nil, false
+			//}
+			//currentCapacity := baseCapacityAchieved
+			//for _, spec := range ct.Spec.Clusters {
+			//	capacity := replicas.CalculateDesiredReplicaCount(uint(spec.TotalReplicaCount), float64(spec.Percent))
+			//	// TODO HILLA This is only for progressing contender, make sure to check for not progressing contender
+			//	if progressing && (capacity > currentCapacity) {
+			//		currentCapacity = capacity
+			//	} else if !progressing && (capacity < currentCapacity) {
+			//		currentCapacity = capacity
+			//	}
+			//}
+			//diffAchieved := math.Abs(float64(int(baseCapacityAchieved) - int(currentCapacity)))
+			//currentStep := int32(math.Ceil(diffAchieved / float64(surge)))
+			//klog.Infof("HILLA rel %s, base %d pods, achieved %d pods, diff %.1f, current step is %d, division result is %.1f", curr.release.Name, baseCapacityAchieved, currentCapacity, diffAchieved, currentStep, diffAchieved/float64(surge))
+			contenderStep, achieved := e.virtualStep(succ, progressing, isHead)
+			incumbentStep, incumbentAchieved := e.virtualStep(curr, !progressing, !isHead)
+			isReady := isRelReady(succ) && isRelReady(curr)
+			if isReady && achieved && incumbentAchieved && contenderStep == incumbentStep {
+				virtualStep = contenderStep + 1
+			} else {
+				virtualStep = contenderStep
+			}
+
+			//if achieved && !isReady {
+			//	virtualStep = currentStep
+			//} else if achieved && isReady {
+			//	virtualStep = currentStep + 1
+			//} else if !isReady {
+			//	virtualStep = currentStep
+			//} else {
+			//	virtualStep = currentStep + 1
+			//}
+			klog.Infof("HILLA INCUMBENT NEXT Virtual STEP IS %d", virtualStep)
+			//}
+		}
+	}
+	return virtualStep
+}
+
+func (e *StrategyExecutor) virtualStep(rel *releaseInfo, progressing, isHead bool) (int32, bool) {
+	ct := rel.capacityTarget
+	achievedStep := e.step
+	achievedStep = rel.release.Status.AchievedStep.Step
+	baseCapacity := e.strategy.Steps[achievedStep].Capacity.Incumbent
+	if isHead {
+		baseCapacity = e.strategy.Steps[achievedStep].Capacity.Contender
+	}
+	baseCapacityAchieved := replicas.CalculateDesiredReplicaCount(uint(getReleaseReplicaCount(rel)), float64(baseCapacity))
+	surge, err := getMaxSurge(rel, e.strategy)
+	if err != nil {
+		klog.Infof("HILLA got this error %s", err.Error())
+		//return false, nil, nil, false
+	}
+	currentCapacity := baseCapacityAchieved
+	for _, spec := range ct.Spec.Clusters {
+		capacity := replicas.CalculateDesiredReplicaCount(uint(spec.TotalReplicaCount), float64(spec.Percent))
+		klog.Infof("HILLA rel %s, capacity in spec %d, capacity in pods %d", rel.release.Name, spec.Percent, capacity)
+		// TODO HILLA This is only for progressing contender, make sure to check for not progressing contender
+		if progressing && (capacity > currentCapacity) {
+			currentCapacity = capacity
+		} else if !progressing && (capacity < currentCapacity) {
+			currentCapacity = capacity
+		}
+	}
+	diffAchieved := math.Abs(float64(int(baseCapacityAchieved) - int(currentCapacity)))
+	currentStep := int32(math.Ceil(diffAchieved / float64(surge)))
+	klog.Infof("HILLA release %s, base %d pods, achieved %d pods, diff %.1f, current step is %d, division result is %.1f", rel.release.Name, baseCapacityAchieved, currentCapacity, diffAchieved, currentStep, diffAchieved/float64(surge))
+	return currentStep, diffAchieved == 0
 }
 
 func genInstallationEnforcer(curr, succ *releaseInfo) PipelineStep {
@@ -208,6 +321,7 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 		isHead := succ == nil
 		isInitiator := releasesIdentical(extra.Initiator, curr.release)
 		if curr.release.Status.AchievedStep != nil {
+			// TODO HILLA fix this
 			achievedStep = curr.release.Status.AchievedStep.Step
 		} else {
 			achievedStep = targetStep
@@ -239,6 +353,11 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 		for _, spec := range ct.Spec.Clusters {
 			desiredCapacity := replicas.CalculateDesiredReplicaCount(uint(spec.TotalReplicaCount), float64(capacityWeight))
 			baseCapacity := replicas.CalculateDesiredReplicaCount(uint(spec.TotalReplicaCount), float64(baseWeight))
+			if baseCapacity == desiredCapacity {
+				stepCapacity[spec.Name] = capacityWeight
+				continue
+
+			}
 			// surge is amount of pods. now we need to calculate the amount of pods we currently have
 			// ct.spec.clusters[*].percent is how much we should have by now.
 			// this value can be different for each cluster :facepalm: (though it shouldn't)
@@ -246,7 +365,8 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 			var newCapacity float64
 
 			var possibleCapacity float64
-			if (progress && isInitiator) || (!progress && !isInitiator) {
+			//if progress {
+			if (progress && isHead) || (!progress && !isHead) {
 				possibleCapacity = float64(int32(baseCapacity) + virtualStep*int32(surge))
 				newCapacity = math.Min(possibleCapacity, float64(desiredCapacity))
 				//newCapacity = math.Min(float64(existingCapacity), float64(desiredCapacity))
@@ -255,8 +375,16 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 				newCapacity = math.Max(possibleCapacity, float64(desiredCapacity))
 				//newCapacity = math.Min(float64(existingCapacity), float64(desiredCapacity))
 			}
+			//if baseCapacity > desiredCapacity {
+			//	possibleCapacity = float64(int32(baseCapacity) - virtualStep*int32(surge))
+			//	newCapacity = math.Max(possibleCapacity, float64(desiredCapacity))
+			//} else if baseCapacity < desiredCapacity {
+			//	possibleCapacity = float64(int32(baseCapacity) + virtualStep*int32(surge))
+			//	newCapacity = math.Min(possibleCapacity, float64(desiredCapacity))
+			//} else {
+			//	newCapacity = float64(desiredCapacity)
+			//}
 
-			klog.Infof("HILLA base capacity %d, desired Capacity %d, possible Capacity %.1f, new Capacity %.1f", baseCapacity, desiredCapacity, possibleCapacity, newCapacity)
 			if newCapacity > float64(spec.TotalReplicaCount) {
 				newCapacity = float64(spec.TotalReplicaCount)
 			}
@@ -266,9 +394,12 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 			//klog.Infof("HILLA existingCapacity %d, surge %s, new capacity is %.1f pods, total replica count is %d pods", existingCapacity, surge, newCapacity, spec.TotalReplicaCount)
 			// newCapacity is number of pods, now we translate it to percent
 			newPercent := int32(math.Ceil(newCapacity / float64(getReleaseReplicaCount(curr)) * 100.0))
-			if (progress && isInitiator) || (!progress && !isInitiator) && newPercent > capacityWeight {
+			// TODO HILLA fix this, this is wrong
+			if ((progress && isHead) || (!progress && !isHead)) && newPercent > capacityWeight {
+				klog.Infof("HILAAAAAAA WWHHHYYYY")
 				newPercent = capacityWeight
 			}
+			klog.Infof("HILLA virtual step base %d,  capacity %d, desired Capacity %d, possible Capacity %.1f, new Capacity %.1f", virtualStep, baseCapacity, desiredCapacity, possibleCapacity, newCapacity)
 			stepCapacity[spec.Name] = newPercent
 			if isHead && newPercent == capacityWeight {
 				isLastVirtualStep = true
@@ -317,12 +448,18 @@ func genCapacityEnforcer(curr, succ *releaseInfo) PipelineStep {
 			}
 
 			return PipelineBreak, patches, nil, false
-		} else if achievedStep != targetStep {
-			curr.release.Status.AchievedSubStep = virtualStep
+			//} else if curr.release.Status.AchievedSubStepp.ForStep != targetStep {
 		}
 
+		klog.Infof("HILLA Release %q updating rel info virtual step %d step %d", curr.release.Name, virtualStep, targetStep)
+		curr.release.Status.AchievedSubStepp = &shipper.AchievedSubStep{SubStep: virtualStep, Step: targetStep}
+		//if curr.release.Status.AchievedSubStepp != nil {
+		//	curr.release.Status.AchievedSubStepp.SubStep = virtualStep
+		//} else {
+		//}
+
 		if !isLastVirtualStep {
-			klog.Infof("HILLA Release %q has achieved virtual step %d", controller.MetaKey(curr.release), virtualStep)
+			klog.Infof("HILLA Release %q did not finish virtual steps", curr.release.Name)
 
 			return PipelineContinue, nil, nil, isLastVirtualStep
 		}

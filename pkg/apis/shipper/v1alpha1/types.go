@@ -195,15 +195,20 @@ type ReleaseSpec struct {
 
 // this will likely grow into a struct with interesting fields
 type ReleaseStatus struct {
-	AchievedStep    *AchievedStep          `json:"achievedStep,omitempty"`
-	AchievedSubStep int32                  `json:"achievedSubStep,omitempty"`
-	Strategy        *ReleaseStrategyStatus `json:"strategy,omitempty"`
-	Conditions      []ReleaseCondition     `json:"conditions,omitempty"`
+	AchievedStep     *AchievedStep          `json:"achievedStep,omitempty"`
+	AchievedSubStepp *AchievedSubStep       `json:"achievedSubStepp,omitempty"`
+	Strategy         *ReleaseStrategyStatus `json:"strategy,omitempty"`
+	Conditions       []ReleaseCondition     `json:"conditions,omitempty"`
 }
 
 type AchievedStep struct {
 	Step int32  `json:"step"`
 	Name string `json:"name"`
+}
+
+type AchievedSubStep struct {
+	SubStep int32 `json:"subStep"`
+	Step    int32 `json:"step"`
 }
 
 type ReleaseConditionType string
@@ -257,7 +262,7 @@ type RollingUpdate struct {
 	// The minimum number of pods that can get traffic during the update.
 	// Value can be an absolute number (ex: 5) or a percentage of total desired pods (ex: 10%).
 	// Absolute number is calculated from percentage by rounding up.
-	// This can not be 0 if MaxSurge is 0. //FIXME: HILLA WHAT??
+	// This can not be 0 if MaxSurge is 0. //TODO: HILLA WHAT??
 	// By default, a fixed value of 1 is used.
 	// Example: when this is set to 30%, during a rollout there would be at least 30%
 	// of desired pods (from contender and incumbent) that receive traffic at all times.
@@ -269,7 +274,7 @@ type RollingUpdate struct {
 	// The maximum number of pods that can be scheduled above the original number of
 	// pods.
 	// Value can be an absolute number (ex: 5) or a percentage of total pods at
-	// the start of the update (ex: 10%). This can not be 0 if MinTraffic is 0. //FIXME: HILLA WHAT??
+	// the start of the update (ex: 10%). This can not be 0 if MinTraffic is 0. //TODO: HILLA WHAT??
 	// Absolute number is calculated from percentage by rounding up.
 	// By default, a value of 2 is used.
 	// Example: when this is set to 30%, the new Release can be scaled up by 30%

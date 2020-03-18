@@ -375,10 +375,18 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 
 ApplyChanges:
 
+	subStep := 999
+	if rel.Status.AchievedSubStepp != nil {
+		subStep = int(rel.Status.AchievedSubStepp.SubStep)
+	}
 	if !equality.Semantic.DeepEqual(rel, baseRel) {
+		klog.Infof("HILLA updating release %s for real, it has this virtual step %d", rel.Name, subStep)
 		if _, updErr := c.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel); updErr != nil {
 			return updErr
 		}
+	} else {
+		klog.Infof("HILLA NOT updating release %s for real, it has this virtual step %v", rel.Name, rel.Status.AchievedSubStepp)
+
 	}
 
 	for _, patch := range patches {
@@ -447,23 +455,35 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 	isHead := succ == nil
 	var strategy *shipper.RolloutStrategy
 	var targetStep int32
-	var achievedStep int32
+	//var achievedStep int32
+	var capacityWeight int32
 	// A head release uses it's local spec-defined strategy, any other release
 	// follows it's successor state, therefore looking into the forecoming spec.
 	if isHead {
 		strategy = rel.Spec.Environment.Strategy
 		targetStep = rel.Spec.TargetStep
-		if rel.Status.AchievedStep != nil {
-			achievedStep = rel.Status.AchievedStep.Step
-		}
+		capacityWeight = strategy.Steps[targetStep].Capacity.Contender
+		//if rel.Status.AchievedStep != nil {
+		//	achievedStep = rel.Status.AchievedStep.Step
+		//}
 	} else {
 		strategy = succ.Spec.Environment.Strategy
 		targetStep = succ.Spec.TargetStep
-		if succ.Status.AchievedStep != nil {
-			achievedStep = succ.Status.AchievedStep.Step
+		capacityWeight = strategy.Steps[targetStep].Capacity.Incumbent
+		//if succ.Status.AchievedStep != nil {
+		//	achievedStep = succ.Status.AchievedStep.Step
+		//}
+	}
+	// Compare target capacity with actual capacity in target objects to know if this release is progressing
+	//progressing := targetStep >= achievedStep
+	progressing := true
+	ct := relinfo.capacityTarget
+	for _, spec := range ct.Spec.Clusters {
+		//klog.Infof("HILLA ************* capacity weight %d, spec weight %d for rel %s", capacityWeight, spec.Percent, rel.Name)
+		if spec.Percent > capacityWeight {
+			progressing = false
 		}
 	}
-	progressing := targetStep >= achievedStep
 
 	// Looks like a malformed input. Informing about a problem and bailing out.
 	if targetStep >= int32(len(strategy.Steps)) {
@@ -493,7 +513,7 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 	isLastStep := int(targetStep) == len(strategy.Steps)-1
 	prevStep := rel.Status.AchievedStep
 
-	klog.Infof("HILLA :: complete: %v completeVirtualSteps: %v", complete, completeVirtualSteps)
+	//klog.Infof("HILLA :: complete: %v completeVirtualSteps: %v", complete, completeVirtualSteps)
 	if complete && completeVirtualSteps {
 		var achievedStep int32
 		var achievedStepName string
@@ -506,14 +526,16 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 			achievedStepName = rel.Spec.Environment.Strategy.Steps[achievedStep].Name
 		}
 		if prevStep == nil || achievedStep != prevStep.Step {
-			klog.Infof("HILLAAAAA")
-
 			rel.Status.AchievedStep = &shipper.AchievedStep{
 				Step: achievedStep,
 				Name: achievedStepName,
 			}
-			klog.Infof("HILLA release %s has reached target step %d and has substep of %d in the status and in the relinfo %d", rel.Name, targetStep, rel.Status.AchievedSubStep, relinfo.release.Status.AchievedSubStep)
-			rel.Status.AchievedSubStep = 0
+			//klog.Infof("HILLA release %s has reached target step %d and has substep of %d in the status and in the relinfo %d",
+			//	rel.Name,
+			//	targetStep,
+			//	rel.Status.AchievedSubStepp.SubStep,
+			//	relinfo.release.Status.AchievedSubStepp.SubStep)
+			//rel.Status.AchievedSubStepp = 0
 			c.recorder.Eventf(
 				rel,
 				corev1.EventTypeNormal,
@@ -522,9 +544,9 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 				achievedStep,
 			)
 		} else {
-			//var virtualStep int32 = relinfo.release.Status.AchievedSubStep + 1
-			//klog.Infof("HILLA release %s has substep of %d in the status and in the relinfo %d", rel.Name, rel.Status.AchievedSubStep, relinfo.release.Status.AchievedSubStep)
-			//rel.Status.AchievedSubStep = relinfo.release.Status.AchievedSubStep
+			//var virtualStep int32 = relinfo.release.Status.AchievedSubStepp + 1
+			//klog.Infof("HILLA release %s has substep of %d in the status and in the relinfo %d", rel.Name, rel.Status.AchievedSubStepp, relinfo.release.Status.AchievedSubStepp)
+			//rel.Status.AchievedSubStepp = relinfo.release.Status.AchievedSubStepp
 		}
 
 		if isLastStep {
@@ -537,11 +559,17 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 		}
 	}
-	if complete && !completeVirtualSteps {
-		klog.Infof("HILLAAAAAA release %s has substep of %d in the status and in the relinfo %d", rel.Name, rel.Status.AchievedSubStep, relinfo.release.Status.AchievedSubStep)
-		rel.Status.AchievedSubStep = relinfo.release.Status.AchievedSubStep
+	if complete {
+		//subStep := 999//rel.Status.AchievedSubStepp.SubStep
+		//if rel.Status.AchievedSubStepp != nil {
+		//	subStep = int(rel.Status.AchievedSubStepp.SubStep)
+		//}
+		klog.Infof("HILLA UPDATING STATUS release %s has substep of %v in the status and in the relinfo %v", rel.Name, rel.Status.AchievedSubStepp, relinfo.release.Status.AchievedSubStepp)
+		//rel.Status.AchievedSubStepp.SubStep = relinfo.release.Status.AchievedSubStepp.SubStep
+		//rel.Status.AchievedSubStepp.Step = targetStep
+		rel.Status.AchievedSubStepp = relinfo.release.Status.AchievedSubStepp.DeepCopy()
 	}
-	//rel.Status.AchievedSubStep = 0
+	//rel.Status.AchievedSubStepp = 0
 
 	for _, t := range trans {
 		c.recorder.Eventf(
