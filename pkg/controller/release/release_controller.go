@@ -385,7 +385,7 @@ ApplyChanges:
 			return updErr
 		}
 	} else {
-		klog.Infof("HILLA NOT updating release %s for real, it has this virtual step %v", rel.Name, rel.Status.AchievedSubStepp)
+		klog.Infof("HILLA NOT updating release %s for real, it has this virtual step %v, and base rel %s has virtual step %v ", rel.Name, rel.Status.AchievedSubStepp, baseRel.Name, baseRel.Status.AchievedSubStepp)
 
 	}
 
@@ -564,10 +564,15 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 		//if rel.Status.AchievedSubStepp != nil {
 		//	subStep = int(rel.Status.AchievedSubStepp.SubStep)
 		//}
-		klog.Infof("HILLA UPDATING STATUS release %s has substep of %v in the status and in the relinfo %v", rel.Name, rel.Status.AchievedSubStepp, relinfo.release.Status.AchievedSubStepp)
+		klog.Infof("HILLA UPDATING STATUS release %s has substep of %v in the status and in the relinfo %v, targetStep sould be %d", rel.Name, rel.Status.AchievedSubStepp, relinfo.release.Status.AchievedSubStepp, targetStep)
 		//rel.Status.AchievedSubStepp.SubStep = relinfo.release.Status.AchievedSubStepp.SubStep
 		//rel.Status.AchievedSubStepp.Step = targetStep
 		rel.Status.AchievedSubStepp = relinfo.release.Status.AchievedSubStepp.DeepCopy()
+	} else {
+		klog.Infof("HILLA UPDATING STATUS release %s NOT achieved substep, targetStep sould be %d", rel.Name, targetStep)
+		//rel.Status.AchievedSubStepp.SubStep = relinfo.release.Status.AchievedSubStepp.SubStep
+		//rel.Status.AchievedSubStepp.Step = targetStep
+		rel.Status.AchievedSubStepp = nil
 	}
 	//rel.Status.AchievedSubStepp = 0
 

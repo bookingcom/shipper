@@ -10,7 +10,6 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/controller"
 	"github.com/bookingcom/shipper/pkg/util/conditions"
-	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
 	targetutil "github.com/bookingcom/shipper/pkg/util/target"
 )
@@ -109,7 +108,9 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, progressing bo
 	// might be following it's successor) it could be that a preliminary action
 	// would create more noise than help really.
 	if !isHead {
-		if !releaseutil.ReleaseAchievedTargetStep(succ.release) {
+		if !isRelReady(succ) {
+			//if !releaseutil.ReleaseAchievedTargetStep(succ.release) {
+			klog.Infof("HILLA fuck")
 			//curr.release.Status.AchievedSubStepp = 0
 			return false, nil, nil, false
 		}
@@ -160,12 +161,11 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, progressing bo
 func (e *StrategyExecutor) getNextSubStep(prev, curr, succ *releaseInfo, progressing bool) int32 {
 	// TODO HILLA find a way for curr and prev to wait for each other
 	isHead := succ == nil
-	var virtualStep int32 = 1 //curr.release.Status.AchievedSubStepp.SubStep + 1
+	var virtualStep int32 = 0
 	if curr.release.Status.AchievedStep != nil {
 		if isHead {
 			//ct := curr.capacityTarget
 			//achievedStep := e.step
-			//if curr.release.Status.AchievedStep != nil {
 			currentStep, achieved := e.virtualStep(curr, progressing, isHead)
 			incumbentStep, incumbentAchieved := e.virtualStep(prev, !progressing, !isHead)
 			isReady := isRelReady(curr) && isRelReady(prev)
@@ -175,46 +175,11 @@ func (e *StrategyExecutor) getNextSubStep(prev, curr, succ *releaseInfo, progres
 				virtualStep = currentStep
 			}
 
-			//if achieved && !isReady {
-			//	virtualStep = currentStep
-			//} else if achieved && isReady {
-			//	virtualStep = currentStep + 1
-			//} else if !isReady {
-			//	virtualStep = currentStep
-			//} else {
-			//	virtualStep = currentStep + 1
-			//}
 			klog.Infof("HILLA CONTENDER NEXT Virtual STEP IS %d, incumbent is in step %d, did it achieve it? %v", virtualStep, incumbentStep, incumbentAchieved)
-			//}
 		} else {
 			//must match successor!
 			//virtualStep = succ.release.Status.AchievedSubStepp
 
-			//ct := curr.capacityTarget
-			//achievedStep := e.step
-			//if curr.release.Status.AchievedStep != nil {
-			//rel := succ
-			//achievedStep = rel.release.Status.AchievedStep.Step
-			//baseCapacity := rel.release.Spec.Environment.Strategy.Steps[achievedStep].Capacity.Incumbent
-			//baseCapacityAchieved := replicas.CalculateDesiredReplicaCount(uint(getReleaseReplicaCount(rel)), float64(baseCapacity))
-			//surge, err := getMaxSurge(rel, e.strategy)
-			//if err != nil {
-			//	klog.Infof("HILLA got this error %s", err.Error())
-			//	//return false, nil, nil, false
-			//}
-			//currentCapacity := baseCapacityAchieved
-			//for _, spec := range ct.Spec.Clusters {
-			//	capacity := replicas.CalculateDesiredReplicaCount(uint(spec.TotalReplicaCount), float64(spec.Percent))
-			//	// TODO HILLA This is only for progressing contender, make sure to check for not progressing contender
-			//	if progressing && (capacity > currentCapacity) {
-			//		currentCapacity = capacity
-			//	} else if !progressing && (capacity < currentCapacity) {
-			//		currentCapacity = capacity
-			//	}
-			//}
-			//diffAchieved := math.Abs(float64(int(baseCapacityAchieved) - int(currentCapacity)))
-			//currentStep := int32(math.Ceil(diffAchieved / float64(surge)))
-			//klog.Infof("HILLA rel %s, base %d pods, achieved %d pods, diff %.1f, current step is %d, division result is %.1f", curr.release.Name, baseCapacityAchieved, currentCapacity, diffAchieved, currentStep, diffAchieved/float64(surge))
 			contenderStep, achieved := e.virtualStep(succ, progressing, isHead)
 			incumbentStep, incumbentAchieved := e.virtualStep(curr, !progressing, !isHead)
 			isReady := isRelReady(succ) && isRelReady(curr)
@@ -224,18 +189,10 @@ func (e *StrategyExecutor) getNextSubStep(prev, curr, succ *releaseInfo, progres
 				virtualStep = contenderStep
 			}
 
-			//if achieved && !isReady {
-			//	virtualStep = currentStep
-			//} else if achieved && isReady {
-			//	virtualStep = currentStep + 1
-			//} else if !isReady {
-			//	virtualStep = currentStep
-			//} else {
-			//	virtualStep = currentStep + 1
-			//}
 			klog.Infof("HILLA INCUMBENT NEXT Virtual STEP IS %d", virtualStep)
-			//}
 		}
+	} else {
+		klog.Infof("HILLA NO ACHIEVED STEEEPPPPP FFFUUUCCCKKKKK")
 	}
 	return virtualStep
 }
