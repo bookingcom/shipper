@@ -2,6 +2,7 @@ package release
 
 import (
 	"fmt"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	"math"
 	"time"
 
@@ -97,7 +98,7 @@ func NewStrategyExecutor(strategy *shipper.RolloutStrategy, step int32) *Strateg
 	7. Make necessary adjustments to the release object.
 */
 
-func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, progressing bool) (bool, []StrategyPatch, []ReleaseStrategyStateTransition, bool) {
+func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, progressing bool) (bool, bool, []StrategyPatch, []ReleaseStrategyStateTransition) {
 	isHead, hasTail := succ == nil, prev != nil
 
 	// There is no really a point in making any changes until the successor
@@ -108,11 +109,17 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, progressing bo
 	// might be following it's successor) it could be that a preliminary action
 	// would create more noise than help really.
 	if !isHead {
-		if !isRelReady(succ) {
-			//if !releaseutil.ReleaseAchievedTargetStep(succ.release) {
+		//if !isRelReady(succ) {
+		subStep, achieved := e.virtualStep(curr, progressing, isHead)
+		curr.release.Status.AchievedSubStepp = &shipper.AchievedSubStep{
+			SubStep: subStep,
+			Step:    e.step,
+		}
+		//if !releaseutil.ReleaseAchievedSubStep(succ.release, e.step, subStep) {
+		if !releaseutil.ReleaseAchievedTargetStep(succ.release) {
 			klog.Infof("HILLA fuck")
 			//curr.release.Status.AchievedSubStepp = 0
-			return false, nil, nil, false
+			return false, achieved, nil, nil
 		}
 	}
 
@@ -155,7 +162,8 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, progressing bo
 	}
 
 	virtualStep := e.getNextSubStep(prev, curr, succ, progressing)
-	return pipeline.Process(e.strategy, e.step, virtualStep, extra, cond)
+	completePipeline, patches, transitions, isLastSubStep := pipeline.Process(e.strategy, e.step, virtualStep, extra, cond)
+	return completePipeline && isLastSubStep, completePipeline, patches, transitions
 }
 
 func (e *StrategyExecutor) getNextSubStep(prev, curr, succ *releaseInfo, progressing bool) int32 {

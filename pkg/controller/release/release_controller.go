@@ -494,7 +494,7 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 
 	executor := NewStrategyExecutor(strategy, targetStep)
 
-	complete, patches, trans, completeVirtualSteps := executor.Execute(relinfoPrev, relinfo, relinfoSucc, progressing)
+	stepCompleted, subStepCompleted, patches, trans := executor.Execute(relinfoPrev, relinfo, relinfoSucc, progressing)
 
 	if len(patches) == 0 {
 		klog.V(4).Infof("Strategy verified for release %q, nothing to patch", controller.MetaKey(rel))
@@ -513,8 +513,8 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 	isLastStep := int(targetStep) == len(strategy.Steps)-1
 	prevStep := rel.Status.AchievedStep
 
-	//klog.Infof("HILLA :: complete: %v completeVirtualSteps: %v", complete, completeVirtualSteps)
-	if complete && completeVirtualSteps {
+	//klog.Infof("HILLA :: stepCompleted: %v subStepCompleted: %v", stepCompleted, subStepCompleted)
+	if stepCompleted {
 		var achievedStep int32
 		var achievedStepName string
 
@@ -559,7 +559,7 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 		}
 	}
-	if complete {
+	if subStepCompleted {
 		//subStep := 999//rel.Status.AchievedSubStepp.SubStep
 		//if rel.Status.AchievedSubStepp != nil {
 		//	subStep = int(rel.Status.AchievedSubStepp.SubStep)
