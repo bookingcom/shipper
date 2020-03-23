@@ -152,7 +152,7 @@ func runJoinClustersCommand(cmd *cobra.Command, args []string) error {
 }
 
 func setupManagementCluster(cmd *cobra.Command, configurator *configurator.Cluster) error {
-	if err := createOrUpdateCrds(cmd, configurator); err != nil {
+	if err := createOrUpdateManagementCrds(cmd, configurator); err != nil {
 		return err
 	}
 
@@ -192,6 +192,10 @@ func setupManagementCluster(cmd *cobra.Command, configurator *configurator.Clust
 }
 
 func setupApplicationCluster(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	if err := createOrUpdateApplicationCrds(cmd, configurator); err != nil {
+		return err
+	}
+
 	if err := createNamespace(cmd, configurator); err != nil {
 		return err
 	}
@@ -236,8 +240,8 @@ func joinClusters(
 	return nil
 }
 
-func createOrUpdateCrds(cmd *cobra.Command, configurator *configurator.Cluster) error {
-	cmd.Print("Registering or updating custom resource definitions... ")
+func createOrUpdateManagementCrds(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	cmd.Print("Registering or updating management bundle of custom resource definitions... ")
 	if err := configurator.CreateOrUpdateCRD(crds.Application); err != nil {
 		return err
 	}
@@ -245,6 +249,22 @@ func createOrUpdateCrds(cmd *cobra.Command, configurator *configurator.Cluster) 
 	if err := configurator.CreateOrUpdateCRD(crds.Release); err != nil {
 		return err
 	}
+
+	if err := configurator.CreateOrUpdateCRD(crds.Cluster); err != nil {
+		return err
+	}
+
+	if err := configurator.CreateOrUpdateCRD(crds.RolloutBlock); err != nil {
+		return err
+	}
+
+	cmd.Println("done")
+
+	return nil
+}
+
+func createOrUpdateApplicationCrds(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	cmd.Print("Registering or updating application bundle of custom resource definitions... ")
 
 	if err := configurator.CreateOrUpdateCRD(crds.InstallationTarget); err != nil {
 		return err
@@ -255,14 +275,6 @@ func createOrUpdateCrds(cmd *cobra.Command, configurator *configurator.Cluster) 
 	}
 
 	if err := configurator.CreateOrUpdateCRD(crds.TrafficTarget); err != nil {
-		return err
-	}
-
-	if err := configurator.CreateOrUpdateCRD(crds.Cluster); err != nil {
-		return err
-	}
-
-	if err := configurator.CreateOrUpdateCRD(crds.RolloutBlock); err != nil {
 		return err
 	}
 

@@ -83,7 +83,7 @@ install: install-shipper
 install-shipper: install-shipper-app install-shipper-mgmt
 
 install-shipper-app: build/shipper-app.image.$(IMAGE_TAG) build/shipper-app.deployment.$(IMAGE_TAG).yaml
-	$(KUBECTL) apply -f build/shipper-app.deployment.$(IMAGE_TAG).yaml
+	$(KUBECTL) --context $(SHIPPER_CLUSTER) apply -f build/shipper-app.deployment.$(IMAGE_TAG).yaml
 
 install-shipper-mgmt: build/shipper-mgmt.image.$(IMAGE_TAG) build/shipper-mgmt.deployment.$(IMAGE_TAG).yaml
 	$(KUBECTL) apply -f build/shipper-mgmt.deployment.$(IMAGE_TAG).yaml

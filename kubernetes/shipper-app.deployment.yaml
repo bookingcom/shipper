@@ -35,4 +35,4 @@ spec:
         ports:
         - name: metrics
           containerPort: 8889
-      serviceAccountName: shipper-management-cluster
+      serviceAccountName: shipper-application-cluster
