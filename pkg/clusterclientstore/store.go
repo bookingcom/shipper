@@ -28,12 +28,10 @@ import (
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
-const AgentName = "clusterclientstore"
-
-// This enables tests to inject an appropriate fake client, which allows us to
-// use the real cluster client store in unit tests.
-type KubeClientBuilderFunc func(string, string, *rest.Config) (kubernetes.Interface, error)
-type ShipperClientBuilderFunc func(string, string, *rest.Config) (shipperclientset.Interface, error)
+const (
+	AgentName = "clusterclientstore"
+	noTimeout = 0 * time.Second
+)
 
 type Store struct {
 	ns                 string
@@ -132,27 +130,6 @@ func (s *Store) AddEventHandlerCallback(eventHandler EventHandlerRegisterFunc) {
 	s.eventHandlerRegisterFuncs = append(s.eventHandlerRegisterFuncs, eventHandler)
 }
 
-// GetClient returns a client for the specified cluster name and user agent
-// pair.
-func (s *Store) GetClient(clusterName string, ua string) (kubernetes.Interface, error) {
-	cluster, ok := s.cache.Fetch(clusterName)
-	if !ok {
-		return nil, shippererrors.NewClusterNotInStoreError(clusterName)
-	}
-
-	return cluster.GetClient(ua)
-}
-
-// GetConfig returns a rest.Config for the specified cluster name.
-func (s *Store) GetConfig(clusterName string) (*rest.Config, error) {
-	cluster, ok := s.cache.Fetch(clusterName)
-	if !ok {
-		return nil, shippererrors.NewClusterNotInStoreError(clusterName)
-	}
-
-	return cluster.GetConfig()
-}
-
 func (s *Store) GetApplicationClusterClientset(clusterName, userAgent string) (ClientsetInterface, error) {
 	cluster, ok := s.cache.Fetch(clusterName)
 	if !ok {
@@ -164,17 +141,22 @@ func (s *Store) GetApplicationClusterClientset(clusterName, userAgent string) (C
 		return nil, err
 	}
 
-	kubeClient, err := cluster.GetClient(userAgent)
+	kubeClient, err := cluster.GetKubeClient(userAgent)
 	if err != nil {
 		return nil, err
 	}
 
-	kubeInformerFactory, err := cluster.GetInformerFactory()
+	kubeInformerFactory, err := cluster.GetKubeInformerFactory()
 	if err != nil {
 		return nil, err
 	}
 
-	shipperClient, err := s.buildShipperClient(clusterName, userAgent, config)
+	shipperClient, err := cluster.GetShipperClient(userAgent)
+	if err != nil {
+		return nil, err
+	}
+
+	shipperInformerFactory, err := cluster.GetShipperInformerFactory()
 	if err != nil {
 		return nil, err
 	}
@@ -184,19 +166,8 @@ func (s *Store) GetApplicationClusterClientset(clusterName, userAgent string) (C
 		kubeClient,
 		kubeInformerFactory,
 		shipperClient,
-		s.shipperInformerFactory,
+		shipperInformerFactory,
 	), nil
-}
-
-// GetInformerFactory returns an informer factory for the specified
-// cluster name.
-func (s *Store) GetInformerFactory(clusterName string) (kubeinformers.SharedInformerFactory, error) {
-	cluster, ok := s.cache.Fetch(clusterName)
-	if !ok {
-		return nil, shippererrors.NewClusterNotInStoreError(clusterName)
-	}
-
-	return cluster.GetInformerFactory()
 }
 
 func (s *Store) syncCluster(name string) error {
@@ -315,32 +286,37 @@ func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
 		return shippererrors.NewClusterClientBuild(cluster.Name, err)
 	}
 
-	informerClient, err := s.buildKubeClient(cluster.Name, AgentName, informerConfig)
+	kubeInformerClient, err := s.buildKubeClient(cluster.Name, AgentName, informerConfig)
 	if err != nil {
 		return shippererrors.NewClusterClientBuild(cluster.Name, err)
 	}
 
-	informerFactory := kubeinformers.NewSharedInformerFactory(informerClient, 0*time.Second)
+	shipperInformerClient, err := s.buildShipperClient(cluster.Name, AgentName, informerConfig)
+	if err != nil {
+		return shippererrors.NewClusterClientBuild(cluster.Name, err)
+	}
+
+	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeInformerClient, noTimeout)
+	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(shipperInformerClient, noTimeout)
+
 	// Register all the resources that the controllers are interested in, e.g.
 	// informerFactory.Core().V1().Pods().Informer().
 	for _, cb := range s.subscriptionRegisterFuncs {
-		cb(informerFactory)
+		cb(kubeInformerFactory, shipperInformerFactory)
 	}
 
 	clusterName := cluster.Name
 	checksum := computeSecretChecksum(secret)
 	newCachedCluster := cache.NewCluster(
-		clusterName,
-		checksum,
-		config,
-		informerFactory,
-		s.buildKubeClient,
+		clusterName, checksum, config,
+		kubeInformerFactory, shipperInformerFactory,
+		s.buildKubeClient, s.buildShipperClient,
 		func() {
 			// If/when the informer cache finishes syncing, bind all of the event handler
 			// callbacks from the controllers if it does not finish (because the cluster
 			// was Shutdown) this will not be called.
 			for _, cb := range s.eventHandlerRegisterFuncs {
-				cb(informerFactory, clusterName)
+				cb(kubeInformerFactory, shipperInformerFactory, clusterName)
 			}
 		})
 

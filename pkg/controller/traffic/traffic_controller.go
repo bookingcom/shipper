@@ -101,8 +101,8 @@ func NewController(
 // Endpoints object anyway. In case a new or deleted pod does change traffic
 // shifting in any way, the update to the traffic target itself will trigger a
 // new evaluation of all traffic targets for an app.
-func (c *Controller) registerAppClusterEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
-	informerFactory.Core().V1().Endpoints().Informer().AddEventHandler(cache.FilteringResourceEventHandler{
+func (c *Controller) registerAppClusterEventHandlers(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory informers.SharedInformerFactory, clusterName string) {
+	kubeInformerFactory.Core().V1().Endpoints().Informer().AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: filters.BelongsToApp,
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc:    c.enqueueAllTrafficTargets,
@@ -113,7 +113,7 @@ func (c *Controller) registerAppClusterEventHandlers(informerFactory kubeinforme
 		},
 	})
 
-	informerFactory.Core().V1().Pods().Informer().AddEventHandler(cache.FilteringResourceEventHandler{
+	kubeInformerFactory.Core().V1().Pods().Informer().AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: filters.BelongsToRelease,
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc:    c.enqueueTrafficTargetFromPod,
@@ -122,10 +122,10 @@ func (c *Controller) registerAppClusterEventHandlers(informerFactory kubeinforme
 	})
 }
 
-func (c *Controller) subscribeToAppClusterEvents(informerFactory kubeinformers.SharedInformerFactory) {
-	informerFactory.Core().V1().Pods().Informer()
-	informerFactory.Core().V1().Services().Informer()
-	informerFactory.Core().V1().Endpoints().Informer()
+func (c *Controller) subscribeToAppClusterEvents(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory informers.SharedInformerFactory) {
+	kubeInformerFactory.Core().V1().Pods().Informer()
+	kubeInformerFactory.Core().V1().Services().Informer()
+	kubeInformerFactory.Core().V1().Endpoints().Informer()
 }
 
 // Run will set up the event handlers for types we are interested in, as well as
