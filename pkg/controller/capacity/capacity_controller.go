@@ -428,7 +428,7 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 	c.workqueue.Add(key)
 }
 
-func (c *Controller) registerDeploymentEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
+func (c *Controller) registerDeploymentEventHandlers(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory informers.SharedInformerFactory, clusterName string) {
 	handler := cache.FilteringResourceEventHandler{
 		FilterFunc: filters.BelongsToRelease,
 		Handler: cache.ResourceEventHandlerFuncs{
@@ -439,12 +439,12 @@ func (c *Controller) registerDeploymentEventHandlers(informerFactory kubeinforme
 			},
 		},
 	}
-	informerFactory.Apps().V1().Deployments().Informer().AddEventHandler(handler)
+	kubeInformerFactory.Apps().V1().Deployments().Informer().AddEventHandler(handler)
 }
 
-func (c *Controller) subscribeToDeployments(informerFactory kubeinformers.SharedInformerFactory) {
-	informerFactory.Apps().V1().Deployments().Informer()
-	informerFactory.Core().V1().Pods().Informer()
+func (c *Controller) subscribeToDeployments(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory informers.SharedInformerFactory) {
+	kubeInformerFactory.Apps().V1().Deployments().Informer()
+	kubeInformerFactory.Core().V1().Pods().Informer()
 }
 
 func (c Controller) getClusterObjects(clusterName, ns, appName, release string) (*appsv1.Deployment, []*corev1.Pod, error) {

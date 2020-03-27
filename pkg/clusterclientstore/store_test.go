@@ -37,7 +37,7 @@ type clusters []string
 type secrets []string
 
 func TestClientCreation(t *testing.T) {
-	clientStoreTestCase(t, "creates config",
+	clientStoreTestCase(t, "creates application cluster client set",
 		clusters{testClusterName},
 		secrets{testClusterName},
 		func(s *Store) (bool, error) {
@@ -45,57 +45,11 @@ func TestClientCreation(t *testing.T) {
 			return ok && cluster.IsReady(), nil
 		},
 		func(s *Store) {
-			config, err := s.GetConfig(testClusterName)
+			_, err := s.GetApplicationClusterClientset(testClusterName, AgentName)
 			if err != nil {
-				t.Errorf("unexpected error getting config %v", err)
-			}
-			if config.Host != testClusterHost {
-				t.Errorf("expected config with host %q but got %q", testClusterHost, config.Host)
+				t.Errorf("unexpected error getting clientset: %s", err)
 			}
 
-			if s.cache.Count() != 1 {
-				t.Errorf("expected exactly one cluster, found %q", s.cache.Count())
-			}
-		})
-
-	clientStoreTestCase(t, "creates client",
-		clusters{testClusterName},
-		secrets{testClusterName},
-		func(s *Store) (bool, error) {
-			cluster, ok := s.cache.Fetch(testClusterName)
-			return ok && cluster.IsReady(), nil
-		},
-		func(s *Store) {
-			ua := "foo"
-			expected, err := s.GetClient(testClusterName, ua)
-			if err != nil {
-				t.Errorf("unexpected error getting client %v", err)
-			}
-			if s.cache.Count() != 1 {
-				t.Errorf("expected exactly one cluster, found %q", s.cache.Count())
-			}
-
-			found, err := s.GetClient(testClusterName, ua)
-			if err != nil {
-				t.Errorf("unexpected error getting client %v", err)
-			}
-			if found != expected {
-				t.Errorf("expected client %v to be reused, but instead got a new client %v", expected, found)
-			}
-		})
-
-	clientStoreTestCase(t, "creates informerFactory",
-		clusters{testClusterName},
-		secrets{testClusterName},
-		func(s *Store) (bool, error) {
-			cluster, ok := s.cache.Fetch(testClusterName)
-			return ok && cluster.IsReady(), nil
-		},
-		func(s *Store) {
-			_, err := s.GetInformerFactory(testClusterName)
-			if err != nil {
-				t.Errorf("unexpected error getting informerFactory %v", err)
-			}
 			if s.cache.Count() != 1 {
 				t.Errorf("expected exactly one cluster, found %q", s.cache.Count())
 			}
@@ -115,22 +69,9 @@ func TestClientCreation(t *testing.T) {
 		},
 		func(s *Store) {
 			for _, name := range clusterList {
-				_, err := s.GetClient(name, "foo")
+				_, err := s.GetApplicationClusterClientset(name, "foo")
 				if err != nil {
-					t.Errorf("unexpected error getting client %q %v", name, err)
-				}
-
-				config, err := s.GetConfig(name)
-				if err != nil {
-					t.Errorf("unexpected error getting config for %q %v", name, err)
-				}
-				if config.Host != testClusterHost {
-					t.Errorf("expected config with host %q but got %q", testClusterHost, config.Host)
-				}
-
-				_, err = s.GetInformerFactory(name)
-				if err != nil {
-					t.Errorf("unexpected error getting informerFactory %q %v", name, err)
+					t.Errorf("unexpected error getting clientset %q: %s", name, err)
 				}
 			}
 
@@ -150,11 +91,11 @@ func TestNoClientGeneration(t *testing.T) {
 			return true, nil
 		},
 		func(s *Store) {
-			_, err := s.GetClient("foo", "baz")
+			_, err := s.GetApplicationClusterClientset("foo", "baz")
 			if !shippererrors.IsClusterNotInStoreError(err) {
 				t.Errorf("expected 'no such cluster' error, but got something else: %v", err)
 			}
-			_, err = s.GetClient("bar", "baz")
+			_, err = s.GetApplicationClusterClientset("bar", "baz")
 			if !shippererrors.IsClusterNotInStoreError(err) {
 				t.Errorf("expected 'no such cluster' error, but got something else: %v", err)
 			}
@@ -263,36 +204,6 @@ func TestReCacheClusterOnSecretUpdate(t *testing.T) {
 	if clusterChecksum, _ := cluster.GetChecksum(); clusterChecksum != secretChecksum {
 		t.Fatalf("inconsistent cluster checksum: got: %s, want: %s",
 			clusterChecksum, secretChecksum)
-	}
-}
-
-func TestConfigTimeout(t *testing.T) {
-	f := newFixture(t)
-
-	sevenSeconds := 7 * time.Second
-	f.restTimeout = &sevenSeconds
-
-	f.addCluster(testClusterName)
-	f.addSecret(newValidSecret(testClusterName))
-
-	store := f.run()
-
-	wait.PollUntil(
-		10*time.Millisecond,
-		func() (bool, error) {
-			cluster, ok := store.cache.Fetch(testClusterName)
-			return ok && cluster.IsReady(), nil
-		},
-		stopAfter(3*time.Second),
-	)
-
-	restCfg, err := store.GetConfig(testClusterName)
-	if err != nil {
-		t.Fatalf("expected a REST config, but got error: %s", err)
-	}
-
-	if restCfg.Timeout != sevenSeconds {
-		t.Errorf("expected REST config to have timeout of %s, but got %s", sevenSeconds, restCfg.Timeout)
 	}
 }
 

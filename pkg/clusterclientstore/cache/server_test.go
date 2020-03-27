@@ -5,11 +5,15 @@ import (
 	"testing"
 	"time"
 
-	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	kubeinformers "k8s.io/client-go/informers"
 	kubernetes "k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
+
+	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
+	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
 const (
@@ -131,9 +135,14 @@ func TestReplacement(t *testing.T) {
 		t.Errorf("expected GetChecksum on replaced cluster to return ClusterNotReady, got %v", err)
 	}
 
-	_, err = existing.GetClient("foo")
+	_, err = existing.GetKubeClient("foo")
 	if !shippererrors.IsClusterNotReadyError(err) {
-		t.Errorf("expected GetClient on replaced cluster to return ClusterNotReady, got %v", err)
+		t.Errorf("expected GetKubeClient on replaced cluster to return ClusterNotReady, got %v", err)
+	}
+
+	_, err = existing.GetShipperClient("foo")
+	if !shippererrors.IsClusterNotReadyError(err) {
+		t.Errorf("expected GetShipperClient on replaced cluster to return ClusterNotReady, got %v", err)
 	}
 
 	_, err = existing.GetConfig()
@@ -141,22 +150,33 @@ func TestReplacement(t *testing.T) {
 		t.Errorf("expected GetConfig on replaced cluster to return ClusterNotReady, got %v", err)
 	}
 
-	_, err = existing.GetInformerFactory()
+	_, err = existing.GetKubeInformerFactory()
 	if !shippererrors.IsClusterNotReadyError(err) {
-		t.Errorf("expected GetInformerFactory on replaced cluster to return ClusterNotReady, got %v", err)
+		t.Errorf("expected GetKubeInformerFactory on replaced cluster to return ClusterNotReady, got %v", err)
+	}
+
+	_, err = existing.GetShipperInformerFactory()
+	if !shippererrors.IsClusterNotReadyError(err) {
+		t.Errorf("expected GetShipperInformerFactory on replaced cluster to return ClusterNotReady, got %v", err)
 	}
 }
 
 func newCluster(name string) *Cluster {
 	kubeClient := kubefake.NewSimpleClientset()
+	shipperClient := shipperfake.NewSimpleClientset()
 
 	const noResyncPeriod time.Duration = 0
 	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, noResyncPeriod)
+	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(shipperClient, noResyncPeriod)
 	config := &rest.Config{}
 
 	return NewCluster(
-		name, testChecksum, config, kubeInformerFactory,
+		name, testChecksum, config,
+		kubeInformerFactory, shipperInformerFactory,
 		func(cluster, ua string, config *rest.Config) (kubernetes.Interface, error) {
+			return nil, nil
+		},
+		func(cluster, ua string, config *rest.Config) (shipperclientset.Interface, error) {
 			return nil, nil
 		},
 		func() {},

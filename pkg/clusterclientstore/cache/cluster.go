@@ -3,10 +3,13 @@ package cache
 import (
 	"sync"
 
-	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	kubeinformers "k8s.io/client-go/informers"
 	kubernetes "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+
+	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
 const (
@@ -20,38 +23,52 @@ func NewCluster(
 	name,
 	checksum string,
 	config *rest.Config,
-	informerFactory kubeinformers.SharedInformerFactory,
-	buildClient func(string, string, *rest.Config) (kubernetes.Interface, error),
+	kubeInformerFactory kubeinformers.SharedInformerFactory,
+	shipperInformerFactory shipperinformers.SharedInformerFactory,
+	buildKubeClient func(string, string, *rest.Config) (kubernetes.Interface, error),
+	buildShipperClient func(string, string, *rest.Config) (shipperclientset.Interface, error),
 	cacheSyncCb func(),
 ) *Cluster {
 	return &Cluster{
-		state:           StateNotReady,
-		name:            name,
-		checksum:        checksum,
-		config:          config,
-		informerFactory: informerFactory,
-		buildClient:     buildClient,
-		cacheSyncCb:     cacheSyncCb,
-		stopCh:          make(chan struct{}),
+		name:     name,
+		checksum: checksum,
+		config:   config,
 
-		clients: make(map[string]kubernetes.Interface),
+		state: StateNotReady,
+
+		kubeClients:    make(map[string]kubernetes.Interface),
+		shipperClients: make(map[string]shipperclientset.Interface),
+
+		kubeInformerFactory: kubeInformerFactory,
+		buildKubeClient:     buildKubeClient,
+
+		shipperInformerFactory: shipperInformerFactory,
+		buildShipperClient:     buildShipperClient,
+
+		cacheSyncCb: cacheSyncCb,
+
+		stopCh: make(chan struct{}),
 	}
 }
 
 type Cluster struct {
-	name string
+	// These are all read-only after initialization, so no lock needed.
+	name     string
+	checksum string
+	config   *rest.Config
 
 	stateMut sync.RWMutex
 	state    string
 
-	clientsMut sync.Mutex
-	clients    map[string]kubernetes.Interface
+	clientsMut     sync.Mutex
+	kubeClients    map[string]kubernetes.Interface
+	shipperClients map[string]shipperclientset.Interface
 
-	// These are all read-only after initialization, so no lock needed.
-	checksum        string
-	config          *rest.Config
-	informerFactory kubeinformers.SharedInformerFactory
-	buildClient     func(string, string, *rest.Config) (kubernetes.Interface, error)
+	kubeInformerFactory kubeinformers.SharedInformerFactory
+	buildKubeClient     func(string, string, *rest.Config) (kubernetes.Interface, error)
+
+	shipperInformerFactory shipperinformers.SharedInformerFactory
+	buildShipperClient     func(string, string, *rest.Config) (shipperclientset.Interface, error)
 
 	cacheSyncCb func()
 
@@ -64,10 +81,10 @@ func (c *Cluster) IsReady() bool {
 	return c.state == StateReady
 }
 
-// GetClient returns a client for the user agent specified by ua. If a client
-// doesn't exist for that user agent, one will be created by calling the
-// buildClient func.
-func (c *Cluster) GetClient(ua string) (kubernetes.Interface, error) {
+// GetKubeClient returns a kubernetes client for the user agent specified by
+// ua. If a client doesn't exist for that user agent, one will be created by
+// calling the buildKubeClient func.
+func (c *Cluster) GetKubeClient(ua string) (kubernetes.Interface, error) {
 	if !c.IsReady() {
 		return nil, shippererrors.NewClusterNotReadyError(c.name)
 	}
@@ -75,16 +92,41 @@ func (c *Cluster) GetClient(ua string) (kubernetes.Interface, error) {
 	c.clientsMut.Lock()
 	defer c.clientsMut.Unlock()
 
-	if client, ok := c.clients[ua]; ok {
+	if client, ok := c.kubeClients[ua]; ok {
 		return client, nil
 	}
 
-	client, err := c.buildClient(c.name, ua, c.config)
+	client, err := c.buildKubeClient(c.name, ua, c.config)
 	if err != nil {
 		return nil, err
 	}
 
-	c.clients[ua] = client
+	c.kubeClients[ua] = client
+
+	return client, nil
+}
+
+// GetShipperClient returns a shipperrnetes client for the user agent specified by
+// ua. If a client doesn't exist for that user agent, one will be created by
+// calling the buildShipperClient func.
+func (c *Cluster) GetShipperClient(ua string) (shipperclientset.Interface, error) {
+	if !c.IsReady() {
+		return nil, shippererrors.NewClusterNotReadyError(c.name)
+	}
+
+	c.clientsMut.Lock()
+	defer c.clientsMut.Unlock()
+
+	if client, ok := c.shipperClients[ua]; ok {
+		return client, nil
+	}
+
+	client, err := c.buildShipperClient(c.name, ua, c.config)
+	if err != nil {
+		return nil, err
+	}
+
+	c.shipperClients[ua] = client
 
 	return client, nil
 }
@@ -105,12 +147,20 @@ func (c *Cluster) GetChecksum() (string, error) {
 	return c.checksum, nil
 }
 
-func (c *Cluster) GetInformerFactory() (kubeinformers.SharedInformerFactory, error) {
+func (c *Cluster) GetKubeInformerFactory() (kubeinformers.SharedInformerFactory, error) {
 	if !c.IsReady() {
 		return nil, shippererrors.NewClusterNotReadyError(c.name)
 	}
 
-	return c.informerFactory, nil
+	return c.kubeInformerFactory, nil
+}
+
+func (c *Cluster) GetShipperInformerFactory() (shipperinformers.SharedInformerFactory, error) {
+	if !c.IsReady() {
+		return nil, shippererrors.NewClusterNotReadyError(c.name)
+	}
+
+	return c.shipperInformerFactory, nil
 }
 
 // This will block until the cache syncs. If the cache is never going to sync
@@ -131,10 +181,17 @@ func (c *Cluster) WaitForInformerCache() {
 	c.state = StateWaitingForSync
 	c.stateMut.Unlock()
 
-	c.informerFactory.Start(c.stopCh)
+	c.kubeInformerFactory.Start(c.stopCh)
+	c.shipperInformerFactory.Start(c.stopCh)
+
 	ok := true
-	syncedInformers := c.informerFactory.WaitForCacheSync(c.stopCh)
-	for _, synced := range syncedInformers {
+	syncedKubeInformers := c.kubeInformerFactory.WaitForCacheSync(c.stopCh)
+	for _, synced := range syncedKubeInformers {
+		ok = ok && synced
+	}
+
+	syncedShipperInformers := c.shipperInformerFactory.WaitForCacheSync(c.stopCh)
+	for _, synced := range syncedShipperInformers {
 		ok = ok && synced
 	}
 

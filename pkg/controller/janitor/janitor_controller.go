@@ -93,7 +93,7 @@ func NewController(
 	return controller
 }
 
-func (c *Controller) registerAppClusterEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
+func (c *Controller) registerAppClusterEventHandlers(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory shipperinformers.SharedInformerFactory, clusterName string) {
 	handler := cache.FilteringResourceEventHandler{
 		FilterFunc: filters.BelongsToInstallationTarget,
 		Handler: cache.ResourceEventHandlerFuncs{
@@ -103,11 +103,11 @@ func (c *Controller) registerAppClusterEventHandlers(informerFactory kubeinforme
 		},
 	}
 
-	informerFactory.Core().V1().ConfigMaps().Informer().AddEventHandler(handler)
+	kubeInformerFactory.Core().V1().ConfigMaps().Informer().AddEventHandler(handler)
 }
 
-func (c *Controller) subscribeToAppClusterEvents(informerFactory kubeinformers.SharedInformerFactory) {
-	informerFactory.Core().V1().ConfigMaps().Informer()
+func (c *Controller) subscribeToAppClusterEvents(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory shipperinformers.SharedInformerFactory) {
+	kubeInformerFactory.Core().V1().ConfigMaps().Informer()
 }
 
 type WorkItem interface {

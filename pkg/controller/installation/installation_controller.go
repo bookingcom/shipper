@@ -125,7 +125,7 @@ func NewController(
 	return controller
 }
 
-func (c *Controller) registerAppClusterEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
+func (c *Controller) registerAppClusterEventHandlers(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory shipperinformers.SharedInformerFactory, clusterName string) {
 	handler := cache.FilteringResourceEventHandler{
 		FilterFunc: filters.BelongsToRelease,
 		Handler: cache.ResourceEventHandlerFuncs{
@@ -136,13 +136,13 @@ func (c *Controller) registerAppClusterEventHandlers(informerFactory kubeinforme
 			},
 		},
 	}
-	informerFactory.Apps().V1().Deployments().Informer().AddEventHandler(handler)
-	informerFactory.Core().V1().Services().Informer().AddEventHandler(handler)
+	kubeInformerFactory.Apps().V1().Deployments().Informer().AddEventHandler(handler)
+	kubeInformerFactory.Core().V1().Services().Informer().AddEventHandler(handler)
 }
 
-func (c *Controller) subscribeToAppClusterEvents(informerFactory kubeinformers.SharedInformerFactory) {
-	informerFactory.Apps().V1().Deployments().Informer()
-	informerFactory.Core().V1().Services().Informer()
+func (c *Controller) subscribeToAppClusterEvents(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory shipperinformers.SharedInformerFactory) {
+	kubeInformerFactory.Apps().V1().Deployments().Informer()
+	kubeInformerFactory.Core().V1().Services().Informer()
 }
 
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {

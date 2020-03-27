@@ -40,19 +40,20 @@ func (s *FakeClusterClientStore) AddEventHandlerCallback(c clusterclientstore.Ev
 }
 
 func (s *FakeClusterClientStore) Run(stopCh <-chan struct{}) {
-	for name, cluster := range s.clusters {
-		informerFactory := cluster.KubeInformerFactory
-
+	for _, cluster := range s.clusters {
 		for _, subscriptionCallback := range s.subscriptionCallbacks {
-			subscriptionCallback(informerFactory)
+			subscriptionCallback(cluster.KubeInformerFactory, cluster.ShipperInformerFactory)
 		}
 
 		for _, eventHandlerCallback := range s.eventHandlerCallbacks {
-			eventHandlerCallback(informerFactory, name)
+			eventHandlerCallback(cluster.KubeInformerFactory, cluster.ShipperInformerFactory, cluster.Name)
 		}
 
-		informerFactory.Start(stopCh)
-		informerFactory.WaitForCacheSync(stopCh)
+		cluster.KubeInformerFactory.Start(stopCh)
+		cluster.KubeInformerFactory.WaitForCacheSync(stopCh)
+
+		cluster.ShipperInformerFactory.Start(stopCh)
+		cluster.ShipperInformerFactory.WaitForCacheSync(stopCh)
 	}
 }
 
