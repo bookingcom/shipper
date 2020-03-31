@@ -124,9 +124,15 @@ func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
 		prettyExpected := prettyPrintAction(expected)
 		prettyActual := prettyPrintAction(actual)
 
-		diff, err := YamlDiff(prettyActual, prettyExpected)
+		diff, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
+			A:        difflib.SplitLines(string(prettyExpected)),
+			B:        difflib.SplitLines(string(prettyActual)),
+			FromFile: "Expected",
+			ToFile:   "Actual",
+			Context:  ContextLines,
+		})
 		if err != nil {
-			panic(fmt.Sprintf("couldn't generate yaml diff: %s", err))
+			panic(fmt.Sprintf("couldn't generate diff: %s", err))
 		}
 
 		t.Errorf("expected action is different from actual:\n%s", diff)
