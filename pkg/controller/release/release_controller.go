@@ -29,7 +29,6 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
-	conditions "github.com/bookingcom/shipper/pkg/util/conditions"
 	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	rolloutblock "github.com/bookingcom/shipper/pkg/util/rolloutblock"
@@ -37,8 +36,10 @@ import (
 )
 
 const (
-	AgentName        = "release-controller"
-	ClustersNotReady = "ClustersNotReady"
+	AgentName = "release-controller"
+
+	ClustersNotReady        = "ClustersNotReady"
+	StrategyExecutionFailed = "StrategyExecutionFailed"
 )
 
 // Controller is a Kubernetes controller whose role is to pick up a newly created
@@ -48,9 +49,6 @@ const (
 type Controller struct {
 	clientset shipperclient.Interface
 	store     clusterclientstore.Interface
-
-	applicationLister  shipperlisters.ApplicationLister
-	applicationsSynced cache.InformerSynced
 
 	releaseLister  shipperlisters.ReleaseLister
 	releasesSynced cache.InformerSynced
@@ -70,7 +68,7 @@ type Controller struct {
 	rolloutBlockLister shipperlisters.RolloutBlockLister
 	rolloutBlockSynced cache.InformerSynced
 
-	releaseWorkqueue workqueue.RateLimitingInterface
+	workqueue workqueue.RateLimitingInterface
 
 	chartFetcher shipperrepo.ChartFetcher
 
@@ -98,7 +96,6 @@ func NewController(
 	recorder record.EventRecorder,
 ) *Controller {
 
-	applicationInformer := informerFactory.Shipper().V1alpha1().Applications()
 	releaseInformer := informerFactory.Shipper().V1alpha1().Releases()
 	clusterInformer := informerFactory.Shipper().V1alpha1().Clusters()
 	installationTargetInformer := informerFactory.Shipper().V1alpha1().InstallationTargets()
@@ -111,9 +108,6 @@ func NewController(
 	controller := &Controller{
 		clientset: clientset,
 		store:     store,
-
-		applicationLister:  applicationInformer.Lister(),
-		applicationsSynced: applicationInformer.Informer().HasSynced,
 
 		releaseLister:  releaseInformer.Lister(),
 		releasesSynced: releaseInformer.Informer().HasSynced,
@@ -133,7 +127,7 @@ func NewController(
 		rolloutBlockLister: rolloutBlockInformer.Lister(),
 		rolloutBlockSynced: rolloutBlockInformer.Informer().HasSynced,
 
-		releaseWorkqueue: workqueue.NewNamedRateLimitingQueue(
+		workqueue: workqueue.NewNamedRateLimitingQueue(
 			shipperworkqueue.NewDefaultControllerRateLimiter(),
 			"release_controller_releases",
 		),
@@ -177,14 +171,13 @@ func NewController(
 // Run starts Release Controller workers and waits until stopCh is closed.
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
-	defer c.releaseWorkqueue.ShutDown()
+	defer c.workqueue.ShutDown()
 
 	klog.V(2).Info("Starting Release controller")
 	defer klog.V(2).Info("Shutting down Release controller")
 
 	if ok := cache.WaitForCacheSync(
 		stopCh,
-		c.applicationsSynced,
 		c.releasesSynced,
 		c.clustersSynced,
 		c.installationTargetsSynced,
@@ -206,20 +199,20 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 }
 
 func (c *Controller) runReleaseWorker() {
-	for c.processNextReleaseWorkItem() {
+	for c.processNextWorkItem() {
 	}
 }
 
 // processNextReleaseWorkItem pops an element from the head of the workqueue and
 // passes to the sync release handler. It returns bool indicating if the
 // execution process should go on.
-func (c *Controller) processNextReleaseWorkItem() bool {
-	obj, shutdown := c.releaseWorkqueue.Get()
+func (c *Controller) processNextWorkItem() bool {
+	obj, shutdown := c.workqueue.Get()
 	if shutdown {
 		return false
 	}
 
-	defer c.releaseWorkqueue.Done(obj)
+	defer c.workqueue.Done(obj)
 
 	var (
 		key string
@@ -227,7 +220,7 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 	)
 
 	if key, ok = obj.(string); !ok {
-		c.releaseWorkqueue.Forget(obj)
+		c.workqueue.Forget(obj)
 		runtime.HandleError(fmt.Errorf("invalid object key (will retry: false): %#v", obj))
 		return true
 	}
@@ -241,12 +234,12 @@ func (c *Controller) processNextReleaseWorkItem() bool {
 	}
 
 	if shouldRetry {
-		c.releaseWorkqueue.AddRateLimited(key)
+		c.workqueue.AddRateLimited(key)
 		return true
 	}
 
 	klog.V(4).Infof("Successfully synced Release %q", key)
-	c.releaseWorkqueue.Forget(obj)
+	c.workqueue.Forget(obj)
 
 	return true
 }
@@ -419,8 +412,8 @@ func (c *Controller) processRelease(rel *shipper.Release) (*shipper.Release, []S
 		releaseStrategyExecutedCond := releaseutil.NewReleaseCondition(
 			shipper.ReleaseConditionTypeStrategyExecuted,
 			corev1.ConditionFalse,
-			conditions.StrategyExecutionFailed,
-			fmt.Sprintf("failed to execute strategy: %q", err),
+			StrategyExecutionFailed,
+			err.Error(),
 		)
 		diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *releaseStrategyExecutedCond))
 
@@ -684,7 +677,7 @@ func (c *Controller) enqueueRelease(obj interface{}) {
 		return
 	}
 
-	c.releaseWorkqueue.Add(key)
+	c.workqueue.Add(key)
 }
 
 func (c *Controller) enqueueReleaseFromRolloutBlock(obj interface{}) {

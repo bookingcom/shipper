@@ -177,24 +177,6 @@ func NewDuplicateCapabilityRequirementError(capability string) DuplicateCapabili
 	}
 }
 
-type NotWorkingOnStrategyError struct {
-	contenderReleaseKey string
-}
-
-func (e NotWorkingOnStrategyError) Error() string {
-	return fmt.Sprintf("found %s as a contender, but it is not currently working on any strategy", e.contenderReleaseKey)
-}
-
-func (e NotWorkingOnStrategyError) ShouldRetry() bool {
-	return false
-}
-
-func NewNotWorkingOnStrategyError(contenderReleaseKey string) NotWorkingOnStrategyError {
-	return NotWorkingOnStrategyError{
-		contenderReleaseKey: contenderReleaseKey,
-	}
-}
-
 type InconsistentReleaseTargetStep struct {
 	relKey         string
 	gotTargetStep  int32
@@ -202,7 +184,7 @@ type InconsistentReleaseTargetStep struct {
 }
 
 func (e InconsistentReleaseTargetStep) Error() string {
-	return fmt.Sprintf("Release %s target step is inconsistent: unexpected value %d (expected: %d)",
+	return fmt.Sprintf("Release %q target step is inconsistent: unexpected value %d (expected: %d)",
 		e.relKey, e.gotTargetStep, e.wantTargetStep)
 }
 
