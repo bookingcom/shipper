@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"sort"
-	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -21,6 +20,7 @@ import (
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shipperclient "github.com/bookingcom/shipper/pkg/client"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperinformer "github.com/bookingcom/shipper/pkg/client/informers/externalversions/shipper/v1alpha1"
@@ -273,18 +273,17 @@ func (s *Store) syncSecret(key string) error {
 }
 
 func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
-	config, err := buildConfig(cluster.Spec.APIMaster, secret, s.restTimeout)
-	if err != nil {
-		return shippererrors.NewClusterClientBuild(cluster.Name, err)
+	config := shipperclient.BuildConfigFromClusterAndSecret(cluster, secret)
+	if s.restTimeout != nil {
+		config.Timeout = *s.restTimeout
 	}
 
-	// These are only used in shared informers. Setting HTTP timeout here would
-	// affect watches which is undesirable. Instead, we leave it to client-go (see
-	// k8s.io/client-go/tools/cache) to govern watch durations.
-	informerConfig, err := buildConfig(cluster.Spec.APIMaster, secret, nil)
-	if err != nil {
-		return shippererrors.NewClusterClientBuild(cluster.Name, err)
-	}
+	// These are only used in shared informers. Setting HTTP timeout here
+	// would affect watches which is undesirable. Instead, we leave it to
+	// client-go (see k8s.io/client-go/tools/cache) to govern watch
+	// durations.
+	informerConfig := rest.CopyConfig(config)
+	informerConfig.Timeout = noTimeout
 
 	kubeInformerClient, err := s.buildKubeClient(cluster.Name, AgentName, informerConfig)
 	if err != nil {
@@ -371,60 +370,6 @@ func (c *StoreClientset) GetShipperClient() shipperclientset.Interface {
 
 func (c *StoreClientset) GetShipperInformerFactory() shipperinformers.SharedInformerFactory {
 	return c.shipperInformerFactory
-}
-
-// TODO(btyler): error here or let any invalid data get picked up by errors from
-// kube.NewForConfig or auth problems at connection time?
-func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration) (*rest.Config, error) {
-	config := &rest.Config{
-		Host: host,
-	}
-
-	if restTimeout != nil {
-		config.Timeout = *restTimeout
-	}
-
-	// Can't use the ServiceAccountToken type because we don't want the service
-	// account controller to touch it.
-	_, tokenOK := secret.Data["token"]
-	if tokenOK {
-		ca := secret.Data["ca.crt"]
-		config.CAData = ca
-
-		token := secret.Data["token"]
-		config.BearerToken = string(token)
-		return config, nil
-	}
-
-	// Let's figure it's either a TLS secret or an opaque thing formatted like a
-	// TLS secret.
-
-	// The cluster secret controller does not include the CA in the secret: you end
-	// up using the system CA trust store. However, it's much handier for
-	// integration testing to be able to create a secret that is independent of the
-	// underlying system trust store.
-	if ca, ok := secret.Data["tls.ca"]; ok {
-		config.CAData = ca
-	}
-
-	if crt, ok := secret.Data["tls.crt"]; ok {
-		config.CertData = crt
-	}
-
-	if key, ok := secret.Data["tls.key"]; ok {
-		config.KeyData = key
-	}
-
-	if encodedInsecureSkipTlsVerify, ok := secret.Annotations[shipper.SecretClusterSkipTlsVerifyAnnotation]; ok {
-		if insecureSkipTlsVerify, err := strconv.ParseBool(encodedInsecureSkipTlsVerify); err == nil {
-			klog.Infof("found %q annotation with value %q for host %q", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify, host)
-			config.Insecure = insecureSkipTlsVerify
-		} else {
-			klog.Infof("found %q annotation with value %q for host %q but failed to decode a bool from it, ignoring it", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify, host)
-		}
-	}
-
-	return config, nil
 }
 
 func computeSecretChecksum(secret *corev1.Secret) string {

@@ -3,13 +3,16 @@ package client
 import (
 	"fmt"
 	"runtime"
+	"strconv"
 
+	corev1 "k8s.io/api/core/v1"
 	apiextensionclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	"github.com/bookingcom/shipper/pkg/version"
 )
@@ -32,6 +35,44 @@ func decorateConfig(config *rest.Config, ua string) *rest.Config {
 	cp.UserAgent = fmt.Sprintf("%s/%s (%s) %s", MainAgent, version.Version, platform, ua)
 
 	return cp
+}
+
+func BuildConfigFromClusterAndSecret(cluster *shipper.Cluster, secret *corev1.Secret) *rest.Config {
+	config := &rest.Config{
+		Host: cluster.Spec.APIMaster,
+	}
+
+	_, tokenOK := secret.Data["token"]
+	if tokenOK {
+		ca := secret.Data["ca.crt"]
+		config.CAData = ca
+
+		token := secret.Data["token"]
+		config.BearerToken = string(token)
+		return config
+	}
+
+	// Let's figure it's either a TLS secret or an opaque thing formatted
+	// like a TLS secret.
+	if ca, ok := secret.Data["tls.ca"]; ok {
+		config.CAData = ca
+	}
+
+	if crt, ok := secret.Data["tls.crt"]; ok {
+		config.CertData = crt
+	}
+
+	if key, ok := secret.Data["tls.key"]; ok {
+		config.KeyData = key
+	}
+
+	if encodedInsecureSkipTlsVerify, ok := secret.Annotations[shipper.SecretClusterSkipTlsVerifyAnnotation]; ok {
+		if insecureSkipTlsVerify, err := strconv.ParseBool(encodedInsecureSkipTlsVerify); err == nil {
+			config.Insecure = insecureSkipTlsVerify
+		}
+	}
+
+	return config
 }
 
 func NewKubeClient(ua string, config *rest.Config) (*kubernetes.Clientset, error) {
