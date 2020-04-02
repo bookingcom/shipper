@@ -14,8 +14,6 @@ import (
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
-var clusters = []string{"cluster-a"}
-
 // TestRendererSingleServiceLB tests that the renderer successfully adds the LB
 // label to a chart with a single service, both to services that do have a
 // label already, and also to ones that don't. It also checks that selectors
@@ -32,7 +30,6 @@ func TestRendererSingleService(t *testing.T) {
 		it := buildInstallationTarget(
 			shippertesting.TestNamespace,
 			shippertesting.TestApp,
-			clusters,
 			buildChart(reviewsChartName, chartVersion))
 
 		objects, err := FetchAndRenderChart(shippertesting.LocalFetchChart, it)
@@ -75,7 +72,6 @@ func TestRendererMultiService(t *testing.T) {
 		it := buildInstallationTarget(
 			shippertesting.TestNamespace,
 			shippertesting.TestApp,
-			clusters,
 			buildChart(test.chartName, test.chartVersion))
 
 		objects, err := FetchAndRenderChart(shippertesting.LocalFetchChart, it)
@@ -101,7 +97,6 @@ func TestRendererBrokenChartTarball(t *testing.T) {
 	it := buildInstallationTarget(
 		shippertesting.TestNamespace,
 		shippertesting.TestApp,
-		clusters,
 		buildChart("reviews-api", "broken-tarball"))
 
 	_, err := FetchAndRenderChart(shippertesting.LocalFetchChart, it)
@@ -121,7 +116,6 @@ func TestRendererBrokenObjects(t *testing.T) {
 	it := buildInstallationTarget(
 		shippertesting.TestNamespace,
 		shippertesting.TestApp,
-		clusters,
 		buildChart(reviewsChartName, "broken-k8s-objects"))
 
 	_, err := FetchAndRenderChart(shippertesting.LocalFetchChart, it)
@@ -142,7 +136,6 @@ func TestRendererInvalidDeploymentName(t *testing.T) {
 	it := buildInstallationTarget(
 		shippertesting.TestNamespace,
 		shippertesting.TestApp,
-		clusters,
 		buildChart(reviewsChartName, "invalid-deployment-name"))
 
 	_, err := FetchAndRenderChart(shippertesting.LocalFetchChart, it)
@@ -154,8 +147,6 @@ func TestRendererInvalidDeploymentName(t *testing.T) {
 	if _, ok := err.(shippererrors.InvalidChartError); !ok {
 		t.Fatalf("FetchAndRenderChart should fail with InvalidChartError, got %v instead", err)
 	}
-
-	t.Logf("FetchAndRenderChart failed as expected. errors was: %s", err.Error())
 }
 
 // TestRendererMultiServiceNoLB tests if the renderer returns an error when the
@@ -165,7 +156,6 @@ func TestRendererMultiServiceNoLB(t *testing.T) {
 	it := buildInstallationTarget(
 		shippertesting.TestNamespace,
 		shippertesting.TestApp,
-		clusters,
 		buildChart(reviewsChartName, "multi-service-no-lb"))
 
 	_, err := FetchAndRenderChart(shippertesting.LocalFetchChart, it)
@@ -189,7 +179,6 @@ func TestRendererServiceWithReleaseNoWorkaround(t *testing.T) {
 	it := buildInstallationTarget(
 		shippertesting.TestNamespace,
 		shippertesting.TestApp,
-		clusters,
 		buildChart(reviewsChartName, "0.0.1"))
 
 	// Disabling the helm workaround

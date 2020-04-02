@@ -14,17 +14,16 @@ import (
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
 	shipperrepo "github.com/bookingcom/shipper/pkg/chart/repo"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
 type Scheduler struct {
-	clientset shipperclientset.Interface
+	// TODO(jgreff): explain why we need this
+	clientset           shipperclientset.Interface
+	appClusterClientset shipperclientset.Interface
 
-	installationTargetLister listers.InstallationTargetLister
-	trafficTargetLister      listers.TrafficTargetLister
-	capacityTargetLister     listers.CapacityTargetLister
+	listers listers
 
 	chartFetcher shipperrepo.ChartFetcher
 
@@ -33,18 +32,16 @@ type Scheduler struct {
 
 func NewScheduler(
 	clientset shipperclientset.Interface,
-	installationTargerLister listers.InstallationTargetLister,
-	capacityTargetLister listers.CapacityTargetLister,
-	trafficTargetLister listers.TrafficTargetLister,
+	appClusterClientset shipperclientset.Interface,
+	listers listers,
 	chartFetcher shipperrepo.ChartFetcher,
 	recorder record.EventRecorder,
 ) *Scheduler {
 	return &Scheduler{
-		clientset: clientset,
+		clientset:           clientset,
+		appClusterClientset: appClusterClientset,
 
-		installationTargetLister: installationTargerLister,
-		trafficTargetLister:      trafficTargetLister,
-		capacityTargetLister:     capacityTargetLister,
+		listers: listers,
 
 		chartFetcher: chartFetcher,
 
@@ -121,16 +118,9 @@ func getReleaseClusters(rel *shipper.Release) []string {
 	return uniqRelClusters
 }
 
-// The 3 functions below are based on a basic cluster name set match, and never
+// The 2 functions below are based on a basic cluster name set match, and never
 // take into account a cluster weight change. This must be addressed in the
 // future.
-func installationTargetClustersMatch(it *shipper.InstallationTarget, clusters []string) bool {
-	itClusters := it.Spec.Clusters
-	sort.Strings(itClusters)
-
-	return stringSliceEqual(clusters, itClusters)
-}
-
 func capacityTargetClustersMatch(ct *shipper.CapacityTarget, clusters []string) bool {
 	ctClusters := make([]string, 0, len(ct.Spec.Clusters))
 	for _, ctc := range ct.Spec.Clusters {
@@ -149,10 +139,6 @@ func trafficTargetClustersMatch(tt *shipper.TrafficTarget, clusters []string) bo
 	sort.Strings(ttClusters)
 
 	return stringSliceEqual(clusters, ttClusters)
-}
-
-func setInstallationTargetClusters(it *shipper.InstallationTarget, clusters []string) {
-	it.Spec.Clusters = clusters
 }
 
 func setCapacityTargetClusters(ct *shipper.CapacityTarget, clusters []string, totalReplicaCount int32) {
@@ -183,21 +169,20 @@ func setTrafficTargetClusters(tt *shipper.TrafficTarget, clusters []string) {
 }
 
 func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shipper.InstallationTarget, error) {
-	clusters := getReleaseClusters(rel)
-
-	it, err := s.installationTargetLister.InstallationTargets(rel.GetNamespace()).Get(rel.GetName())
+	it, err := s.listers.installationTargetLister.InstallationTargets(rel.GetNamespace()).Get(rel.GetName())
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return nil, err
 		}
+
 		it := &shipper.InstallationTarget{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      rel.Name,
 				Namespace: rel.Namespace,
 				Labels:    rel.Labels,
-				OwnerReferences: []metav1.OwnerReference{
-					createOwnerRefFromRelease(rel),
-				},
+				// OwnerReferences: []metav1.OwnerReference{
+				// 	createOwnerRefFromRelease(rel),
+				// },
 			},
 			Spec: shipper.InstallationTargetSpec{
 				Chart:       rel.Spec.Environment.Chart,
@@ -205,9 +190,8 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 				CanOverride: true,
 			},
 		}
-		setInstallationTargetClusters(it, clusters)
 
-		updIt, err := s.clientset.ShipperV1alpha1().InstallationTargets(rel.GetNamespace()).Create(it)
+		updIt, err := s.appClusterClientset.ShipperV1alpha1().InstallationTargets(rel.GetNamespace()).Create(it)
 		if err != nil {
 			return nil, shippererrors.NewKubeclientCreateError(it, err)
 		}
@@ -223,25 +207,33 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 		return updIt, nil
 	}
 
-	if !objectBelongsToRelease(it, rel) {
-		return nil, shippererrors.NewWrongOwnerReferenceError(it, rel)
-	}
+	// TODO(jgreff): ensure things still make sense in this case
+	// if !objectBelongsToRelease(it, rel) {
+	// 	return nil, shippererrors.NewWrongOwnerReferenceError(it, rel)
+	// }
 
-	if !installationTargetClustersMatch(it, clusters) {
-		setInstallationTargetClusters(it, clusters)
-		updIt, err := s.clientset.ShipperV1alpha1().InstallationTargets(rel.GetNamespace()).Update(it)
-		if err != nil {
-			return nil, err
-		}
-		s.recorder.Eventf(
-			rel,
-			corev1.EventTypeNormal,
-			"ReleaseScheduled",
-			"Updated InstallationTarget %q cluster set to [%s]",
-			controller.MetaKey(updIt),
-			strings.Join(clusters, ","))
-		return updIt, nil
-	}
+	// TODO(jgreff): ensure InstallationTargets are inserted and removed from clusters correctly
+	// if !installationTargetClustersMatch(it, clusters) {
+	// 	klog.V(4).Infof("Updating InstallationTarget %q clusters to %s",
+	// 		controller.MetaKey(it),
+	// 		strings.Join(clusters, ","))
+	// 	setInstallationTargetClusters(it, clusters)
+	// 	updIt, err := s.clientset.ShipperV1alpha1().InstallationTargets(rel.GetNamespace()).Update(it)
+	// 	if err != nil {
+	// 		klog.Errorf("Failed to update InstallationTarget %q clusters: %s",
+	// 			controller.MetaKey(it),
+	// 			err)
+	// 		return nil, err
+	// 	}
+	// 	s.recorder.Eventf(
+	// 		rel,
+	// 		corev1.EventTypeNormal,
+	// 		"ReleaseScheduled",
+	// 		"Updated InstallationTarget %q cluster set to [%s]",
+	// 		controller.MetaKey(updIt),
+	// 		strings.Join(clusters, ","))
+	// 	return updIt, nil
+	// }
 
 	return it, nil
 }
@@ -249,7 +241,7 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalReplicaCount int32) (*shipper.CapacityTarget, error) {
 	clusters := getReleaseClusters(rel)
 
-	ct, err := s.capacityTargetLister.CapacityTargets(rel.GetNamespace()).Get(rel.GetName())
+	ct, err := s.listers.capacityTargetLister.CapacityTargets(rel.GetNamespace()).Get(rel.GetName())
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return nil, err
@@ -308,7 +300,7 @@ func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalRepl
 func (s *Scheduler) CreateOrUpdateTrafficTarget(rel *shipper.Release) (*shipper.TrafficTarget, error) {
 	clusters := getReleaseClusters(rel)
 
-	tt, err := s.trafficTargetLister.TrafficTargets(rel.GetNamespace()).Get(rel.GetName())
+	tt, err := s.listers.trafficTargetLister.TrafficTargets(rel.GetNamespace()).Get(rel.GetName())
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return nil, err
@@ -385,7 +377,12 @@ func extractReplicasFromChartForRel(chart *helmchart.Chart, rel *shipper.Release
 	}
 
 	applicationName := owners[0].Name
-	rendered, err := shipperchart.Render(chart, applicationName, rel.Namespace, &rel.Spec.Environment.Values)
+	rendered, err := shipperchart.Render(
+		chart,
+		applicationName,
+		rel.Namespace,
+		&rel.Spec.Environment.Values)
+
 	if err != nil {
 		return 0, shippererrors.NewBrokenChartSpecError(
 			&rel.Spec.Environment.Chart,

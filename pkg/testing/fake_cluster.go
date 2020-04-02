@@ -12,9 +12,7 @@ import (
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
 
-	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 )
@@ -73,7 +71,7 @@ func (c *FakeCluster) InitializeDynamicClient(objects []runtime.Object) {
 	c.DynamicClient = fakedynamic.NewSimpleDynamicClient(scheme.Scheme, objects...)
 }
 
-func (c *FakeCluster) DynamicClientBuilder(kind *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipper.Cluster) (dynamic.Interface, error) {
+func (c *FakeCluster) DynamicClientBuilder(kind *schema.GroupVersionKind) (dynamic.Interface, error) {
 	if c.DynamicClient == nil {
 		return nil, fmt.Errorf(
 			"cluster %q does not have an initialized DynamicClient. please call InitializeDynamicClient first",

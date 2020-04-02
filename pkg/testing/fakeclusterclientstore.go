@@ -23,8 +23,10 @@ type FakeClusterClientStore struct {
 
 var _ clusterclientstore.Interface = (*FakeClusterClientStore)(nil)
 
-func NewFakeClusterClientStore(clusters map[string]*FakeCluster) *FakeClusterClientStore {
-	return &FakeClusterClientStore{clusters: clusters}
+func NewFakeClusterClientStore() *FakeClusterClientStore {
+	return &FakeClusterClientStore{
+		clusters: make(map[string]*FakeCluster),
+	}
 }
 
 func (s *FakeClusterClientStore) AddCluster(c *FakeCluster) {
