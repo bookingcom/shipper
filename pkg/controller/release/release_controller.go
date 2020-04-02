@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -29,6 +30,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller"
 	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	"github.com/bookingcom/shipper/pkg/util/diff"
 	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	rolloutblock "github.com/bookingcom/shipper/pkg/util/rolloutblock"
@@ -38,7 +40,9 @@ import (
 const (
 	AgentName = "release-controller"
 
+	ClustersChosen          = "ClustersChosen"
 	ClustersNotReady        = "ClustersNotReady"
+	InternalError           = "InternalError"
 	StrategyExecutionFailed = "StrategyExecutionFailed"
 )
 
@@ -55,9 +59,6 @@ type Controller struct {
 
 	clusterLister  shipperlisters.ClusterLister
 	clustersSynced cache.InformerSynced
-
-	installationTargetLister  shipperlisters.InstallationTargetLister
-	installationTargetsSynced cache.InformerSynced
 
 	trafficTargetLister  shipperlisters.TrafficTargetLister
 	trafficTargetsSynced cache.InformerSynced
@@ -82,6 +83,12 @@ type releaseInfo struct {
 	capacityTarget     *shipper.CapacityTarget
 }
 
+type listers struct {
+	installationTargetLister shipperlisters.InstallationTargetLister
+	capacityTargetLister     shipperlisters.CapacityTargetLister
+	trafficTargetLister      shipperlisters.TrafficTargetLister
+}
+
 type ReleaseStrategyStateTransition struct {
 	State    string
 	Previous shipper.StrategyState
@@ -98,7 +105,6 @@ func NewController(
 
 	releaseInformer := informerFactory.Shipper().V1alpha1().Releases()
 	clusterInformer := informerFactory.Shipper().V1alpha1().Clusters()
-	installationTargetInformer := informerFactory.Shipper().V1alpha1().InstallationTargets()
 	trafficTargetInformer := informerFactory.Shipper().V1alpha1().TrafficTargets()
 	capacityTargetInformer := informerFactory.Shipper().V1alpha1().CapacityTargets()
 	rolloutBlockInformer := informerFactory.Shipper().V1alpha1().RolloutBlocks()
@@ -114,9 +120,6 @@ func NewController(
 
 		clusterLister:  clusterInformer.Lister(),
 		clustersSynced: clusterInformer.Informer().HasSynced,
-
-		installationTargetLister:  installationTargetInformer.Lister(),
-		installationTargetsSynced: installationTargetInformer.Informer().HasSynced,
 
 		trafficTargetLister:  trafficTargetInformer.Lister(),
 		trafficTargetsSynced: trafficTargetInformer.Informer().HasSynced,
@@ -161,9 +164,16 @@ func NewController(
 		DeleteFunc: controller.enqueueReleaseFromAssociatedObject,
 	}
 
-	installationTargetInformer.Informer().AddEventHandler(eventHandler)
 	capacityTargetInformer.Informer().AddEventHandler(eventHandler)
 	trafficTargetInformer.Informer().AddEventHandler(eventHandler)
+
+	store.AddSubscriptionCallback(func(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory shipperinformers.SharedInformerFactory) {
+		shipperInformerFactory.Shipper().V1alpha1().InstallationTargets().Informer()
+	})
+
+	store.AddEventHandlerCallback(func(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory shipperinformers.SharedInformerFactory, clusterName string) {
+		shipperInformerFactory.Shipper().V1alpha1().InstallationTargets().Informer().AddEventHandler(eventHandler)
+	})
 
 	return controller
 }
@@ -180,7 +190,6 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 		stopCh,
 		c.releasesSynced,
 		c.clustersSynced,
-		c.installationTargetsSynced,
 		c.trafficTargetsSynced,
 		c.capacityTargetsSynced,
 		c.rolloutBlockSynced,
@@ -203,7 +212,7 @@ func (c *Controller) runReleaseWorker() {
 	}
 }
 
-// processNextReleaseWorkItem pops an element from the head of the workqueue and
+// processNextWorkItem pops an element from the head of the workqueue and
 // passes to the sync release handler. It returns bool indicating if the
 // execution process should go on.
 func (c *Controller) processNextWorkItem() bool {
@@ -296,15 +305,6 @@ func (c *Controller) processRelease(rel *shipper.Release) (*shipper.Release, []S
 		}
 	}()
 
-	scheduler := NewScheduler(
-		c.clientset,
-		c.installationTargetLister,
-		c.capacityTargetLister,
-		c.trafficTargetLister,
-		c.chartFetcher,
-		c.recorder,
-	)
-
 	rolloutBlocked, events, err := rolloutblock.BlocksRollout(c.rolloutBlockLister, rel)
 	for _, ev := range events {
 		c.recorder.Event(rel, ev.Type, ev.Reason, ev.Message)
@@ -335,59 +335,11 @@ func (c *Controller) processRelease(rel *shipper.Release) (*shipper.Release, []S
 	)
 	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
-	clusterAnnotation, ok := rel.Annotations[shipper.ReleaseClustersAnnotation]
-	if !ok || len(clusterAnnotation) == 0 {
-		selector := labels.Everything()
-		allClusters, err := c.clusterLister.List(selector)
-		if err != nil {
-			err = shippererrors.NewKubeclientListError(
-				shipper.SchemeGroupVersion.WithKind("Cluster"),
-				"", selector, err)
-
-			reason := reasonForReleaseCondition(err)
-			condition := releaseutil.NewReleaseCondition(
-				shipper.ReleaseConditionTypeScheduled,
-				corev1.ConditionFalse,
-				reason,
-				err.Error(),
-			)
-			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
-
-			return rel, nil, err
-		}
-
-		selectedClusters, err := computeTargetClusters(rel, allClusters)
-		if err != nil {
-			reason := reasonForReleaseCondition(err)
-			condition := releaseutil.NewReleaseCondition(
-				shipper.ReleaseConditionTypeScheduled,
-				corev1.ConditionFalse,
-				reason,
-				err.Error(),
-			)
-			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
-
-			return rel, nil, err
-		}
-
-		setReleaseClusters(rel, selectedClusters)
-
-		c.recorder.Eventf(
-			rel,
-			corev1.EventTypeNormal,
-			"ClustersSelected",
-			"Set clusters for %q to %v",
-			shippercontroller.MetaKey(rel),
-			selectedClusters,
-		)
-	}
-
-	klog.V(4).Infof("Scheduling release %q", controller.MetaKey(rel))
-	relinfo, err := scheduler.ScheduleRelease(rel.DeepCopy())
+	rel, clusterNames, err := c.chooseClusters(rel)
 	if err != nil {
 		reason := reasonForReleaseCondition(err)
 		condition := releaseutil.NewReleaseCondition(
-			shipper.ReleaseConditionTypeScheduled,
+			shipper.ReleaseConditionTypeClustersChosen,
 			corev1.ConditionFalse,
 			reason,
 			err.Error(),
@@ -397,33 +349,144 @@ func (c *Controller) processRelease(rel *shipper.Release) (*shipper.Release, []S
 		return rel, nil, err
 	}
 
-	rel = relinfo.release
-
 	condition = releaseutil.NewReleaseCondition(
-		shipper.ReleaseConditionTypeScheduled,
+		shipper.ReleaseConditionTypeClustersChosen,
 		corev1.ConditionTrue,
-		"",
-		"",
+		ClustersChosen,
+		strings.Join(clusterNames, ","),
 	)
 	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
-	execRel, patches, err := c.executeReleaseStrategy(relinfo, diff)
-	if err != nil {
-		releaseStrategyExecutedCond := releaseutil.NewReleaseCondition(
-			shipper.ReleaseConditionTypeStrategyExecuted,
-			corev1.ConditionFalse,
-			StrategyExecutionFailed,
-			err.Error(),
-		)
-		diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *releaseStrategyExecutedCond))
-
-		return rel, patches, err
-	}
-
-	return execRel, patches, nil
+	return c.scheduleAndExecuteStrategyForClusters(rel, clusterNames, diff)
 }
 
-func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil.MultiDiff) (*shipper.Release, []StrategyPatch, error) {
+func (c *Controller) chooseClusters(rel *shipper.Release) (*shipper.Release, []string, error) {
+	clusterAnnotation, ok := rel.Annotations[shipper.ReleaseClustersAnnotation]
+	if ok && len(clusterAnnotation) > 0 {
+		return rel, strings.Split(clusterAnnotation, ","), nil
+	}
+
+	selector := labels.Everything()
+	allClusters, err := c.clusterLister.List(selector)
+	if err != nil {
+		return rel, nil, shippererrors.NewKubeclientListError(
+			shipper.SchemeGroupVersion.WithKind("Cluster"),
+			"", selector, err)
+
+	}
+
+	selectedClusters, err := computeTargetClusters(rel, allClusters)
+	if err != nil {
+		return rel, nil, err
+	}
+
+	setReleaseClusters(rel, selectedClusters)
+
+	clusterAnnotation = rel.Annotations[shipper.ReleaseClustersAnnotation]
+	if len(clusterAnnotation) == 0 {
+		return rel, []string{}, nil
+	}
+
+	return rel, strings.Split(clusterAnnotation, ","), nil
+}
+
+func (c *Controller) scheduleAndExecuteStrategyForClusters(
+	rel *shipper.Release,
+	clusters []string,
+	diff *diff.MultiDiff,
+) (*shipper.Release, []StrategyPatch, error) {
+	for _, clusterName := range clusters {
+		appClusterClients, err := c.store.GetApplicationClusterClientset(clusterName, AgentName)
+		if err != nil {
+			condition := releaseutil.NewReleaseCondition(
+				shipper.ReleaseConditionTypeScheduled,
+				corev1.ConditionFalse,
+				InternalError,
+				err.Error(),
+			)
+			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
+
+			return rel, nil, err
+		}
+
+		// TODO(jgreff): replace mgmt cluster listers with app cluster
+		// ones once they're moved
+		informerFactory := appClusterClients.GetShipperInformerFactory()
+		listers := listers{
+			installationTargetLister: informerFactory.Shipper().V1alpha1().InstallationTargets().Lister(),
+			capacityTargetLister:     c.capacityTargetLister,
+			trafficTargetLister:      c.trafficTargetLister,
+		}
+
+		scheduler := NewScheduler(
+			c.clientset,
+			appClusterClients.GetShipperClient(),
+			listers,
+			c.chartFetcher,
+			c.recorder,
+		)
+
+		relinfo, err := scheduler.ScheduleRelease(rel.DeepCopy())
+		if err != nil {
+			reason := reasonForReleaseCondition(err)
+			condition := releaseutil.NewReleaseCondition(
+				shipper.ReleaseConditionTypeScheduled,
+				corev1.ConditionFalse,
+				reason,
+				err.Error(),
+			)
+			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
+
+			return rel, nil, err
+		}
+
+		rel = relinfo.release
+
+		condition := releaseutil.NewReleaseCondition(
+			shipper.ReleaseConditionTypeScheduled,
+			corev1.ConditionTrue,
+			"",
+			"",
+		)
+		diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
+
+		execRel, patches, err := c.executeReleaseStrategyForCluster(relinfo, clusterName, listers, diff)
+		if err != nil {
+			releaseStrategyExecutedCond := releaseutil.NewReleaseCondition(
+				shipper.ReleaseConditionTypeStrategyExecuted,
+				corev1.ConditionFalse,
+				StrategyExecutionFailed,
+				err.Error(),
+			)
+			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *releaseStrategyExecutedCond))
+
+			return rel, patches, err
+		}
+
+		rel = execRel
+
+		condition = releaseutil.NewReleaseCondition(
+			shipper.ReleaseConditionTypeStrategyExecuted,
+			corev1.ConditionTrue,
+			"",
+			"",
+		)
+		diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
+
+		if len(patches) > 0 {
+			return rel, patches, nil
+		}
+	}
+
+	return rel, nil, nil
+}
+
+func (c *Controller) executeReleaseStrategyForCluster(
+	relinfo *releaseInfo,
+	clusterName string,
+	listers listers,
+	diff *diffutil.MultiDiff,
+) (*shipper.Release, []StrategyPatch, error) {
 	rel := relinfo.release.DeepCopy()
 
 	releases, err := c.applicationReleases(rel)
@@ -437,7 +500,7 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 
 	var relinfoPrev, relinfoSucc *releaseInfo
 	if prev != nil {
-		relinfoPrev, err = c.buildReleaseInfo(prev)
+		relinfoPrev, err = c.buildReleaseInfo(prev, listers)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -457,7 +520,7 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 			)
 		}
 
-		relinfoSucc, err = c.buildReleaseInfo(succ)
+		relinfoSucc, err = c.buildReleaseInfo(succ, listers)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -492,14 +555,6 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 	} else {
 		klog.V(4).Infof("Strategy has been executed for release %q, applying patches", controller.MetaKey(rel))
 	}
-
-	condition := releaseutil.NewReleaseCondition(
-		shipper.ReleaseConditionTypeStrategyExecuted,
-		corev1.ConditionTrue,
-		"",
-		"",
-	)
-	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
 	isLastStep := int(targetStep) == len(strategy.Steps)-1
 	prevStep := rel.Status.AchievedStep
@@ -561,8 +616,6 @@ func (c *Controller) applyPatch(namespace string, patch StrategyPatch) error {
 	switch gvk.Kind {
 	case "Release":
 		_, err = c.clientset.ShipperV1alpha1().Releases(namespace).Patch(name, types.MergePatchType, b)
-	case "InstallationTarget":
-		_, err = c.clientset.ShipperV1alpha1().InstallationTargets(namespace).Patch(name, types.MergePatchType, b)
 	case "CapacityTarget":
 		_, err = c.clientset.ShipperV1alpha1().CapacityTargets(namespace).Patch(name, types.MergePatchType, b)
 	case "TrafficTarget":
@@ -581,36 +634,37 @@ func (c *Controller) applyPatch(namespace string, patch StrategyPatch) error {
 // associated object in the format:
 // <namespace> / <release name>
 func (c *Controller) getAssociatedReleaseName(obj metav1.Object) (string, error) {
-	references := obj.GetOwnerReferences()
-	if n := len(references); n != 1 {
-		return "", shippererrors.NewMultipleOwnerReferencesError(obj.GetName(), n)
+	release, ok := obj.GetLabels()[shipper.ReleaseLabel]
+	if !ok || len(release) == 0 {
+		return "", shippererrors.NewMultipleOwnerReferencesError(obj.GetName(), 0)
 	}
 
-	owner := references[0]
-
-	return owner.Name, nil
+	return release, nil
 }
 
 // buildReleaseInfo returns a release and it's associated objects fetched from
 // the lister interface. If some of them could not be found, it returns a
 // corresponding error.
-func (c *Controller) buildReleaseInfo(rel *shipper.Release) (*releaseInfo, error) {
+func (c *Controller) buildReleaseInfo(
+	rel *shipper.Release,
+	listers listers,
+) (*releaseInfo, error) {
 	ns := rel.Namespace
 	name := rel.Name
 
-	installationTarget, err := c.installationTargetLister.InstallationTargets(ns).Get(name)
+	installationTarget, err := listers.installationTargetLister.InstallationTargets(ns).Get(name)
 	if err != nil {
 		return nil, shippererrors.NewKubeclientGetError(ns, name, err).
 			WithShipperKind("InstallationTarget")
 	}
 
-	capacityTarget, err := c.capacityTargetLister.CapacityTargets(ns).Get(name)
+	capacityTarget, err := listers.capacityTargetLister.CapacityTargets(ns).Get(name)
 	if err != nil {
 		return nil, shippererrors.NewKubeclientGetError(ns, name, err).
 			WithShipperKind("CapacityTarget")
 	}
 
-	trafficTarget, err := c.trafficTargetLister.TrafficTargets(ns).Get(name)
+	trafficTarget, err := listers.trafficTargetLister.TrafficTargets(ns).Get(name)
 	if err != nil {
 		return nil, shippererrors.NewKubeclientGetError(ns, name, err).
 			WithShipperKind("TrafficTarget")

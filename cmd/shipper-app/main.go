@@ -47,7 +47,6 @@ var controllers = []string{
 	"installation",
 	"capacity",
 	"traffic",
-	"janitor",
 }
 
 const defaultRESTTimeout time.Duration = 10 * time.Second
@@ -136,26 +135,30 @@ func main() {
 
 	enabledControllers := buildEnabledControllers(*enabledControllers, *disabledControllers)
 
-	secretInformer := corev1informers.New(kubeInformerFactory, *ns, nil).Secrets()
-	store := clusterclientstore.NewStore(
-		func(clusterName string, ua string, config *rest.Config) (kubernetes.Interface, error) {
-			return client.NewKubeClient(ua, config)
-		},
-		func(_, ua string, config *rest.Config) (shipperclientset.Interface, error) {
-			return client.NewShipperClient(ua, config)
-		},
-		secretInformer,
-		shipperInformerFactory,
-		*ns,
-		restTimeout,
-	)
-
 	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		store.Run(stopCh)
-		wg.Done()
-	}()
+	var store *clusterclientstore.Store
+
+	if !enabledControllers["installation"] {
+		secretInformer := corev1informers.New(kubeInformerFactory, *ns, nil).Secrets()
+		store = clusterclientstore.NewStore(
+			func(clusterName string, ua string, config *rest.Config) (kubernetes.Interface, error) {
+				return client.NewKubeClient(ua, config)
+			},
+			func(_, ua string, config *rest.Config) (shipperclientset.Interface, error) {
+				return client.NewShipperClient(ua, config)
+			},
+			secretInformer,
+			shipperInformerFactory,
+			*ns,
+			restTimeout,
+		)
+
+		wg.Add(1)
+		go func() {
+			store.Run(stopCh)
+			wg.Done()
+		}()
+	}
 
 	klog.V(1).Infof("Chart cache stored at %q", *chartCacheDir)
 	klog.V(1).Infof("REST client timeout is %s", *restTimeout)
@@ -350,13 +353,14 @@ func startInstallationController(cfg *cfg) (bool, error) {
 		return false, nil
 	}
 
-	dynamicClientBuilderFunc := func(gvk *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipper.Cluster) (dynamic.Interface, error) {
-		return client.NewDynamicClient(installation.AgentName, restConfig, gvk)
+	dynamicClientBuilderFunc := func(gvk *schema.GroupVersionKind) (dynamic.Interface, error) {
+		return client.NewDynamicClient(installation.AgentName, cfg.restCfg, gvk)
 	}
 
 	c := installation.NewController(
+		client.NewKubeClientOrDie(installation.AgentName, cfg.restCfg),
+		cfg.kubeInformerFactory,
 		client.NewShipperClientOrDie(installation.AgentName, cfg.restCfg),
-		cfg.store,
 		cfg.shipperInformerFactory,
 		dynamicClientBuilderFunc,
 		cfg.chartFetcher,

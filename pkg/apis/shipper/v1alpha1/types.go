@@ -206,6 +206,7 @@ type AchievedStep struct {
 type ReleaseConditionType string
 
 const (
+	ReleaseConditionTypeClustersChosen   ReleaseConditionType = "ClustersChosen"
 	ReleaseConditionTypeScheduled        ReleaseConditionType = "Scheduled"
 	ReleaseConditionTypeStrategyExecuted ReleaseConditionType = "StrategyExecuted"
 	ReleaseConditionTypeComplete         ReleaseConditionType = "Complete"
@@ -298,25 +299,10 @@ type InstallationTargetList struct {
 }
 
 type InstallationTargetStatus struct {
-	Clusters   []*ClusterInstallationStatus `json:"clusters,omitempty"`
-	Conditions []TargetCondition            `json:"conditions,omitempty"`
-}
-
-type ClusterInstallationStatus struct {
-	Name       string                         `json:"name"`
-	Conditions []ClusterInstallationCondition `json:"conditions,omitempty"`
-}
-
-type ClusterInstallationCondition struct {
-	Type               ClusterConditionType   `json:"type"`
-	Status             corev1.ConditionStatus `json:"status"`
-	LastTransitionTime metav1.Time            `json:"lastTransitionTime,omitempty"`
-	Reason             string                 `json:"reason,omitempty"`
-	Message            string                 `json:"message,omitempty"`
+	Conditions []TargetCondition `json:"conditions,omitempty"`
 }
 
 type InstallationTargetSpec struct {
-	Clusters    []string    `json:"clusters"`
 	CanOverride bool        `json:"canOverride"`
 	Chart       Chart       `json:"chart"`
 	Values      ChartValues `json:"values,omitempty"`

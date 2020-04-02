@@ -54,25 +54,3 @@ func IsClusterCapacityReady(conditions []shipper.ClusterCapacityCondition) (bool
 
 	return true, ""
 }
-
-func IsClusterInstallationReady(conditions []shipper.ClusterInstallationCondition) (bool, string) {
-	var readyCond shipper.ClusterInstallationCondition
-	for _, c := range conditions {
-		if c.Type == shipper.ClusterConditionTypeReady {
-			readyCond = c
-			break
-		}
-	}
-
-	if readyCond.Status != corev1.ConditionTrue {
-		msg := readyCond.Reason
-
-		if readyCond.Message != "" {
-			msg = fmt.Sprintf("%s %s", msg, readyCond.Message)
-		}
-
-		return false, msg
-	}
-
-	return true, ""
-}

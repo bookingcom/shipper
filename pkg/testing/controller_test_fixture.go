@@ -3,10 +3,6 @@ package testing
 import (
 	"fmt"
 
-	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 )
 
@@ -22,7 +18,7 @@ type ControllerTestFixture struct {
 func NewControllerTestFixture() *ControllerTestFixture {
 	const recorderBufSize = 42
 
-	store := NewFakeClusterClientStore(map[string]*FakeCluster{})
+	store := NewFakeClusterClientStore()
 	fakeCluster := NewNamedFakeCluster("mgmt")
 
 	return &ControllerTestFixture{
@@ -47,17 +43,6 @@ func (f *ControllerTestFixture) AddNamedCluster(name string) *FakeCluster {
 func (f *ControllerTestFixture) AddCluster() *FakeCluster {
 	name := fmt.Sprintf("cluster-%d", len(f.Clusters))
 	return f.AddNamedCluster(name)
-}
-
-func (f *ControllerTestFixture) DynamicClientBuilder(
-	kind *schema.GroupVersionKind,
-	restConfig *rest.Config,
-	cluster *shipper.Cluster,
-) (dynamic.Interface, error) {
-	if fdc, ok := f.Clusters[cluster.Name]; ok {
-		return fdc.DynamicClient, nil
-	}
-	return nil, fmt.Errorf("couldn't find client for %q", cluster.Name)
 }
 
 func (f *ControllerTestFixture) Run(stopCh chan struct{}) {

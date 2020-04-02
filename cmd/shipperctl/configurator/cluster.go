@@ -90,6 +90,11 @@ func (c *Cluster) CreateClusterRole(domain, name string) error {
 				Resources: []string{"secrets"},
 			},
 			rbacv1.PolicyRule{
+				Verbs:     []string{"get", "list", "watch"},
+				APIGroups: []string{""},
+				Resources: []string{"namespaces"},
+			},
+			rbacv1.PolicyRule{
 				Verbs:     []string{rbacv1.VerbAll},
 				APIGroups: []string{""},
 				Resources: []string{"events"},
@@ -169,12 +174,15 @@ func (c *Cluster) FetchSecretForServiceAccount(name, namespace string) (*corev1.
 	}
 
 	secretName := serviceAccount.Secrets[0].Name
-	secret, err := c.KubeClient.CoreV1().Secrets(namespace).Get(secretName, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
+	return c.FetchSecret(secretName, namespace)
+}
 
-	return secret, nil
+func (c *Cluster) FetchSecret(name, namespace string) (*corev1.Secret, error) {
+	return c.KubeClient.CoreV1().Secrets(namespace).Get(name, metav1.GetOptions{})
+}
+
+func (c *Cluster) ListClusters() (*shipper.ClusterList, error) {
+	return c.ShipperClient.ShipperV1alpha1().Clusters().List(metav1.ListOptions{})
 }
 
 func (c *Cluster) FetchCluster(clusterName string) (*shipper.Cluster, error) {

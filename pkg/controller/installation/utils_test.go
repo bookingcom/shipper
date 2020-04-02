@@ -1,8 +1,6 @@
 package installation
 
 import (
-	"sort"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -12,8 +10,6 @@ import (
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 )
 
-type objectsPerClusterMap map[string][]runtime.Object
-
 const (
 	// charts need to match a file in "testdata/$chartName-$version.tar.gz"
 	nginxChartName   = "nginx"
@@ -21,14 +17,6 @@ const (
 )
 
 var (
-	ClusterInstallationOperational = shipper.ClusterInstallationCondition{
-		Type:   shipper.ClusterConditionTypeOperational,
-		Status: corev1.ConditionTrue,
-	}
-	ClusterInstallationReady = shipper.ClusterInstallationCondition{
-		Type:   shipper.ClusterConditionTypeReady,
-		Status: corev1.ConditionTrue,
-	}
 	TargetConditionOperational = shipper.TargetCondition{
 		Type:   shipper.TargetConditionTypeOperational,
 		Status: corev1.ConditionTrue,
@@ -73,31 +61,15 @@ var (
 	}
 )
 
-func buildCluster(name string) *shipper.Cluster {
-	return &shipper.Cluster{
-		ObjectMeta: v1.ObjectMeta{
-			Name: name,
-		},
-		Status: shipper.ClusterStatus{
-			InService: true,
-		},
-	}
-}
-
-func newFixture(objectsPerCluster objectsPerClusterMap) *shippertesting.ControllerTestFixture {
+func newFixture(objects []runtime.Object) *shippertesting.ControllerTestFixture {
 	f := shippertesting.NewControllerTestFixture()
-
-	for clusterName, objs := range objectsPerCluster {
-		cluster := f.AddNamedCluster(clusterName)
-		cluster.AddMany(objs)
-		cluster.InitializeDiscovery(apiResourceList)
-		cluster.InitializeDynamicClient(objs)
-	}
+	f.InitializeDiscovery(apiResourceList)
+	f.InitializeDynamicClient(objects)
 
 	return f
 }
 
-func buildInstallationTarget(namespace, appName string, clusters []string, chart shipper.Chart) *shipper.InstallationTarget {
+func buildInstallationTarget(namespace, appName string, chart shipper.Chart) *shipper.InstallationTarget {
 	return &shipper.InstallationTarget{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      appName,
@@ -108,7 +80,6 @@ func buildInstallationTarget(namespace, appName string, clusters []string, chart
 			},
 		},
 		Spec: shipper.InstallationTargetSpec{
-			Clusters:    clusters,
 			Chart:       chart,
 			Values:      nil,
 			CanOverride: true,
@@ -120,29 +91,5 @@ func buildChart(appName, version string) shipper.Chart {
 	return shipper.Chart{
 		Name:    appName,
 		Version: version,
-	}
-}
-
-func buildSuccessStatus(clusters []string) shipper.InstallationTargetStatus {
-	clusterStatuses := make([]*shipper.ClusterInstallationStatus, 0, len(clusters))
-
-	for _, cluster := range clusters {
-		clusterStatuses = append(clusterStatuses, &shipper.ClusterInstallationStatus{
-			Name: cluster,
-			Conditions: []shipper.ClusterInstallationCondition{
-				ClusterInstallationOperational,
-				ClusterInstallationReady,
-			},
-		})
-	}
-
-	sort.Sort(byClusterName(clusterStatuses))
-
-	return shipper.InstallationTargetStatus{
-		Clusters: clusterStatuses,
-		Conditions: []shipper.TargetCondition{
-			TargetConditionOperational,
-			TargetConditionReady,
-		},
 	}
 }

@@ -128,15 +128,10 @@ func buildAssociatedObjects(release *shipper.Release, clusters []*shipper.Cluste
 		shipper.ReleaseLabel: release.GetName(),
 	}
 
-	clusterInstallationTargets := make([]string, 0, len(clusters))
 	clusterCapacityTargets := make([]shipper.ClusterCapacityTarget, 0, len(clusters))
 	clusterTrafficTargets := make([]shipper.ClusterTrafficTarget, 0, len(clusters))
 
 	for _, cluster := range clusters {
-		clusterInstallationTargets = append(
-			clusterInstallationTargets,
-			cluster.GetName())
-
 		clusterCapacityTargets = append(
 			clusterCapacityTargets,
 			shipper.ClusterCapacityTarget{
@@ -154,13 +149,11 @@ func buildAssociatedObjects(release *shipper.Release, clusters []*shipper.Cluste
 
 	installationTarget := &shipper.InstallationTarget{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            release.GetName(),
-			Namespace:       release.GetNamespace(),
-			OwnerReferences: ownerReferences,
-			Labels:          labels,
+			Name:      release.GetName(),
+			Namespace: release.GetNamespace(),
+			Labels:    labels,
 		},
 		Spec: shipper.InstallationTargetSpec{
-			Clusters:    clusterInstallationTargets,
 			CanOverride: true,
 			Chart:       release.Spec.Environment.Chart,
 			Values:      release.Spec.Environment.Values,

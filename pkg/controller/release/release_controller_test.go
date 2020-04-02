@@ -71,6 +71,15 @@ var (
 	}
 )
 
+func ReleaseConditionClustersChosen(clusters []string) shipper.ReleaseCondition {
+	return shipper.ReleaseCondition{
+		Type:    shipper.ReleaseConditionTypeClustersChosen,
+		Status:  corev1.ConditionTrue,
+		Reason:  ClustersChosen,
+		Message: strings.Join(clusters, "'"),
+	}
+}
+
 func init() {
 	releaseutil.ConditionsShouldDiscardTimestamps = true
 	conditions.StrategyConditionsShouldDiscardTimestamps = true
@@ -141,7 +150,7 @@ func TestUnschedulable(t *testing.T) {
 		Conditions: []shipper.ReleaseCondition{
 			ReleaseConditionUnblocked,
 			{
-				Type:   shipper.ReleaseConditionTypeScheduled,
+				Type:   shipper.ReleaseConditionTypeClustersChosen,
 				Status: corev1.ConditionFalse,
 				Reason: "NotEnoughClustersInRegion",
 				Message: fmt.Sprintf(
@@ -157,6 +166,50 @@ func TestUnschedulable(t *testing.T) {
 			{
 				release: rel,
 				status:  expectedStatus,
+			},
+		})
+}
+
+// TestClusterUnreachable tests that a Release will not progress when it
+// already has clusters chosen, but they are unreachable.
+func TestClusterUnreachable(t *testing.T) {
+	rel := buildRelease(
+		shippertesting.TestNamespace,
+		shippertesting.TestApp,
+		"unreachable",
+		1,
+	)
+
+	// We give the release a cluster that won't exist, making the
+	// clusterclientstore consider it unreachable.
+	clusterName := "cluster-a"
+	rel.Annotations[shipper.ReleaseClustersAnnotation] = clusterName
+
+	mgmtClusterObjects := []runtime.Object{rel}
+	appClusterObjects := map[string][]runtime.Object{}
+
+	expectedStatus := shipper.ReleaseStatus{
+		Conditions: []shipper.ReleaseCondition{
+			ReleaseConditionUnblocked,
+			ReleaseConditionClustersChosen([]string{clusterName}),
+			{
+				Type:   shipper.ReleaseConditionTypeScheduled,
+				Status: corev1.ConditionFalse,
+				Reason: InternalError,
+				Message: fmt.Sprintf(
+					"no client for cluster %q",
+					clusterName,
+				),
+			},
+		},
+	}
+
+	runReleaseControllerTest(t, mgmtClusterObjects, appClusterObjects,
+		[]releaseControllerTestExpectation{
+			{
+				release:  rel,
+				status:   expectedStatus,
+				clusters: []string{clusterName},
 			},
 		})
 }
@@ -187,6 +240,7 @@ func TestInvalidStrategy(t *testing.T) {
 	expectedStatus := shipper.ReleaseStatus{
 		Conditions: []shipper.ReleaseCondition{
 			ReleaseConditionUnblocked,
+			ReleaseConditionClustersChosen([]string{cluster.Name}),
 			ReleaseConditionScheduled,
 			{
 				Type:   shipper.ReleaseConditionTypeStrategyExecuted,
@@ -232,8 +286,13 @@ func TestIntermediateStep(t *testing.T) {
 	cluster := buildCluster("cluster-a")
 	it, tt, ct := buildAssociatedObjectsWithStatus(rel, []*shipper.Cluster{cluster}, &achievedStep)
 
-	mgmtClusterObjects := []runtime.Object{rel, cluster, it, ct, tt}
-	appClusterObjects := map[string][]runtime.Object{}
+	// NOTE(jgreff): you'll note that it is in app cluster while ct and tt
+	// are in mgmt. that's scaffolding that needs to remain in place until
+	// we migrate all the objects to the app cluster.
+	mgmtClusterObjects := []runtime.Object{rel, cluster, ct, tt}
+	appClusterObjects := map[string][]runtime.Object{
+		cluster.Name: []runtime.Object{it},
+	}
 
 	expectedStatus := shipper.ReleaseStatus{
 		AchievedStep: &shipper.AchievedStep{
@@ -242,6 +301,7 @@ func TestIntermediateStep(t *testing.T) {
 		},
 		Conditions: []shipper.ReleaseCondition{
 			ReleaseConditionUnblocked,
+			ReleaseConditionClustersChosen([]string{cluster.Name}),
 			ReleaseConditionScheduled,
 			ReleaseConditionStrategyExecuted,
 		},
@@ -286,8 +346,13 @@ func TestLastStep(t *testing.T) {
 	cluster := buildCluster("cluster-a")
 	it, tt, ct := buildAssociatedObjectsWithStatus(rel, []*shipper.Cluster{cluster}, &achievedStep)
 
-	mgmtClusterObjects := []runtime.Object{rel, cluster, it, ct, tt}
-	appClusterObjects := map[string][]runtime.Object{}
+	// NOTE(jgreff): you'll note that it is in app cluster while ct and tt
+	// are in mgmt. that's scaffolding that needs to remain in place until
+	// we migrate all the objects to the app cluster.
+	mgmtClusterObjects := []runtime.Object{rel, cluster, ct, tt}
+	appClusterObjects := map[string][]runtime.Object{
+		cluster.Name: []runtime.Object{it},
+	}
 
 	expectedStatus := shipper.ReleaseStatus{
 		AchievedStep: &shipper.AchievedStep{
@@ -296,6 +361,7 @@ func TestLastStep(t *testing.T) {
 		},
 		Conditions: []shipper.ReleaseCondition{
 			ReleaseConditionUnblocked,
+			ReleaseConditionClustersChosen([]string{cluster.Name}),
 			ReleaseConditionComplete,
 			ReleaseConditionScheduled,
 			ReleaseConditionStrategyExecuted,
@@ -355,6 +421,7 @@ func TestIncumbentNotOnLastStep(t *testing.T) {
 	expectedStatus := shipper.ReleaseStatus{
 		Conditions: []shipper.ReleaseCondition{
 			ReleaseConditionUnblocked,
+			ReleaseConditionClustersChosen([]string{cluster.Name}),
 			ReleaseConditionScheduled,
 			{
 				Type:   shipper.ReleaseConditionTypeStrategyExecuted,

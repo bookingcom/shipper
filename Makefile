@@ -74,7 +74,8 @@ export CGO_ENABLED := 0
 # These are the targets you are most likely to use directly, either when
 # working on shipper, or via CI scripts.
 
-KUBECTL ?= kubectl -n $(SHIPPER_NAMESPACE)
+MGMT_KUBE_CONTEXT ?= kind-mgmt
+APP_KUBE_CONTEXT ?= kind-app
 
 .PHONY: install install-shipper install-shipper-mgmt install-shipper-app
 
@@ -83,12 +84,12 @@ install: install-shipper
 install-shipper: install-shipper-app install-shipper-mgmt
 
 install-shipper-app: build/shipper-app.image.$(IMAGE_TAG) build/shipper-app.deployment.$(IMAGE_TAG).yaml
-	$(KUBECTL) apply -f build/shipper-app.deployment.$(IMAGE_TAG).yaml
+	kubectl --context $(APP_KUBE_CONTEXT) -n $(SHIPPER_NAMESPACE) apply -f build/shipper-app.deployment.$(IMAGE_TAG).yaml
 
 install-shipper-mgmt: build/shipper-mgmt.image.$(IMAGE_TAG) build/shipper-mgmt.deployment.$(IMAGE_TAG).yaml
-	$(KUBECTL) apply -f build/shipper-mgmt.deployment.$(IMAGE_TAG).yaml
+	kubectl --context $(MGMT_KUBE_CONTEXT) -n $(SHIPPER_NAMESPACE) apply -f build/shipper-mgmt.deployment.$(IMAGE_TAG).yaml
 
-.PHONY: setup e2e restart logs lint test vendor verify-codegen update-codegen clean
+.PHONY: setup e2e restart logs-app logs-mgmt lint test vendor verify-codegen update-codegen clean
 
 # Set up shipper clusters with `shipperctl`. This is probably the first thing
 # you should do when starting to work on shipper, as most of everything else
@@ -96,6 +97,7 @@ install-shipper-mgmt: build/shipper-mgmt.image.$(IMAGE_TAG) build/shipper-mgmt.d
 setup: $(SHIPPER_CLUSTERS_YAML) build/shipperctl.$(GOOS)-amd64
 	./build/shipperctl.$(GOOS)-amd64 clusters setup management -n $(SHIPPER_NAMESPACE) $(SETUP_FLAGS)
 	./build/shipperctl.$(GOOS)-amd64 clusters join -f $(SHIPPER_CLUSTERS_YAML) -n $(SHIPPER_NAMESPACE) $(SETUP_FLAGS)
+	./build/shipperctl.$(GOOS)-amd64 clusters setup application -n $(SHIPPER_NAMESPACE) $(SETUP_FLAGS)
 
 # Run all end-to-end tests. It does all the work necessary to get the current
 # version of shipper on your working directory running in kubernetes, so just
@@ -110,11 +112,15 @@ e2e: install build/e2e.test
 # Delete all pods in $(SHIPPER_NAMESPACE), to force kubernetes to spawn new
 # ones with the latest image (assuming that imagePullPolicy is set to Always).
 restart:
-	$(KUBECTL) delete pods --all
+	kubectl --context $(APP_KUBE_CONTEXT) -n $(SHIPPER_NAMESPACE) delete pods -l app=shipper
+	kubectl --context $(MGMT_KUBE_CONTEXT) -n $(SHIPPER_NAMESPACE) delete pods -l app=shipper
 
 # Tail logs from shipper's pods.
-logs:
-	$(KUBECTL) logs -l app=shipper -f
+logs-app:
+	kubectl --context $(APP_KUBE_CONTEXT) -n $(SHIPPER_NAMESPACE) logs -l app=shipper -f
+
+logs-mgmt:
+	kubectl --context $(MGMT_KUBE_CONTEXT) -n $(SHIPPER_NAMESPACE) logs -l app=shipper -f
 
 # Run all linters. It's useful to run this one before pushing commits ;)
 lint:

@@ -57,18 +57,11 @@ var InstallationTarget = &apiextensionv1beta1.CustomResourceDefinition{
 					"spec": apiextensionv1beta1.JSONSchemaProps{
 						Type: "object",
 						Required: []string{
-							"clusters",
 							"canOverride",
+							"chart",
+							"values",
 						},
 						Properties: map[string]apiextensionv1beta1.JSONSchemaProps{
-							"clusters": apiextensionv1beta1.JSONSchemaProps{
-								Type: "array",
-								Items: &apiextensionv1beta1.JSONSchemaPropsOrArray{
-									Schema: &apiextensionv1beta1.JSONSchemaProps{
-										Type: "string",
-									},
-								},
-							},
 							"canOverride": apiextensionv1beta1.JSONSchemaProps{
 								Type: "boolean",
 							},

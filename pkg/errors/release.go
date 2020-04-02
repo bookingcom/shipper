@@ -54,7 +54,7 @@ type MissingGenerationAnnotationError struct {
 }
 
 func (e MissingGenerationAnnotationError) Error() string {
-	return fmt.Sprintf("missing label %q in release %q", shipper.ReleaseGenerationAnnotation, e.relName)
+	return fmt.Sprintf("missing annotation %q in release %q", shipper.ReleaseGenerationAnnotation, e.relName)
 }
 
 func (e MissingGenerationAnnotationError) ShouldRetry() bool {

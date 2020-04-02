@@ -60,10 +60,9 @@ func TestInstallerCleanInstall(t *testing.T) {
 	it := buildInstallationTarget(
 		shippertesting.TestNamespace,
 		shippertesting.TestApp,
-		clusters,
 		buildChart(reviewsChartName, "0.0.1"))
 
-	kubeObjects := objectsPerClusterMap{}
+	kubeObjects := []runtime.Object{}
 	anchoredSvc := convertToAnchoredUnstructured(baselineSvc.DeepCopy(), it)
 
 	expectedActions := []kubetesting.Action{
@@ -86,11 +85,10 @@ func TestInstallerExistingButNoOwners(t *testing.T) {
 	it := buildInstallationTarget(
 		shippertesting.TestNamespace,
 		shippertesting.TestApp,
-		clusters,
 		buildChart(reviewsChartName, "0.0.1"))
 
-	kubeObjects := objectsPerClusterMap{
-		clusters[0]: []runtime.Object{baselineSvc.DeepCopy()},
+	kubeObjects := []runtime.Object{
+		baselineSvc.DeepCopy(),
 	}
 	anchoredSvc := convertToAnchoredUnstructured(baselineSvc.DeepCopy(), it)
 
@@ -115,7 +113,6 @@ func TestInstallerExistingOwners(t *testing.T) {
 	it := buildInstallationTarget(
 		shippertesting.TestNamespace,
 		shippertesting.TestApp,
-		clusters,
 		buildChart(reviewsChartName, "0.0.1"))
 
 	ownedService := baselineSvc.DeepCopy()
@@ -128,8 +125,8 @@ func TestInstallerExistingOwners(t *testing.T) {
 		},
 	})
 
-	kubeObjects := objectsPerClusterMap{
-		clusters[0]: []runtime.Object{ownedService},
+	kubeObjects := []runtime.Object{
+		ownedService,
 	}
 
 	anchoredSvc := convertToAnchoredUnstructured(ownedService.DeepCopy(), it)
@@ -154,15 +151,14 @@ func TestInstallerNoOverride(t *testing.T) {
 	it := buildInstallationTarget(
 		shippertesting.TestNamespace,
 		shippertesting.TestApp,
-		clusters,
 		buildChart(reviewsChartName, "0.0.1"))
 	it.Spec.CanOverride = false
 
 	svc := baselineSvc.DeepCopy()
 	svc.Labels[shipper.InstallationTargetOwnerLabel] = "some-other-installation-target"
 
-	kubeObjects := objectsPerClusterMap{
-		clusters[0]: []runtime.Object{svc},
+	kubeObjects := []runtime.Object{
+		svc,
 	}
 
 	expectedActions := []kubetesting.Action{
@@ -214,26 +210,21 @@ func convertToAnchoredUnstructured(
 func runInstallerTest(
 	t *testing.T,
 	it *shipper.InstallationTarget,
-	objects objectsPerClusterMap,
+	objects []runtime.Object,
 	actions, dynamicActions []kubetesting.Action,
 ) {
 	installer := newInstaller(it)
 
 	f := newFixture(objects)
-
-	for clusterName, _ := range objects {
-		cluster := buildCluster(clusterName)
-		fakecluster := f.Clusters[clusterName]
-		err := installer.install(cluster, fakecluster.KubeClient, nil, fakecluster.DynamicClientBuilder)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// actions are only meant to be generated for ConfigMaps, so we don't
-		// check them too closely. Dynamic actions, on the other hand, are used
-		// to install the actual manifests into clusters, so we do deep check
-		// them.
-		shippertesting.ShallowCheckActions(actions, fakecluster.KubeClient.Actions(), t)
-		shippertesting.CheckActions(dynamicActions, fakecluster.DynamicClient.Actions(), t)
+	err := installer.install(f.KubeClient, f.DynamicClientBuilder)
+	if err != nil {
+		t.Fatal(err)
 	}
+
+	// actions are only meant to be generated for ConfigMaps, so we don't
+	// check them too closely. Dynamic actions, on the other hand, are used
+	// to install the actual manifests into clusters, so we do deep check
+	// them.
+	shippertesting.ShallowCheckActions(actions, f.KubeClient.Actions(), t)
+	shippertesting.CheckActions(dynamicActions, f.DynamicClient.Actions(), t)
 }

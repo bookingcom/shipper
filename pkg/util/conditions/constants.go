@@ -8,5 +8,4 @@ const (
 	ChartVersionResolutionFailed        = "ChartVersionResolutionFailed"
 	BrokenReleaseGeneration             = "BrokenReleaseGeneration"
 	BrokenApplicationObservedGeneration = "BrokenApplicationObservedGeneration"
-	StrategyExecutionFailed             = "StrategyExecutionFailed"
 )
