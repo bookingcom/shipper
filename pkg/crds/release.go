@@ -59,6 +59,12 @@ var Release = &apiextensionv1beta1.CustomResourceDefinition{
 				JSONPath:    ".status.achievedStep.name",
 			},
 			apiextensionv1beta1.CustomResourceColumnDefinition{
+				Name:        "Achieved Virtual Step",
+				Type:        "integer",
+				Description: "The current achieved virtual step for a release as defined by max surge.",
+				JSONPath:    ".status.achievedVirtualStep.virtualStep",
+			},
+			apiextensionv1beta1.CustomResourceColumnDefinition{
 				Name:        "Clusters",
 				Type:        "string",
 				Description: "The list of clusters where a release is supposed to be rolled out as per strategy.",

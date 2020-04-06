@@ -549,7 +549,7 @@ func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
 			f.waitForReleaseStrategyState("command", relName, i)
 		}
 
-		expectedCapacity := int(replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas)))
+		expectedCapacity := int(replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, int32(targetReplicas)))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
 		f.checkReadyPods(relName, expectedCapacity)
 	}
@@ -605,7 +605,7 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int, t *t
 			f.waitForReleaseStrategyState("command", relName, i)
 		}
 
-		expectedCapacity := int(replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas)))
+		expectedCapacity := int(replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, int32(targetReplicas)))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
 		f.checkReadyPods(relName, expectedCapacity)
 	}
@@ -699,8 +699,8 @@ func testRolloutVanguard(targetReplicas int, t *testing.T) {
 			f.waitForReleaseStrategyState("command", contenderName, i)
 		}
 
-		expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
-		expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
+		expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, int32(targetReplicas))
+		expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Incumbent, int32(targetReplicas))
 
 		t.Logf(
 			"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step %d -- %d/%d)",
@@ -761,7 +761,7 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
 		f.waitForReleaseStrategyState("command", relName, i)
 
-		expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
+		expectedCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, int32(targetReplicas))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
 		f.checkReadyPods(relName, int(expectedCapacity))
 	}
@@ -812,7 +812,7 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
 		f.waitForReleaseStrategyState("command", relName, i)
 
-		expectedCapacity = replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
+		expectedCapacity = replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, int32(targetReplicas))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
 		f.checkReadyPods(relName, int(expectedCapacity))
 	}
@@ -900,8 +900,8 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
 		f.waitForReleaseStrategyState("command", contenderName, i)
 
-		expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
-		expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
+		expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, int32(targetReplicas))
+		expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Incumbent, int32(targetReplicas))
 
 		t.Logf(
 			"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step %d -- %d/%d)",
@@ -975,8 +975,8 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 	t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
 	f.waitForReleaseStrategyState("command", contenderName, i)
 
-	expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
-	expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
+	expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, int32(targetReplicas))
+	expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Incumbent, int32(targetReplicas))
 
 	t.Logf(
 		"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step %d -- %d/%d)",
@@ -1062,7 +1062,7 @@ func TestNewApplicationAbort(t *testing.T) {
 	t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, targetStep)
 	f.waitForReleaseStrategyState("command", relName, targetStep)
 
-	expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
+	expectedCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, int32(targetReplicas))
 	t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, targetStep, step.Name)
 	f.checkReadyPods(relName, int(expectedCapacity))
 
@@ -1077,7 +1077,7 @@ func TestNewApplicationAbort(t *testing.T) {
 	f.waitForReleaseStrategyState("command", relName, 0)
 
 	// It's back to step 0, let's check the number of pods
-	expectedCapacity = replicas.CalculateDesiredReplicaCount(uint(vanguard.Steps[0].Capacity.Contender), float64(targetReplicas))
+	expectedCapacity = replicas.CalculateDesiredReplicaCount(vanguard.Steps[0].Capacity.Contender, int32(targetReplicas))
 	f.checkReadyPods(relName, int(expectedCapacity))
 }
 
@@ -1141,8 +1141,8 @@ func TestRolloutAbort(t *testing.T) {
 	t.Logf("waiting for contender release %q to achieve waitingForCommand for targetStep %d", contenderName, targetStep)
 	f.waitForReleaseStrategyState("command", contenderName, targetStep)
 
-	expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
-	expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
+	expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, int32(targetReplicas))
+	expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Incumbent, int32(targetReplicas))
 
 	t.Logf(
 		"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step %d -- %d/%d)",
@@ -1170,7 +1170,7 @@ func TestRolloutAbort(t *testing.T) {
 
 	// By this moment shipper is expected to have recovered the missing capacity
 	// and get all pods up and running
-	expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(allIn.Steps[0].Capacity.Contender), float64(targetReplicas))
+	expectedCapacity := replicas.CalculateDesiredReplicaCount(allIn.Steps[0].Capacity.Contender, int32(targetReplicas))
 	f.checkReadyPods(incumbentName, int(expectedCapacity))
 }
 

@@ -2,6 +2,7 @@ package release
 
 import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	"math"
 )
 
 func HasEmptyEnvironment(rel *shipper.Release) bool {
@@ -17,6 +18,21 @@ func ReleaseAchievedTargetStep(rel *shipper.Release) bool {
 		return false
 	}
 	return rel.Status.AchievedStep.Step == rel.Spec.TargetStep
+}
+
+func ReleaseIsProgressing(rel *shipper.Release) bool {
+	if rel == nil || rel.Status.AchievedStep == nil {
+		return true
+	}
+	return rel.Status.AchievedStep.Step <= rel.Spec.TargetStep
+}
+
+func StepsFromAchievedStep(rel *shipper.Release) int {
+	if rel == nil || rel.Status.AchievedStep == nil {
+		return 1
+	}
+
+	return int(math.Abs(float64(rel.Status.AchievedStep.Step - rel.Spec.TargetStep)))
 }
 
 func IsLastStrategyStep(rel *shipper.Release) bool {

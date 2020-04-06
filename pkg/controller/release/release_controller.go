@@ -465,25 +465,76 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 
 	isHead := succ == nil
 	var strategy *shipper.RolloutStrategy
-	var targetStep int32
+	var virtualStrategy *shipper.RolloutVirtualStrategy
+	var targetStep, targetVirtualStep int32
 	// A head release uses it's local spec-defined strategy, any other release
 	// follows it's successor state, therefore looking into the forecoming spec.
 	if isHead {
 		strategy = rel.Spec.Environment.Strategy
+		virtualStrategy = rel.Spec.VirtualStrategy
 		targetStep = rel.Spec.TargetStep
+		targetVirtualStep = rel.Spec.TargetVirtualStep
 	} else {
 		strategy = succ.Spec.Environment.Strategy
+		virtualStrategy = succ.Spec.VirtualStrategy
 		targetStep = succ.Spec.TargetStep
+		targetVirtualStep = succ.Spec.TargetVirtualStep
+	}
+
+	if virtualStrategy == nil {
+		// wait for virtual strategy to be built
+		err := fmt.Errorf("release %q missing a virtual strategy", controller.MetaKey(rel))
+		return nil, nil, shippererrors.NewRecoverableError(err)
+	}
+	progressing := releaseutil.ReleaseIsProgressing(rel)
+	achievedTargetStep := releaseutil.ReleaseAchievedTargetStep(rel)
+	gap := releaseutil.StepsFromAchievedStep(rel)
+	if !isHead {
+		// not head will go to the other direction as the head, head is the one that's supposed to decide if this is a rolling forward or backward.
+		progressing = releaseutil.ReleaseIsProgressing(succ)
+		achievedTargetStep = releaseutil.ReleaseAchievedTargetStep(succ)
+		gap = releaseutil.StepsFromAchievedStep(succ)
+	}
+	if progressing && !achievedTargetStep && gap > 1 {
+		targetStep -= int32(gap) - 1
+	} else if !progressing && !achievedTargetStep && gap > 1 {
+		targetStep += int32(gap) - 1
+	}
+	processTargetStep := targetStep
+	if !progressing && !achievedTargetStep {
+		processTargetStep += 1
 	}
 
 	// Looks like a malformed input. Informing about a problem and bailing out.
-	if targetStep >= int32(len(strategy.Steps)) {
-		err := fmt.Errorf("no step %d in strategy for Release %q",
-			targetStep, controller.MetaKey(rel))
+	targetStepOutOfRange := targetStep >= int32(len(strategy.Steps)) || processTargetStep >= int32(len(virtualStrategy.Steps))
+	if targetStepOutOfRange {
+		err := fmt.Errorf("no step %d in strategy, or virtual step %d in virtual strategy for Release %q",
+			targetStep, processTargetStep, controller.MetaKey(rel))
 		return nil, nil, shippererrors.NewUnrecoverableError(err)
 	}
+	if achievedTargetStep {
+		processTargetStep = targetStep
+		targetVirtualStep = int32(len(virtualStrategy.Steps[processTargetStep].VirtualSteps)) - 1
+	}
 
-	executor := NewStrategyExecutor(strategy, targetStep)
+	prevVirtualStep := rel.Status.AchievedVirtualStep
+	if isHead && ((prevVirtualStep != nil && prevVirtualStep.Step != targetStep) || prevVirtualStep == nil) {
+		targetVirtualStep = 0 // TODO: calculate current virtual step?
+		if !progressing {
+			targetVirtualStep = int32(len(virtualStrategy.Steps[processTargetStep].VirtualSteps)) - 1
+		}
+	}
+
+	targetVirtualStepOutOfRange := targetVirtualStep >= int32(len(virtualStrategy.Steps[processTargetStep].VirtualSteps)) || targetVirtualStep < 0
+	if targetVirtualStepOutOfRange {
+		if targetVirtualStep >= int32(len(virtualStrategy.Steps[processTargetStep].VirtualSteps)) {
+			targetVirtualStep = int32(len(virtualStrategy.Steps[processTargetStep].VirtualSteps)) - 1
+		} else if targetVirtualStep < 0 {
+			targetVirtualStep = 0
+		}
+	}
+
+	executor := NewStrategyExecutor(strategy, virtualStrategy, processTargetStep, targetVirtualStep, progressing)
 
 	complete, patches, trans := executor.Execute(relinfoPrev, relinfo, relinfoSucc)
 
@@ -502,22 +553,35 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
 	isLastStep := int(targetStep) == len(strategy.Steps)-1
+	isLastVirtualStep := int(targetVirtualStep) == len(virtualStrategy.Steps[processTargetStep].VirtualSteps)-1
+	if !progressing {
+		isLastVirtualStep = targetVirtualStep == 0
+	}
 	prevStep := rel.Status.AchievedStep
 
-	if complete {
-		var achievedStep int32
+	updateStep := complete && isLastVirtualStep
+	updateVirtualStep := complete
+
+	if updateStep {
+		var achievedStep, achievedVirtualStep int32
 		var achievedStepName string
 		if isHead {
 			achievedStep = targetStep
+			achievedVirtualStep = targetVirtualStep
 			achievedStepName = strategy.Steps[achievedStep].Name
 		} else {
 			achievedStep = int32(len(rel.Spec.Environment.Strategy.Steps)) - 1
+			achievedVirtualStep = int32(len(rel.Spec.VirtualStrategy.Steps[achievedStep].VirtualSteps)) - 1
 			achievedStepName = rel.Spec.Environment.Strategy.Steps[achievedStep].Name
 		}
 		if prevStep == nil || achievedStep != prevStep.Step {
 			rel.Status.AchievedStep = &shipper.AchievedStep{
 				Step: achievedStep,
 				Name: achievedStepName,
+			}
+			rel.Status.AchievedVirtualStep = &shipper.AchievedVirtualStep{
+				Step:        achievedStep,
+				VirtualStep: achievedVirtualStep,
 			}
 			c.recorder.Eventf(
 				rel,
@@ -537,6 +601,35 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 			)
 			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 		}
+	} else if updateVirtualStep {
+		var achievedStep, achievedVirtualStep int32
+		if isHead {
+			achievedStep = targetStep
+			achievedVirtualStep = targetVirtualStep
+		} else {
+			achievedStep = int32(len(rel.Spec.Environment.Strategy.Steps)) - 1
+			achievedVirtualStep = int32(len(rel.Spec.VirtualStrategy.Steps[achievedStep].VirtualSteps)) - 1
+		}
+		if prevVirtualStep == nil || achievedStep != prevVirtualStep.Step || achievedVirtualStep != prevVirtualStep.VirtualStep {
+			rel.Status.AchievedVirtualStep = &shipper.AchievedVirtualStep{
+				Step:        achievedStep,
+				VirtualStep: achievedVirtualStep,
+			}
+			c.recorder.Eventf(
+				rel,
+				corev1.EventTypeNormal,
+				"StrategyApplied",
+				"virtual step [%d] finished",
+				achievedVirtualStep,
+			)
+		}
+
+		if !isLastVirtualStep {
+			rel.Spec.TargetVirtualStep = targetVirtualStep + 1
+			if !progressing {
+				rel.Spec.TargetVirtualStep = targetVirtualStep - 1
+			}
+		}
 	}
 
 	for _, t := range trans {
@@ -552,6 +645,19 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 	}
 
 	return rel, patches, nil
+}
+
+func getCurrentCapacityWeight(relinfo *releaseInfo) int32 {
+	if relinfo.capacityTarget == nil {
+		return 0
+	}
+	var currentCapacityWeight int32 = 0
+	for _, spec := range relinfo.capacityTarget.Spec.Clusters {
+		if currentCapacityWeight < spec.Percent {
+			currentCapacityWeight = spec.Percent
+		}
+	}
+	return currentCapacityWeight
 }
 
 func (c *Controller) applyPatch(namespace string, patch StrategyPatch) error {

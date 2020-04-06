@@ -226,7 +226,7 @@ func (c *Controller) processCapacityTargetOnCluster(
 	// availableReplicas will be used by the defer at the top of this func
 	availableReplicas = deployment.Status.AvailableReplicas
 
-	desiredReplicas := int32(replicas.CalculateDesiredReplicaCount(uint(spec.TotalReplicaCount), float64(spec.Percent)))
+	desiredReplicas := int32(replicas.CalculateDesiredReplicaCount(spec.TotalReplicaCount, spec.Percent))
 	if deployment.Spec.Replicas == nil || desiredReplicas != *deployment.Spec.Replicas {
 		_, err = c.patchDeploymentWithReplicaCount(deployment, spec.Name, desiredReplicas)
 		if err != nil {

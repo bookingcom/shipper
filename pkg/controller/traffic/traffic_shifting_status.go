@@ -263,7 +263,7 @@ func calculateReleasePodTarget(releasePods int, releaseWeight uint32, totalPods 
 
 	// Round up to the nearest pod, clamped to the number of pods this
 	// release has.
-	targetPods := int(replicas.CalculateDesiredReplicaCount(uint(totalPods), float64(targetPercent)))
+	targetPods := int(replicas.CalculateDesiredReplicaCount(int32(totalPods), int32(targetPercent)))
 	targetPods = int(math.Min(float64(releasePods), float64(targetPods)))
 
 	return targetPods

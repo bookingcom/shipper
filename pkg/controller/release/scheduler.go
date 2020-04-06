@@ -1,6 +1,9 @@
 package release
 
 import (
+	"fmt"
+	intstrutil "k8s.io/apimachinery/pkg/util/intstr"
+	"math"
 	"sort"
 	"strings"
 
@@ -59,6 +62,23 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*releaseInfo, error) 
 	}
 
 	releaseErrors := shippererrors.NewMultiError()
+	if rel.Spec.VirtualStrategy == nil {
+		virtualStrategy, err := buildVirtualStrategy(rel, replicaCount)
+		if err != nil {
+			//klog.Infof("HILLA COULD NOT CALCULATE VIRTUAL STRATEGY!!!")
+			return nil, err
+		}
+
+		//klog.Infof("HILLA about to put virtual strategy into %s", rel.Name)
+		rel.Spec.VirtualStrategy = virtualStrategy
+		//klog.Infof("HILLA DID IT!  virtual strategy is %v", virtualStrategy)
+		//return &releaseInfo{
+		//	release:            rel,
+		//	installationTarget: nil,
+		//	trafficTarget:      nil,
+		//	capacityTarget:     nil,
+		//}, shippererrors.NewUpdateVirtualStrategy(controller.MetaKey(rel))
+	}
 
 	it, err := s.CreateOrUpdateInstallationTarget(rel)
 	if err != nil {
@@ -434,4 +454,124 @@ func objectBelongsToRelease(obj metav1.Object, release *shipper.Release) bool {
 	}
 
 	return false
+}
+
+func buildVirtualStrategy(rel *shipper.Release, replicaCount int32) (*shipper.RolloutVirtualStrategy, error) {
+	strategy := rel.Spec.Environment.Strategy
+	rolloutVirtualStrategy := make([]shipper.RolloutStrategyVirtualStep, len(strategy.Steps))
+	//rolloutBackVirtualStrategy := make([]shipper.RolloutStrategyVirtualStep, len(strategy.Steps)-1)
+
+	surgeWeight, err := getMaxSurgePercent(rel, replicaCount)
+	if err != nil {
+		return nil, err
+	}
+
+	// create the first virtual transition: from previous release to first strategy step
+	step := shipper.RolloutStrategyStep{
+		Name: "",
+		Capacity: shipper.RolloutStrategyStepValue{
+			Incumbent: 100,
+			Contender: 0,
+		},
+		Traffic: shipper.RolloutStrategyStepValue{
+			Incumbent: 100,
+			Contender: 0,
+		},
+	}
+	nextStep := strategy.Steps[0]
+	rolloutStrategyVirtualSteps := buildRolloutStrategyVirtualSteps(step, nextStep, surgeWeight)
+	rolloutVirtualStrategy[0] = shipper.RolloutStrategyVirtualStep{VirtualSteps: rolloutStrategyVirtualSteps}
+
+	for i, step := range strategy.Steps {
+		if i != len(strategy.Steps)-1 {
+			nextStep := strategy.Steps[i+1]
+			rolloutStrategyVirtualSteps := buildRolloutStrategyVirtualSteps(step, nextStep, surgeWeight)
+
+			rolloutVirtualStrategy[i+1] = shipper.RolloutStrategyVirtualStep{VirtualSteps: rolloutStrategyVirtualSteps}
+		}
+	}
+	virtualStrategy := &shipper.RolloutVirtualStrategy{Steps: rolloutVirtualStrategy}
+	return virtualStrategy, nil
+}
+
+func buildRolloutStrategyVirtualSteps(step, nextStep shipper.RolloutStrategyStep, surgeWeight int) []shipper.RolloutStrategyStep {
+	// Calculate virtual steps
+	// Contender:
+	currContenderCapacity := step.Capacity.Contender
+	currContenderTraffic := step.Traffic.Contender
+	nextContenderCapacity := nextStep.Capacity.Contender
+	nextContenderTraffic := nextStep.Traffic.Contender
+	diffContenderCapacity := float64(nextContenderCapacity - currContenderCapacity)
+	virtualStepsContender := math.Ceil(diffContenderCapacity / float64(surgeWeight))
+
+	// Incumbent:
+	currIncumbentCapacity := step.Capacity.Incumbent
+	currIncumbentTraffic := step.Traffic.Incumbent
+	nextIncumbentCapacity := nextStep.Capacity.Incumbent
+	nextIncumbentTraffic := nextStep.Traffic.Incumbent
+	diffIncumbentCapacity := float64(currIncumbentCapacity - nextIncumbentCapacity)
+	virtualStepsIncumbent := math.Ceil(diffIncumbentCapacity / float64(surgeWeight))
+
+	virtualSteps := math.Max(virtualStepsContender, virtualStepsIncumbent)
+	virtualSteps = math.Max(virtualSteps, 1)
+
+	// Calculate traffic surge to each step
+	diffContenderTraffic := float64(nextContenderTraffic - currContenderTraffic)
+	diffIncumbentTraffic := float64(nextIncumbentTraffic - currIncumbentTraffic)
+	trafficSurgeContender := math.Ceil(diffContenderTraffic / virtualSteps)
+	trafficSurgeIncumvent := math.Ceil(diffIncumbentTraffic / virtualSteps)
+	trafficSurge := int(math.Max(trafficSurgeContender, trafficSurgeIncumvent))
+
+	rolloutStrategyVirtualSteps := make([]shipper.RolloutStrategyStep, int(virtualSteps)+1)
+	for j, _ := range rolloutStrategyVirtualSteps {
+		multiplier := j // + 1
+		// Contender:
+		// Capacity
+		possibleContenderCapacity := currContenderCapacity + int32(multiplier*surgeWeight)
+		newContenderCapacity := int32(math.Min(float64(possibleContenderCapacity), float64(nextContenderCapacity)))
+		// Traffic
+		possibleContenderTraffic := currContenderTraffic + int32(multiplier*trafficSurge)
+		newContenderTraffic := int32(math.Min(float64(possibleContenderTraffic), float64(nextContenderTraffic)))
+
+		// Incumbent:
+		// Capacity
+		possibleIncumbentCapacity := currIncumbentCapacity - int32(multiplier*surgeWeight)
+		newIncumbentCapacity := int32(math.Max(float64(possibleIncumbentCapacity), float64(nextIncumbentCapacity)))
+		// Traffic
+		possibleIncumbentTraffic := currIncumbentTraffic - int32(multiplier*trafficSurge)
+		newIncumbentTraffic := int32(math.Max(float64(possibleIncumbentTraffic), float64(nextIncumbentTraffic)))
+
+		rolloutStrategyVirtualSteps[j] = shipper.RolloutStrategyStep{
+			Name: fmt.Sprintf("%d: %s to %s", j, step.Name, nextStep.Name),
+			Capacity: shipper.RolloutStrategyStepValue{
+				Incumbent: newIncumbentCapacity,
+				Contender: newContenderCapacity,
+			},
+			Traffic: shipper.RolloutStrategyStepValue{
+				Incumbent: newIncumbentTraffic,
+				Contender: newContenderTraffic,
+			},
+		}
+	}
+	return rolloutStrategyVirtualSteps
+}
+
+func getMaxSurgePercent(rel *shipper.Release, replicaCount int32) (int, error) {
+	//return 20, nil
+	maxSurgeValue := intstrutil.FromString("100%")
+	strategy := rel.Spec.Environment.Strategy
+	if strategy != nil {
+		rollingUpdate := strategy.RollingUpdate
+		if rollingUpdate != nil {
+			maxSurgeValue = *intstrutil.ValueOrDefault(&rollingUpdate.MaxSurge, maxSurgeValue)
+		}
+	}
+
+	surge, err := intstrutil.GetValueFromIntOrPercent(&maxSurgeValue, int(replicaCount), true)
+	if err != nil {
+		return 0, err
+	}
+	surgePercent := (float64(surge) / float64(replicaCount)) * 100
+	surgePercent = math.Min(surgePercent, 100) // cap by 100
+	return int(surgePercent), err
 }
