@@ -5,7 +5,7 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
-	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
+	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 )
 
 // computeTargetClusters picks out the clusters from the given list which match
@@ -20,7 +20,7 @@ func computeTargetClusters(rel *shipper.Release, clusterList []*shipper.Cluster)
 		return nil, shippererrors.NewNoRegionsSpecifiedError()
 	}
 
-	app, err := releaseutil.ApplicationNameForRelease(rel)
+	app, err := objectutil.GetApplicationLabel(rel)
 	if err != nil {
 		return nil, err
 	}

@@ -291,12 +291,8 @@ func generateReleaseForTestCase(reqs shipper.ClusterRequirements) *shipper.Relea
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-release",
 			Namespace: shippertesting.TestNamespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: shipper.SchemeGroupVersion.String(),
-					Kind:       "Application",
-					Name:       "test-application",
-				},
+			Labels: map[string]string{
+				shipper.AppLabel: "test-application",
 			},
 		},
 		Spec: shipper.ReleaseSpec{

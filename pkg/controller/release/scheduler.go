@@ -14,8 +14,9 @@ import (
 	shipperchart "github.com/bookingcom/shipper/pkg/chart"
 	shipperrepo "github.com/bookingcom/shipper/pkg/chart/repo"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	"github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	objectutil "github.com/bookingcom/shipper/pkg/util/object"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 type Scheduler struct {
@@ -100,10 +101,8 @@ func stringSliceEqual(arr1, arr2 []string) bool {
 // getReleaseClusters is a helper function that returns a list of cluster names
 // annotating the release. It assumes cluster names are all unique.
 func getReleaseClusters(rel *shipper.Release) []string {
-	allRelClusters := strings.Split(rel.ObjectMeta.Annotations[shipper.ReleaseClustersAnnotation], ",")
-	if len(allRelClusters) == 1 && allRelClusters[0] == "" {
-		allRelClusters = []string{}
-	}
+	allRelClusters := releaseutil.GetSelectedClusters(rel)
+
 	uniqRelClusters := make([]string, 0, len(allRelClusters))
 	seen := make(map[string]struct{})
 	for _, cluster := range allRelClusters {
@@ -201,7 +200,7 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 			corev1.EventTypeNormal,
 			"ReleaseScheduled",
 			"Created InstallationTarget %q",
-			controller.MetaKey(updIt),
+			objectutil.MetaKey(updIt),
 		)
 
 		return updIt, nil
@@ -268,7 +267,7 @@ func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalRepl
 			corev1.EventTypeNormal,
 			"ReleaseScheduled",
 			"Created CapacityTarget %q",
-			controller.MetaKey(updCt),
+			objectutil.MetaKey(updCt),
 		)
 
 		return updCt, nil
@@ -289,7 +288,7 @@ func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalRepl
 			corev1.EventTypeNormal,
 			"ReleaseScheduled",
 			"Updated CapacityTarget %q cluster set to [%s]",
-			controller.MetaKey(updCt),
+			objectutil.MetaKey(updCt),
 			strings.Join(clusters, ","))
 		return updCt, nil
 	}
@@ -327,7 +326,7 @@ func (s *Scheduler) CreateOrUpdateTrafficTarget(rel *shipper.Release) (*shipper.
 			corev1.EventTypeNormal,
 			"ReleaseScheduled",
 			"Created TrafficTarget %q",
-			controller.MetaKey(updTt),
+			objectutil.MetaKey(updTt),
 		)
 
 		return updTt, nil
@@ -348,7 +347,7 @@ func (s *Scheduler) CreateOrUpdateTrafficTarget(rel *shipper.Release) (*shipper.
 			corev1.EventTypeNormal,
 			"ReleaseScheduled",
 			"Updated TrafficTarget %q cluster set to [%s]",
-			controller.MetaKey(updTt),
+			objectutil.MetaKey(updTt),
 			strings.Join(clusters, ","))
 		return updTt, nil
 	}
@@ -371,12 +370,11 @@ func (s *Scheduler) fetchChartAndExtractReplicaCount(rel *shipper.Release) (int3
 }
 
 func extractReplicasFromChartForRel(chart *helmchart.Chart, rel *shipper.Release) (int32, error) {
-	owners := rel.OwnerReferences
-	if l := len(owners); l != 1 {
-		return 0, shippererrors.NewMultipleOwnerReferencesError(rel.Name, l)
+	applicationName, err := objectutil.GetApplicationLabel(rel)
+	if err != nil {
+		return 0, err
 	}
 
-	applicationName := owners[0].Name
 	rendered, err := shipperchart.Render(
 		chart,
 		applicationName,

@@ -24,11 +24,11 @@ import (
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
-	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	clusterstatusutil "github.com/bookingcom/shipper/pkg/util/clusterstatus"
 	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
 	"github.com/bookingcom/shipper/pkg/util/filters"
+	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 	targetutil "github.com/bookingcom/shipper/pkg/util/target"
 	trafficutil "github.com/bookingcom/shipper/pkg/util/traffic"
 	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
@@ -230,9 +230,8 @@ func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.T
 	diff := diffutil.NewMultiDiff()
 	defer c.reportConditionChange(tt, TrafficTargetConditionChanged, diff)
 
-	appName, ok := tt.Labels[shipper.AppLabel]
-	if !ok {
-		err := shippererrors.NewMissingShipperLabelError(tt, shipper.AppLabel)
+	appName, err := objectutil.GetApplicationLabel(tt)
+	if err != nil {
 		tt.Status.Conditions = targetutil.TransitionToNotOperational(
 			diff, tt.Status.Conditions,
 			InternalError, err.Error())
@@ -350,8 +349,8 @@ func (c *Controller) processTrafficTargetOnCluster(
 		return err
 	}
 
-	appName := tt.Labels[shipper.AppLabel]
-	releaseName := tt.Labels[shipper.ReleaseLabel]
+	appName, _ := objectutil.GetApplicationLabel(tt)
+	releaseName, _ := objectutil.GetReleaseLabel(tt)
 
 	appPods, endpoints, err := c.getClusterObjects(spec.Name, tt.Namespace, appName)
 	if err != nil {
@@ -512,10 +511,11 @@ func (c *Controller) enqueueAllTrafficTargets(obj interface{}) {
 	}
 
 	namespace := kubeobj.GetNamespace()
-	appName, ok := kubeobj.GetLabels()[shipper.AppLabel]
-	if !ok {
-		runtime.HandleError(fmt.Errorf("object %q is missing label %s. FilterFunc not working?",
-			shippercontroller.MetaKey(kubeobj), shipper.AppLabel))
+	appName, err := objectutil.GetApplicationLabel(kubeobj)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf(
+			"object %q does not belong to an application. FilterFunc not working?",
+			objectutil.MetaKey(kubeobj)))
 		return
 	}
 
@@ -540,11 +540,11 @@ func (c *Controller) enqueueTrafficTargetFromPod(obj interface{}) {
 		return
 	}
 
-	release, ok := pod.GetLabels()[shipper.ReleaseLabel]
-	if !ok {
+	release, err := objectutil.GetReleaseLabel(pod)
+	if err != nil {
 		runtime.HandleError(fmt.Errorf(
-			"object %q does not have label %s. FilterFunc not working?",
-			shippercontroller.MetaKey(pod), shipper.ReleaseLabel))
+			"pod %q does not belong to a release. FilterFunc not working?",
+			objectutil.MetaKey(pod)))
 		return
 	}
 

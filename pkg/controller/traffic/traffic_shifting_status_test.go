@@ -9,6 +9,7 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 )
 
 type release struct {
@@ -325,7 +326,13 @@ func runBuildTestTrafficShiftingStatus(
 
 	for i, expectation := range expectations {
 		tt := trafficTargets[i]
-		relName := tt.Labels[shipper.ReleaseLabel]
+		relName, err := objectutil.GetReleaseLabel(tt)
+		if err != nil {
+			t.Fatalf(
+				"traffic target %q does not belong to a release: %s",
+				objectutil.MetaKey(tt), err.Error())
+		}
+
 		trafficStatus := buildTrafficShiftingStatus(
 			shippertesting.TestCluster, shippertesting.TestApp, relName,
 			clusterReleaseWeights,

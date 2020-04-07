@@ -2,31 +2,7 @@ package errors
 
 import (
 	"fmt"
-
-	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
-
-type MissingShipperLabelError struct {
-	tt    *shipper.TrafficTarget
-	label string
-}
-
-func (e MissingShipperLabelError) Error() string {
-	return fmt.Sprintf(
-		`TrafficTarget "%s/%s" needs a %q label in order to select resources in the target clusters`,
-		e.tt.GetNamespace(), e.tt.GetName(), e.label)
-}
-
-func (e MissingShipperLabelError) ShouldRetry() bool {
-	return false
-}
-
-func NewMissingShipperLabelError(tt *shipper.TrafficTarget, label string) MissingShipperLabelError {
-	return MissingShipperLabelError{
-		tt:    tt,
-		label: label,
-	}
-}
 
 type MultipleTrafficTargetsForReleaseError struct {
 	ns          string

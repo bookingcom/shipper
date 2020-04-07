@@ -24,10 +24,10 @@ import (
 	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
-	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
 	"github.com/bookingcom/shipper/pkg/util/filters"
+	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 	targetutil "github.com/bookingcom/shipper/pkg/util/target"
 	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
 )
@@ -239,17 +239,11 @@ func (c *Controller) enqueueInstallationTargetFromObject(obj interface{}) {
 		return
 	}
 
-	// Using ReleaseLabel here instead of the full set of labels because we
-	// can't guarantee that there isn't extra stuff there that was put
-	// directly in the chart.
-	// Also not using ObjectReference here because it would go over cluster
-	// boundaries. While technically it's probably ok, I feel like it'd be
-	// abusing the feature.
-	rel, ok := kubeobj.GetLabels()[shipper.ReleaseLabel]
-	if !ok {
+	rel, err := objectutil.GetReleaseLabel(kubeobj)
+	if err != nil {
 		runtime.HandleError(fmt.Errorf(
-			"object %q does not have label %s. FilterFunc not working?",
-			shippercontroller.MetaKey(kubeobj), shipper.ReleaseLabel))
+			"object %q does not belong to a release. FilterFunc not working?",
+			objectutil.MetaKey(kubeobj)))
 		return
 	}
 

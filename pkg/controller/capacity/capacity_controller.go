@@ -31,6 +31,7 @@ import (
 	clusterstatusutil "github.com/bookingcom/shipper/pkg/util/clusterstatus"
 	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
 	"github.com/bookingcom/shipper/pkg/util/filters"
+	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
 	targetutil "github.com/bookingcom/shipper/pkg/util/target"
 	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
@@ -204,8 +205,8 @@ func (c *Controller) processCapacityTargetOnCluster(
 		c.reportConditionChange(ct, ClusterCapacityConditionChanged, diff)
 	}()
 
-	appName := ct.Labels[shipper.AppLabel]
-	release := ct.Labels[shipper.ReleaseLabel]
+	appName, _ := objectutil.GetApplicationLabel(ct)
+	release, _ := objectutil.GetReleaseLabel(ct)
 	deployment, pods, err := c.getClusterObjects(spec.Name, ct.Namespace, appName, release)
 	if err != nil {
 		operationalCond = capacityutil.NewClusterCapacityCondition(

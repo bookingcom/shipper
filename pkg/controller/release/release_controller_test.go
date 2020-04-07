@@ -503,7 +503,7 @@ func runReleaseControllerTest(
 		expectedSelectedClusters := strings.Join(expectation.clusters, ",")
 		selectedClusters, ok := rel.Annotations[shipper.ReleaseClustersAnnotation]
 		if !ok && len(expectation.clusters) > 0 {
-			t.Errorf("whoops")
+			t.Errorf("expected release %q to have selected clusters, but got none", relKey)
 		}
 
 		if expectedSelectedClusters != selectedClusters {

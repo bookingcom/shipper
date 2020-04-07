@@ -12,16 +12,16 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	"github.com/bookingcom/shipper/pkg/controller"
 	"github.com/bookingcom/shipper/pkg/errors"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 )
 
 func (c *Controller) createReleaseForApplication(app *shipper.Application, releaseName string, iteration, generation int) (*shipper.Release, error) {
 	// Label releases with their hash; select by that label and increment if needed
 	// appname-hash-of-template-iteration.
 
-	klog.V(4).Infof("Generated Release name for Application %q: %q", controller.MetaKey(app), releaseName)
+	klog.V(4).Infof("Generated Release name for Application %q: %q", objectutil.MetaKey(app), releaseName)
 	rolloutblocksOverrides := app.Annotations[shipper.RolloutBlocksOverrideAnnotation]
 	newRelease := &shipper.Release{
 		ObjectMeta: metav1.ObjectMeta{
@@ -83,7 +83,7 @@ func (c *Controller) releaseNameForApplication(app *shipper.Application) (string
 	}
 
 	if len(releases) == 0 {
-		klog.V(3).Infof("No Releases with template %q for Application %q", hash, controller.MetaKey(app))
+		klog.V(3).Infof("No Releases with template %q for Application %q", hash, objectutil.MetaKey(app))
 		return fmt.Sprintf("%s-%s-%d", app.GetName(), hash, 0), 0, nil
 	}
 
@@ -91,7 +91,7 @@ func (c *Controller) releaseNameForApplication(app *shipper.Application) (string
 	for _, rel := range releases {
 		iterationStr, ok := rel.GetAnnotations()[shipper.ReleaseTemplateIterationAnnotation]
 		if !ok {
-			return "", 0, errors.NewMissingGenerationAnnotationError(controller.MetaKey(rel))
+			return "", 0, errors.NewMissingGenerationAnnotationError(objectutil.MetaKey(rel))
 		}
 
 		iteration, err := strconv.Atoi(iterationStr)

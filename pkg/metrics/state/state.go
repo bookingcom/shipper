@@ -149,7 +149,7 @@ func (ssm Metrics) collectReleases(ch chan<- prometheus.Metric) {
 			appName = "unknown"
 		}
 
-		clusters := strings.Split(rel.Annotations[shipper.ReleaseClustersAnnotation], ",")
+		clusters := releaseutil.GetSelectedClusters(rel)
 		for _, cluster := range clusters {
 			releasesPerCluster[cluster]++
 		}

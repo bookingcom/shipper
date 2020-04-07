@@ -27,11 +27,10 @@ import (
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
-	"github.com/bookingcom/shipper/pkg/controller"
-	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	"github.com/bookingcom/shipper/pkg/util/diff"
 	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
+	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	rolloutblock "github.com/bookingcom/shipper/pkg/util/rolloutblock"
 	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
@@ -109,8 +108,6 @@ func NewController(
 	capacityTargetInformer := informerFactory.Shipper().V1alpha1().CapacityTargets()
 	rolloutBlockInformer := informerFactory.Shipper().V1alpha1().RolloutBlocks()
 
-	klog.Info("Building a release controller")
-
 	controller := &Controller{
 		clientset: clientset,
 		store:     store,
@@ -139,8 +136,6 @@ func NewController(
 
 		recorder: recorder,
 	}
-
-	klog.Info("Setting up event handlers")
 
 	releaseInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
@@ -199,7 +194,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	}
 
 	for i := 0; i < threadiness; i++ {
-		go wait.Until(c.runReleaseWorker, time.Second, stopCh)
+		go wait.Until(c.runWorker, time.Second, stopCh)
 	}
 
 	klog.V(4).Info("Started Release controller")
@@ -207,7 +202,7 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	<-stopCh
 }
 
-func (c *Controller) runReleaseWorker() {
+func (c *Controller) runWorker() {
 	for c.processNextWorkItem() {
 	}
 }
@@ -235,7 +230,7 @@ func (c *Controller) processNextWorkItem() bool {
 	}
 
 	shouldRetry := false
-	err := c.syncOneReleaseHandler(key)
+	err := c.syncHandler(key)
 
 	if err != nil {
 		shouldRetry = shippererrors.ShouldRetry(err)
@@ -253,10 +248,10 @@ func (c *Controller) processNextWorkItem() bool {
 	return true
 }
 
-// syncOneReleaseHandler processes release keys one-by-one. This stage progresses
+// syncHandler processes release keys one-by-one. This stage progresses
 // the release through a scheduler: assigns a set of chosen clusters, creates
 // required associated objects and marks the release as scheduled.
-func (c *Controller) syncOneReleaseHandler(key string) error {
+func (c *Controller) syncHandler(key string) error {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return shippererrors.NewUnrecoverableError(err)
@@ -361,9 +356,9 @@ func (c *Controller) processRelease(rel *shipper.Release) (*shipper.Release, []S
 }
 
 func (c *Controller) chooseClusters(rel *shipper.Release) (*shipper.Release, []string, error) {
-	clusterAnnotation, ok := rel.Annotations[shipper.ReleaseClustersAnnotation]
-	if ok && len(clusterAnnotation) > 0 {
-		return rel, strings.Split(clusterAnnotation, ","), nil
+	releaseClusters := releaseutil.GetSelectedClusters(rel)
+	if releaseClusters != nil {
+		return rel, releaseClusters, nil
 	}
 
 	selector := labels.Everything()
@@ -382,12 +377,7 @@ func (c *Controller) chooseClusters(rel *shipper.Release) (*shipper.Release, []s
 
 	setReleaseClusters(rel, selectedClusters)
 
-	clusterAnnotation = rel.Annotations[shipper.ReleaseClustersAnnotation]
-	if len(clusterAnnotation) == 0 {
-		return rel, []string{}, nil
-	}
-
-	return rel, strings.Split(clusterAnnotation, ","), nil
+	return rel, releaseutil.GetSelectedClusters(rel), nil
 }
 
 func (c *Controller) scheduleAndExecuteStrategyForClusters(
@@ -514,7 +504,7 @@ func (c *Controller) executeReleaseStrategyForCluster(
 			// which can potentially cause some harmful consequences
 			// like: a historical release gets activated.
 			return nil, nil, shippererrors.NewInconsistentReleaseTargetStep(
-				controller.MetaKey(relinfo.release),
+				objectutil.MetaKey(relinfo.release),
 				relinfo.release.Spec.TargetStep,
 				int32(len(relinfo.release.Spec.Environment.Strategy.Steps)-1),
 			)
@@ -542,7 +532,7 @@ func (c *Controller) executeReleaseStrategyForCluster(
 	// Looks like a malformed input. Informing about a problem and bailing out.
 	if targetStep >= int32(len(strategy.Steps)) {
 		err := fmt.Errorf("no step %d in strategy for Release %q",
-			targetStep, controller.MetaKey(rel))
+			targetStep, objectutil.MetaKey(rel))
 		return nil, nil, shippererrors.NewUnrecoverableError(err)
 	}
 
@@ -551,9 +541,9 @@ func (c *Controller) executeReleaseStrategyForCluster(
 	complete, patches, trans := executor.Execute(relinfoPrev, relinfo, relinfoSucc)
 
 	if len(patches) == 0 {
-		klog.V(4).Infof("Strategy verified for release %q, nothing to patch", controller.MetaKey(rel))
+		klog.V(4).Infof("Strategy verified for release %q, nothing to patch", objectutil.MetaKey(rel))
 	} else {
-		klog.V(4).Infof("Strategy has been executed for release %q, applying patches", controller.MetaKey(rel))
+		klog.V(4).Infof("Strategy has been executed for release %q, applying patches", objectutil.MetaKey(rel))
 	}
 
 	isLastStep := int(targetStep) == len(strategy.Steps)-1
@@ -600,7 +590,7 @@ func (c *Controller) executeReleaseStrategyForCluster(
 			corev1.EventTypeNormal,
 			"ReleaseStateTransitioned",
 			"Release %q had its state %q transitioned to %q",
-			shippercontroller.MetaKey(rel),
+			objectutil.MetaKey(rel),
 			t.State,
 			t.New,
 		)
@@ -628,18 +618,6 @@ func (c *Controller) applyPatch(namespace string, patch StrategyPatch) error {
 	}
 
 	return nil
-}
-
-// getAssociatedReleaseKey returns an owner reference release name for an
-// associated object in the format:
-// <namespace> / <release name>
-func (c *Controller) getAssociatedReleaseName(obj metav1.Object) (string, error) {
-	release, ok := obj.GetLabels()[shipper.ReleaseLabel]
-	if !ok || len(release) == 0 {
-		return "", shippererrors.NewMultipleOwnerReferencesError(obj.GetName(), 0)
-	}
-
-	return release, nil
 }
 
 // buildReleaseInfo returns a release and it's associated objects fetched from
@@ -679,14 +657,16 @@ func (c *Controller) buildReleaseInfo(
 }
 
 func (c *Controller) applicationReleases(rel *shipper.Release) ([]*shipper.Release, error) {
-	appName, err := releaseutil.ApplicationNameForRelease(rel)
+	appName, err := objectutil.GetApplicationLabel(rel)
 	if err != nil {
 		return nil, err
 	}
+
 	releases, err := c.releaseLister.Releases(rel.Namespace).ReleasesForApplication(appName)
 	if err != nil {
 		return nil, err
 	}
+
 	return releases, nil
 }
 
@@ -760,7 +740,7 @@ func (c *Controller) enqueueReleaseFromAssociatedObject(obj interface{}) {
 		return
 	}
 
-	releaseName, err := c.getAssociatedReleaseName(kubeobj)
+	releaseName, err := objectutil.GetReleaseLabel(kubeobj)
 	if err != nil {
 		runtime.HandleError(err)
 		return
