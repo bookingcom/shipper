@@ -26,6 +26,12 @@ const (
 	GenerationContender string = "3"
 )
 
+// Virtual strategy with MaxSurge=100%
+const (
+	VirtualStepFirst int32 = iota
+	VirtualStepLast
+)
+
 var (
 	ReleaseConditionUnblocked = shipper.ReleaseCondition{
 		Type:   shipper.ReleaseConditionTypeBlocked,
@@ -193,8 +199,8 @@ func TestInvalidStrategy(t *testing.T) {
 				Status: corev1.ConditionFalse,
 				Reason: StrategyExecutionFailed,
 				Message: fmt.Sprintf(
-					"no step %d in strategy for Release %q",
-					rel.Spec.TargetStep, fmt.Sprintf("%s/%s", rel.Namespace, rel.Name),
+					"no step %d, or %d, in strategy for Release %q",
+					rel.Spec.TargetStep, rel.Spec.TargetStep, fmt.Sprintf("%s/%s", rel.Namespace, rel.Name),
 				),
 			},
 		},
@@ -224,6 +230,7 @@ func TestIntermediateStep(t *testing.T) {
 
 	targetStep := StepVanguard
 	achievedStep := StepVanguard
+	achievedVirtualStep := VirtualStepLast
 
 	// rel has a three-step strategy, so StepVanguard should be an
 	// intermediate step
@@ -239,6 +246,10 @@ func TestIntermediateStep(t *testing.T) {
 		AchievedStep: &shipper.AchievedStep{
 			Step: achievedStep,
 			Name: rel.Spec.Environment.Strategy.Steps[achievedStep].Name,
+		},
+		AchievedVirtualStep: &shipper.AchievedVirtualStep{
+			Step:        achievedStep,
+			VirtualStep: achievedVirtualStep,
 		},
 		Conditions: []shipper.ReleaseCondition{
 			ReleaseConditionUnblocked,
@@ -278,6 +289,7 @@ func TestLastStep(t *testing.T) {
 
 	targetStep := StepFullOn
 	achievedStep := StepFullOn
+	achievedVirtualStep := VirtualStepLast
 
 	// rel has a three-step strategy, so StepVanguard should be an
 	// intermediate step
@@ -293,6 +305,10 @@ func TestLastStep(t *testing.T) {
 		AchievedStep: &shipper.AchievedStep{
 			Step: achievedStep,
 			Name: rel.Spec.Environment.Strategy.Steps[achievedStep].Name,
+		},
+		AchievedVirtualStep: &shipper.AchievedVirtualStep{
+			Step:        achievedStep,
+			VirtualStep: achievedVirtualStep,
 		},
 		Conditions: []shipper.ReleaseCondition{
 			ReleaseConditionUnblocked,

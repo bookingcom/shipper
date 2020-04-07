@@ -508,7 +508,7 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 	// Looks like a malformed input. Informing about a problem and bailing out.
 	targetStepOutOfRange := targetStep >= int32(len(strategy.Steps)) || processTargetStep >= int32(len(virtualStrategy.Steps))
 	if targetStepOutOfRange {
-		err := fmt.Errorf("no step %d in strategy, or virtual step %d in virtual strategy for Release %q",
+		err := fmt.Errorf("no step %d, or %d, in strategy for Release %q",
 			targetStep, processTargetStep, controller.MetaKey(rel))
 		return nil, nil, shippererrors.NewUnrecoverableError(err)
 	}

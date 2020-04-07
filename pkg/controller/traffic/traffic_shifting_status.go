@@ -258,7 +258,7 @@ func calculateReleasePodTarget(releasePods int, releaseWeight uint32, totalPods 
 	if totalWeight == 0 {
 		targetPercent = 0
 	} else {
-		targetPercent = float64(releaseWeight) / float64(totalWeight) * 100
+		targetPercent = math.Ceil(float64(releaseWeight) / float64(totalWeight) * 100)
 	}
 
 	// Round up to the nearest pod, clamped to the number of pods this
