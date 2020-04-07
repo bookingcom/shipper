@@ -2,7 +2,6 @@ package release
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -463,24 +462,8 @@ func runReleaseControllerTest(
 	appClusterObjects map[string][]runtime.Object,
 	expectations []releaseControllerTestExpectation,
 ) {
-	f := shippertesting.NewControllerTestFixture()
-
-	clusterNames := []string{}
-	for clusterName, objects := range appClusterObjects {
-		cluster := f.AddNamedCluster(clusterName)
-		clusterNames = append(clusterNames, clusterName)
-
-		for _, object := range objects {
-			cluster.ShipperClient.Tracker().Add(object)
-		}
-
-		_, err := f.ClusterClientStore.GetApplicationClusterClientset(clusterName, AgentName)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	sort.Strings(clusterNames)
+	f := shippertesting.NewManagementControllerTestFixture(
+		mgmtClusterObjects, appClusterObjects)
 
 	for _, object := range mgmtClusterObjects {
 		f.ShipperClient.Tracker().Add(object)

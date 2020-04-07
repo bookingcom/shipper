@@ -288,6 +288,8 @@ func createOrUpdateApplicationCrds(cmd *cobra.Command, configurator *configurato
 
 	crds := []*apiextensionv1beta1.CustomResourceDefinition{
 		crds.InstallationTarget,
+		crds.CapacityTarget,
+		crds.TrafficTarget,
 	}
 
 	for _, crd := range crds {

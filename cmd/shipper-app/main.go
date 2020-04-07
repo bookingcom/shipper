@@ -37,7 +37,6 @@ import (
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/controller/capacity"
 	"github.com/bookingcom/shipper/pkg/controller/installation"
-	"github.com/bookingcom/shipper/pkg/controller/janitor"
 	"github.com/bookingcom/shipper/pkg/controller/traffic"
 	"github.com/bookingcom/shipper/pkg/metrics/instrumentedclient"
 	shippermetrics "github.com/bookingcom/shipper/pkg/metrics/prometheus"
@@ -343,7 +342,6 @@ func buildInitializers() map[string]initFunc {
 	controllers["installation"] = startInstallationController
 	controllers["capacity"] = startCapacityController
 	controllers["traffic"] = startTrafficController
-	controllers["janitor"] = startJanitorController
 	return controllers
 }
 
@@ -407,28 +405,6 @@ func startTrafficController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		cfg.store,
 		cfg.recorder(traffic.AgentName),
-	)
-
-	cfg.wg.Add(1)
-	go func() {
-		c.Run(cfg.workers, cfg.stopCh)
-		cfg.wg.Done()
-	}()
-
-	return true, nil
-}
-
-func startJanitorController(cfg *cfg) (bool, error) {
-	enabled := cfg.enabledControllers["janitor"]
-	if !enabled {
-		return false, nil
-	}
-
-	c := janitor.NewController(
-		client.NewShipperClientOrDie(janitor.AgentName, cfg.restCfg),
-		cfg.shipperInformerFactory,
-		cfg.store,
-		cfg.recorder(janitor.AgentName),
 	)
 
 	cfg.wg.Add(1)

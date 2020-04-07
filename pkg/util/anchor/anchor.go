@@ -42,6 +42,14 @@ func CreateConfigMapAnchor(it *shipper.InstallationTarget) *corev1.ConfigMap {
 			Name:      CreateAnchorName(it),
 			Namespace: it.Namespace,
 			Labels:    it.Labels,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: shipper.SchemeGroupVersion.String(),
+					Kind:       "InstallationTarget",
+					Name:       it.Name,
+					UID:        it.UID,
+				},
+			},
 		},
 		Data: map[string]string{
 			InstallationTargetUID: string(it.UID),

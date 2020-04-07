@@ -3,6 +3,7 @@ package testing
 import (
 	"fmt"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 )
 
@@ -29,6 +30,27 @@ func NewControllerTestFixture() *ControllerTestFixture {
 
 		Recorder: record.NewFakeRecorder(recorderBufSize),
 	}
+}
+
+func NewManagementControllerTestFixture(
+	mgmtClusterObjects []runtime.Object,
+	appClusterShipperObjects map[string][]runtime.Object,
+) *ControllerTestFixture {
+	f := NewControllerTestFixture()
+
+	for clusterName, objects := range appClusterShipperObjects {
+		cluster := f.AddNamedCluster(clusterName)
+
+		for _, object := range objects {
+			cluster.ShipperClient.Tracker().Add(object)
+		}
+	}
+
+	for _, object := range mgmtClusterObjects {
+		f.ShipperClient.Tracker().Add(object)
+	}
+
+	return f
 }
 
 func (f *ControllerTestFixture) AddNamedCluster(name string) *FakeCluster {

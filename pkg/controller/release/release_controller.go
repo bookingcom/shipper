@@ -386,7 +386,7 @@ func (c *Controller) scheduleAndExecuteStrategyForClusters(
 	diff *diff.MultiDiff,
 ) (*shipper.Release, []StrategyPatch, error) {
 	for _, clusterName := range clusters {
-		appClusterClients, err := c.store.GetApplicationClusterClientset(clusterName, AgentName)
+		clusterClientsets, err := c.store.GetApplicationClusterClientset(clusterName, AgentName)
 		if err != nil {
 			condition := releaseutil.NewReleaseCondition(
 				shipper.ReleaseConditionTypeScheduled,
@@ -401,7 +401,7 @@ func (c *Controller) scheduleAndExecuteStrategyForClusters(
 
 		// TODO(jgreff): replace mgmt cluster listers with app cluster
 		// ones once they're moved
-		informerFactory := appClusterClients.GetShipperInformerFactory()
+		informerFactory := clusterClientsets.GetShipperInformerFactory()
 		listers := listers{
 			installationTargetLister: informerFactory.Shipper().V1alpha1().InstallationTargets().Lister(),
 			capacityTargetLister:     c.capacityTargetLister,
@@ -410,7 +410,7 @@ func (c *Controller) scheduleAndExecuteStrategyForClusters(
 
 		scheduler := NewScheduler(
 			c.clientset,
-			appClusterClients.GetShipperClient(),
+			clusterClientsets.GetShipperClient(),
 			listers,
 			c.chartFetcher,
 			c.recorder,
