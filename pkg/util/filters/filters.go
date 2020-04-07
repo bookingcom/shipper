@@ -12,7 +12,7 @@ import (
 func BelongsToRelease(obj interface{}) bool {
 	kubeobj, ok := obj.(metav1.Object)
 	if !ok {
-		klog.Warningf("Received something that's not a metav1/Object: %v", obj)
+		klog.Warningf("Received something that's not a metav1.Object: %v", obj)
 		return false
 	}
 
@@ -24,7 +24,7 @@ func BelongsToRelease(obj interface{}) bool {
 func BelongsToApp(obj interface{}) bool {
 	kubeobj, ok := obj.(metav1.Object)
 	if !ok {
-		klog.Warningf("Received something that's not a metav1/Object: %v", obj)
+		klog.Warningf("Received something that's not a metav1.Object: %v", obj)
 		return false
 	}
 
@@ -36,7 +36,7 @@ func BelongsToApp(obj interface{}) bool {
 func BelongsToInstallationTarget(obj interface{}) bool {
 	cm, ok := obj.(*corev1.ConfigMap)
 	if !ok {
-		klog.Warningf("Received something that's not a corev1/ConfigMap: %v", obj)
+		klog.Warningf("Received something that's not a corev1.ConfigMap: %v", obj)
 		return false
 	}
 

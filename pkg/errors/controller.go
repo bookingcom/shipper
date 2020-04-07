@@ -36,27 +36,6 @@ func NewUnexpectedObjectCountFromSelectorError(
 	}
 }
 
-type MultipleOwnerReferencesError string
-
-func (e MultipleOwnerReferencesError) Error() string {
-	return string(e)
-}
-
-func (e MultipleOwnerReferencesError) ShouldRetry() bool {
-	return false
-}
-
-func IsMultipleOwnerReferencesError(err error) bool {
-	_, ok := err.(MultipleOwnerReferencesError)
-	return ok
-}
-
-func NewMultipleOwnerReferencesError(name string, references int) MultipleOwnerReferencesError {
-	return MultipleOwnerReferencesError(fmt.Sprintf(
-		"expected exactly one owner for object %q, got %d",
-		name, references))
-}
-
 type WrongOwnerReferenceError struct {
 	object kubeobj
 	owner  kubeobj

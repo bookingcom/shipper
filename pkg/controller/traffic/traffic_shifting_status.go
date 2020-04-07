@@ -9,6 +9,7 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 
@@ -225,9 +226,8 @@ func buildClusterReleaseWeights(trafficTargets []*shipper.TrafficTarget) (cluste
 	releaseTT := map[string]*shipper.TrafficTarget{}
 
 	for _, tt := range trafficTargets {
-		release, ok := tt.Labels[shipper.ReleaseLabel]
-		if !ok {
-			err := shippererrors.NewMissingShipperLabelError(tt, shipper.ReleaseLabel)
+		release, err := objectutil.GetReleaseLabel(tt)
+		if err != nil {
 			return nil, err
 		}
 

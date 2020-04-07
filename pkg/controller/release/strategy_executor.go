@@ -7,8 +7,8 @@ import (
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	"github.com/bookingcom/shipper/pkg/controller"
 	"github.com/bookingcom/shipper/pkg/util/conditions"
+	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
@@ -226,7 +226,7 @@ func genCapacityEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
 		}
 
 		if achieved, newSpec, clustersNotReady := checkCapacity(curr.capacityTarget, capacityWeight); !achieved {
-			klog.Infof("Release %q %s", controller.MetaKey(curr.release), "hasn't achieved capacity yet")
+			klog.Infof("Release %q %s", objectutil.MetaKey(curr.release), "hasn't achieved capacity yet")
 
 			patches := make([]StrategyPatch, 0, 2)
 
@@ -256,7 +256,7 @@ func genCapacityEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
 			return PipelineBreak, patches, nil
 		}
 
-		klog.Infof("Release %q %s", controller.MetaKey(curr.release), "has achieved capacity")
+		klog.Infof("Release %q %s", objectutil.MetaKey(curr.release), "has achieved capacity")
 
 		cond.SetTrue(
 			condType,
@@ -291,7 +291,7 @@ func genTrafficEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
 		}
 
 		if achieved, newSpec, reason := checkTraffic(curr.trafficTarget, uint32(trafficWeight)); !achieved {
-			klog.Infof("Release %q %s", controller.MetaKey(curr.release), "hasn't achieved traffic yet")
+			klog.Infof("Release %q %s", objectutil.MetaKey(curr.release), "hasn't achieved traffic yet")
 
 			patches := make([]StrategyPatch, 0, 2)
 
@@ -321,7 +321,7 @@ func genTrafficEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
 			return PipelineBreak, patches, nil
 		}
 
-		klog.Infof("Release %q %s", controller.MetaKey(curr.release), "has achieved traffic")
+		klog.Infof("Release %q %s", objectutil.MetaKey(curr.release), "has achieved traffic")
 
 		cond.SetTrue(
 			condType,
