@@ -35,6 +35,7 @@ import (
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	"github.com/bookingcom/shipper/pkg/controller/application"
+	"github.com/bookingcom/shipper/pkg/controller/janitor"
 	"github.com/bookingcom/shipper/pkg/controller/release"
 	"github.com/bookingcom/shipper/pkg/controller/rolloutblock"
 	"github.com/bookingcom/shipper/pkg/metrics/instrumentedclient"
@@ -45,6 +46,7 @@ import (
 
 var controllers = []string{
 	"application",
+	"janitor",
 	"release",
 	"rolloutblock",
 	"webhook",
@@ -370,6 +372,7 @@ type initFunc func(*cfg) (bool, error)
 func buildInitializers() map[string]initFunc {
 	controllers := map[string]initFunc{}
 	controllers["application"] = startApplicationController
+	controllers["janitor"] = startJanitorController
 	controllers["release"] = startReleaseController
 	controllers["rolloutblock"] = startRolloutBlockController
 	controllers["webhook"] = startWebhook
@@ -387,6 +390,28 @@ func startApplicationController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		cfg.chartVersionResolver,
 		cfg.recorder(application.AgentName),
+	)
+
+	cfg.wg.Add(1)
+	go func() {
+		c.Run(cfg.workers, cfg.stopCh)
+		cfg.wg.Done()
+	}()
+
+	return true, nil
+}
+
+func startJanitorController(cfg *cfg) (bool, error) {
+	enabled := cfg.enabledControllers["janitor"]
+	if !enabled {
+		return false, nil
+	}
+
+	c := janitor.NewController(
+		client.NewShipperClientOrDie(janitor.AgentName, cfg.restCfg),
+		cfg.store,
+		cfg.shipperInformerFactory,
+		cfg.recorder(janitor.AgentName),
 	)
 
 	cfg.wg.Add(1)
