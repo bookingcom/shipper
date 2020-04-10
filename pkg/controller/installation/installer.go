@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"sort"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -17,7 +16,6 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
-	"github.com/bookingcom/shipper/pkg/util/anchor"
 )
 
 type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind) (dynamic.Interface, error)
@@ -97,25 +95,30 @@ func (i *Installer) install(
 ) error {
 	it := i.installationTarget
 
-	var createdConfigMap *corev1.ConfigMap
-
-	configMap := anchor.CreateConfigMapAnchor(it)
-	// TODO(jgreff): use a lister insted of a bare client
-	existingConfigMap, err := client.CoreV1().ConfigMaps(it.Namespace).Get(configMap.Name, metav1.GetOptions{})
-	if err != nil && !errors.IsNotFound(err) {
-		return shippererrors.NewKubeclientGetError(it.Name, configMap.Name, err).
-			WithCoreV1Kind("ConfigMap")
-	} else if err != nil { // errors.IsNotFound(err) == true
-		createdConfigMap, err = client.CoreV1().ConfigMaps(configMap.Namespace).Create(configMap)
-		if err != nil {
-			return shippererrors.NewKubeclientCreateError(configMap, err).
-				WithCoreV1Kind("ConfigMap")
-		}
-	} else {
-		createdConfigMap = existingConfigMap
+	ownerReference := metav1.OwnerReference{
+		APIVersion: shipper.SchemeGroupVersion.String(),
+		Kind:       "InstallationTarget",
+		Name:       it.Name,
+		UID:        it.UID,
 	}
 
-	ownerReference := anchor.ConfigMapAnchorToOwnerReference(createdConfigMap)
+	anchorName := fmt.Sprintf("%s-anchor", it.Name)
+	anchorConfigMap, err := client.CoreV1().
+		ConfigMaps(it.Namespace).Get(anchorName, metav1.GetOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return shippererrors.NewKubeclientGetError(it.Namespace, anchorName, err).
+			WithCoreV1Kind("ConfigMap")
+	} else if err == nil {
+		anchorConfigMap.SetOwnerReferences([]metav1.OwnerReference{
+			ownerReference})
+
+		_, err := client.CoreV1().ConfigMaps(it.Namespace).Update(anchorConfigMap)
+		if err != nil {
+			return shippererrors.NewKubeclientUpdateError(anchorConfigMap, err).
+				WithCoreV1Kind("ConfigMap")
+		}
+	}
+
 	resourceClients := make(map[string]dynamic.ResourceInterface)
 
 	for _, preparedObj := range i.objects {

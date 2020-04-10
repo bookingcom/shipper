@@ -110,21 +110,6 @@ func NewController(
 	return controller
 }
 
-func (c *Controller) registerAppClusterEventHandlers(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory shipperinformers.SharedInformerFactory, clusterName string) {
-	handler := cache.FilteringResourceEventHandler{
-		FilterFunc: filters.BelongsToRelease,
-		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc:    c.enqueueInstallationTargetFromObject,
-			DeleteFunc: c.enqueueInstallationTargetFromObject,
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				c.enqueueInstallationTargetFromObject(newObj)
-			},
-		},
-	}
-	kubeInformerFactory.Apps().V1().Deployments().Informer().AddEventHandler(handler)
-	kubeInformerFactory.Core().V1().Services().Informer().AddEventHandler(handler)
-}
-
 func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 	defer c.workqueue.ShutDown()

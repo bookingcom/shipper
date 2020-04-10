@@ -15,7 +15,6 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
-	"github.com/bookingcom/shipper/pkg/util/anchor"
 )
 
 var (
@@ -65,22 +64,15 @@ func TestInstallerCleanInstall(t *testing.T) {
 	kubeObjects := []runtime.Object{}
 	anchoredSvc := convertToAnchoredUnstructured(baselineSvc.DeepCopy(), it)
 
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(configmapGVR, shippertesting.TestNamespace, shippertesting.TestApp),
-		kubetesting.NewCreateAction(configmapGVR, shippertesting.TestNamespace, nil),
-		shippertesting.NewDiscoveryAction("services"),
-	}
-
 	expectedDynamicActions := []kubetesting.Action{
-		kubetesting.NewGetAction(svcGVR, shippertesting.TestNamespace, anchoredSvc.GetName()),
 		kubetesting.NewCreateAction(svcGVR, shippertesting.TestNamespace, anchoredSvc),
 	}
 
-	runInstallerTest(t, it, kubeObjects, expectedActions, expectedDynamicActions)
+	runInstallerTest(t, it, kubeObjects, expectedDynamicActions)
 }
 
 // TestInstallerExistingButNoOwners tests that the installer updates existing
-// objects to add a new OwnerReference to the related ConfigMap anchor.
+// objects to add a new OwnerReference to the related InstallationTarget
 func TestInstallerExistingButNoOwners(t *testing.T) {
 	it := buildInstallationTarget(
 		shippertesting.TestNamespace,
@@ -92,22 +84,15 @@ func TestInstallerExistingButNoOwners(t *testing.T) {
 	}
 	anchoredSvc := convertToAnchoredUnstructured(baselineSvc.DeepCopy(), it)
 
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(configmapGVR, shippertesting.TestNamespace, shippertesting.TestApp),
-		kubetesting.NewCreateAction(configmapGVR, shippertesting.TestNamespace, nil),
-		shippertesting.NewDiscoveryAction("services"),
-	}
-
 	expectedDynamicActions := []kubetesting.Action{
-		kubetesting.NewGetAction(svcGVR, shippertesting.TestNamespace, anchoredSvc.GetName()),
 		kubetesting.NewUpdateAction(svcGVR, shippertesting.TestNamespace, anchoredSvc),
 	}
 
-	runInstallerTest(t, it, kubeObjects, expectedActions, expectedDynamicActions)
+	runInstallerTest(t, it, kubeObjects, expectedDynamicActions)
 }
 
 // TestInstallerExistingOwners tests that the installer updates existing
-// objects to add a new OwnerReference to the related ConfigMap anchor. This
+// objects to add a new OwnerReference to the related InstallationTarget. This
 // does not replace the previous OwnerReferences, but adds to it.
 func TestInstallerExistingOwners(t *testing.T) {
 	it := buildInstallationTarget(
@@ -118,8 +103,8 @@ func TestInstallerExistingOwners(t *testing.T) {
 	ownedService := baselineSvc.DeepCopy()
 	ownedService.SetOwnerReferences([]metav1.OwnerReference{
 		{
-			APIVersion: "v1",
-			Kind:       "ConfigMap",
+			APIVersion: shipper.SchemeGroupVersion.String(),
+			Kind:       "InstallationTarget",
 			Name:       "some-other-installation-target",
 			UID:        "deadbeef",
 		},
@@ -131,18 +116,60 @@ func TestInstallerExistingOwners(t *testing.T) {
 
 	anchoredSvc := convertToAnchoredUnstructured(ownedService.DeepCopy(), it)
 
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(configmapGVR, shippertesting.TestNamespace, shippertesting.TestApp),
-		kubetesting.NewCreateAction(configmapGVR, shippertesting.TestNamespace, nil),
-		shippertesting.NewDiscoveryAction("services"),
-	}
-
 	expectedDynamicActions := []kubetesting.Action{
-		kubetesting.NewGetAction(svcGVR, shippertesting.TestNamespace, anchoredSvc.GetName()),
 		kubetesting.NewUpdateAction(svcGVR, shippertesting.TestNamespace, anchoredSvc),
 	}
 
-	runInstallerTest(t, it, kubeObjects, expectedActions, expectedDynamicActions)
+	runInstallerTest(t, it, kubeObjects, expectedDynamicActions)
+}
+
+func TestInstallerExistingConfigmap(t *testing.T) {
+	it := buildInstallationTarget(
+		shippertesting.TestNamespace,
+		shippertesting.TestApp,
+		buildChart(reviewsChartName, "0.0.1"))
+
+	configmap := &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: shippertesting.TestNamespace,
+			Name:      fmt.Sprintf("%s-anchor", it.Name),
+		},
+	}
+
+	ownedService := baselineSvc.DeepCopy()
+	ownedService.SetOwnerReferences([]metav1.OwnerReference{
+		{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+			Name:       configmap.Name,
+		},
+	})
+
+	t.Logf(configmap.GetName())
+
+	kubeObjects := []runtime.Object{configmap, ownedService}
+
+	anchoredSvc := convertToAnchoredUnstructured(ownedService.DeepCopy(), it)
+	updatedConfigmap := configmap.DeepCopy()
+	updatedConfigmap.OwnerReferences = []metav1.OwnerReference{
+		buildInstallationTargetOwnerRef(it),
+	}
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewUpdateAction(configmapGVR, shippertesting.TestNamespace, updatedConfigmap),
+	}
+	expectedDynamicActions := []kubetesting.Action{
+		kubetesting.NewUpdateAction(svcGVR, shippertesting.TestNamespace, anchoredSvc),
+	}
+
+	f := runInstallerTest(t, it, kubeObjects, expectedDynamicActions)
+
+	filteredActions := shippertesting.FilterActions(f.KubeClient.Actions())
+	shippertesting.CheckActions(expectedActions, filteredActions, t)
 }
 
 // TestInstallerNoOverride verifies that an InstallationTarget with disabled
@@ -161,17 +188,9 @@ func TestInstallerNoOverride(t *testing.T) {
 		svc,
 	}
 
-	expectedActions := []kubetesting.Action{
-		kubetesting.NewGetAction(configmapGVR, shippertesting.TestNamespace, fmt.Sprintf("%s-anchor", reviewsChartName)),
-		kubetesting.NewCreateAction(configmapGVR, shippertesting.TestNamespace, nil),
-		shippertesting.NewDiscoveryAction("services"),
-	}
+	expectedDynamicActions := []kubetesting.Action{}
 
-	expectedDynamicActions := []kubetesting.Action{
-		kubetesting.NewGetAction(svcGVR, shippertesting.TestNamespace, baselineSvc.Name),
-	}
-
-	runInstallerTest(t, it, kubeObjects, expectedActions, expectedDynamicActions)
+	runInstallerTest(t, it, kubeObjects, expectedDynamicActions)
 }
 
 // newInstaller returns an installer configured to install a single service
@@ -197,34 +216,48 @@ func convertToAnchoredUnstructured(
 		panic(fmt.Sprintf("error converting object to unstructured: %s", err))
 	}
 
-	configMapAnchor := anchor.CreateConfigMapAnchor(it)
-	anchorOwnerRefs := anchor.ConfigMapAnchorToOwnerReference(configMapAnchor)
-
 	converted.SetOwnerReferences(append(
-		[]metav1.OwnerReference{anchorOwnerRefs},
+		[]metav1.OwnerReference{buildInstallationTargetOwnerRef(it)},
 		converted.GetOwnerReferences()...))
 
 	return converted
+}
+
+func buildInstallationTargetOwnerRef(it *shipper.InstallationTarget) metav1.OwnerReference {
+	return metav1.OwnerReference{
+		APIVersion: shipper.SchemeGroupVersion.String(),
+		Kind:       "InstallationTarget",
+		Name:       it.Name,
+		UID:        it.UID,
+	}
 }
 
 func runInstallerTest(
 	t *testing.T,
 	it *shipper.InstallationTarget,
 	objects []runtime.Object,
-	actions, dynamicActions []kubetesting.Action,
-) {
+	dynamicActions []kubetesting.Action,
+) *shippertesting.ControllerTestFixture {
 	installer := newInstaller(it)
 
 	f := newFixture(objects)
+
+	for _, obj := range objects {
+		f.KubeClient.Tracker().Add(obj)
+	}
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	f.Run(stopCh)
+
 	err := installer.install(f.KubeClient, f.DynamicClientBuilder)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// actions are only meant to be generated for ConfigMaps, so we don't
-	// check them too closely. Dynamic actions, on the other hand, are used
-	// to install the actual manifests into clusters, so we do deep check
-	// them.
-	shippertesting.ShallowCheckActions(actions, f.KubeClient.Actions(), t)
-	shippertesting.CheckActions(dynamicActions, f.DynamicClient.Actions(), t)
+	filteredActions := shippertesting.FilterActions(f.DynamicClient.Actions())
+	shippertesting.CheckActions(dynamicActions, filteredActions, t)
+
+	return f
 }

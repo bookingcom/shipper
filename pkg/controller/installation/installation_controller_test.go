@@ -7,14 +7,12 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
-	"github.com/bookingcom/shipper/pkg/util/anchor"
 	targetutil "github.com/bookingcom/shipper/pkg/util/target"
 )
 
@@ -101,36 +99,6 @@ func runInstallationControllerTest(
 		t.Fatalf(
 			"InstallationTarget %q has Status different from expected:\n%s",
 			itKey, diff)
-	}
-
-	// although we don't specifically ask about it, an anchor configmap
-	// should be present on any successful installation
-	configmapGVR := corev1.SchemeGroupVersion.WithResource("configmaps")
-	configmapName := anchor.CreateAnchorName(it)
-	_, err = f.KubeClient.Tracker().Get(configmapGVR, it.Namespace, configmapName)
-
-	// a nil objects slice means a failed installation, so no objects
-	// should be installed
-	if objects == nil {
-		if err != nil {
-			if !kerrors.IsNotFound(err) {
-				t.Fatalf(
-					`expected to not find ConfigMap %q, but got error instead: %s`,
-					configmapName, err)
-			}
-		} else {
-			t.Fatalf(
-				`expected to not find ConfigMap %q, but it was there`,
-				configmapName)
-		}
-
-		return
-	}
-
-	if err != nil {
-		t.Errorf(
-			`expected to get ConfigMap %q, but got error instead: %s`,
-			configmapName, err)
 	}
 
 	for _, expected := range objects {
