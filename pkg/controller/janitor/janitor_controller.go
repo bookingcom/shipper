@@ -166,7 +166,6 @@ func (c *Controller) processNextWorkItem() bool {
 		return true
 	}
 
-	klog.V(4).Infof("Successfully ran garbage collection cycle for Release %q", key)
 	c.workqueue.Forget(obj)
 
 	return true
@@ -217,6 +216,8 @@ func (c *Controller) syncHandler(key string) error {
 		if err != nil {
 			return err
 		}
+
+		klog.V(4).Infof("Successfully removed orphaned objects for Release %q in cluster %s", key, cluster)
 	}
 
 	return nil
