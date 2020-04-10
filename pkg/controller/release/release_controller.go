@@ -166,7 +166,7 @@ func NewController(
 		shipperInformerFactory.Shipper().V1alpha1().InstallationTargets().Informer()
 	})
 
-	store.AddEventHandlerCallback(func(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory shipperinformers.SharedInformerFactory, clusterName string) {
+	store.AddEventHandlerCallback(func(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory shipperinformers.SharedInformerFactory) {
 		shipperInformerFactory.Shipper().V1alpha1().InstallationTargets().Informer().AddEventHandler(eventHandler)
 	})
 
