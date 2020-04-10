@@ -68,7 +68,11 @@ func (f *ControllerTestFixture) AddCluster() *FakeCluster {
 }
 
 func (f *ControllerTestFixture) Run(stopCh chan struct{}) {
+	f.KubeInformerFactory.Start(stopCh)
+	f.KubeInformerFactory.WaitForCacheSync(stopCh)
+
 	f.ShipperInformerFactory.Start(stopCh)
 	f.ShipperInformerFactory.WaitForCacheSync(stopCh)
+
 	f.ClusterClientStore.Run(stopCh)
 }

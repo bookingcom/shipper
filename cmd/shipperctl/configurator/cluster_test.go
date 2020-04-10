@@ -31,9 +31,8 @@ func TestCreateValidatingWebhookConfiguration(t *testing.T) {
 	}
 	expectedConfiguration := f.newValidatingWebhookConfiguration(caBundle, shipperSystemNamespace, operations)
 	gvr := admissionregistrationv1beta1.SchemeGroupVersion.WithResource("validatingwebhookconfigurations")
-	getAction := kubetesting.NewGetAction(gvr, "", expectedConfiguration.Name)
 	createAction := kubetesting.NewCreateAction(gvr, "", expectedConfiguration)
-	f.actions = append(f.actions, getAction, createAction)
+	f.actions = append(f.actions, createAction)
 
 	clientSet, ok := f.configurator.KubeClient.(*kubefake.Clientset)
 	if !ok {
@@ -67,9 +66,8 @@ func TestUpdateValidatingWebhookConfiguration(t *testing.T) {
 		admissionregistrationv1beta1.Update,
 	}
 	expectedConfiguration := f.newValidatingWebhookConfiguration(caBundle, shipperSystemNamespace, operations)
-	getAction := kubetesting.NewGetAction(gvr, "", expectedConfiguration.Name)
 	updateAction := kubetesting.NewUpdateAction(gvr, "", expectedConfiguration)
-	f.actions = append(f.actions, getAction, updateAction)
+	f.actions = append(f.actions, updateAction)
 
 	clientSet, ok := f.configurator.KubeClient.(*kubefake.Clientset)
 	if !ok {
@@ -87,9 +85,8 @@ func TestCreateValidatingWebhookService(t *testing.T) {
 
 	expectedService := f.newValidatingWebhookService("shipper", shipperSystemNamespace)
 	gvr := corev1.SchemeGroupVersion.WithResource("services")
-	getAction := kubetesting.NewGetAction(gvr, shipperSystemNamespace, expectedService.Name)
 	createAction := kubetesting.NewCreateAction(gvr, shipperSystemNamespace, expectedService)
-	f.actions = append(f.actions, getAction, createAction)
+	f.actions = append(f.actions, createAction)
 
 	clientSet, ok := f.configurator.KubeClient.(*kubefake.Clientset)
 	if !ok {
@@ -114,9 +111,8 @@ func TestUpdateValidatingWebhookService(t *testing.T) {
 	}
 
 	expectedService := f.newValidatingWebhookService("shipper", shipperSystemNamespace)
-	getAction := kubetesting.NewGetAction(gvr, shipperSystemNamespace, expectedService.Name)
 	updateAction := kubetesting.NewUpdateAction(gvr, shipperSystemNamespace, expectedService)
-	f.actions = append(f.actions, getAction, updateAction)
+	f.actions = append(f.actions, updateAction)
 
 	clientSet, ok := f.configurator.KubeClient.(*kubefake.Clientset)
 	if !ok {

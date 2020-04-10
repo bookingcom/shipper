@@ -12,7 +12,6 @@ import (
 
 	"github.com/pmezard/go-difflib/difflib"
 	"k8s.io/apimachinery/pkg/api/equality"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/helm/pkg/chartutil"
@@ -152,25 +151,9 @@ func PrettyPrintActions(actions []kubetesting.Action, t *testing.T) {
 // tests.
 func FilterActions(actions []kubetesting.Action) []kubetesting.Action {
 	ignore := func(action kubetesting.Action) bool {
-		for _, v := range []string{"list", "watch"} {
-			for _, r := range []string{
-				"applications",
-				"capacitytargets",
-				"clusters",
-				"configmaps",
-				"deployments",
-				"endpoints",
-				"installationtargets",
-				"pods",
-				"releases",
-				"rolloutblocks",
-				"secrets",
-				"services",
-				"traffictargets",
-			} {
-				if action.Matches(v, r) {
-					return true
-				}
+		for _, v := range []string{"get", "list", "watch"} {
+			if action.Matches(v, action.GetResource().Resource) {
+				return true
 			}
 		}
 
@@ -309,16 +292,4 @@ func prettyPrintActionPatch(action kubetesting.PatchActionImpl) string {
 	}
 
 	return ""
-}
-
-func NewDiscoveryAction(_ string) kubetesting.ActionImpl {
-	// FakeDiscovery has a very odd way of generating fake actions for
-	// discovery. We try to paper over that as best we can. The ignored
-	// parameter is trying to be future proof in case FakeDiscovery ever
-	// decides to fix its nasty ways and actually report the resource we're
-	// trying to discover.
-	return kubetesting.ActionImpl{
-		Verb:     "get",
-		Resource: schema.GroupVersionResource{Resource: "resource"},
-	}
 }
