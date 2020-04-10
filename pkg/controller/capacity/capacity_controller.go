@@ -429,7 +429,7 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 	c.workqueue.Add(key)
 }
 
-func (c *Controller) registerDeploymentEventHandlers(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory informers.SharedInformerFactory, clusterName string) {
+func (c *Controller) registerDeploymentEventHandlers(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory informers.SharedInformerFactory) {
 	handler := cache.FilteringResourceEventHandler{
 		FilterFunc: filters.BelongsToRelease,
 		Handler: cache.ResourceEventHandlerFuncs{

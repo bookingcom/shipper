@@ -315,7 +315,7 @@ func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
 			// callbacks from the controllers if it does not finish (because the cluster
 			// was Shutdown) this will not be called.
 			for _, cb := range s.eventHandlerRegisterFuncs {
-				cb(kubeInformerFactory, shipperInformerFactory, clusterName)
+				cb(kubeInformerFactory, shipperInformerFactory)
 			}
 		})
 

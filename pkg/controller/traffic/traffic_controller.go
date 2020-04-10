@@ -101,7 +101,7 @@ func NewController(
 // Endpoints object anyway. In case a new or deleted pod does change traffic
 // shifting in any way, the update to the traffic target itself will trigger a
 // new evaluation of all traffic targets for an app.
-func (c *Controller) registerAppClusterEventHandlers(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory informers.SharedInformerFactory, clusterName string) {
+func (c *Controller) registerAppClusterEventHandlers(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory informers.SharedInformerFactory) {
 	kubeInformerFactory.Core().V1().Endpoints().Informer().AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: filters.BelongsToApp,
 		Handler: cache.ResourceEventHandlerFuncs{

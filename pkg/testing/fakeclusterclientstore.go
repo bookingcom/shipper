@@ -48,7 +48,7 @@ func (s *FakeClusterClientStore) Run(stopCh <-chan struct{}) {
 		}
 
 		for _, eventHandlerCallback := range s.eventHandlerCallbacks {
-			eventHandlerCallback(cluster.KubeInformerFactory, cluster.ShipperInformerFactory, cluster.Name)
+			eventHandlerCallback(cluster.KubeInformerFactory, cluster.ShipperInformerFactory)
 		}
 
 		cluster.KubeInformerFactory.Start(stopCh)

@@ -89,7 +89,7 @@ func NewController(
 		shipperv1alpha1.TrafficTargets().Informer()
 	})
 
-	store.AddEventHandlerCallback(func(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory shipperinformers.SharedInformerFactory, clusterName string) {
+	store.AddEventHandlerCallback(func(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory shipperinformers.SharedInformerFactory) {
 		eventHandler := cache.ResourceEventHandlerFuncs{
 			AddFunc:    controller.enqueue,
 			DeleteFunc: controller.enqueue,

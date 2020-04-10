@@ -37,7 +37,7 @@ type SubscriptionRegisterFunc func(kubeinformers.SharedInformerFactory, shipperi
 // been built, and provides a hook for a controller to register its event
 // handlers. These will be event handlers for changes to the resources that the
 // controller has subscribed to in the `SubscriptionRegisterFunc` callback.
-type EventHandlerRegisterFunc func(kubeinformers.SharedInformerFactory, shipperinformers.SharedInformerFactory, string)
+type EventHandlerRegisterFunc func(kubeinformers.SharedInformerFactory, shipperinformers.SharedInformerFactory)
 
 // This enables tests to inject an appropriate fake client, which allows us to
 // use the real cluster client store in unit tests.
