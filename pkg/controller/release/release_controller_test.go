@@ -42,6 +42,10 @@ var (
 		Type:   shipper.ReleaseConditionTypeComplete,
 		Status: corev1.ConditionTrue,
 	}
+	ReleaseConditionNotComplete = shipper.ReleaseCondition{
+		Type:   shipper.ReleaseConditionTypeComplete,
+		Status: corev1.ConditionFalse,
+	}
 
 	StateWaitingForCommand = shipper.ReleaseStrategyState{
 		WaitingForInstallation: shipper.StrategyStateFalse,
@@ -301,6 +305,7 @@ func TestIntermediateStep(t *testing.T) {
 		Conditions: []shipper.ReleaseCondition{
 			ReleaseConditionUnblocked,
 			ReleaseConditionClustersChosen([]string{cluster.Name}),
+			ReleaseConditionNotComplete,
 			ReleaseConditionScheduled,
 			ReleaseConditionStrategyExecuted,
 		},
@@ -372,6 +377,95 @@ func TestLastStep(t *testing.T) {
 				StrategyConditionContenderAchievedTraffic,
 			}),
 			State: StateWaitingForNone,
+		},
+	}
+
+	runReleaseControllerTest(t, mgmtClusterObjects, appClusterObjects,
+		[]releaseControllerTestExpectation{
+			{
+				release:  rel,
+				status:   expectedStatus,
+				clusters: []string{cluster.Name},
+			},
+		})
+}
+
+// TestLastStepToVangurad tests that a Release will have a Complete condition set to true
+// after stepping back from a full on. The rest of the conditions (accept for Blocked)
+// should be true, as in TesttLastStep.
+func TestLastStepToVangurad(t *testing.T) {
+	rel := buildRelease(
+		shippertesting.TestNamespace,
+		shippertesting.TestApp,
+		"last-step",
+		1,
+	)
+
+	targetStep := StepFullOn
+	achievedStep := StepFullOn
+
+	// rel has a three-step strategy, so StepVanguard should be an
+	// intermediate step
+	rel.Spec.TargetStep = targetStep
+
+	cluster := buildCluster("cluster-a")
+
+	fullonStatus := shipper.ReleaseStatus{
+		AchievedStep: &shipper.AchievedStep{
+			Step: achievedStep,
+			Name: rel.Spec.Environment.Strategy.Steps[achievedStep].Name,
+		},
+		Conditions: []shipper.ReleaseCondition{
+			ReleaseConditionUnblocked,
+			ReleaseConditionClustersChosen([]string{cluster.Name}),
+			ReleaseConditionComplete,
+			ReleaseConditionScheduled,
+			ReleaseConditionStrategyExecuted,
+		},
+		Strategy: &shipper.ReleaseStrategyStatus{
+			Conditions: stepify(achievedStep, []shipper.ReleaseStrategyCondition{
+				StrategyConditionContenderAchievedCapacity,
+				StrategyConditionContenderAchievedInstallation,
+				StrategyConditionContenderAchievedTraffic,
+			}),
+			State: StateWaitingForNone,
+		},
+	}
+	rel.Status = fullonStatus
+
+	targetStep = StepVanguard
+	achievedStep = StepVanguard
+
+	rel.Spec.TargetStep = targetStep
+	it, tt, ct := buildAssociatedObjectsWithStatus(rel, []*shipper.Cluster{cluster}, &achievedStep)
+
+	// NOTE(jgreff): you'll note that it is in app cluster while ct and tt
+	// are in mgmt. that's scaffolding that needs to remain in place until
+	// we migrate all the objects to the app cluster.
+	mgmtClusterObjects := []runtime.Object{rel, cluster, ct, tt}
+	appClusterObjects := map[string][]runtime.Object{
+		cluster.Name: []runtime.Object{it},
+	}
+
+	expectedStatus := shipper.ReleaseStatus{
+		AchievedStep: &shipper.AchievedStep{
+			Step: achievedStep,
+			Name: rel.Spec.Environment.Strategy.Steps[achievedStep].Name,
+		},
+		Conditions: []shipper.ReleaseCondition{
+			ReleaseConditionUnblocked,
+			ReleaseConditionClustersChosen([]string{cluster.Name}),
+			ReleaseConditionNotComplete,
+			ReleaseConditionScheduled,
+			ReleaseConditionStrategyExecuted,
+		},
+		Strategy: &shipper.ReleaseStrategyStatus{
+			Conditions: stepify(achievedStep, []shipper.ReleaseStrategyCondition{
+				StrategyConditionContenderAchievedCapacity,
+				StrategyConditionContenderAchievedInstallation,
+				StrategyConditionContenderAchievedTraffic,
+			}),
+			State: StateWaitingForCommand,
 		},
 	}
 

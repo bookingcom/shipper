@@ -581,6 +581,14 @@ func (c *Controller) executeReleaseStrategyForCluster(
 				"",
 			)
 			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
+		} else {
+			condition := releaseutil.NewReleaseCondition(
+				shipper.ReleaseConditionTypeComplete,
+				corev1.ConditionFalse,
+				"",
+				"",
+			)
+			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 		}
 	}
 
