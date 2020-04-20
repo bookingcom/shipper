@@ -3,7 +3,7 @@ kind: Release
 metadata:
   name: reviews-api-deadbeef-1
 spec:
-  targetStep: 0
+  targetStep: 2
   environment:
     chart:
       name: reviews-api
