@@ -207,7 +207,6 @@ type ReleaseConditionType string
 
 const (
 	ReleaseConditionTypeClustersChosen   ReleaseConditionType = "ClustersChosen"
-	ReleaseConditionTypeScheduled        ReleaseConditionType = "Scheduled"
 	ReleaseConditionTypeStrategyExecuted ReleaseConditionType = "StrategyExecuted"
 	ReleaseConditionTypeComplete         ReleaseConditionType = "Complete"
 	ReleaseConditionTypeBlocked          ReleaseConditionType = "Blocked"
@@ -437,8 +436,13 @@ type ClusterTrafficTarget struct {
 }
 
 type ReleaseStrategyStatus struct {
-	State      ReleaseStrategyState       `json:"state,omitempty"`
-	Conditions []ReleaseStrategyCondition `json:"conditions,omitempty"`
+	State    ReleaseStrategyState    `json:"state,omitempty"`
+	Clusters []ClusterStrategyStatus `json:"clusters,omitempty"`
+}
+
+type ClusterStrategyStatus struct {
+	Name       string                     `json:"name"`
+	Conditions []ReleaseStrategyCondition `json:"conditions"`
 }
 
 type ReleaseStrategyState struct {

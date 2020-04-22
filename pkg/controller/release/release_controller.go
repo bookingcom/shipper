@@ -2,16 +2,14 @@ package release
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/equality"
-	"k8s.io/apimachinery/pkg/labels"
-
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -24,10 +22,12 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperrepo "github.com/bookingcom/shipper/pkg/chart/repo"
 	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	"github.com/bookingcom/shipper/pkg/util/conditions"
 	"github.com/bookingcom/shipper/pkg/util/diff"
 	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
 	objectutil "github.com/bookingcom/shipper/pkg/util/object"
@@ -86,12 +86,6 @@ type listers struct {
 	installationTargetLister shipperlisters.InstallationTargetLister
 	capacityTargetLister     shipperlisters.CapacityTargetLister
 	trafficTargetLister      shipperlisters.TrafficTargetLister
-}
-
-type ReleaseStrategyStateTransition struct {
-	State    string
-	Previous shipper.StrategyState
-	New      shipper.StrategyState
 }
 
 func NewController(
@@ -248,9 +242,9 @@ func (c *Controller) processNextWorkItem() bool {
 	return true
 }
 
-// syncHandler processes release keys one-by-one. This stage progresses
-// the release through a scheduler: assigns a set of chosen clusters, creates
-// required associated objects and marks the release as scheduled.
+// syncHandler processes release keys one-by-one. This stage assigns a set of
+// chosen clusters, creates required associated objects and executes the
+// strategy.
 func (c *Controller) syncHandler(key string) error {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -272,7 +266,7 @@ func (c *Controller) syncHandler(key string) error {
 		return nil
 	}
 
-	rel, patches, err := c.processRelease(initialRel.DeepCopy())
+	rel, err := c.processRelease(initialRel.DeepCopy())
 
 	if !equality.Semantic.DeepEqual(initialRel, rel) {
 		_, err := c.clientset.ShipperV1alpha1().Releases(namespace).
@@ -283,16 +277,10 @@ func (c *Controller) syncHandler(key string) error {
 		}
 	}
 
-	for _, patch := range patches {
-		if err := c.applyPatch(namespace, patch); err != nil {
-			return err
-		}
-	}
-
 	return err
 }
 
-func (c *Controller) processRelease(rel *shipper.Release) (*shipper.Release, []StrategyPatch, error) {
+func (c *Controller) processRelease(rel *shipper.Release) (*shipper.Release, error) {
 	diff := diffutil.NewMultiDiff()
 	defer func() {
 		if !diff.IsEmpty() {
@@ -319,7 +307,7 @@ func (c *Controller) processRelease(rel *shipper.Release) (*shipper.Release, []S
 		)
 		diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
-		return rel, nil, err
+		return rel, err
 	}
 
 	condition := releaseutil.NewReleaseCondition(
@@ -341,7 +329,7 @@ func (c *Controller) processRelease(rel *shipper.Release) (*shipper.Release, []S
 		)
 		diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
-		return rel, nil, err
+		return rel, err
 	}
 
 	condition = releaseutil.NewReleaseCondition(
@@ -352,171 +340,61 @@ func (c *Controller) processRelease(rel *shipper.Release) (*shipper.Release, []S
 	)
 	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
-	return c.scheduleAndExecuteStrategyForClusters(rel, clusterNames, diff)
+	rel, err = c.executeStrategyOnClusters(rel, clusterNames, diff)
+	if err != nil {
+		releaseStrategyExecutedCond := releaseutil.NewReleaseCondition(
+			shipper.ReleaseConditionTypeStrategyExecuted,
+			corev1.ConditionFalse,
+			StrategyExecutionFailed,
+			err.Error(),
+		)
+		diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *releaseStrategyExecutedCond))
+
+		return rel, err
+	}
+
+	condition = releaseutil.NewReleaseCondition(
+		shipper.ReleaseConditionTypeStrategyExecuted,
+		corev1.ConditionTrue,
+		"",
+		"",
+	)
+	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
+
+	return rel, nil
 }
 
-func (c *Controller) chooseClusters(rel *shipper.Release) (*shipper.Release, []string, error) {
-	releaseClusters := releaseutil.GetSelectedClusters(rel)
-	if releaseClusters != nil {
-		return rel, releaseClusters, nil
-	}
-
-	selector := labels.Everything()
-	allClusters, err := c.clusterLister.List(selector)
-	if err != nil {
-		return rel, nil, shippererrors.NewKubeclientListError(
-			shipper.SchemeGroupVersion.WithKind("Cluster"),
-			"", selector, err)
-
-	}
-
-	selectedClusters, err := computeTargetClusters(rel, allClusters)
-	if err != nil {
-		return rel, nil, err
-	}
-
-	setReleaseClusters(rel, selectedClusters)
-
-	return rel, releaseutil.GetSelectedClusters(rel), nil
-}
-
-func (c *Controller) scheduleAndExecuteStrategyForClusters(
+// NOTE(jgreff): executeStrategyOnClusters still refers to Schedule. this is
+// going to be removed at the end of the migration of it, ct and tt to app
+// clusters, as the old "scheduling" will become either choosing clusters or
+// executing strategy, with nothing in between.
+func (c *Controller) executeStrategyOnClusters(
 	rel *shipper.Release,
 	clusters []string,
 	diff *diff.MultiDiff,
-) (*shipper.Release, []StrategyPatch, error) {
-	for _, clusterName := range clusters {
-		clusterClientsets, err := c.store.GetApplicationClusterClientset(clusterName, AgentName)
-		if err != nil {
-			condition := releaseutil.NewReleaseCondition(
-				shipper.ReleaseConditionTypeScheduled,
-				corev1.ConditionFalse,
-				InternalError,
-				err.Error(),
-			)
-			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
-
-			return rel, nil, err
-		}
-
-		// TODO(jgreff): replace mgmt cluster listers with app cluster
-		// ones once they're moved
-		informerFactory := clusterClientsets.GetShipperInformerFactory()
-		listers := listers{
-			installationTargetLister: informerFactory.Shipper().V1alpha1().InstallationTargets().Lister(),
-			capacityTargetLister:     c.capacityTargetLister,
-			trafficTargetLister:      c.trafficTargetLister,
-		}
-
-		scheduler := NewScheduler(
-			c.clientset,
-			clusterClientsets.GetShipperClient(),
-			listers,
-			c.chartFetcher,
-			c.recorder,
-		)
-
-		relinfo, err := scheduler.ScheduleRelease(rel.DeepCopy())
-		if err != nil {
-			reason := reasonForReleaseCondition(err)
-			condition := releaseutil.NewReleaseCondition(
-				shipper.ReleaseConditionTypeScheduled,
-				corev1.ConditionFalse,
-				reason,
-				err.Error(),
-			)
-			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
-
-			return rel, nil, err
-		}
-
-		rel = relinfo.release
-
-		condition := releaseutil.NewReleaseCondition(
-			shipper.ReleaseConditionTypeScheduled,
-			corev1.ConditionTrue,
-			"",
-			"",
-		)
-		diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
-
-		execRel, patches, err := c.executeReleaseStrategyForCluster(relinfo, clusterName, listers, diff)
-		if err != nil {
-			releaseStrategyExecutedCond := releaseutil.NewReleaseCondition(
-				shipper.ReleaseConditionTypeStrategyExecuted,
-				corev1.ConditionFalse,
-				StrategyExecutionFailed,
-				err.Error(),
-			)
-			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *releaseStrategyExecutedCond))
-
-			return rel, patches, err
-		}
-
-		rel = execRel
-
-		condition = releaseutil.NewReleaseCondition(
-			shipper.ReleaseConditionTypeStrategyExecuted,
-			corev1.ConditionTrue,
-			"",
-			"",
-		)
-		diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
-
-		if len(patches) > 0 {
-			return rel, patches, nil
-		}
-	}
-
-	return rel, nil, nil
-}
-
-func (c *Controller) executeReleaseStrategyForCluster(
-	relinfo *releaseInfo,
-	clusterName string,
-	listers listers,
-	diff *diffutil.MultiDiff,
-) (*shipper.Release, []StrategyPatch, error) {
-	rel := relinfo.release.DeepCopy()
-
-	releases, err := c.applicationReleases(rel)
+) (*shipper.Release, error) {
+	prev, succ, err := c.getSiblingReleases(rel)
 	if err != nil {
-		return nil, nil, err
-	}
-	prev, succ, err := releaseutil.GetSiblingReleases(rel, releases)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var relinfoPrev, relinfoSucc *releaseInfo
-	if prev != nil {
-		relinfoPrev, err = c.buildReleaseInfo(prev, listers)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-	if succ != nil {
-		// If there is a successor to the current release, we have to ensure
-		// it's spec points to the last strategy step.
-		if !releaseutil.IsLastStrategyStep(relinfo.release) {
-			// In practice, this situation most likely means an
-			// external modification to the current release object,
-			// which can potentially cause some harmful consequences
-			// like: a historical release gets activated.
-			return nil, nil, shippererrors.NewInconsistentReleaseTargetStep(
-				objectutil.MetaKey(relinfo.release),
-				relinfo.release.Spec.TargetStep,
-				int32(len(relinfo.release.Spec.Environment.Strategy.Steps)-1),
-			)
-		}
-
-		relinfoSucc, err = c.buildReleaseInfo(succ, listers)
-		if err != nil {
-			return nil, nil, err
-		}
+		return rel, err
 	}
 
 	isHead := succ == nil
+
+	if !isHead && !releaseutil.IsLastStrategyStep(rel) {
+		// If there is a successor to the current release, we have to
+		// ensure it's spec points to the last strategy step.
+
+		// In practice, this situation most likely means an external
+		// modification to the current release object, which can
+		// potentially cause some harmful consequences like: a
+		// historical release gets activated.
+		return rel, shippererrors.NewInconsistentReleaseTargetStep(
+			objectutil.MetaKey(rel),
+			rel.Spec.TargetStep,
+			int32(len(rel.Spec.Environment.Strategy.Steps)-1),
+		)
+	}
+
 	var strategy *shipper.RolloutStrategy
 	var targetStep int32
 	// A head release uses it's local spec-defined strategy, any other release
@@ -529,27 +407,48 @@ func (c *Controller) executeReleaseStrategyForCluster(
 		targetStep = succ.Spec.TargetStep
 	}
 
-	// Looks like a malformed input. Informing about a problem and bailing out.
-	if targetStep >= int32(len(strategy.Steps)) {
-		err := fmt.Errorf("no step %d in strategy for Release %q",
-			targetStep, objectutil.MetaKey(rel))
-		return nil, nil, shippererrors.NewUnrecoverableError(err)
+	executor, err := NewStrategyExecutor(strategy, targetStep)
+	if err != nil {
+		return rel, err
 	}
 
-	executor := NewStrategyExecutor(strategy, targetStep)
+	clusterConditions := make(map[string]conditions.StrategyConditionsMap)
+	for _, clusterName := range clusters {
+		clusterClientsets, err := c.store.GetApplicationClusterClientset(clusterName, AgentName)
+		if err != nil {
+			return rel, err
+		}
 
-	complete, patches, trans := executor.Execute(relinfoPrev, relinfo, relinfoSucc)
+		// TODO(jgreff): replace mgmt cluster listers with app cluster
+		// ones once they're moved
+		informerFactory := clusterClientsets.GetShipperInformerFactory()
+		shipperv1alpha1 := informerFactory.Shipper().V1alpha1()
+		listers := listers{
+			installationTargetLister: shipperv1alpha1.InstallationTargets().Lister(),
+			capacityTargetLister:     c.capacityTargetLister,
+			trafficTargetLister:      c.trafficTargetLister,
+		}
 
-	if len(patches) == 0 {
-		klog.V(4).Infof("Strategy verified for release %q, nothing to patch", objectutil.MetaKey(rel))
-	} else {
-		klog.V(4).Infof("Strategy has been executed for release %q, applying patches", objectutil.MetaKey(rel))
+		clusterConditions[clusterName], err = c.executeReleaseStrategyForCluster(
+			rel.DeepCopy(),
+			prev, succ,
+			clusterClientsets.GetShipperClient(),
+			executor,
+			listers)
+		if err != nil {
+			return rel, err
+		}
 	}
 
 	isLastStep := int(targetStep) == len(strategy.Steps)-1
-	prevStep := rel.Status.AchievedStep
+	stepComplete, strategyStatus := consolidateStrategyStatus(
+		isHead, isLastStep, clusterConditions)
 
-	if complete {
+	rel.Status.Strategy = strategyStatus
+
+	if stepComplete {
+		prevStep := rel.Status.AchievedStep
+
 		var achievedStep int32
 		var achievedStepName string
 		if isHead {
@@ -559,6 +458,7 @@ func (c *Controller) executeReleaseStrategyForCluster(
 			achievedStep = int32(len(rel.Spec.Environment.Strategy.Steps)) - 1
 			achievedStepName = rel.Spec.Environment.Strategy.Steps[achievedStep].Name
 		}
+
 		if prevStep == nil || achievedStep != prevStep.Step {
 			rel.Status.AchievedStep = &shipper.AchievedStep{
 				Step: achievedStep,
@@ -584,40 +484,100 @@ func (c *Controller) executeReleaseStrategyForCluster(
 		}
 	}
 
-	for _, t := range trans {
-		c.recorder.Eventf(
-			rel,
-			corev1.EventTypeNormal,
-			"ReleaseStateTransitioned",
-			"Release %q had its state %q transitioned to %q",
-			objectutil.MetaKey(rel),
-			t.State,
-			t.New,
-		)
-	}
-
-	return rel, patches, nil
+	return rel, nil
 }
 
-func (c *Controller) applyPatch(namespace string, patch StrategyPatch) error {
-	name, gvk, b := patch.PatchSpec()
-
+func (c *Controller) executeReleaseStrategyForCluster(
+	rel *shipper.Release,
+	prev, succ *shipper.Release,
+	appClusterClientset shipperclientset.Interface,
+	executor *StrategyExecutor,
+	listers listers,
+) (conditions.StrategyConditionsMap, error) {
 	var err error
-	switch gvk.Kind {
-	case "Release":
-		_, err = c.clientset.ShipperV1alpha1().Releases(namespace).Patch(name, types.MergePatchType, b)
-	case "CapacityTarget":
-		_, err = c.clientset.ShipperV1alpha1().CapacityTargets(namespace).Patch(name, types.MergePatchType, b)
-	case "TrafficTarget":
-		_, err = c.clientset.ShipperV1alpha1().TrafficTargets(namespace).Patch(name, types.MergePatchType, b)
-	default:
-		return shippererrors.NewUnrecoverableError(fmt.Errorf("error syncing Release %q (will not retry): unknown GVK resource name: %s", name, gvk.Kind))
-	}
+	var relinfoPrev, relinfoSucc *releaseInfo
+
+	scheduler := NewScheduler(
+		c.clientset,
+		appClusterClientset,
+		listers,
+		c.chartFetcher,
+		c.recorder,
+	)
+
+	relinfo, err := scheduler.ScheduleRelease(rel)
 	if err != nil {
-		return shippererrors.NewKubeclientPatchError(namespace, name, err).WithKind(gvk)
+		return nil, err
 	}
 
-	return nil
+	if prev != nil {
+		relinfoPrev, err = c.buildReleaseInfo(prev, listers)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if succ != nil {
+		relinfoSucc, err = c.buildReleaseInfo(succ, listers)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	conditions, patches := executor.Execute(relinfoPrev, relinfo, relinfoSucc)
+
+	for _, patch := range patches {
+		namespace := relinfo.release.Namespace
+		name, gvk, b := patch.PatchSpec()
+
+		var err error
+		switch gvk.Kind {
+		case "CapacityTarget":
+			shipperv1alpha1 := c.clientset.ShipperV1alpha1()
+			_, err = shipperv1alpha1.CapacityTargets(namespace).Patch(name, types.MergePatchType, b)
+		case "TrafficTarget":
+			shipperv1alpha1 := c.clientset.ShipperV1alpha1()
+			_, err = shipperv1alpha1.TrafficTargets(namespace).Patch(name, types.MergePatchType, b)
+		default:
+			err = fmt.Errorf(
+				"invalid strategy patch. shipper doesn't know how to patch GVK %s",
+				gvk.Kind)
+			return nil, shippererrors.NewUnrecoverableError(err)
+		}
+
+		if err != nil {
+			return nil, shippererrors.
+				NewKubeclientPatchError(namespace, name, err).
+				WithKind(gvk)
+		}
+	}
+
+	return conditions, nil
+}
+
+func (c *Controller) chooseClusters(rel *shipper.Release) (*shipper.Release, []string, error) {
+	releaseClusters := releaseutil.GetSelectedClusters(rel)
+	if releaseClusters != nil {
+		return rel, releaseClusters, nil
+	}
+
+	selector := labels.Everything()
+	allClusters, err := c.clusterLister.List(selector)
+	if err != nil {
+		return rel, nil, shippererrors.NewKubeclientListError(
+			shipper.SchemeGroupVersion.WithKind("Cluster"),
+			"", selector, err)
+
+	}
+
+	selectedClusters, err := computeTargetClusters(rel, allClusters)
+	if err != nil {
+		return rel, nil, err
+	}
+
+	setReleaseClusters(rel, selectedClusters)
+
+	return rel, releaseutil.GetSelectedClusters(rel), nil
 }
 
 // buildReleaseInfo returns a release and it's associated objects fetched from
@@ -756,49 +716,11 @@ func (c *Controller) enqueueReleaseFromAssociatedObject(obj interface{}) {
 	c.enqueueReleaseAndNeighbours(rel)
 }
 
-func reasonForReleaseCondition(err error) string {
-	switch err.(type) {
-	case shippererrors.NoRegionsSpecifiedError:
-		return "NoRegionsSpecified"
-	case shippererrors.NotEnoughClustersInRegionError:
-		return "NotEnoughClustersInRegion"
-	case shippererrors.NotEnoughCapableClustersInRegionError:
-		return "NotEnoughCapableClustersInRegion"
-
-	case shippererrors.DuplicateCapabilityRequirementError:
-		return "DuplicateCapabilityRequirement"
-
-	case shippererrors.ChartFetchFailureError:
-		return "ChartFetchFailure"
-	case shippererrors.BrokenChartSpecError:
-		return "BrokenChartSpec"
-	case shippererrors.WrongChartDeploymentsError:
-		return "WrongChartDeployments"
-	case shippererrors.RolloutBlockError:
-		return "RolloutBlock"
-	case shippererrors.ChartRepoInternalError:
-		return "ChartRepoInternal"
-	case shippererrors.NoCachedChartRepoIndexError:
-		return "NoCachedChartRepoIndex"
+func (c *Controller) getSiblingReleases(rel *shipper.Release) (*shipper.Release, *shipper.Release, error) {
+	releases, err := c.applicationReleases(rel)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	if shippererrors.IsKubeclientError(err) {
-		return "FailedAPICall"
-	}
-
-	return fmt.Sprintf("unknown error %T! tell Shipper devs to classify it", err)
-}
-
-func setReleaseClusters(rel *shipper.Release, clusters []*shipper.Cluster) {
-	clusterNames := make([]string, 0, len(clusters))
-	memo := make(map[string]struct{})
-	for _, cluster := range clusters {
-		if _, ok := memo[cluster.Name]; ok {
-			continue
-		}
-		clusterNames = append(clusterNames, cluster.Name)
-		memo[cluster.Name] = struct{}{}
-	}
-	sort.Strings(clusterNames)
-	rel.Annotations[shipper.ReleaseClustersAnnotation] = strings.Join(clusterNames, ",")
+	return releaseutil.GetSiblingReleases(rel, releases)
 }

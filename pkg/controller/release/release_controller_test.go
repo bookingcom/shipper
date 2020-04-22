@@ -30,10 +30,6 @@ var (
 		Type:   shipper.ReleaseConditionTypeBlocked,
 		Status: corev1.ConditionFalse,
 	}
-	ReleaseConditionScheduled = shipper.ReleaseCondition{
-		Type:   shipper.ReleaseConditionTypeScheduled,
-		Status: corev1.ConditionTrue,
-	}
 	ReleaseConditionStrategyExecuted = shipper.ReleaseCondition{
 		Type:   shipper.ReleaseConditionTypeStrategyExecuted,
 		Status: corev1.ConditionTrue,
@@ -192,9 +188,9 @@ func TestClusterUnreachable(t *testing.T) {
 			ReleaseConditionUnblocked,
 			ReleaseConditionClustersChosen([]string{clusterName}),
 			{
-				Type:   shipper.ReleaseConditionTypeScheduled,
+				Type:   shipper.ReleaseConditionTypeStrategyExecuted,
 				Status: corev1.ConditionFalse,
-				Reason: InternalError,
+				Reason: StrategyExecutionFailed,
 				Message: fmt.Sprintf(
 					"no client for cluster %q",
 					clusterName,
@@ -231,7 +227,7 @@ func TestInvalidStrategy(t *testing.T) {
 	mgmtClusterObjects := []runtime.Object{rel, cluster}
 
 	// we need to set the cluster as a key here so it gets its own client,
-	// otherwise the release won't be scheduled properly.
+	// otherwise the release won't be executed properly.
 	appClusterObjects := map[string][]runtime.Object{
 		cluster.Name: []runtime.Object{},
 	}
@@ -240,14 +236,13 @@ func TestInvalidStrategy(t *testing.T) {
 		Conditions: []shipper.ReleaseCondition{
 			ReleaseConditionUnblocked,
 			ReleaseConditionClustersChosen([]string{cluster.Name}),
-			ReleaseConditionScheduled,
 			{
 				Type:   shipper.ReleaseConditionTypeStrategyExecuted,
 				Status: corev1.ConditionFalse,
 				Reason: StrategyExecutionFailed,
 				Message: fmt.Sprintf(
-					"no step %d in strategy for Release %q",
-					rel.Spec.TargetStep, fmt.Sprintf("%s/%s", rel.Namespace, rel.Name),
+					"no step %d in strategy",
+					rel.Spec.TargetStep,
 				),
 			},
 		},
@@ -301,15 +296,19 @@ func TestIntermediateStep(t *testing.T) {
 		Conditions: []shipper.ReleaseCondition{
 			ReleaseConditionUnblocked,
 			ReleaseConditionClustersChosen([]string{cluster.Name}),
-			ReleaseConditionScheduled,
 			ReleaseConditionStrategyExecuted,
 		},
 		Strategy: &shipper.ReleaseStrategyStatus{
-			Conditions: stepify(achievedStep, []shipper.ReleaseStrategyCondition{
-				StrategyConditionContenderAchievedCapacity,
-				StrategyConditionContenderAchievedInstallation,
-				StrategyConditionContenderAchievedTraffic,
-			}),
+			Clusters: []shipper.ClusterStrategyStatus{
+				{
+					Name: cluster.Name,
+					Conditions: stepify(achievedStep, []shipper.ReleaseStrategyCondition{
+						StrategyConditionContenderAchievedCapacity,
+						StrategyConditionContenderAchievedInstallation,
+						StrategyConditionContenderAchievedTraffic,
+					}),
+				},
+			},
 			State: StateWaitingForCommand,
 		},
 	}
@@ -362,15 +361,19 @@ func TestLastStep(t *testing.T) {
 			ReleaseConditionUnblocked,
 			ReleaseConditionClustersChosen([]string{cluster.Name}),
 			ReleaseConditionComplete,
-			ReleaseConditionScheduled,
 			ReleaseConditionStrategyExecuted,
 		},
 		Strategy: &shipper.ReleaseStrategyStatus{
-			Conditions: stepify(achievedStep, []shipper.ReleaseStrategyCondition{
-				StrategyConditionContenderAchievedCapacity,
-				StrategyConditionContenderAchievedInstallation,
-				StrategyConditionContenderAchievedTraffic,
-			}),
+			Clusters: []shipper.ClusterStrategyStatus{
+				{
+					Name: cluster.Name,
+					Conditions: stepify(achievedStep, []shipper.ReleaseStrategyCondition{
+						StrategyConditionContenderAchievedCapacity,
+						StrategyConditionContenderAchievedInstallation,
+						StrategyConditionContenderAchievedTraffic,
+					}),
+				},
+			},
 			State: StateWaitingForNone,
 		},
 	}
@@ -412,7 +415,7 @@ func TestIncumbentNotOnLastStep(t *testing.T) {
 	mgmtClusterObjects := []runtime.Object{incumbent, contender, cluster}
 
 	// we need to set the cluster as a key here so it gets its own client,
-	// otherwise the release won't be scheduled properly.
+	// otherwise the release won't be executed properly.
 	appClusterObjects := map[string][]runtime.Object{
 		cluster.Name: []runtime.Object{},
 	}
@@ -421,7 +424,6 @@ func TestIncumbentNotOnLastStep(t *testing.T) {
 		Conditions: []shipper.ReleaseCondition{
 			ReleaseConditionUnblocked,
 			ReleaseConditionClustersChosen([]string{cluster.Name}),
-			ReleaseConditionScheduled,
 			{
 				Type:   shipper.ReleaseConditionTypeStrategyExecuted,
 				Status: corev1.ConditionFalse,
@@ -464,10 +466,6 @@ func runReleaseControllerTest(
 ) {
 	f := shippertesting.NewManagementControllerTestFixture(
 		mgmtClusterObjects, appClusterObjects)
-
-	for _, object := range mgmtClusterObjects {
-		f.ShipperClient.Tracker().Add(object)
-	}
 
 	runController(f)
 
