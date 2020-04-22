@@ -25,25 +25,24 @@ const (
 	rolloutBlockName = "my-test-rollout-block"
 )
 
-//
-//var (
-//	masterURL      = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
-//	runEndToEnd    = flag.Bool("e2e", false, "Set this flag to enable E2E tests against the local minikube")
-//	testCharts     = flag.String("testcharts", "", "The address of the Helm repository holding the test charts")
-//	inspectFailed  = flag.Bool("inspectfailed", false, "Set this flag to skip deleting the namespaces for failed tests. Useful for debugging.")
-//	kubeconfig     = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
-//	appClusterName = flag.String("appcluster", "minikube", "The application cluster that E2E tests will check to determine success/failure")
-//	timeoutFlag    = flag.String("progresstimeout", "30s", "timeout when waiting for things to change")
-//)
-//
-//var (
-//	appKubeClient kubernetes.Interface
-//	kubeClient    kubernetes.Interface
-//	shipperClient shipperclientset.Interface
-//	chartRepo     string
-//	testRegion    string
-//	globalTimeout time.Duration
-//)
+var (
+	masterURL      = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
+	runEndToEnd    = flag.Bool("e2e", false, "Set this flag to enable E2E tests against the local minikube")
+	testCharts     = flag.String("testcharts", "", "The address of the Helm repository holding the test charts")
+	inspectFailed  = flag.Bool("inspectfailed", false, "Set this flag to skip deleting the namespaces for failed tests. Useful for debugging.")
+	kubeconfig     = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
+	appClusterName = flag.String("appcluster", "minikube", "The application cluster that E2E tests will check to determine success/failure")
+	timeoutFlag    = flag.String("progresstimeout", "30s", "timeout when waiting for things to change")
+)
+
+var (
+	appKubeClient kubernetes.Interface
+	kubeClient    kubernetes.Interface
+	shipperClient shipperclientset.Interface
+	chartRepo     string
+	testRegion    string
+	globalTimeout time.Duration
+)
 
 var allIn = shipper.RolloutStrategy{
 	Steps: []shipper.RolloutStrategyStep{
