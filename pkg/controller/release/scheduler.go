@@ -117,19 +117,6 @@ func getReleaseClusters(rel *shipper.Release) []string {
 	return uniqRelClusters
 }
 
-// The 2 functions below are based on a basic cluster name set match, and never
-// take into account a cluster weight change. This must be addressed in the
-// future.
-func capacityTargetClustersMatch(ct *shipper.CapacityTarget, clusters []string) bool {
-	ctClusters := make([]string, 0, len(ct.Spec.Clusters))
-	for _, ctc := range ct.Spec.Clusters {
-		ctClusters = append(ctClusters, ctc.Name)
-	}
-	sort.Strings(ctClusters)
-
-	return stringSliceEqual(clusters, ctClusters)
-}
-
 func trafficTargetClustersMatch(tt *shipper.TrafficTarget, clusters []string) bool {
 	ttClusters := make([]string, 0, len(tt.Spec.Clusters))
 	for _, ttc := range tt.Spec.Clusters {
@@ -138,20 +125,6 @@ func trafficTargetClustersMatch(tt *shipper.TrafficTarget, clusters []string) bo
 	sort.Strings(ttClusters)
 
 	return stringSliceEqual(clusters, ttClusters)
-}
-
-func setCapacityTargetClusters(ct *shipper.CapacityTarget, clusters []string, totalReplicaCount int32) {
-	capacityTargetClusters := make([]shipper.ClusterCapacityTarget, 0, len(clusters))
-	for _, cluster := range clusters {
-		capacityTargetClusters = append(
-			capacityTargetClusters,
-			shipper.ClusterCapacityTarget{
-				Name:              cluster,
-				Percent:           0,
-				TotalReplicaCount: totalReplicaCount,
-			})
-	}
-	ct.Spec.Clusters = capacityTargetClusters
 }
 
 func setTrafficTargetClusters(tt *shipper.TrafficTarget, clusters []string) {
@@ -207,26 +180,24 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 }
 
 func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalReplicaCount int32) (*shipper.CapacityTarget, error) {
-	clusters := getReleaseClusters(rel)
-
 	ct, err := s.listers.capacityTargetLister.CapacityTargets(rel.GetNamespace()).Get(rel.GetName())
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return nil, err
 		}
+
 		ct := &shipper.CapacityTarget{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      rel.Name,
 				Namespace: rel.Namespace,
 				Labels:    rel.Labels,
-				OwnerReferences: []metav1.OwnerReference{
-					createOwnerRefFromRelease(rel),
-				},
+			},
+			Spec: shipper.CapacityTargetSpec{
+				TotalReplicaCount: totalReplicaCount,
 			},
 		}
-		setCapacityTargetClusters(ct, clusters, totalReplicaCount)
 
-		updCt, err := s.clientset.ShipperV1alpha1().CapacityTargets(rel.GetNamespace()).Create(ct)
+		updCt, err := s.appClusterClientset.ShipperV1alpha1().CapacityTargets(rel.GetNamespace()).Create(ct)
 		if err != nil {
 			return nil, shippererrors.NewKubeclientCreateError(ct, err)
 		}
@@ -239,26 +210,6 @@ func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalRepl
 			objectutil.MetaKey(updCt),
 		)
 
-		return updCt, nil
-	}
-
-	if !objectBelongsToRelease(ct, rel) {
-		return nil, shippererrors.NewWrongOwnerReferenceError(ct, rel)
-	}
-
-	if !capacityTargetClustersMatch(ct, clusters) {
-		setCapacityTargetClusters(ct, clusters, totalReplicaCount)
-		updCt, err := s.clientset.ShipperV1alpha1().CapacityTargets(rel.GetNamespace()).Update(ct)
-		if err != nil {
-			return nil, err
-		}
-		s.recorder.Eventf(
-			rel,
-			corev1.EventTypeNormal,
-			"ReleaseScheduled",
-			"Updated CapacityTarget %q cluster set to [%s]",
-			objectutil.MetaKey(updCt),
-			strings.Join(clusters, ","))
 		return updCt, nil
 	}
 

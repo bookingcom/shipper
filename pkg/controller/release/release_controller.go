@@ -40,7 +40,6 @@ const (
 	AgentName = "release-controller"
 
 	ClustersChosen          = "ClustersChosen"
-	ClustersNotReady        = "ClustersNotReady"
 	InternalError           = "InternalError"
 	StrategyExecutionFailed = "StrategyExecutionFailed"
 )
@@ -61,9 +60,6 @@ type Controller struct {
 
 	trafficTargetLister  shipperlisters.TrafficTargetLister
 	trafficTargetsSynced cache.InformerSynced
-
-	capacityTargetLister  shipperlisters.CapacityTargetLister
-	capacityTargetsSynced cache.InformerSynced
 
 	rolloutBlockLister shipperlisters.RolloutBlockLister
 	rolloutBlockSynced cache.InformerSynced
@@ -99,7 +95,6 @@ func NewController(
 	releaseInformer := informerFactory.Shipper().V1alpha1().Releases()
 	clusterInformer := informerFactory.Shipper().V1alpha1().Clusters()
 	trafficTargetInformer := informerFactory.Shipper().V1alpha1().TrafficTargets()
-	capacityTargetInformer := informerFactory.Shipper().V1alpha1().CapacityTargets()
 	rolloutBlockInformer := informerFactory.Shipper().V1alpha1().RolloutBlocks()
 
 	controller := &Controller{
@@ -114,9 +109,6 @@ func NewController(
 
 		trafficTargetLister:  trafficTargetInformer.Lister(),
 		trafficTargetsSynced: trafficTargetInformer.Informer().HasSynced,
-
-		capacityTargetLister:  capacityTargetInformer.Lister(),
-		capacityTargetsSynced: capacityTargetInformer.Informer().HasSynced,
 
 		rolloutBlockLister: rolloutBlockInformer.Lister(),
 		rolloutBlockSynced: rolloutBlockInformer.Informer().HasSynced,
@@ -153,15 +145,20 @@ func NewController(
 		DeleteFunc: controller.enqueueReleaseFromAssociatedObject,
 	}
 
-	capacityTargetInformer.Informer().AddEventHandler(eventHandler)
 	trafficTargetInformer.Informer().AddEventHandler(eventHandler)
 
 	store.AddSubscriptionCallback(func(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory shipperinformers.SharedInformerFactory) {
-		shipperInformerFactory.Shipper().V1alpha1().InstallationTargets().Informer()
+		shipperv1alpha1 := shipperInformerFactory.Shipper().V1alpha1()
+		shipperv1alpha1.InstallationTargets().Informer()
+		shipperv1alpha1.CapacityTargets().Informer()
+		shipperv1alpha1.TrafficTargets().Informer()
 	})
 
 	store.AddEventHandlerCallback(func(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory shipperinformers.SharedInformerFactory) {
-		shipperInformerFactory.Shipper().V1alpha1().InstallationTargets().Informer().AddEventHandler(eventHandler)
+		shipperv1alpha1 := shipperInformerFactory.Shipper().V1alpha1()
+		shipperv1alpha1.InstallationTargets().Informer().AddEventHandler(eventHandler)
+		shipperv1alpha1.CapacityTargets().Informer().AddEventHandler(eventHandler)
+		shipperv1alpha1.TrafficTargets().Informer().AddEventHandler(eventHandler)
 	})
 
 	return controller
@@ -180,7 +177,6 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 		c.releasesSynced,
 		c.clustersSynced,
 		c.trafficTargetsSynced,
-		c.capacityTargetsSynced,
 		c.rolloutBlockSynced,
 	); !ok {
 		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
@@ -425,7 +421,7 @@ func (c *Controller) executeStrategyOnClusters(
 		shipperv1alpha1 := informerFactory.Shipper().V1alpha1()
 		listers := listers{
 			installationTargetLister: shipperv1alpha1.InstallationTargets().Lister(),
-			capacityTargetLister:     c.capacityTargetLister,
+			capacityTargetLister:     shipperv1alpha1.CapacityTargets().Lister(),
 			trafficTargetLister:      c.trafficTargetLister,
 		}
 
@@ -533,7 +529,7 @@ func (c *Controller) executeReleaseStrategyForCluster(
 		var err error
 		switch gvk.Kind {
 		case "CapacityTarget":
-			shipperv1alpha1 := c.clientset.ShipperV1alpha1()
+			shipperv1alpha1 := appClusterClientset.ShipperV1alpha1()
 			_, err = shipperv1alpha1.CapacityTargets(namespace).Patch(name, types.MergePatchType, b)
 		case "TrafficTarget":
 			shipperv1alpha1 := c.clientset.ShipperV1alpha1()
