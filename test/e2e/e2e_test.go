@@ -10,11 +10,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	intstrutil "k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	"github.com/bookingcom/shipper/pkg/util/release"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 
@@ -110,7 +112,7 @@ func TestNewAppAllIn(t *testing.T) {
 	}
 	t.Parallel()
 
-	targetReplicas := 4
+	var targetReplicas int32 = 4
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -142,13 +144,52 @@ func TestNewAppAllIn(t *testing.T) {
 	f.checkReadyPods(relName, targetReplicas)
 }
 
+func TestNewAppAllInWithMaxSurge(t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+	t.Parallel()
+
+	var targetReplicas int32 = 4
+	ns, err := setupNamespace(t.Name())
+	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(ns.GetName())
+	}()
+
+	newApp := newApplication(ns.GetName(), appName, &allIn)
+	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Chart.Name = "test-nginx"
+	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: intstrutil.FromInt(1)}
+
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
+	if err != nil {
+		t.Fatalf("could not create application %q: %q", appName, err)
+	}
+
+	t.Logf("waiting for a new release for new application %q", appName)
+	rel := f.waitForRelease(appName, 0)
+	relName := rel.GetName()
+	t.Logf("waiting for release %q to complete", relName)
+	f.waitForComplete(rel.GetName())
+	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
+	f.checkReadyPods(relName, targetReplicas)
+}
+
 func TestNewAppAllInWithRolloutBlockOverride(t *testing.T) {
 	if !*runEndToEnd {
 		t.Skip("skipping end-to-end tests: --e2e is false")
 	}
 	t.Parallel()
 
-	targetReplicas := 4
+	var targetReplicas int32 = 4
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -192,7 +233,7 @@ func TestBlockNewAppWithRolloutBlock(t *testing.T) {
 	}
 	t.Parallel()
 
-	targetReplicas := 4
+	var targetReplicas int32 = 4
 	ns, err := setupNamespace(t.Name())
 	if err != nil {
 		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
@@ -229,7 +270,7 @@ func TestNewAppAllInWithRolloutBlockNonExisting(t *testing.T) {
 	}
 	t.Parallel()
 
-	targetReplicas := 4
+	var targetReplicas int32 = 4
 	ns, err := setupNamespace(t.Name())
 	_ = newFixture(ns.GetName(), t)
 	if err != nil {
@@ -263,7 +304,7 @@ func TestBlockNewAppProgressWithRolloutBlock(t *testing.T) {
 	}
 	t.Parallel()
 
-	targetReplicas := 4
+	var targetReplicas int32 = 4
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -300,7 +341,7 @@ func TestRolloutAllIn(t *testing.T) {
 	}
 	t.Parallel()
 
-	targetReplicas := 4
+	var targetReplicas int32 = 4
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -372,7 +413,7 @@ func TestBrokenRolloutAllIn(t *testing.T) {
 	}
 	t.Parallel()
 
-	targetReplicas := 4
+	var targetReplicas int32 = 4
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -448,7 +489,7 @@ func TestRolloutAllInWithRolloutBlockOverride(t *testing.T) {
 	}
 	t.Parallel()
 
-	targetReplicas := 4
+	var targetReplicas int32 = 4
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -506,7 +547,7 @@ func TestRolloutAllInWithRolloutBlockOverride(t *testing.T) {
 	f.checkReadyPods(contender.GetName(), targetReplicas)
 }
 
-func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
+func testNewApplicationVanguard(targetReplicas int32, t *testing.T) {
 	if !*runEndToEnd {
 		t.Skip("skipping end-to-end tests: --e2e is false")
 	}
@@ -547,16 +588,76 @@ func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
 			f.waitForComplete(relName)
 		} else {
 			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
+			f.waitForReleaseVirtualStrategyState("command", relName, i, 1)
 			f.waitForReleaseStrategyState("command", relName, i)
 		}
 
-		expectedCapacity := int(replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas)))
+		expectedCapacity := int32(replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, targetReplicas))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
 		f.checkReadyPods(relName, expectedCapacity)
 	}
 }
 
-func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int, t *testing.T) {
+func testNewApplicationVanguardWithMaxSurge(targetReplicas int32, t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+
+	t.Parallel()
+	ns, err := setupNamespace(t.Name())
+	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(ns.GetName())
+	}()
+
+	newApp := newApplication(ns.GetName(), appName, &vanguard)
+	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Chart.Name = "test-nginx"
+	newApp.Spec.Template.Chart.Version = "0.0.1"
+	surge := 1
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: intstrutil.FromInt(surge)}
+	surgePercent := int(100 * (float32(surge) / float32(targetReplicas)))
+	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, surgePercent)
+	if err != nil {
+		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
+	}
+
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
+	if err != nil {
+		t.Fatalf("could not create application %q: %q", appName, err)
+	}
+
+	t.Logf("waiting for a new release for new application %q", appName)
+	rel := f.waitForRelease(appName, 0)
+	relName := rel.GetName()
+
+	for i, step := range vanguard.Steps {
+		t.Logf("setting release %q targetStep to %d", relName, i)
+		f.targetStep(i, relName)
+
+		if i == len(vanguard.Steps)-1 {
+			t.Logf("waiting for release %q to complete", relName)
+			f.waitForComplete(relName)
+		} else {
+			lastVirtualStep := len(expectedVirtualStrategy.Steps[i].VirtualSteps) - 1
+			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
+			f.waitForReleaseVirtualStrategyState("command", relName, i, lastVirtualStep)
+			f.waitForReleaseStrategyState("command", relName, i)
+		}
+
+		expectedCapacity := int32(replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, targetReplicas))
+		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
+		f.checkReadyPods(relName, expectedCapacity)
+	}
+}
+
+func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int32, t *testing.T) {
 	if !*runEndToEnd {
 		t.Skip("skipping end-to-end tests: --e2e is false")
 	}
@@ -603,10 +704,11 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int, t *t
 			f.waitForComplete(relName)
 		} else {
 			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
+			f.waitForReleaseVirtualStrategyState("command", relName, i, 1)
 			f.waitForReleaseStrategyState("command", relName, i)
 		}
 
-		expectedCapacity := int(replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas)))
+		expectedCapacity := int32(replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, targetReplicas))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
 		f.checkReadyPods(relName, expectedCapacity)
 	}
@@ -617,6 +719,13 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int, t *t
 // strategy until it hopefully converges on the final desired state.
 func TestNewApplicationVanguardMultipleReplicas(t *testing.T) {
 	testNewApplicationVanguard(3, t)
+}
+
+// TestNewApplicationVanguardMultipleReplicasMaxSurge tests the creation of a new
+// application with multiple replicas and max surge, marching through the specified vanguard
+// strategy and virtual strategy until it hopefully converges on the final desired state.
+func TestNewApplicationVanguardMultipleReplicasMaxSurge(t *testing.T) {
+	testNewApplicationVanguardWithMaxSurge(3, t)
 }
 
 func TestNewApplicationVanguardMultipleReplicasRBOverride(t *testing.T) {
@@ -637,7 +746,7 @@ func TestNewApplicationVanguardOneReplicaRBOverride(t *testing.T) {
 // testRolloutVanguard tests the creation of a new application with the
 // specified number of replicas, marching through the specified vanguard
 // strategy until it hopefully converges on the final desired state.
-func testRolloutVanguard(targetReplicas int, t *testing.T) {
+func testRolloutVanguard(targetReplicas int32, t *testing.T) {
 	if !*runEndToEnd {
 		t.Skip("skipping end-to-end tests: --e2e is false")
 	}
@@ -697,19 +806,20 @@ func testRolloutVanguard(targetReplicas int, t *testing.T) {
 			f.waitForComplete(contenderName)
 		} else {
 			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
+			f.waitForReleaseVirtualStrategyState("command", contenderName, i, 1)
 			f.waitForReleaseStrategyState("command", contenderName, i)
 		}
 
-		expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
-		expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
+		expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, targetReplicas)
+		expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Incumbent, targetReplicas)
 
 		t.Logf(
 			"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step %d -- %d/%d)",
 			incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, i, step.Capacity.Incumbent, step.Capacity.Contender,
 		)
 
-		f.checkReadyPods(contenderName, int(expectedContenderCapacity))
-		f.checkReadyPods(incumbentName, int(expectedIncumbentCapacity))
+		f.checkReadyPods(contenderName, int32(expectedContenderCapacity))
+		f.checkReadyPods(incumbentName, int32(expectedIncumbentCapacity))
 	}
 }
 
@@ -727,7 +837,7 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 	}
 
 	t.Parallel()
-	targetReplicas := 4
+	var targetReplicas int32 = 4
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -754,17 +864,84 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 	rel := f.waitForRelease(appName, 0)
 	relName := rel.GetName()
 
+	virtualStep := 1
 	for _, i := range []int{0, 1, 0} {
 		step := vanguard.Steps[i]
 		t.Logf("setting release %q targetStep to %d", relName, i)
 		f.targetStep(i, relName)
 
 		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
+		f.waitForReleaseVirtualStrategyState("command", relName, i, virtualStep)
 		f.waitForReleaseStrategyState("command", relName, i)
 
-		expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
+		expectedCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, targetReplicas)
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
-		f.checkReadyPods(relName, int(expectedCapacity))
+		f.checkReadyPods(relName, int32(expectedCapacity))
+		if i == 1 {
+			virtualStep = 0
+		}
+	}
+}
+
+func TestNewApplicationMovingStrategyBackwardsMaxSurge(t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+
+	t.Parallel()
+	var targetReplicas int32 = 5
+	ns, err := setupNamespace(t.Name())
+	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(ns.GetName())
+	}()
+
+	app := newApplication(ns.GetName(), appName, &vanguard)
+	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Chart.Name = "test-nginx"
+	app.Spec.Template.Chart.Version = "0.0.1"
+	surge := 1
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: intstrutil.FromInt(surge)}
+	surgePercent := int(100 * (float32(surge) / float32(targetReplicas)))
+	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, surgePercent)
+	if err != nil {
+		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
+	}
+
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
+	if err != nil {
+		t.Fatalf("could not create application %q: %q", appName, err)
+	}
+
+	t.Logf("waiting for a new release for new application %q", appName)
+	rel := f.waitForRelease(appName, 0)
+	relName := rel.GetName()
+
+	virtualStep := len(expectedVirtualStrategy.Steps[0].VirtualSteps) - 1
+	for _, i := range []int{0, 1, 0} {
+		step := vanguard.Steps[i]
+		t.Logf("setting release %q targetStep to %d", relName, i)
+		f.targetStep(i, relName)
+
+		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d and virtualStep %d", relName, i, virtualStep)
+		f.waitForReleaseVirtualStrategyState("command", relName, i, virtualStep)
+		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
+		f.waitForReleaseStrategyState("command", relName, i)
+
+		expectedCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, targetReplicas)
+		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
+		f.checkReadyPods(relName, int32(expectedCapacity))
+		if i == 1 {
+			virtualStep = 0
+		} else {
+			virtualStep = len(expectedVirtualStrategy.Steps[1].VirtualSteps) - 1
+		}
 	}
 }
 
@@ -774,7 +951,7 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 	}
 
 	t.Parallel()
-	targetReplicas := 4
+	var targetReplicas int32 = 4
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -811,11 +988,12 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 		f.targetStep(i, relName)
 
 		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
+		f.waitForReleaseVirtualStrategyState("command", relName, i, 1)
 		f.waitForReleaseStrategyState("command", relName, i)
 
-		expectedCapacity = replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
+		expectedCapacity = replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, targetReplicas)
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
-		f.checkReadyPods(relName, int(expectedCapacity))
+		f.checkReadyPods(relName, int32(expectedCapacity))
 	}
 
 	t.Logf("created a new rollout block object %q", rolloutBlockName)
@@ -833,10 +1011,11 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 	}
 
 	t.Logf("release %q should stay in waitingForCommand for targetStep %d", relName, 1)
+	f.waitForReleaseVirtualStrategyState("command", relName, 1, 1)
 	f.waitForReleaseStrategyState("command", relName, 1)
 
 	t.Logf("checking that release %q still has %d pods (strategy step %d aka %q)", relName, expectedCapacity, 1, step.Name)
-	f.checkReadyPods(relName, int(expectedCapacity))
+	f.checkReadyPods(relName, int32(expectedCapacity))
 }
 
 func TestRolloutMovingStrategyBackwards(t *testing.T) {
@@ -845,7 +1024,7 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 	}
 
 	t.Parallel()
-	targetReplicas := 4
+	var targetReplicas int32 = 4
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -893,24 +1072,29 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 
 	// The strategy emulates deployment all way down to 50/50 and then revert
 	// to the previous step (staging).
+	virtualStep := 1
 	for _, i := range []int{0, 1, 0} {
 		step := vanguard.Steps[i]
 		t.Logf("setting release %q targetStep to %d", contenderName, i)
 		f.targetStep(i, contenderName)
 
 		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
+		f.waitForReleaseVirtualStrategyState("command", contenderName, i, virtualStep)
 		f.waitForReleaseStrategyState("command", contenderName, i)
 
-		expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
-		expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
+		expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, targetReplicas)
+		expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Incumbent, targetReplicas)
 
 		t.Logf(
 			"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step %d -- %d/%d)",
 			incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, i, step.Capacity.Incumbent, step.Capacity.Contender,
 		)
 
-		f.checkReadyPods(contenderName, int(expectedContenderCapacity))
-		f.checkReadyPods(incumbentName, int(expectedIncumbentCapacity))
+		f.checkReadyPods(contenderName, int32(expectedContenderCapacity))
+		f.checkReadyPods(incumbentName, int32(expectedIncumbentCapacity))
+		if i == 1 {
+			virtualStep = 0
+		}
 	}
 }
 
@@ -920,7 +1104,7 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 	}
 
 	t.Parallel()
-	targetReplicas := 4
+	var targetReplicas int32 = 4
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -974,18 +1158,19 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 	f.targetStep(i, contenderName)
 
 	t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
+	f.waitForReleaseVirtualStrategyState("command", contenderName, i, 1)
 	f.waitForReleaseStrategyState("command", contenderName, i)
 
-	expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
-	expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
+	expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, targetReplicas)
+	expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Incumbent, targetReplicas)
 
 	t.Logf(
 		"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step %d -- %d/%d)",
 		incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, i, step.Capacity.Incumbent, step.Capacity.Contender,
 	)
 
-	f.checkReadyPods(contenderName, int(expectedContenderCapacity))
-	f.checkReadyPods(incumbentName, int(expectedIncumbentCapacity))
+	f.checkReadyPods(contenderName, int32(expectedContenderCapacity))
+	f.checkReadyPods(incumbentName, int32(expectedIncumbentCapacity))
 
 	t.Logf("created a new rollout block object %q", rolloutBlockName)
 	_, err = createRolloutBlock(ns.GetName(), rolloutBlockName)
@@ -1004,6 +1189,7 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 	}
 
 	t.Logf("release %q should stay in waitingForCommand for targetStep %d", contenderName, 0)
+	f.waitForReleaseVirtualStrategyState("command", contenderName, 0, 1)
 	f.waitForReleaseStrategyState("command", contenderName, 0)
 
 	t.Logf(
@@ -1011,8 +1197,8 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 		incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, i, step.Capacity.Incumbent, step.Capacity.Contender,
 	)
 
-	f.checkReadyPods(contenderName, int(expectedContenderCapacity))
-	f.checkReadyPods(incumbentName, int(expectedIncumbentCapacity))
+	f.checkReadyPods(contenderName, int32(expectedContenderCapacity))
+	f.checkReadyPods(incumbentName, int32(expectedIncumbentCapacity))
 }
 
 // TestNewApplicationAbort emulates a brand new application rollout.
@@ -1028,7 +1214,7 @@ func TestNewApplicationAbort(t *testing.T) {
 	}
 
 	t.Parallel()
-	targetReplicas := 4
+	var targetReplicas int32 = 4
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -1061,11 +1247,12 @@ func TestNewApplicationAbort(t *testing.T) {
 	f.targetStep(targetStep, relName)
 
 	t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, targetStep)
+	f.waitForReleaseVirtualStrategyState("command", relName, targetStep, 1)
 	f.waitForReleaseStrategyState("command", relName, targetStep)
 
-	expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
+	expectedCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, targetReplicas)
 	t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, targetStep, step.Name)
-	f.checkReadyPods(relName, int(expectedCapacity))
+	f.checkReadyPods(relName, int32(expectedCapacity))
 
 	t.Logf("Preparing to remove the release %q", relName)
 
@@ -1075,11 +1262,12 @@ func TestNewApplicationAbort(t *testing.T) {
 	}
 
 	// Now the release should be waiting for a command
+	f.waitForReleaseVirtualStrategyState("command", relName, 0, 1)
 	f.waitForReleaseStrategyState("command", relName, 0)
 
 	// It's back to step 0, let's check the number of pods
-	expectedCapacity = replicas.CalculateDesiredReplicaCount(uint(vanguard.Steps[0].Capacity.Contender), float64(targetReplicas))
-	f.checkReadyPods(relName, int(expectedCapacity))
+	expectedCapacity = replicas.CalculateDesiredReplicaCount(vanguard.Steps[0].Capacity.Contender, targetReplicas)
+	f.checkReadyPods(relName, int32(expectedCapacity))
 }
 
 func TestRolloutAbort(t *testing.T) {
@@ -1088,7 +1276,7 @@ func TestRolloutAbort(t *testing.T) {
 	}
 
 	t.Parallel()
-	targetReplicas := 4
+	var targetReplicas int32 = 4
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -1140,18 +1328,19 @@ func TestRolloutAbort(t *testing.T) {
 	f.targetStep(targetStep, contenderName)
 
 	t.Logf("waiting for contender release %q to achieve waitingForCommand for targetStep %d", contenderName, targetStep)
+	f.waitForReleaseVirtualStrategyState("command", contenderName, targetStep, 1)
 	f.waitForReleaseStrategyState("command", contenderName, targetStep)
 
-	expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
-	expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Incumbent), float64(targetReplicas))
+	expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, targetReplicas)
+	expectedIncumbentCapacity := replicas.CalculateDesiredReplicaCount(step.Capacity.Incumbent, targetReplicas)
 
 	t.Logf(
 		"checking that incumbent %q has %d pods and contender %q has %d pods (strategy step %d -- %d/%d)",
 		incumbentName, expectedIncumbentCapacity, contenderName, expectedContenderCapacity, targetStep, step.Capacity.Incumbent, step.Capacity.Contender,
 	)
 
-	f.checkReadyPods(contenderName, int(expectedContenderCapacity))
-	f.checkReadyPods(incumbentName, int(expectedIncumbentCapacity))
+	f.checkReadyPods(contenderName, int32(expectedContenderCapacity))
+	f.checkReadyPods(incumbentName, int32(expectedIncumbentCapacity))
 
 	err = shipperClient.ShipperV1alpha1().Releases(ns.GetName()).Delete(contenderName, &metav1.DeleteOptions{})
 	if err != nil {
@@ -1163,16 +1352,18 @@ func TestRolloutAbort(t *testing.T) {
 	// capacity state (step 1 according to the vanguard definition) for a bit
 	// until shipper detects the need for capacity and spins up the missing
 	// pods
+	f.waitForReleaseVirtualStrategyState("capacity", incumbentName, 0, 1)
 	f.waitForReleaseStrategyState("capacity", incumbentName, 0)
 
 	// Once the need for capacity triggers, the test waits for all-clear state
 	// (all 4 strategy states indicate no demand).
+	f.waitForReleaseVirtualStrategyState("none", incumbentName, 0, 1)
 	f.waitForReleaseStrategyState("none", incumbentName, 0)
 
 	// By this moment shipper is expected to have recovered the missing capacity
 	// and get all pods up and running
-	expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(allIn.Steps[0].Capacity.Contender), float64(targetReplicas))
-	f.checkReadyPods(incumbentName, int(expectedCapacity))
+	expectedCapacity := replicas.CalculateDesiredReplicaCount(allIn.Steps[0].Capacity.Contender, targetReplicas)
+	f.checkReadyPods(incumbentName, int32(expectedCapacity))
 }
 
 func TestNewRolloutBlockAddOverrides(t *testing.T) {
@@ -1181,7 +1372,7 @@ func TestNewRolloutBlockAddOverrides(t *testing.T) {
 	}
 	t.Parallel()
 
-	targetReplicas := 1
+	var targetReplicas int32 = 1
 	ns, err := setupNamespace(t.Name())
 	namespace := ns.GetName()
 	f := newFixture(namespace, t)
@@ -1242,7 +1433,7 @@ func TestNewGlobalRolloutBlockAddOverrides(t *testing.T) {
 		t.Skip("skipping end-to-end tests: --e2e is false")
 	}
 
-	targetReplicas := 1
+	var targetReplicas int32 = 1
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -1309,7 +1500,7 @@ func TestNewRolloutBlockRemoveRelease(t *testing.T) {
 	}
 	t.Parallel()
 
-	targetReplicas := 1
+	var targetReplicas int32 = 1
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -1389,7 +1580,7 @@ func TestNewGlobalRolloutBlockRemoveRelease(t *testing.T) {
 		t.Skip("skipping end-to-end tests: --e2e is false")
 	}
 
-	targetReplicas := 1
+	var targetReplicas int32 = 1
 	ns, err := setupNamespace(t.Name())
 	testNamespace := ns.GetName()
 	f := newFixture(testNamespace, t)
@@ -1480,7 +1671,7 @@ func TestDeletedDeploymentsAreReinstalled(t *testing.T) {
 	}
 	t.Parallel()
 
-	targetReplicas := 4
+	var targetReplicas int32 = 4
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {
@@ -1516,9 +1707,11 @@ func TestDeletedDeploymentsAreReinstalled(t *testing.T) {
 		t.Fatalf("could not delete deployment %q: %q", deploymentName, err)
 	}
 
+	f.waitForReleaseVirtualStrategyState("capacity", rel.GetName(), 0, 1)
 	f.waitForReleaseStrategyState("capacity", rel.GetName(), 0)
 
 	t.Logf("waiting for release %q to complete again", relName)
+	f.waitForReleaseVirtualStrategyState("none", rel.GetName(), 0, 1)
 	f.waitForReleaseStrategyState("none", rel.GetName(), 0)
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
 	f.checkReadyPods(relName, targetReplicas)
@@ -1586,7 +1779,7 @@ func TestMultipleAppsInNamespace(t *testing.T) {
 	}
 	t.Parallel()
 
-	targetReplicas := 1
+	var targetReplicas int32 = 1
 	ns, err := setupNamespace(t.Name())
 	f := newFixture(ns.GetName(), t)
 	if err != nil {

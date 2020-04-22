@@ -19,12 +19,11 @@ import (
 	"sigs.k8s.io/yaml"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	testutil "github.com/bookingcom/shipper/pkg/util/testing"
 )
 
 const (
 	NoResyncPeriod time.Duration = 0
-
-	ContextLines = 4
 
 	TestNamespace = "test-namespace"
 	TestApp       = "shipper-test"
@@ -128,7 +127,7 @@ func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
 			B:        difflib.SplitLines(string(prettyActual)),
 			FromFile: "Expected",
 			ToFile:   "Actual",
-			Context:  ContextLines,
+			Context:  testutil.ContextLines,
 		})
 		if err != nil {
 			panic(fmt.Sprintf("couldn't generate diff: %s", err))
@@ -173,45 +172,10 @@ func FilterActions(actions []kubetesting.Action) []kubetesting.Action {
 }
 
 func CheckEvents(expectedOrderedEvents []string, receivedEvents []string, t *testing.T) {
-	eq, diff := DeepEqualDiff(expectedOrderedEvents, receivedEvents)
+	eq, diff := testutil.DeepEqualDiff(expectedOrderedEvents, receivedEvents)
 	if !eq {
 		t.Errorf("Events don't match expectation:\n%s", diff)
 	}
-}
-
-func YamlDiff(a interface{}, b interface{}) (string, error) {
-	yamlActual, err := yaml.Marshal(a)
-	if err != nil {
-		return "", err
-	}
-
-	yamlExpected, err := yaml.Marshal(b)
-	if err != nil {
-		return "", err
-	}
-
-	diff := difflib.UnifiedDiff{
-		A:        difflib.SplitLines(string(yamlExpected)),
-		B:        difflib.SplitLines(string(yamlActual)),
-		FromFile: "Expected",
-		ToFile:   "Actual",
-		Context:  ContextLines,
-	}
-
-	return difflib.GetUnifiedDiffString(diff)
-}
-
-func DeepEqualDiff(expected, actual interface{}) (bool, string) {
-	if !reflect.DeepEqual(actual, expected) {
-		diff, err := YamlDiff(actual, expected)
-		if err != nil {
-			panic(fmt.Sprintf("couldn't generate yaml diff: %s", err))
-		}
-
-		return false, diff
-	}
-
-	return true, ""
 }
 
 func prettyPrintAction(a kubetesting.Action) string {

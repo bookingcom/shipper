@@ -67,14 +67,20 @@ func (p *Pipeline) Process(strategyStep shipper.RolloutStrategyStep, cond condit
 }
 
 type StrategyExecutor struct {
-	strategy *shipper.RolloutStrategy
-	step     int32
+	strategy        *shipper.RolloutStrategy
+	virtualStrategy *shipper.RolloutVirtualStrategy
+	step            int32
+	virtualStep     int32
+	progressing     bool
 }
 
-func NewStrategyExecutor(strategy *shipper.RolloutStrategy, step int32) *StrategyExecutor {
+func NewStrategyExecutor(strategy *shipper.RolloutStrategy, virtualStrategy *shipper.RolloutVirtualStrategy, step, virtualStep int32, progressing bool) *StrategyExecutor {
 	return &StrategyExecutor{
-		strategy: strategy,
-		step:     step,
+		strategy:        strategy,
+		virtualStrategy: virtualStrategy,
+		step:            step,
+		virtualStep:     virtualStep,
+		progressing:     progressing,
 	}
 }
 
@@ -111,7 +117,7 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (bool, []Strat
 	// might be following it's successor) it could be that a preliminary action
 	// would create more noise than help really.
 	if !isHead {
-		if !releaseutil.ReleaseAchievedTargetStep(succ.release) {
+		if !releaseutil.HasReleaseAchievedTargetStep(succ.release) {
 			return false, nil, nil
 		}
 	}
@@ -146,28 +152,46 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (bool, []Strat
 
 	pipeline := NewPipeline()
 	pipeline.Enqueue(genInstallationEnforcer(ctx, curr, succ))
+	if e.progressing {
 
-	if isHead {
-		pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
-		pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
-		if hasTail {
-			// This is the moment where a contender is performing a look-behind.
-			// Incumbent's context is completely identical to it's successor
-			// except that it's not the head of the chain anymore.
-			prevctx := ctx.Copy()
-			prevctx.isHead = false
-			pipeline.Enqueue(genTrafficEnforcer(prevctx, prev, curr))
-			pipeline.Enqueue(genCapacityEnforcer(prevctx, prev, curr))
+		if isHead {
+			pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
+			pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
+			if hasTail {
+				// This is the moment where a contender is performing a look-behind.
+				// Incumbent's context is completely identical to it's successor
+				// except that it's not the head of the chain anymore.
+				prevctx := ctx.Copy()
+				prevctx.isHead = false
+				pipeline.Enqueue(genTrafficEnforcer(prevctx, prev, curr))
+				pipeline.Enqueue(genCapacityEnforcer(prevctx, prev, curr))
+			}
+		} else {
+			pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
+			pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
 		}
 	} else {
-		pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
-		pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
+		if isHead {
+			// This rollout is a step backward (target step is less then achieved step)
+			// we would like to first increase capacity and traffic
+			// therefore, we first increase capacity and traffic for the incumbent
+			// and then decrease traffic and capacity for contender
+			if hasTail {
+				prevctx := ctx.Copy()
+				prevctx.isHead = false
+				pipeline.Enqueue(genTrafficEnforcer(prevctx, prev, curr))
+				pipeline.Enqueue(genCapacityEnforcer(prevctx, prev, curr))
+			}
+			pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
+			pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
+		} else {
+			pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
+			pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
+		}
 	}
 
 	pipeline.Enqueue(genReleaseStrategyStateEnforcer(ctx, curr, succ))
-
-	strategyStep := e.strategy.Steps[e.step]
-
+	strategyStep := e.virtualStrategy.Steps[e.step].VirtualSteps[e.virtualStep]
 	return pipeline.Process(strategyStep, cond)
 }
 

@@ -18,7 +18,7 @@ import (
 // 0, 1, 2, 3 and 3. Those values are based on where the desired percentage
 // falls on the divisible slices of 3 replicas: 0%, 1%-33%, 34%-66% and
 // 67%-100%.
-func CalculateDesiredReplicaCount(totalReplicaCount uint, desiredCapacityPercentage float64) uint {
+func CalculateDesiredReplicaCount(totalReplicaCount, desiredCapacityPercentage int32) uint {
 	desiredReplicaCount := math.Ceil(float64(totalReplicaCount) * float64(desiredCapacityPercentage) / 100)
 	return uint(desiredReplicaCount)
 }
@@ -35,5 +35,5 @@ func AchievedDesiredReplicaPercentage(totalReplicaCount, currentReplicaCount, de
 		panic("Programmer error: desiredPercentage should be a value between 0 and 100 inclusive")
 	}
 
-	return uint(currentReplicaCount) == CalculateDesiredReplicaCount(uint(totalReplicaCount), float64(desiredPercentage))
+	return uint(currentReplicaCount) == CalculateDesiredReplicaCount(totalReplicaCount, desiredPercentage)
 }

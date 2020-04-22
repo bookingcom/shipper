@@ -17,6 +17,7 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	targetutil "github.com/bookingcom/shipper/pkg/util/target"
+	testutil "github.com/bookingcom/shipper/pkg/util/testing"
 	trafficutil "github.com/bookingcom/shipper/pkg/util/traffic"
 )
 
@@ -291,7 +292,7 @@ func runTrafficControllerTest(
 		tt := object.(*shipper.TrafficTarget)
 
 		actualStatus := tt.Status
-		eq, diff := shippertesting.DeepEqualDiff(expectation.status, actualStatus)
+		eq, diff := testutil.DeepEqualDiff(expectation.status, actualStatus)
 		if !eq {
 			t.Errorf(
 				"TrafficTarget %q has Status different from expected:\n%s",

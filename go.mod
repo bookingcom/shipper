@@ -10,6 +10,7 @@ require (
 	github.com/aokoli/goutils v1.0.1 // indirect
 	github.com/cespare/xxhash v1.1.0
 	github.com/evanphx/json-patch v4.2.0+incompatible // indirect
+	github.com/ghodss/yaml v0.0.0-20180820084758-c7ce16629ff4
 	github.com/gobwas/glob v0.2.2 // indirect
 	github.com/gogo/protobuf v1.2.1 // indirect
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef // indirect

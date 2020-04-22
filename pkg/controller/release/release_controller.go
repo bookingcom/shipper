@@ -518,25 +518,43 @@ func (c *Controller) executeReleaseStrategyForCluster(
 
 	isHead := succ == nil
 	var strategy *shipper.RolloutStrategy
-	var targetStep int32
+
+	var virtualStrategy *shipper.RolloutVirtualStrategy
 	// A head release uses it's local spec-defined strategy, any other release
 	// follows it's successor state, therefore looking into the forecoming spec.
 	if isHead {
 		strategy = rel.Spec.Environment.Strategy
-		targetStep = rel.Spec.TargetStep
+		virtualStrategy = rel.Spec.VirtualStrategy
 	} else {
 		strategy = succ.Spec.Environment.Strategy
-		targetStep = succ.Spec.TargetStep
+		virtualStrategy = succ.Spec.VirtualStrategy
 	}
 
-	// Looks like a malformed input. Informing about a problem and bailing out.
-	if targetStep >= int32(len(strategy.Steps)) {
-		err := fmt.Errorf("no step %d in strategy for Release %q",
-			targetStep, objectutil.MetaKey(rel))
-		return nil, nil, shippererrors.NewUnrecoverableError(err)
+	if virtualStrategy == nil {
+		// wait for virtual strategy to be built
+		err := fmt.Errorf("release %q missing a virtual strategy", objectutil.MetaKey(rel))
+		return nil, nil, shippererrors.NewRecoverableError(err)
 	}
 
-	executor := NewStrategyExecutor(strategy, targetStep)
+	progressing := releaseutil.IsReleaseProgressing(rel.Status.AchievedStep, rel.Spec.TargetStep)
+	hasAchievedTargetStep := releaseutil.HasReleaseAchievedTargetStep(rel)
+	stepsFromAchievedStep := releaseutil.StepsFromAchievedStep(rel.Status.AchievedStep, rel.Spec.TargetStep)
+	if !isHead {
+		// head is the one that's supposed to decide if this is a rolling forward or backward.
+		progressing = releaseutil.IsReleaseProgressing(succ.Status.AchievedStep, succ.Spec.TargetStep)
+		hasAchievedTargetStep = releaseutil.HasReleaseAchievedTargetStep(succ)
+		stepsFromAchievedStep = releaseutil.StepsFromAchievedStep(succ.Status.AchievedStep, succ.Spec.TargetStep)
+	}
+
+	targetStep, err := releaseutil.GetTargetStep(rel, succ, strategy, stepsFromAchievedStep, progressing, hasAchievedTargetStep)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	processTargetStep := releaseutil.GetProcessedTargetStep(virtualStrategy, targetStep, progressing, hasAchievedTargetStep)
+	virtualTargetStep := releaseutil.GetVirtualTargetStep(rel, succ, virtualStrategy, targetStep, processTargetStep, progressing, hasAchievedTargetStep)
+
+	executor := NewStrategyExecutor(strategy, virtualStrategy, processTargetStep, virtualTargetStep, progressing)
 
 	complete, patches, trans := executor.Execute(relinfoPrev, relinfo, relinfoSucc)
 
@@ -547,22 +565,35 @@ func (c *Controller) executeReleaseStrategyForCluster(
 	}
 
 	isLastStep := int(targetStep) == len(strategy.Steps)-1
+	isLastVirtualStep := int(virtualTargetStep) == len(virtualStrategy.Steps[processTargetStep].VirtualSteps)-1
+	if !progressing {
+		isLastVirtualStep = virtualTargetStep == 0
+	}
 	prevStep := rel.Status.AchievedStep
+	prevVirtualStep := rel.Status.AchievedVirtualStep
+	updateStep := complete && isLastVirtualStep
+	updateVirtualStep := complete
 
-	if complete {
-		var achievedStep int32
+	if updateStep {
+		var achievedStep, achievedVirtualStep int32
 		var achievedStepName string
 		if isHead {
 			achievedStep = targetStep
+			achievedVirtualStep = virtualTargetStep
 			achievedStepName = strategy.Steps[achievedStep].Name
 		} else {
 			achievedStep = int32(len(rel.Spec.Environment.Strategy.Steps)) - 1
+			achievedVirtualStep = int32(len(rel.Spec.VirtualStrategy.Steps[achievedStep].VirtualSteps)) - 1
 			achievedStepName = rel.Spec.Environment.Strategy.Steps[achievedStep].Name
 		}
 		if prevStep == nil || achievedStep != prevStep.Step {
 			rel.Status.AchievedStep = &shipper.AchievedStep{
 				Step: achievedStep,
 				Name: achievedStepName,
+			}
+			rel.Status.AchievedVirtualStep = &shipper.AchievedVirtualStep{
+				Step:        achievedStep,
+				VirtualStep: achievedVirtualStep,
 			}
 			c.recorder.Eventf(
 				rel,
@@ -581,6 +612,35 @@ func (c *Controller) executeReleaseStrategyForCluster(
 				"",
 			)
 			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
+		}
+	} else if updateVirtualStep {
+		var achievedStep, achievedVirtualStep int32
+		if isHead {
+			achievedStep = targetStep
+			achievedVirtualStep = virtualTargetStep
+		} else {
+			achievedStep = int32(len(rel.Spec.Environment.Strategy.Steps)) - 1
+			achievedVirtualStep = int32(len(rel.Spec.VirtualStrategy.Steps[achievedStep].VirtualSteps)) - 1
+		}
+		if prevVirtualStep == nil || achievedStep != prevVirtualStep.Step || achievedVirtualStep != prevVirtualStep.VirtualStep {
+			rel.Status.AchievedVirtualStep = &shipper.AchievedVirtualStep{
+				Step:        achievedStep,
+				VirtualStep: achievedVirtualStep,
+			}
+			c.recorder.Eventf(
+				rel,
+				corev1.EventTypeNormal,
+				"StrategyApplied",
+				"virtual step [%d] finished",
+				achievedVirtualStep,
+			)
+		}
+
+		if !isLastVirtualStep {
+			rel.Spec.TargetVirtualStep = virtualTargetStep + 1
+			if !progressing {
+				rel.Spec.TargetVirtualStep = virtualTargetStep - 1
+			}
 		}
 	}
 

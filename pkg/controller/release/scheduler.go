@@ -57,6 +57,19 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*releaseInfo, error) 
 	}
 
 	releaseErrors := shippererrors.NewMultiError()
+	if rel.Spec.VirtualStrategy == nil {
+		strategy := rel.Spec.Environment.Strategy
+
+		surgeWeight, err := releaseutil.GetMaxSurgePercent(rel.Spec.Environment.Strategy.RollingUpdate, replicaCount)
+		if err != nil {
+			return nil, err
+		}
+		virtualStrategy, err := releaseutil.BuildVirtualStrategy(strategy, surgeWeight)
+		if err != nil {
+			return nil, err
+		}
+		rel.Spec.VirtualStrategy = virtualStrategy
+	}
 
 	it, err := s.CreateOrUpdateInstallationTarget(rel)
 	if err != nil {

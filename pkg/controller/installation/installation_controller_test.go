@@ -14,6 +14,7 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	targetutil "github.com/bookingcom/shipper/pkg/util/target"
+	testutil "github.com/bookingcom/shipper/pkg/util/testing"
 )
 
 type object struct {
@@ -94,7 +95,7 @@ func runInstallationControllerTest(
 
 	actualIT := object.(*shipper.InstallationTarget)
 	actualStatus := actualIT.Status
-	eq, diff := shippertesting.DeepEqualDiff(status, actualStatus)
+	eq, diff := testutil.DeepEqualDiff(status, actualStatus)
 	if !eq {
 		t.Fatalf(
 			"InstallationTarget %q has Status different from expected:\n%s",

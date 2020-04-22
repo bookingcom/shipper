@@ -13,6 +13,7 @@ import (
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	"github.com/bookingcom/shipper/pkg/util/conditions"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
+	testutil "github.com/bookingcom/shipper/pkg/util/testing"
 )
 
 const (
@@ -23,6 +24,12 @@ const (
 	GenerationInactive  string = "1"
 	GenerationIncumbent string = "2"
 	GenerationContender string = "3"
+)
+
+// Virtual strategy with MaxSurge=100%
+const (
+	VirtualStepFirst int32 = iota
+	VirtualStepLast
 )
 
 var (
@@ -277,6 +284,7 @@ func TestIntermediateStep(t *testing.T) {
 
 	targetStep := StepVanguard
 	achievedStep := StepVanguard
+	achievedVirtualStep := VirtualStepLast
 
 	// rel has a three-step strategy, so StepVanguard should be an
 	// intermediate step
@@ -298,9 +306,116 @@ func TestIntermediateStep(t *testing.T) {
 			Step: achievedStep,
 			Name: rel.Spec.Environment.Strategy.Steps[achievedStep].Name,
 		},
+		AchievedVirtualStep: &shipper.AchievedVirtualStep{
+			Step:        achievedStep,
+			VirtualStep: achievedVirtualStep,
+		},
 		Conditions: []shipper.ReleaseCondition{
 			ReleaseConditionUnblocked,
 			ReleaseConditionClustersChosen([]string{cluster.Name}),
+			ReleaseConditionScheduled,
+			ReleaseConditionStrategyExecuted,
+		},
+		Strategy: &shipper.ReleaseStrategyStatus{
+			Conditions: stepify(achievedStep, []shipper.ReleaseStrategyCondition{
+				StrategyConditionContenderAchievedCapacity,
+				StrategyConditionContenderAchievedInstallation,
+				StrategyConditionContenderAchievedTraffic,
+			}),
+			State: StateWaitingForCommand,
+		},
+	}
+
+	runReleaseControllerTest(t, mgmtClusterObjects, appClusterObjects,
+		[]releaseControllerTestExpectation{
+			{
+				release:  rel,
+				status:   expectedStatus,
+				clusters: []string{cluster.Name},
+			},
+		})
+}
+
+// TestStepBack tests that a Release will have all of its conditions
+// set appropriately when stepping back. This happens when a user patches target step to a lower number
+// (which causes achieved step to be higher than target step)
+// This expects most conditions to be true, except for Blocked and
+// Complete, as in TestIntermediateStep.
+func TestStepBack(t *testing.T) {
+	rel := buildRelease(
+		shippertesting.TestNamespace,
+		shippertesting.TestApp,
+		"intermediate-step",
+		1,
+	)
+
+	targetStep := StepFullOn
+	achievedStep := StepFullOn
+	achievedVirtualStep := VirtualStepLast
+
+	// rel has a three-step strategy, so StepVanguard should be an
+	// intermediate step
+	rel.Spec.TargetStep = targetStep
+
+	cluster := buildCluster("cluster-a")
+
+	expectedStatus := shipper.ReleaseStatus{
+		AchievedStep: &shipper.AchievedStep{
+			Step: achievedStep,
+			Name: rel.Spec.Environment.Strategy.Steps[achievedStep].Name,
+		},
+		AchievedVirtualStep: &shipper.AchievedVirtualStep{
+			Step:        achievedStep,
+			VirtualStep: achievedVirtualStep,
+		},
+		Conditions: []shipper.ReleaseCondition{
+			ReleaseConditionUnblocked,
+			ReleaseConditionClustersChosen([]string{cluster.Name}),
+			ReleaseConditionComplete,
+			ReleaseConditionScheduled,
+			ReleaseConditionStrategyExecuted,
+		},
+		Strategy: &shipper.ReleaseStrategyStatus{
+			Conditions: stepify(achievedStep, []shipper.ReleaseStrategyCondition{
+				StrategyConditionContenderAchievedCapacity,
+				StrategyConditionContenderAchievedInstallation,
+				StrategyConditionContenderAchievedTraffic,
+			}),
+			State: StateWaitingForNone,
+		},
+	}
+
+	rel.Status = expectedStatus
+
+	targetStep = StepVanguard
+	achievedStep = StepVanguard
+	achievedVirtualStep = VirtualStepFirst
+	rel.Spec.TargetStep = targetStep
+
+	//cluster := buildCluster("cluster-a")
+	it, tt, ct := buildAssociatedObjectsWithStatus(rel, []*shipper.Cluster{cluster}, &achievedStep)
+
+	// NOTE(jgreff): you'll note that it is in app cluster while ct and tt
+	// are in mgmt. that's scaffolding that needs to remain in place until
+	// we migrate all the objects to the app cluster.
+	mgmtClusterObjects := []runtime.Object{rel, cluster, ct, tt}
+	appClusterObjects := map[string][]runtime.Object{
+		cluster.Name: []runtime.Object{it},
+	}
+
+	expectedStatus = shipper.ReleaseStatus{
+		AchievedStep: &shipper.AchievedStep{
+			Step: achievedStep,
+			Name: rel.Spec.Environment.Strategy.Steps[achievedStep].Name,
+		},
+		AchievedVirtualStep: &shipper.AchievedVirtualStep{
+			Step:        achievedStep,
+			VirtualStep: achievedVirtualStep,
+		},
+		Conditions: []shipper.ReleaseCondition{
+			ReleaseConditionUnblocked,
+			ReleaseConditionClustersChosen([]string{cluster.Name}),
+			ReleaseConditionComplete,
 			ReleaseConditionScheduled,
 			ReleaseConditionStrategyExecuted,
 		},
@@ -337,6 +452,7 @@ func TestLastStep(t *testing.T) {
 
 	targetStep := StepFullOn
 	achievedStep := StepFullOn
+	achievedVirtualStep := VirtualStepLast
 
 	// rel has a three-step strategy, so StepVanguard should be an
 	// intermediate step
@@ -357,6 +473,10 @@ func TestLastStep(t *testing.T) {
 		AchievedStep: &shipper.AchievedStep{
 			Step: achievedStep,
 			Name: rel.Spec.Environment.Strategy.Steps[achievedStep].Name,
+		},
+		AchievedVirtualStep: &shipper.AchievedVirtualStep{
+			Step:        achievedStep,
+			VirtualStep: achievedVirtualStep,
 		},
 		Conditions: []shipper.ReleaseCondition{
 			ReleaseConditionUnblocked,
@@ -495,7 +615,7 @@ func runReleaseControllerTest(
 		}
 
 		actualStatus := rel.Status
-		eq, diff := shippertesting.DeepEqualDiff(expectation.status, actualStatus)
+		eq, diff := testutil.DeepEqualDiff(expectation.status, actualStatus)
 		if !eq {
 			t.Errorf(
 				"Release %q has Status different from expected:\n%s",

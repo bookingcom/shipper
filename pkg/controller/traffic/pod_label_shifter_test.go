@@ -6,6 +6,7 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	testutil "github.com/bookingcom/shipper/pkg/util/testing"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubefake "k8s.io/client-go/kubernetes/fake"
@@ -58,7 +59,7 @@ func TestShiftPodLabels(t *testing.T) {
 			p.Labels[shipper.PodTrafficStatusLabel] = newLabelValue
 
 			actualLabels := pod.Labels
-			eq, diff := shippertesting.DeepEqualDiff(expectedLabels, actualLabels)
+			eq, diff := testutil.DeepEqualDiff(expectedLabels, actualLabels)
 			if !eq {
 				t.Errorf("labels for pod %q differ from expected:\n%s", pod.Name, diff)
 			}

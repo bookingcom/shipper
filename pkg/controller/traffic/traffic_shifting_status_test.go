@@ -10,6 +10,7 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	objectutil "github.com/bookingcom/shipper/pkg/util/object"
+	testutil "github.com/bookingcom/shipper/pkg/util/testing"
 )
 
 type release struct {
@@ -361,7 +362,7 @@ func assertTrafficShiftingStatusExpectation(
 		},
 	}
 
-	eq, diff := shippertesting.DeepEqualDiff(expectation, actual)
+	eq, diff := testutil.DeepEqualDiff(expectation, actual)
 	if !eq {
 		t.Errorf(
 			"release %q got a different traffic shifting status than expected:\n%s",

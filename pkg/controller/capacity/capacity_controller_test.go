@@ -14,6 +14,7 @@ import (
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	capacityutil "github.com/bookingcom/shipper/pkg/util/capacity"
 	targetutil "github.com/bookingcom/shipper/pkg/util/target"
+	testutil "github.com/bookingcom/shipper/pkg/util/testing"
 )
 
 const (
@@ -265,7 +266,7 @@ func runCapacityControllerTest(
 		ct := object.(*shipper.CapacityTarget)
 
 		actualStatus := ct.Status
-		eq, diff := shippertesting.DeepEqualDiff(expectation.status, actualStatus)
+		eq, diff := testutil.DeepEqualDiff(expectation.status, actualStatus)
 		if !eq {
 			t.Errorf(
 				"CapacityTarget %q has Status different from expected:\n%s",

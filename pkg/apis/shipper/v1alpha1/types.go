@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	"encoding/json"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -187,20 +188,28 @@ type ReleaseList struct {
 }
 
 type ReleaseSpec struct {
-	TargetStep  int32              `json:"targetStep"`
-	Environment ReleaseEnvironment `json:"environment"`
+	TargetStep        int32                   `json:"targetStep"`
+	TargetVirtualStep int32                   `json:"targetVirtualStep"`
+	Environment       ReleaseEnvironment      `json:"environment"`
+	VirtualStrategy   *RolloutVirtualStrategy `json:"virtualStrategy,omitempty"`
 }
 
 // this will likely grow into a struct with interesting fields
 type ReleaseStatus struct {
-	AchievedStep *AchievedStep          `json:"achievedStep,omitempty"`
-	Strategy     *ReleaseStrategyStatus `json:"strategy,omitempty"`
-	Conditions   []ReleaseCondition     `json:"conditions,omitempty"`
+	AchievedStep        *AchievedStep          `json:"achievedStep,omitempty"`
+	AchievedVirtualStep *AchievedVirtualStep   `json:"achievedVirtualStep,omitempty"`
+	Strategy            *ReleaseStrategyStatus `json:"strategy,omitempty"`
+	Conditions          []ReleaseCondition     `json:"conditions,omitempty"`
 }
 
 type AchievedStep struct {
 	Step int32  `json:"step"`
 	Name string `json:"name"`
+}
+
+type AchievedVirtualStep struct {
+	Step        int32 `json:"step"`
+	VirtualStep int32 `json:"virtualStep"`
 }
 
 type ReleaseConditionType string
@@ -246,7 +255,32 @@ type RegionRequirement struct {
 }
 
 type RolloutStrategy struct {
-	Steps []RolloutStrategyStep `json:"steps"`
+	Steps         []RolloutStrategyStep `json:"steps"`
+	RollingUpdate *RollingUpdate        `json:"rollingUpdate,omitempty"`
+}
+
+type RolloutVirtualStrategy struct {
+	Steps []RolloutStrategyVirtualStep `json:"steps"`
+}
+
+type RolloutStrategyVirtualStep struct {
+	VirtualSteps []RolloutStrategyStep `json:"virtualSteps"`
+}
+
+// RollingUpdate is the spec to control the desired behavior of rolling update.
+type RollingUpdate struct {
+	// The maximum number of pods that can be scheduled above the original number of
+	// pods.
+	// Value can be an absolute number (ex: 5) or a percentage of total pods at
+	// the start of the update (ex: 10%).
+	// Absolute number is calculated from percentage by rounding up.
+	// By default, a value of 100% is used.
+	// Example: when this is set to 30%, the new Release can be scaled up by 30%
+	// only. Once old pods have been killed,
+	// new Release can be scaled up further, ensuring that total number of pods running
+	// at any time during the update is at most 130% of original pods.
+	// +optional
+	MaxSurge intstr.IntOrString `json:"maxSurge,omitempty"`
 }
 
 type RolloutStrategyStep struct {
