@@ -2,7 +2,6 @@ package state
 
 import (
 	"strings"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
@@ -130,13 +129,11 @@ func (ssm Metrics) collectReleases(ch chan<- prometheus.Metric) {
 	key := func(ss ...string) string { return strings.Join(ss, "^") }
 	unkey := func(s string) []string { return strings.Split(s, "^") }
 
-	now := time.Now()
 	relAgesByCondition := make(map[string][]float64)
 
 	releasesPerCluster := make(map[string]float64)
 	releasesPerCondition := make(map[string]float64)
 	conditions := []shipper.ReleaseConditionType{
-		shipper.ReleaseConditionTypeScheduled,
 		shipper.ReleaseConditionTypeComplete,
 		shipper.ReleaseConditionTypeBlocked,
 	}
@@ -174,23 +171,6 @@ func (ssm Metrics) collectReleases(ch chan<- prometheus.Metric) {
 			// it's either this or map[string]map[string]map[string]map[string]float64
 			releasesPerCondition[key(rel.Namespace, appName, string(c), status, reason)]++
 		}
-
-		// We're only interested in incomplete releases, as this metric
-		// is intended to for measuring how long each release takes to
-		// roll out, waiting for installation, capacity and traffic.
-		// Sometimes, previously completed releases lose capacity and
-		// don't recover, and we're not interested in those.
-		if !releaseutil.ReleaseComplete(rel) && rel.Status.Strategy != nil {
-			for _, condition := range rel.Status.Strategy.Conditions {
-				if condition.Status != corev1.ConditionFalse {
-					continue
-				}
-
-				age := now.Sub(condition.LastTransitionTime.Time).Seconds()
-				relAgesByCondition[string(condition.Type)] = append(relAgesByCondition[string(condition.Type)], age)
-			}
-		}
-
 	}
 
 	for k, v := range releasesPerCondition {

@@ -7,6 +7,7 @@ import (
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	"github.com/bookingcom/shipper/pkg/util/conditions"
 	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
@@ -20,24 +21,20 @@ const (
 )
 
 type context struct {
-	release    *shipper.Release
-	step       int32
-	isHead     bool
-	isLastStep bool
-	hasTail    bool
+	release *shipper.Release
+	step    int32
+	isHead  bool
 }
 
 func (ctx *context) Copy() *context {
 	return &context{
-		release:    ctx.release,
-		step:       ctx.step,
-		isHead:     ctx.isHead,
-		isLastStep: ctx.isLastStep,
-		hasTail:    ctx.hasTail,
+		release: ctx.release,
+		step:    ctx.step,
+		isHead:  ctx.isHead,
 	}
 }
 
-type PipelineStep func(shipper.RolloutStrategyStep, conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition)
+type PipelineStep func(shipper.RolloutStrategyStep, conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch)
 
 type Pipeline []PipelineStep
 
@@ -49,21 +46,17 @@ func (p *Pipeline) Enqueue(step PipelineStep) {
 	*p = append(*p, step)
 }
 
-func (p *Pipeline) Process(strategyStep shipper.RolloutStrategyStep, cond conditions.StrategyConditionsMap) (bool, []StrategyPatch, []ReleaseStrategyStateTransition) {
+func (p *Pipeline) Process(strategyStep shipper.RolloutStrategyStep, cond conditions.StrategyConditionsMap) (conditions.StrategyConditionsMap, []StrategyPatch) {
 	var patches []StrategyPatch
-	var trans []ReleaseStrategyStateTransition
-	complete := true
 	for _, stage := range *p {
-		cont, steppatches, steptrans := stage(strategyStep, cond)
+		cont, steppatches := stage(strategyStep, cond)
 		patches = append(patches, steppatches...)
-		trans = append(trans, steptrans...)
 		if cont == PipelineBreak {
-			complete = false
 			break
 		}
 	}
 
-	return complete, patches, trans
+	return cond, patches
 }
 
 type StrategyExecutor struct {
@@ -71,30 +64,19 @@ type StrategyExecutor struct {
 	step     int32
 }
 
-func NewStrategyExecutor(strategy *shipper.RolloutStrategy, step int32) *StrategyExecutor {
+func NewStrategyExecutor(strategy *shipper.RolloutStrategy, step int32) (*StrategyExecutor, error) {
+	if step >= int32(len(strategy.Steps)) {
+		return nil, shippererrors.NewUnrecoverableError(
+			fmt.Errorf("no step %d in strategy", step))
+	}
+
 	return &StrategyExecutor{
 		strategy: strategy,
 		step:     step,
-	}
+	}, nil
 }
 
-// copyStrategyConditions makes a shallow copy of the original condition
-// collection and based on the value of the keepIncumbent flag either keeps or
-// filters out conditions that descibe incumbent's state.
-func copyStrategyConditions(conditions []shipper.ReleaseStrategyCondition, keepIncumbent bool) []shipper.ReleaseStrategyCondition {
-	res := make([]shipper.ReleaseStrategyCondition, 0, len(conditions))
-	for _, cond := range conditions {
-		if t := cond.Type; !keepIncumbent &&
-			(t == shipper.StrategyConditionIncumbentAchievedTraffic ||
-				t == shipper.StrategyConditionIncumbentAchievedCapacity) {
-			continue
-		}
-		res = append(res, cond)
-	}
-	return res
-}
-
-func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (bool, []StrategyPatch, []ReleaseStrategyStateTransition) {
+func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (conditions.StrategyConditionsMap, []StrategyPatch) {
 	isHead := succ == nil
 
 	// hasTail is a flag indicating that the executor should look behind. The
@@ -112,36 +94,14 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (bool, []Strat
 	// would create more noise than help really.
 	if !isHead {
 		if !releaseutil.ReleaseAchievedTargetStep(succ.release) {
-			return false, nil, nil
+			return nil, nil
 		}
 	}
 
-	var releaseStrategyConditions []shipper.ReleaseStrategyCondition
-	if curr.release.Status.Strategy != nil {
-		// As it's been mentioned before, we only look behind if it's the
-		// contender. StrategyExecutor should not state a fact if it has never
-		// observed an evidence of this statement, therefore for non-contender
-		// cases we can't really say anything about incumbent's state (in fact,
-		// we are not  interested in it at all). Therefore, we're dropping
-		// incumbent-related conditions from the initial condition collection so
-		// to never report an unchecked state.
-		releaseStrategyConditions = copyStrategyConditions(
-			curr.release.Status.Strategy.Conditions,
-			hasTail,
-		)
-	}
-	cond := conditions.NewStrategyConditions(releaseStrategyConditions...)
-
-	// the last step is slightly special from others: at this moment shipper
-	// is no longer waiting for a command but marks a release as complete.
-	isLastStep := int(e.step) == len(e.strategy.Steps)-1
-
 	ctx := &context{
-		release:    curr.release,
-		hasTail:    hasTail,
-		isLastStep: isLastStep,
-		step:       e.step,
-		isHead:     isHead,
+		release: curr.release,
+		step:    e.step,
+		isHead:  isHead,
 	}
 
 	pipeline := NewPipeline()
@@ -164,15 +124,15 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (bool, []Strat
 		pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
 	}
 
-	pipeline.Enqueue(genReleaseStrategyStateEnforcer(ctx, curr, succ))
-
+	var releaseStrategyConditions []shipper.ReleaseStrategyCondition
+	cond := conditions.NewStrategyConditions(releaseStrategyConditions...)
 	strategyStep := e.strategy.Steps[e.step]
 
 	return pipeline.Process(strategyStep, cond)
 }
 
 func genInstallationEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
-	return func(strategyStep shipper.RolloutStrategyStep, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
+	return func(strategyStep shipper.RolloutStrategyStep, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch) {
 		if ready, clusters := checkInstallation(curr.installationTarget); !ready {
 			cond.SetFalse(
 				shipper.StrategyConditionContenderAchievedInstallation,
@@ -184,13 +144,7 @@ func genInstallationEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep
 				},
 			)
 
-			patches := make([]StrategyPatch, 0, 1)
-			relPatch := buildContenderStrategyConditionsPatch(ctx, cond)
-			if relPatch.Alters(ctx.release) {
-				patches = append(patches, relPatch)
-			}
-
-			return PipelineBreak, patches, nil
+			return PipelineBreak, nil
 		}
 
 		cond.SetTrue(
@@ -203,12 +157,12 @@ func genInstallationEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep
 			},
 		)
 
-		return PipelineContinue, nil, nil
+		return PipelineContinue, nil
 	}
 }
 
 func genCapacityEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
-	return func(strategyStep shipper.RolloutStrategyStep, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
+	return func(strategyStep shipper.RolloutStrategyStep, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch) {
 		var condType shipper.StrategyConditionType
 		var capacityWeight int32
 		isHead := succ == nil
@@ -228,8 +182,6 @@ func genCapacityEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
 		if achieved, newSpec, clustersNotReady := checkCapacity(curr.capacityTarget, capacityWeight); !achieved {
 			klog.Infof("Release %q %s", objectutil.MetaKey(curr.release), "hasn't achieved capacity yet")
 
-			patches := make([]StrategyPatch, 0, 2)
-
 			cond.SetFalse(
 				condType,
 				conditions.StrategyConditionsUpdate{
@@ -240,6 +192,7 @@ func genCapacityEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
 				},
 			)
 
+			patches := make([]StrategyPatch, 0, 1)
 			ctPatch := &CapacityTargetSpecPatch{
 				NewSpec: newSpec,
 				Name:    curr.release.GetName(),
@@ -248,12 +201,7 @@ func genCapacityEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
 				patches = append(patches, ctPatch)
 			}
 
-			relPatch := buildContenderStrategyConditionsPatch(ctx, cond)
-			if relPatch.Alters(ctx.release) {
-				patches = append(patches, relPatch)
-			}
-
-			return PipelineBreak, patches, nil
+			return PipelineBreak, patches
 		}
 
 		klog.Infof("Release %q %s", objectutil.MetaKey(curr.release), "has achieved capacity")
@@ -268,12 +216,12 @@ func genCapacityEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
 			},
 		)
 
-		return PipelineContinue, nil, nil
+		return PipelineContinue, nil
 	}
 }
 
 func genTrafficEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
-	return func(strategyStep shipper.RolloutStrategyStep, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
+	return func(strategyStep shipper.RolloutStrategyStep, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch) {
 		var condType shipper.StrategyConditionType
 		var trafficWeight int32
 		isHead := succ == nil
@@ -293,8 +241,6 @@ func genTrafficEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
 		if achieved, newSpec, reason := checkTraffic(curr.trafficTarget, uint32(trafficWeight)); !achieved {
 			klog.Infof("Release %q %s", objectutil.MetaKey(curr.release), "hasn't achieved traffic yet")
 
-			patches := make([]StrategyPatch, 0, 2)
-
 			cond.SetFalse(
 				condType,
 				conditions.StrategyConditionsUpdate{
@@ -305,6 +251,7 @@ func genTrafficEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
 				},
 			)
 
+			patches := make([]StrategyPatch, 0, 1)
 			ttPatch := &TrafficTargetSpecPatch{
 				NewSpec: newSpec,
 				Name:    curr.release.GetName(),
@@ -313,12 +260,7 @@ func genTrafficEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
 				patches = append(patches, ttPatch)
 			}
 
-			relPatch := buildContenderStrategyConditionsPatch(ctx, cond)
-			if relPatch.Alters(ctx.release) {
-				patches = append(patches, relPatch)
-			}
-
-			return PipelineBreak, patches, nil
+			return PipelineBreak, patches
 		}
 
 		klog.Infof("Release %q %s", objectutil.MetaKey(curr.release), "has achieved traffic")
@@ -333,87 +275,8 @@ func genTrafficEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
 			},
 		)
 
-		return PipelineContinue, nil, nil
+		return PipelineContinue, nil
 	}
-}
-
-func genReleaseStrategyStateEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
-	return func(strategyStep shipper.RolloutStrategyStep, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition) {
-		var releaseStrategyStateTransitions []ReleaseStrategyStateTransition
-		patches := make([]StrategyPatch, 0, 1)
-
-		relStatus := curr.release.Status.DeepCopy()
-
-		newReleaseStrategyState := cond.AsReleaseStrategyState(
-			ctx.step,
-			ctx.hasTail,
-			ctx.isLastStep,
-			ctx.isHead,
-		)
-
-		var oldReleaseStrategyState shipper.ReleaseStrategyState
-		if relStatus.Strategy != nil {
-			oldReleaseStrategyState = relStatus.Strategy.State
-		}
-
-		relPatch := buildContenderStrategyConditionsPatch(ctx, cond)
-		if relPatch.Alters(ctx.release) {
-			patches = append(patches, relPatch)
-			releaseStrategyStateTransitions =
-				getReleaseStrategyStateTransitions(
-					oldReleaseStrategyState,
-					newReleaseStrategyState,
-					releaseStrategyStateTransitions)
-		}
-
-		return PipelineContinue, patches, releaseStrategyStateTransitions
-	}
-}
-
-func buildContenderStrategyConditionsPatch(
-	ctx *context,
-	cond conditions.StrategyConditionsMap,
-) StrategyPatch {
-	newStrategyStatus := &shipper.ReleaseStrategyStatus{
-		Conditions: cond.AsReleaseStrategyConditions(),
-		State: cond.AsReleaseStrategyState(
-			ctx.step,
-			ctx.hasTail,
-			ctx.isLastStep,
-			ctx.isHead,
-		),
-	}
-	return &ReleaseStrategyStatusPatch{
-		NewStrategyStatus: newStrategyStatus,
-		Name:              ctx.release.GetName(),
-	}
-}
-
-func getReleaseStrategyStateTransitions(
-	oldState shipper.ReleaseStrategyState,
-	newState shipper.ReleaseStrategyState,
-	stateTransitions []ReleaseStrategyStateTransition,
-) []ReleaseStrategyStateTransition {
-	if oldState.WaitingForCapacity != newState.WaitingForCapacity {
-		stateTransitions = append(stateTransitions, ReleaseStrategyStateTransition{State: "WaitingForCapacity", New: newState.WaitingForCapacity, Previous: valueOrUnknown(oldState.WaitingForCapacity)})
-	}
-	if oldState.WaitingForCommand != newState.WaitingForCommand {
-		stateTransitions = append(stateTransitions, ReleaseStrategyStateTransition{State: "WaitingForCommand", New: newState.WaitingForCommand, Previous: valueOrUnknown(oldState.WaitingForCapacity)})
-	}
-	if oldState.WaitingForInstallation != newState.WaitingForInstallation {
-		stateTransitions = append(stateTransitions, ReleaseStrategyStateTransition{State: "WaitingForInstallation", New: newState.WaitingForInstallation, Previous: valueOrUnknown(oldState.WaitingForCapacity)})
-	}
-	if oldState.WaitingForTraffic != newState.WaitingForTraffic {
-		stateTransitions = append(stateTransitions, ReleaseStrategyStateTransition{State: "WaitingForTraffic", New: newState.WaitingForTraffic, Previous: valueOrUnknown(oldState.WaitingForTraffic)})
-	}
-	return stateTransitions
-}
-
-func valueOrUnknown(v shipper.StrategyState) shipper.StrategyState {
-	if len(v) < 1 {
-		v = shipper.StrategyStateUnknown
-	}
-	return v
 }
 
 // This method is a super basic helper and should not be re-used as a reliable

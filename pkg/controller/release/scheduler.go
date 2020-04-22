@@ -179,9 +179,6 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 				Name:      rel.Name,
 				Namespace: rel.Namespace,
 				Labels:    rel.Labels,
-				// OwnerReferences: []metav1.OwnerReference{
-				// 	createOwnerRefFromRelease(rel),
-				// },
 			},
 			Spec: shipper.InstallationTargetSpec{
 				Chart:       rel.Spec.Environment.Chart,
@@ -205,34 +202,6 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 
 		return updIt, nil
 	}
-
-	// TODO(jgreff): ensure things still make sense in this case
-	// if !objectBelongsToRelease(it, rel) {
-	// 	return nil, shippererrors.NewWrongOwnerReferenceError(it, rel)
-	// }
-
-	// TODO(jgreff): ensure InstallationTargets are inserted and removed from clusters correctly
-	// if !installationTargetClustersMatch(it, clusters) {
-	// 	klog.V(4).Infof("Updating InstallationTarget %q clusters to %s",
-	// 		controller.MetaKey(it),
-	// 		strings.Join(clusters, ","))
-	// 	setInstallationTargetClusters(it, clusters)
-	// 	updIt, err := s.clientset.ShipperV1alpha1().InstallationTargets(rel.GetNamespace()).Update(it)
-	// 	if err != nil {
-	// 		klog.Errorf("Failed to update InstallationTarget %q clusters: %s",
-	// 			controller.MetaKey(it),
-	// 			err)
-	// 		return nil, err
-	// 	}
-	// 	s.recorder.Eventf(
-	// 		rel,
-	// 		corev1.EventTypeNormal,
-	// 		"ReleaseScheduled",
-	// 		"Updated InstallationTarget %q cluster set to [%s]",
-	// 		controller.MetaKey(updIt),
-	// 		strings.Join(clusters, ","))
-	// 	return updIt, nil
-	// }
 
 	return it, nil
 }

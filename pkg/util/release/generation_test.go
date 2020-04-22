@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"testing"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -14,10 +13,6 @@ import (
 
 func buildRelease(namespace, name string, generation string) *shipper.Release {
 	return &shipper.Release{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: shipper.SchemeGroupVersion.String(),
-			Kind:       "Release",
-		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
@@ -34,23 +29,6 @@ func buildRelease(namespace, name string, generation string) *shipper.Release {
 			},
 			Annotations: map[string]string{
 				shipper.ReleaseGenerationAnnotation: generation,
-			},
-		},
-		Spec: shipper.ReleaseSpec{
-			Environment: shipper.ReleaseEnvironment{
-				Chart: shipper.Chart{
-					Name:    "simple",
-					Version: "0.0.1",
-				},
-				ClusterRequirements: shipper.ClusterRequirements{
-					Regions: []shipper.RegionRequirement{{Name: "local"}},
-				},
-			},
-		},
-		Status: shipper.ReleaseStatus{
-			Conditions: []shipper.ReleaseCondition{
-				{Type: shipper.ReleaseConditionTypeBlocked, Status: corev1.ConditionFalse},
-				{Type: shipper.ReleaseConditionTypeScheduled, Status: corev1.ConditionFalse},
 			},
 		},
 	}
