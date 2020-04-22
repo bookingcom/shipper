@@ -25,24 +25,25 @@ const (
 	rolloutBlockName = "my-test-rollout-block"
 )
 
-var (
-	masterURL      = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
-	runEndToEnd    = flag.Bool("e2e", false, "Set this flag to enable E2E tests against the local minikube")
-	testCharts     = flag.String("testcharts", "", "The address of the Helm repository holding the test charts")
-	inspectFailed  = flag.Bool("inspectfailed", false, "Set this flag to skip deleting the namespaces for failed tests. Useful for debugging.")
-	kubeconfig     = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
-	appClusterName = flag.String("appcluster", "minikube", "The application cluster that E2E tests will check to determine success/failure")
-	timeoutFlag    = flag.String("progresstimeout", "60s", "timeout when waiting for things to change")
-)
-
-var (
-	appKubeClient kubernetes.Interface
-	kubeClient    kubernetes.Interface
-	shipperClient shipperclientset.Interface
-	chartRepo     string
-	testRegion    string
-	globalTimeout time.Duration
-)
+//
+//var (
+//	masterURL      = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
+//	runEndToEnd    = flag.Bool("e2e", false, "Set this flag to enable E2E tests against the local minikube")
+//	testCharts     = flag.String("testcharts", "", "The address of the Helm repository holding the test charts")
+//	inspectFailed  = flag.Bool("inspectfailed", false, "Set this flag to skip deleting the namespaces for failed tests. Useful for debugging.")
+//	kubeconfig     = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
+//	appClusterName = flag.String("appcluster", "minikube", "The application cluster that E2E tests will check to determine success/failure")
+//	timeoutFlag    = flag.String("progresstimeout", "30s", "timeout when waiting for things to change")
+//)
+//
+//var (
+//	appKubeClient kubernetes.Interface
+//	kubeClient    kubernetes.Interface
+//	shipperClient shipperclientset.Interface
+//	chartRepo     string
+//	testRegion    string
+//	globalTimeout time.Duration
+//)
 
 var allIn = shipper.RolloutStrategy{
 	Steps: []shipper.RolloutStrategyStep{
@@ -73,6 +74,11 @@ var vanguard = shipper.RolloutStrategy{
 		},
 	},
 }
+
+var (
+	surgeOnePod  = intstrutil.FromInt(1)
+	surgeDefault = intstrutil.FromString("100%")
+)
 
 func TestMain(m *testing.M) {
 	flag.Parse()
@@ -129,6 +135,7 @@ func TestNewAppAllIn(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -167,7 +174,7 @@ func TestNewAppAllInWithMaxSurge(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
-	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: intstrutil.FromInt(1)}
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeOnePod}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -212,6 +219,7 @@ func TestNewAppAllInWithRolloutBlockOverride(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -254,6 +262,7 @@ func TestBlockNewAppWithRolloutBlock(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -288,6 +297,7 @@ func TestNewAppAllInWithRolloutBlockNonExisting(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -321,6 +331,7 @@ func TestBlockNewAppProgressWithRolloutBlock(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -358,6 +369,7 @@ func TestRolloutAllIn(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -430,6 +442,7 @@ func TestBrokenRolloutAllIn(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -512,6 +525,7 @@ func TestRolloutAllInWithRolloutBlockOverride(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -569,6 +583,7 @@ func testNewApplicationVanguard(targetReplicas int32, t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, 100)
 	if err != nil {
 		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
@@ -625,9 +640,8 @@ func testNewApplicationVanguardWithMaxSurge(targetReplicas int32, t *testing.T) 
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
-	surge := 1
-	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: intstrutil.FromInt(surge)}
-	surgePercent := int(100 * (float32(surge) / float32(targetReplicas)))
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeOnePod}
+	surgePercent := int(100 * (float32(1) / float32(targetReplicas)))
 	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, surgePercent)
 	if err != nil {
 		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
@@ -690,6 +704,7 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int32, t 
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, 100)
 	if err != nil {
 		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
@@ -779,6 +794,7 @@ func testRolloutVanguard(targetReplicas int32, t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, 100)
 	if err != nil {
 		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
@@ -869,6 +885,7 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, 100)
 	if err != nil {
 		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
@@ -927,9 +944,8 @@ func TestNewApplicationMovingStrategyBackwardsMaxSurge(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
-	surge := 1
-	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: intstrutil.FromInt(surge)}
-	surgePercent := int(100 * (float32(surge) / float32(targetReplicas)))
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeOnePod}
+	surgePercent := int(100 * (float32(1) / float32(targetReplicas)))
 	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, surgePercent)
 	if err != nil {
 		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
@@ -989,6 +1005,7 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, 100)
 	if err != nil {
 		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
@@ -1068,6 +1085,7 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -1148,6 +1166,7 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -1257,6 +1276,7 @@ func TestNewApplicationAbort(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -1320,6 +1340,7 @@ func TestRolloutAbort(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -1431,6 +1452,7 @@ func TestNewRolloutBlockAddOverrides(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(namespace).Create(newApp)
 	if err != nil {
@@ -1497,6 +1519,7 @@ func TestNewGlobalRolloutBlockAddOverrides(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -1507,6 +1530,7 @@ func TestNewGlobalRolloutBlockAddOverrides(t *testing.T) {
 	rel := f.waitForRelease(appName, 0)
 	relName := rel.GetName()
 	t.Logf("waiting for release %q to complete", relName)
+	f.waitForReleaseStrategyState("none", rel.GetName(), 0)
 	f.waitForComplete(rel.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
 	f.checkReadyPods(relName, targetReplicas)
@@ -1558,6 +1582,7 @@ func TestNewRolloutBlockRemoveRelease(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -1647,6 +1672,7 @@ func TestNewGlobalRolloutBlockRemoveRelease(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(testNamespace).Create(app)
 	if err != nil {
@@ -1714,6 +1740,7 @@ func TestDeletedDeploymentsAreReinstalled(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -1765,6 +1792,7 @@ func TestConsistentTrafficBalanceOnStraightFullOn(t *testing.T) {
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": 0}
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -1831,6 +1859,7 @@ func TestMultipleAppsInNamespace(t *testing.T) {
 		}
 		newApp.Spec.Template.Chart.Name = "test-nginx"
 		newApp.Spec.Template.Chart.Version = "0.0.1"
+		newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 		_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 		if err != nil {
@@ -1878,6 +1907,7 @@ func TestDeleteRelease(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
