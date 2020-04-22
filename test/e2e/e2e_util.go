@@ -248,7 +248,9 @@ func (f *fixture) waitForReleaseVirtualStrategyState(waitingFor string, releaseN
 
 		}
 
-		newState = fmt.Sprintf("{installation: %s, capacity: %s, traffic: %s, command: %s}",
+		newState = fmt.Sprintf("step %d virtual step %d {installation: %s, capacity: %s, traffic: %s, command: %s}",
+			rel.Status.AchievedVirtualStep.Step,
+			rel.Status.AchievedVirtualStep.VirtualStep,
 			rel.Status.Strategy.State.WaitingForInstallation,
 			rel.Status.Strategy.State.WaitingForCapacity,
 			rel.Status.Strategy.State.WaitingForTraffic,
@@ -264,7 +266,7 @@ func (f *fixture) waitForReleaseVirtualStrategyState(waitingFor string, releaseN
 
 	if err != nil {
 		if err == wait.ErrWaitTimeout {
-			f.t.Fatalf("timed out waiting for release to be waiting for %s fot target step %d virtual step %d: waited %s. final state: %s", waitingFor, step, virtualStep, globalTimeout, state)
+			f.t.Fatalf("timed out waiting for release to be waiting for %s for target step %d virtual step %d: waited %s. final state: %s", waitingFor, step, virtualStep, globalTimeout, state)
 		}
 		f.t.Fatalf("error waiting for release to be waiting for %s: %q", waitingFor, err)
 	}

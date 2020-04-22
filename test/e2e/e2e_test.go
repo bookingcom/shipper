@@ -569,6 +569,10 @@ func testNewApplicationVanguard(targetReplicas int32, t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, 100)
+	if err != nil {
+		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
+	}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -587,8 +591,9 @@ func testNewApplicationVanguard(targetReplicas int32, t *testing.T) {
 			t.Logf("waiting for release %q to complete", relName)
 			f.waitForComplete(relName)
 		} else {
+			lastVirtualStep := len(expectedVirtualStrategy.Steps[i].VirtualSteps) - 1
 			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
-			f.waitForReleaseVirtualStrategyState("command", relName, i, 1)
+			f.waitForReleaseVirtualStrategyState("command", relName, i, lastVirtualStep)
 			f.waitForReleaseStrategyState("command", relName, i)
 		}
 
@@ -685,6 +690,10 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int32, t 
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, 100)
+	if err != nil {
+		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
+	}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -703,8 +712,9 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int32, t 
 			t.Logf("waiting for release %q to complete", relName)
 			f.waitForComplete(relName)
 		} else {
+			lastVirtualStep := len(expectedVirtualStrategy.Steps[i].VirtualSteps) - 1
 			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
-			f.waitForReleaseVirtualStrategyState("command", relName, i, 1)
+			f.waitForReleaseVirtualStrategyState("command", relName, i, lastVirtualStep)
 			f.waitForReleaseStrategyState("command", relName, i)
 		}
 
@@ -769,6 +779,10 @@ func testRolloutVanguard(targetReplicas int32, t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, 100)
+	if err != nil {
+		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
+	}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -805,8 +819,9 @@ func testRolloutVanguard(targetReplicas int32, t *testing.T) {
 			t.Logf("waiting for release %q to complete", contenderName)
 			f.waitForComplete(contenderName)
 		} else {
+			lastVirtualStep := len(expectedVirtualStrategy.Steps[i].VirtualSteps) - 1
 			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
-			f.waitForReleaseVirtualStrategyState("command", contenderName, i, 1)
+			f.waitForReleaseVirtualStrategyState("command", contenderName, i, lastVirtualStep)
 			f.waitForReleaseStrategyState("command", contenderName, i)
 		}
 
@@ -854,6 +869,10 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, 100)
+	if err != nil {
+		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
+	}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -864,7 +883,7 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 	rel := f.waitForRelease(appName, 0)
 	relName := rel.GetName()
 
-	virtualStep := 1
+	virtualStep := len(expectedVirtualStrategy.Steps[0].VirtualSteps) - 1
 	for _, i := range []int{0, 1, 0} {
 		step := vanguard.Steps[i]
 		t.Logf("setting release %q targetStep to %d", relName, i)
@@ -879,6 +898,8 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 		f.checkReadyPods(relName, int32(expectedCapacity))
 		if i == 1 {
 			virtualStep = 0
+		} else {
+			virtualStep = len(expectedVirtualStrategy.Steps[1].VirtualSteps) - 1
 		}
 	}
 }
@@ -968,6 +989,10 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, 100)
+	if err != nil {
+		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
+	}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -987,8 +1012,9 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 		t.Logf("setting release %q targetStep to %d", relName, i)
 		f.targetStep(i, relName)
 
+		lastVirtualStep := len(expectedVirtualStrategy.Steps[i].VirtualSteps) - 1
 		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
-		f.waitForReleaseVirtualStrategyState("command", relName, i, 1)
+		f.waitForReleaseVirtualStrategyState("command", relName, i, lastVirtualStep)
 		f.waitForReleaseStrategyState("command", relName, i)
 
 		expectedCapacity = replicas.CalculateDesiredReplicaCount(step.Capacity.Contender, targetReplicas)
