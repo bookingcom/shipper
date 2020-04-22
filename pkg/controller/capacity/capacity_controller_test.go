@@ -2,7 +2,6 @@ package capacity
 
 import (
 	"fmt"
-	"sort"
 	"testing"
 	"time"
 
@@ -12,94 +11,36 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
-	capacityutil "github.com/bookingcom/shipper/pkg/util/capacity"
 	targetutil "github.com/bookingcom/shipper/pkg/util/target"
 )
 
 const (
-	clusterA = "cluster-a"
-	clusterB = "cluster-b"
-	ctName   = "foobar"
+	ctName = "foobar"
 )
 
-type capacityTargetTestExpectation struct {
-	capacityTarget    *shipper.CapacityTarget
-	status            shipper.CapacityTargetStatus
-	replicasByCluster map[string]int32
-}
-
 func init() {
-	capacityutil.CapacityConditionsShouldDiscardTimestamps = true
 	targetutil.ConditionsShouldDiscardTimestamps = true
 }
 
-// TestSingleCluster verifies that the capacity controller patches existing
+// TestSuccess verifies that the capacity controller patches existing
 // deployments to match the capacity requirements, and reports achieved
 // capacity and readiness.
-func TestSingleCluster(t *testing.T) {
+func TestSuccess(t *testing.T) {
 	// We define a final total replica count, but expect to have only a
 	// fraction of that, because of percent.
 	percent := int32(50)
 	totalReplicaCount := int32(10)
 	expectedReplicaCount := int32(5)
-	ct := buildCapacityTarget(shippertesting.TestApp, ctName, []shipper.ClusterCapacityTarget{
-		{
-			Name:              clusterA,
-			Percent:           percent,
-			TotalReplicaCount: totalReplicaCount,
-		},
+	ct := buildCapacityTarget(shippertesting.TestApp, ctName, shipper.CapacityTargetSpec{
+		Percent:           percent,
+		TotalReplicaCount: totalReplicaCount,
 	})
 
 	runCapacityControllerTest(t,
-		map[string][]runtime.Object{
-			clusterA: []runtime.Object{buildDeployment(shippertesting.TestApp, ctName, 0, expectedReplicaCount)},
-		},
-		[]capacityTargetTestExpectation{
-			{
-				capacityTarget: ct,
-				status:         buildSuccessStatus(ctName, ct.Spec.Clusters),
-				replicasByCluster: map[string]int32{
-					clusterA: expectedReplicaCount,
-				},
-			},
-		},
-	)
-}
-
-// TestMultipleClusters does the same thing as TestSingleCluster, but does so
-// for multiple clusters.
-func TestMultipleClusters(t *testing.T) {
-	percent := int32(50)
-	totalReplicaCount := int32(10)
-	expectedReplicaCount := int32(5)
-	ct := buildCapacityTarget(shippertesting.TestApp, ctName, []shipper.ClusterCapacityTarget{
-		{
-			Name:              clusterA,
-			Percent:           percent,
-			TotalReplicaCount: totalReplicaCount,
-		},
-		{
-			Name:              clusterB,
-			Percent:           percent,
-			TotalReplicaCount: totalReplicaCount,
-		},
-	})
-
-	runCapacityControllerTest(t,
-		map[string][]runtime.Object{
-			clusterA: []runtime.Object{buildDeployment(shippertesting.TestApp, ctName, 0, expectedReplicaCount)},
-			clusterB: []runtime.Object{buildDeployment(shippertesting.TestApp, ctName, 0, expectedReplicaCount)},
-		},
-		[]capacityTargetTestExpectation{
-			{
-				capacityTarget: ct,
-				status:         buildSuccessStatus(ctName, ct.Spec.Clusters),
-				replicasByCluster: map[string]int32{
-					clusterA: expectedReplicaCount,
-					clusterB: expectedReplicaCount,
-				},
-			},
-		},
+		[]runtime.Object{buildDeployment(shippertesting.TestApp, ctName, 0, expectedReplicaCount)},
+		ct,
+		buildSuccessStatus(ctName, ct.Spec),
+		expectedReplicaCount,
 	)
 }
 
@@ -110,54 +51,29 @@ func TestMultipleClusters(t *testing.T) {
 func TestCapacityShiftingPodsNotSadButNotAvailable(t *testing.T) {
 	totalReplicaCount := int32(10)
 	availableReplicaCount := int32(5)
-	ct := buildCapacityTarget(shippertesting.TestApp, ctName, []shipper.ClusterCapacityTarget{
-		{
-			Name:              clusterA,
-			Percent:           100,
-			TotalReplicaCount: totalReplicaCount,
-		},
+	ct := buildCapacityTarget(shippertesting.TestApp, ctName, shipper.CapacityTargetSpec{
+		Percent:           100,
+		TotalReplicaCount: totalReplicaCount,
 	})
 
 	status := shipper.CapacityTargetStatus{
-		Clusters: []shipper.ClusterCapacityStatus{
-			{
-				Name:              clusterA,
-				AchievedPercent:   50,
-				AvailableReplicas: availableReplicaCount,
-				Conditions: []shipper.ClusterCapacityCondition{
-					ClusterCapacityOperational,
-					{
-						Type:   shipper.ClusterConditionTypeReady,
-						Status: corev1.ConditionFalse,
-						Reason: InProgress,
-					},
-				},
-			},
-		},
+		AchievedPercent:   50,
+		AvailableReplicas: availableReplicaCount,
 		Conditions: []shipper.TargetCondition{
 			TargetConditionOperational,
 			{
-				Type:    shipper.TargetConditionTypeReady,
-				Status:  corev1.ConditionFalse,
-				Reason:  ClustersNotReady,
-				Message: fmt.Sprintf("%s: InProgress", clusterA),
+				Type:   shipper.TargetConditionTypeReady,
+				Status: corev1.ConditionFalse,
+				Reason: "InProgress",
 			},
 		},
 	}
 
 	runCapacityControllerTest(t,
-		map[string][]runtime.Object{
-			clusterA: []runtime.Object{buildDeployment(shippertesting.TestApp, ctName, totalReplicaCount, availableReplicaCount)},
-		},
-		[]capacityTargetTestExpectation{
-			{
-				capacityTarget: ct,
-				status:         status,
-				replicasByCluster: map[string]int32{
-					clusterA: totalReplicaCount,
-				},
-			},
-		},
+		[]runtime.Object{buildDeployment(shippertesting.TestApp, ctName, totalReplicaCount, availableReplicaCount)},
+		ct,
+		status,
+		totalReplicaCount,
 	)
 }
 
@@ -167,12 +83,9 @@ func TestCapacityShiftingPodsNotSadButNotAvailable(t *testing.T) {
 func TestCapacityShiftingSadPods(t *testing.T) {
 	totalReplicaCount := int32(10)
 	availableReplicaCount := int32(5)
-	ct := buildCapacityTarget(shippertesting.TestApp, ctName, []shipper.ClusterCapacityTarget{
-		{
-			Name:              clusterA,
-			Percent:           100,
-			TotalReplicaCount: totalReplicaCount,
-		},
+	ct := buildCapacityTarget(shippertesting.TestApp, ctName, shipper.CapacityTargetSpec{
+		Percent:           100,
+		TotalReplicaCount: totalReplicaCount,
 	})
 
 	deployment := buildDeployment(shippertesting.TestApp, ctName, totalReplicaCount, availableReplicaCount)
@@ -180,27 +93,13 @@ func TestCapacityShiftingSadPods(t *testing.T) {
 	objects := []runtime.Object{deployment, sadPod}
 
 	status := shipper.CapacityTargetStatus{
-		Clusters: []shipper.ClusterCapacityStatus{
+		AchievedPercent:   50,
+		AvailableReplicas: availableReplicaCount,
+		SadPods: []shipper.PodStatus{
 			{
-				Name:              clusterA,
-				AchievedPercent:   50,
-				AvailableReplicas: availableReplicaCount,
-				Conditions: []shipper.ClusterCapacityCondition{
-					ClusterCapacityOperational,
-					{
-						Type:    shipper.ClusterConditionTypeReady,
-						Status:  corev1.ConditionFalse,
-						Reason:  PodsNotReady,
-						Message: `1/10: 1x"app" containers with [ExpectedFail]`,
-					},
-				},
-				SadPods: []shipper.PodStatus{
-					{
-						Name:       sadPod.Name,
-						Condition:  sadPod.Status.Conditions[0],
-						Containers: sadPod.Status.ContainerStatuses,
-					},
-				},
+				Name:       sadPod.Name,
+				Condition:  sadPod.Status.Conditions[0],
+				Containers: sadPod.Status.ContainerStatuses,
 			},
 		},
 		Conditions: []shipper.TargetCondition{
@@ -208,107 +107,75 @@ func TestCapacityShiftingSadPods(t *testing.T) {
 			{
 				Type:    shipper.TargetConditionTypeReady,
 				Status:  corev1.ConditionFalse,
-				Reason:  ClustersNotReady,
-				Message: fmt.Sprintf(`%s: PodsNotReady 1/10: 1x"app" containers with [ExpectedFail]`, clusterA),
+				Reason:  PodsNotReady,
+				Message: `1/10: 1x"app" containers with [ExpectedFail]`,
 			},
 		},
 	}
 
 	runCapacityControllerTest(t,
-		map[string][]runtime.Object{
-			clusterA: objects,
-		},
-		[]capacityTargetTestExpectation{
-			{
-				capacityTarget: ct,
-				status:         status,
-				replicasByCluster: map[string]int32{
-					clusterA: totalReplicaCount,
-				},
-			},
-		},
+		objects,
+		ct,
+		status,
+		totalReplicaCount,
 	)
 }
 
 func runCapacityControllerTest(
 	t *testing.T,
-	objectsByCluster map[string][]runtime.Object,
-	expectations []capacityTargetTestExpectation,
+	objects []runtime.Object,
+	ct *shipper.CapacityTarget,
+	status shipper.CapacityTargetStatus,
+	replicas int32,
 ) {
 	f := shippertesting.NewControllerTestFixture()
 
-	clusterNames := []string{}
-	for clusterName, objects := range objectsByCluster {
-		cluster := f.AddNamedCluster(clusterName)
-		cluster.AddMany(objects)
-		clusterNames = append(clusterNames, clusterName)
+	for _, object := range objects {
+		f.KubeClient.Tracker().Add(object)
 	}
 
-	sort.Strings(clusterNames)
-
-	for _, expectation := range expectations {
-		f.ShipperClient.Tracker().Add(expectation.capacityTarget)
-	}
+	f.ShipperClient.Tracker().Add(ct)
 
 	runController(f)
 
 	ctGVR := shipper.SchemeGroupVersion.WithResource("capacitytargets")
-	for _, expectation := range expectations {
-		initialCT := expectation.capacityTarget
-		ctKey := fmt.Sprintf("%s/%s", initialCT.Namespace, initialCT.Name)
-		object, err := f.ShipperClient.Tracker().Get(ctGVR, initialCT.Namespace, initialCT.Name)
-		if err != nil {
-			t.Errorf("could not Get CapacityTarget %q: %s", ctKey, err)
-			continue
-		}
-
-		ct := object.(*shipper.CapacityTarget)
-
-		actualStatus := ct.Status
-		eq, diff := shippertesting.DeepEqualDiff(expectation.status, actualStatus)
-		if !eq {
-			t.Errorf(
-				"CapacityTarget %q has Status different from expected:\n%s",
-				ctKey, diff)
-			continue
-		}
-
-		for _, clusterName := range clusterNames {
-			expectedReplicas := expectation.replicasByCluster[clusterName]
-			assertDeploymentReplicas(t, ct, f.Clusters[clusterName], expectedReplicas)
-		}
-	}
-}
-
-func assertDeploymentReplicas(
-	t *testing.T,
-	ct *shipper.CapacityTarget,
-	cluster *shippertesting.FakeCluster,
-	expectedReplicas int32,
-) {
-	deploymentGVR := appsv1.SchemeGroupVersion.WithResource("deployments")
 	ctKey := fmt.Sprintf("%s/%s", ct.Namespace, ct.Name)
-	object, err := cluster.KubeClient.Tracker().Get(deploymentGVR, ct.Namespace, ct.Name)
+	object, err := f.ShipperClient.Tracker().Get(ctGVR, ct.Namespace, ct.Name)
 	if err != nil {
-		t.Errorf(`could not Get Deployment %q: %s`, ctKey, err)
-		return
+		t.Fatalf("could not Get CapacityTarget %q: %s", ctKey, err)
+	}
+
+	actualCT := object.(*shipper.CapacityTarget)
+	actualStatus := actualCT.Status
+	eq, diff := shippertesting.DeepEqualDiff(status, actualStatus)
+	if !eq {
+		t.Fatalf(
+			"CapacityTarget %q has Status different from expected:\n%s",
+			ctKey, diff)
+	}
+
+	deploymentGVR := appsv1.SchemeGroupVersion.WithResource("deployments")
+	object, err = f.FakeCluster.KubeClient.Tracker().Get(deploymentGVR, ct.Namespace, ct.Name)
+	if err != nil {
+		t.Fatalf(`could not Get Deployment %q: %s`, ctKey, err)
 	}
 
 	deployment := object.(*appsv1.Deployment)
 
-	if *deployment.Spec.Replicas != expectedReplicas {
-		t.Errorf(
-			"CapacityTarget %q expected Deployment in cluster %q to have %d Replicas in its spec, got %d instead",
-			ctKey, cluster.Name, expectedReplicas, *deployment.Spec.Replicas,
+	if *deployment.Spec.Replicas != replicas {
+		t.Fatalf(
+			"CapacityTarget %q expected Deployment to have %d Replicas in its spec, got %d instead",
+			ctKey, replicas, *deployment.Spec.Replicas,
 		)
 	}
 }
 
 func runController(f *shippertesting.ControllerTestFixture) {
 	controller := NewController(
+		f.KubeClient,
+		f.KubeInformerFactory,
 		f.ShipperClient,
 		f.ShipperInformerFactory,
-		f.ClusterClientStore,
 		f.Recorder,
 	)
 

@@ -16,6 +16,8 @@ import (
 type PipelineContinuation bool
 
 const (
+	NotReady = "NotReady"
+
 	PipelineBreak    PipelineContinuation = false
 	PipelineContinue                      = true
 )
@@ -133,13 +135,13 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (conditions.St
 
 func genInstallationEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
 	return func(strategyStep shipper.RolloutStrategyStep, cond conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch) {
-		if ready, clusters := checkInstallation(curr.installationTarget); !ready {
+		if achieved, reason := checkInstallation(curr.installationTarget); !achieved {
 			cond.SetFalse(
 				shipper.StrategyConditionContenderAchievedInstallation,
 				conditions.StrategyConditionsUpdate{
-					Reason:             ClustersNotReady,
+					Reason:             NotReady,
 					Step:               ctx.step,
-					Message:            fmt.Sprintf("clusters pending installation: %v. for more details try `kubectl describe it %s`", clusters, curr.installationTarget.GetName()),
+					Message:            reason,
 					LastTransitionTime: time.Now(),
 				},
 			)
@@ -179,14 +181,14 @@ func genCapacityEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
 			capacityWeight = strategyStep.Capacity.Incumbent
 		}
 
-		if achieved, newSpec, clustersNotReady := checkCapacity(curr.capacityTarget, capacityWeight); !achieved {
+		if achieved, newSpec, reason := checkCapacity(curr.capacityTarget, capacityWeight); !achieved {
 			klog.Infof("Release %q %s", objectutil.MetaKey(curr.release), "hasn't achieved capacity yet")
 
 			cond.SetFalse(
 				condType,
 				conditions.StrategyConditionsUpdate{
-					Reason:             ClustersNotReady,
-					Message:            fmt.Sprintf("release %q hasn't achieved capacity in clusters: %v. for more details try `kubectl describe ct %s`", curr.release.GetName(), clustersNotReady, curr.capacityTarget.GetName()),
+					Reason:             NotReady,
+					Message:            reason,
 					Step:               ctx.step,
 					LastTransitionTime: time.Now(),
 				},
@@ -244,8 +246,8 @@ func genTrafficEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
 			cond.SetFalse(
 				condType,
 				conditions.StrategyConditionsUpdate{
-					Reason:             ClustersNotReady,
-					Message:            fmt.Sprintf("release %q hasn't achieved traffic in clusters: %s. for more details try `kubectl describe tt %s`", curr.release.GetName(), reason, curr.trafficTarget.GetName()),
+					Reason:             NotReady,
+					Message:            reason,
 					Step:               ctx.step,
 					LastTransitionTime: time.Now(),
 				},

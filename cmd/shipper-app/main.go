@@ -381,16 +381,19 @@ func startCapacityController(cfg *cfg) (bool, error) {
 	}
 
 	c := capacity.NewController(
+		client.NewKubeClientOrDie(capacity.AgentName, cfg.restCfg),
+		cfg.kubeInformerFactory,
 		client.NewShipperClientOrDie(capacity.AgentName, cfg.restCfg),
 		cfg.shipperInformerFactory,
-		cfg.store,
 		cfg.recorder(capacity.AgentName),
 	)
+
 	cfg.wg.Add(1)
 	go func() {
 		c.Run(cfg.workers, cfg.stopCh)
 		cfg.wg.Done()
 	}()
+
 	return true, nil
 }
 

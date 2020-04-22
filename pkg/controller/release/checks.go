@@ -20,61 +20,21 @@ func checkCapacity(
 	*shipper.CapacityTargetSpec,
 	string,
 ) {
-	canProceed := true
-	newSpec := &shipper.CapacityTargetSpec{}
-	reason := ""
-
-	clustersNotReadyMap := make(map[string]struct{})
-	for _, spec := range ct.Spec.Clusters {
-		t := spec
-		if spec.Percent != stepCapacity {
-			t = shipper.ClusterCapacityTarget{
-				Name:              spec.Name,
-				Percent:           stepCapacity,
-				TotalReplicaCount: spec.TotalReplicaCount,
-			}
-
-			clustersNotReadyMap[spec.Name] = struct{}{}
-			canProceed = false
+	if ct.Spec.Percent != stepCapacity {
+		newSpec := &shipper.CapacityTargetSpec{
+			Percent:           stepCapacity,
+			TotalReplicaCount: ct.Spec.TotalReplicaCount,
 		}
-		newSpec.Clusters = append(newSpec.Clusters, t)
+
+		return false, newSpec, "patches pending"
 	}
 
-	if canProceed {
-		// We return an empty new spec if cluster spec check went fine
-		// so far.
-		newSpec = nil
-
-		if ct.Status.ObservedGeneration >= ct.Generation {
-			canProceed, reason = targetutil.IsReady(ct.Status.Conditions)
-		} else {
-			canProceed = false
-
-			clustersNotReady := make([]string, 0)
-			for _, spec := range ct.Spec.Clusters {
-				clustersNotReady = append(clustersNotReady, spec.Name)
-			}
-
-			// We need a sorted order, otherwise it will trigger
-			// unnecessary etcd update operations
-			sort.Strings(clustersNotReady)
-
-			reason = fmt.Sprintf("%v", clustersNotReady)
-		}
-	} else {
-		clustersNotReady := make([]string, 0)
-		for c, _ := range clustersNotReadyMap {
-			clustersNotReady = append(clustersNotReady, c)
-		}
-
-		// We need a sorted order, otherwise it will trigger
-		// unnecessary etcd update operations
-		sort.Strings(clustersNotReady)
-
-		reason = fmt.Sprintf("%v", clustersNotReady)
+	if ct.Status.ObservedGeneration >= ct.Generation {
+		canProceed, reason := targetutil.IsReady(ct.Status.Conditions)
+		return canProceed, nil, reason
 	}
 
-	return canProceed, newSpec, reason
+	return false, nil, "in progress"
 }
 
 func checkTraffic(

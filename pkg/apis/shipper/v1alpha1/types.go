@@ -330,33 +330,17 @@ type CapacityTargetList struct {
 	Items []CapacityTarget `json:"items"`
 }
 
+type CapacityTargetSpec struct {
+	Percent           int32 `json:"percent"`
+	TotalReplicaCount int32 `json:"totalReplicaCount"`
+}
+
 type CapacityTargetStatus struct {
-	ObservedGeneration int64                   `json:"observedGeneration,omitempty"`
-	Clusters           []ClusterCapacityStatus `json:"clusters,omitempty"`
-	Conditions         []TargetCondition       `json:"conditions,omitempty"`
-}
-
-type ClusterCapacityStatus struct {
-	Name              string                     `json:"name"`
-	AvailableReplicas int32                      `json:"availableReplicas"`
-	AchievedPercent   int32                      `json:"achievedPercent"`
-	SadPods           []PodStatus                `json:"sadPods,omitempty"`
-	Conditions        []ClusterCapacityCondition `json:"conditions,omitempty"`
-}
-
-type ClusterConditionType string
-
-const (
-	ClusterConditionTypeOperational ClusterConditionType = "Operational"
-	ClusterConditionTypeReady       ClusterConditionType = "Ready"
-)
-
-type ClusterCapacityCondition struct {
-	Type               ClusterConditionType   `json:"type"`
-	Status             corev1.ConditionStatus `json:"status"`
-	LastTransitionTime metav1.Time            `json:"lastTransitionTime,omitempty"`
-	Reason             string                 `json:"reason,omitempty"`
-	Message            string                 `json:"message,omitempty"`
+	ObservedGeneration int64             `json:"observedGeneration,omitempty"`
+	AvailableReplicas  int32             `json:"availableReplicas"`
+	AchievedPercent    int32             `json:"achievedPercent"`
+	SadPods            []PodStatus       `json:"sadPods,omitempty"`
+	Conditions         []TargetCondition `json:"conditions,omitempty"`
 }
 
 type PodStatus struct {
@@ -364,21 +348,6 @@ type PodStatus struct {
 	Containers     []corev1.ContainerStatus `json:"containers"`
 	InitContainers []corev1.ContainerStatus `json:"initContainers"`
 	Condition      corev1.PodCondition      `json:"condition"`
-}
-
-// the capacity and traffic controllers need context to pick the right
-// things to target for traffic. These labels need to end up on the
-// pods, since that's what service mesh impls will mostly care about.
-//	Selectors []string                `json:"selectors"`
-
-type CapacityTargetSpec struct {
-	Clusters []ClusterCapacityTarget `json:"clusters"`
-}
-
-type ClusterCapacityTarget struct {
-	Name              string `json:"name"`
-	Percent           int32  `json:"percent"`
-	TotalReplicaCount int32  `json:"totalReplicaCount"`
 }
 
 // +genclient
@@ -416,6 +385,13 @@ type ClusterTrafficStatus struct {
 	AchievedTraffic uint32                    `json:"achievedTraffic"`
 	Conditions      []ClusterTrafficCondition `json:"conditions"`
 }
+
+type ClusterConditionType string
+
+const (
+	ClusterConditionTypeOperational ClusterConditionType = "Operational"
+	ClusterConditionTypeReady       ClusterConditionType = "Ready"
+)
 
 type ClusterTrafficCondition struct {
 	Type               ClusterConditionType   `json:"type"`

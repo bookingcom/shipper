@@ -312,7 +312,6 @@ func createOrUpdateManagementCrds(cmd *cobra.Command, configurator *configurator
 		crds.RolloutBlock,
 		crds.Application,
 		crds.Release,
-		crds.CapacityTarget,
 		crds.TrafficTarget,
 	}
 

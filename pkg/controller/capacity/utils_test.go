@@ -2,7 +2,6 @@ package capacity
 
 import (
 	"fmt"
-	"sort"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -21,18 +20,9 @@ var (
 		Type:   shipper.TargetConditionTypeReady,
 		Status: corev1.ConditionTrue,
 	}
-
-	ClusterCapacityOperational = shipper.ClusterCapacityCondition{
-		Type:   shipper.ClusterConditionTypeOperational,
-		Status: corev1.ConditionTrue,
-	}
-	ClusterCapacityReady = shipper.ClusterCapacityCondition{
-		Type:   shipper.ClusterConditionTypeReady,
-		Status: corev1.ConditionTrue,
-	}
 )
 
-func buildCapacityTarget(app, release string, clusters []shipper.ClusterCapacityTarget) *shipper.CapacityTarget {
+func buildCapacityTarget(app, release string, spec shipper.CapacityTargetSpec) *shipper.CapacityTarget {
 	return &shipper.CapacityTarget{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      release,
@@ -42,31 +32,14 @@ func buildCapacityTarget(app, release string, clusters []shipper.ClusterCapacity
 				shipper.ReleaseLabel: release,
 			},
 		},
-		Spec: shipper.CapacityTargetSpec{
-			Clusters: clusters,
-		},
+		Spec: spec,
 	}
 }
 
-func buildSuccessStatus(name string, clusters []shipper.ClusterCapacityTarget) shipper.CapacityTargetStatus {
-	clusterStatuses := make([]shipper.ClusterCapacityStatus, 0, len(clusters))
-
-	for _, cluster := range clusters {
-		clusterStatuses = append(clusterStatuses, shipper.ClusterCapacityStatus{
-			Name:              cluster.Name,
-			AchievedPercent:   cluster.Percent,
-			AvailableReplicas: cluster.TotalReplicaCount * cluster.Percent / 100,
-			Conditions: []shipper.ClusterCapacityCondition{
-				ClusterCapacityOperational,
-				ClusterCapacityReady,
-			},
-		})
-	}
-
-	sort.Sort(byClusterName(clusterStatuses))
-
+func buildSuccessStatus(name string, spec shipper.CapacityTargetSpec) shipper.CapacityTargetStatus {
 	return shipper.CapacityTargetStatus{
-		Clusters: clusterStatuses,
+		AchievedPercent:   spec.Percent,
+		AvailableReplicas: spec.TotalReplicaCount * spec.Percent / 100,
 		Conditions: []shipper.TargetCondition{
 			TargetConditionOperational,
 			TargetConditionReady,

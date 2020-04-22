@@ -34,30 +34,18 @@ var CapacityTarget = &apiextensionv1beta1.CustomResourceDefinition{
 					"spec": apiextensionv1beta1.JSONSchemaProps{
 						Type: "object",
 						Required: []string{
-							"clusters",
+							"percent",
+							"totalReplicaCount",
 						},
 						Properties: map[string]apiextensionv1beta1.JSONSchemaProps{
-							"clusters": apiextensionv1beta1.JSONSchemaProps{
-								Type: "array",
-								Items: &apiextensionv1beta1.JSONSchemaPropsOrArray{
-									Schema: &apiextensionv1beta1.JSONSchemaProps{
-										Type: "object",
-										Required: []string{
-											"name",
-											"percent",
-										},
-										Properties: map[string]apiextensionv1beta1.JSONSchemaProps{
-											"name": apiextensionv1beta1.JSONSchemaProps{
-												Type: "string",
-											},
-											"percent": apiextensionv1beta1.JSONSchemaProps{
-												Type:    "integer",
-												Minimum: &zero,
-												Maximum: &hundred,
-											},
-										},
-									},
-								},
+							"percent": apiextensionv1beta1.JSONSchemaProps{
+								Type:    "integer",
+								Minimum: &zero,
+								Maximum: &hundred,
+							},
+							"totalReplicaCount": apiextensionv1beta1.JSONSchemaProps{
+								Type:    "integer",
+								Minimum: &zero,
 							},
 						},
 					},

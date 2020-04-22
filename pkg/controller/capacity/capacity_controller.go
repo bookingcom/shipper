@@ -3,8 +3,6 @@ package capacity
 import (
 	"fmt"
 	"reflect"
-	"sort"
-	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -16,6 +14,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
+	appslisters "k8s.io/client-go/listers/apps/v1"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -25,10 +26,7 @@ import (
 	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
-	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
-	capacityutil "github.com/bookingcom/shipper/pkg/util/capacity"
-	clusterstatusutil "github.com/bookingcom/shipper/pkg/util/clusterstatus"
 	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
 	"github.com/bookingcom/shipper/pkg/util/filters"
 	objectutil "github.com/bookingcom/shipper/pkg/util/object"
@@ -41,55 +39,66 @@ const (
 	AgentName   = "capacity-controller"
 	SadPodLimit = 5
 
-	ClustersNotReady = "ClustersNotReady"
-	InProgress       = "InProgress"
-	InternalError    = "InternalError"
-	PodsNotReady     = "PodsNotReady"
-	DeploymentStuck  = "DeploymentStuck"
+	InProgress      = "InProgress"
+	InternalError   = "InternalError"
+	PodsNotReady    = "PodsNotReady"
+	DeploymentStuck = "DeploymentStuck"
 
-	CapacityTargetConditionChanged  = "CapacityTargetConditionChanged"
-	ClusterCapacityConditionChanged = "ClusterCapacityConditionChanged"
+	CapacityTargetConditionChanged = "CapacityTargetConditionChanged"
 )
 
 // Controller is the controller implementation for CapacityTarget resources
 type Controller struct {
-	clientset shipperclient.Interface
-	store     clusterclientstore.Interface
+	shipperClient shipperclient.Interface
+	kubeClient    kubernetes.Interface
 
 	capacityTargetsLister listers.CapacityTargetLister
 	capacityTargetsSynced cache.InformerSynced
 
-	releasesLister       listers.ReleaseLister
-	releasesListerSynced cache.InformerSynced
+	deploymentsLister appslisters.DeploymentLister
+	deploymentsSynced cache.InformerSynced
+
+	podsLister corelisters.PodLister
+	podsSynced cache.InformerSynced
 
 	workqueue workqueue.RateLimitingInterface
-	recorder  record.EventRecorder
+
+	recorder record.EventRecorder
 }
 
 // NewController returns a new CapacityTarget controller.
 func NewController(
-	clientset shipperclient.Interface,
+	kubeClient kubernetes.Interface,
+	kubeInformerFactory kubeinformers.SharedInformerFactory,
+	shipperClient shipperclient.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
-	store clusterclientstore.Interface,
 	recorder record.EventRecorder,
 ) *Controller {
-
 	capacityTargetInformer := shipperInformerFactory.Shipper().V1alpha1().CapacityTargets()
-
-	releaseInformer := shipperInformerFactory.Shipper().V1alpha1().Releases()
+	deploymentsInformer := kubeInformerFactory.Apps().V1().Deployments()
+	podsInformer := kubeInformerFactory.Core().V1().Pods()
 
 	controller := &Controller{
-		clientset:             clientset,
-		store:                 store,
+		shipperClient: shipperClient,
+		kubeClient:    kubeClient,
+
 		capacityTargetsLister: capacityTargetInformer.Lister(),
 		capacityTargetsSynced: capacityTargetInformer.Informer().HasSynced,
-		releasesLister:        releaseInformer.Lister(),
-		releasesListerSynced:  releaseInformer.Informer().HasSynced,
-		workqueue:             workqueue.NewNamedRateLimitingQueue(shipperworkqueue.NewDefaultControllerRateLimiter(), "capacity_controller_capacitytargets"),
-		recorder:              recorder,
+
+		deploymentsLister: deploymentsInformer.Lister(),
+		deploymentsSynced: deploymentsInformer.Informer().HasSynced,
+
+		podsLister: podsInformer.Lister(),
+		podsSynced: podsInformer.Informer().HasSynced,
+
+		workqueue: workqueue.NewNamedRateLimitingQueue(
+			shipperworkqueue.NewDefaultControllerRateLimiter(),
+			"capacity_controller_capacitytargets",
+		),
+
+		recorder: recorder,
 	}
 
-	klog.Info("Setting up event handlers")
 	capacityTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueCapacityTarget,
 		UpdateFunc: func(old, new interface{}) {
@@ -97,8 +106,16 @@ func NewController(
 		},
 	})
 
-	store.AddSubscriptionCallback(controller.subscribeToDeployments)
-	store.AddEventHandlerCallback(controller.registerDeploymentEventHandlers)
+	deploymentsInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
+		FilterFunc: filters.BelongsToRelease,
+		Handler: cache.ResourceEventHandlerFuncs{
+			AddFunc:    controller.enqueueCapacityTargetFromDeployment,
+			DeleteFunc: controller.enqueueCapacityTargetFromDeployment,
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				controller.enqueueCapacityTargetFromDeployment(newObj)
+			},
+		},
+	})
 
 	return controller
 }
@@ -114,7 +131,12 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	klog.V(2).Info("Starting Capacity controller")
 	defer klog.V(2).Info("Shutting down Capacity controller")
 
-	if !cache.WaitForCacheSync(stopCh, c.capacityTargetsSynced, c.releasesListerSynced) {
+	if !cache.WaitForCacheSync(
+		stopCh,
+		c.capacityTargetsSynced,
+		c.deploymentsSynced,
+		c.podsSynced,
+	) {
 		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
 		return
 	}
@@ -172,19 +194,46 @@ func (c *Controller) processNextWorkItem() bool {
 	return true
 }
 
-func (c *Controller) processCapacityTargetOnCluster(
-	ct *shipper.CapacityTarget,
-	spec *shipper.ClusterCapacityTarget,
-	status *shipper.ClusterCapacityStatus,
-) error {
+func (c *Controller) capacityTargetSyncHandler(key string) error {
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		return shippererrors.NewUnrecoverableError(err)
+	}
+
+	initialCT, err := c.capacityTargetsLister.CapacityTargets(namespace).Get(name)
+	if err != nil {
+		if kerrors.IsNotFound(err) {
+			klog.V(3).Infof("CapacityTarget %q has been deleted", key)
+			return nil
+		}
+
+		return shippererrors.NewKubeclientGetError(namespace, name, err).
+			WithShipperKind("CapacityTarget")
+	}
+
+	ct, err := c.processCapacityTarget(initialCT.DeepCopy())
+
+	if !reflect.DeepEqual(initialCT, ct) {
+		_, err := c.shipperClient.ShipperV1alpha1().CapacityTargets(namespace).
+			UpdateStatus(ct)
+		if err != nil {
+			return shippererrors.NewKubeclientUpdateError(ct, err).
+				WithShipperKind("CapacityTarget")
+		}
+	}
+
+	return err
+}
+
+func (c *Controller) processCapacityTarget(ct *shipper.CapacityTarget) (*shipper.CapacityTarget, error) {
 	diff := diffutil.NewMultiDiff()
-	operationalCond := capacityutil.NewClusterCapacityCondition(
-		shipper.ClusterConditionTypeOperational,
+	operationalCond := targetutil.NewTargetCondition(
+		shipper.TargetConditionTypeOperational,
 		corev1.ConditionUnknown,
 		"",
 		"")
-	readyCond := capacityutil.NewClusterCapacityCondition(
-		shipper.ClusterConditionTypeReady,
+	readyCond := targetutil.NewTargetCondition(
+		shipper.TargetConditionTypeReady,
 		corev1.ConditionUnknown,
 		"",
 		"")
@@ -195,31 +244,38 @@ func (c *Controller) processCapacityTargetOnCluster(
 	)
 
 	defer func() {
-		status.SadPods = sadPods
-		status.AvailableReplicas = availableReplicas
-		status.AchievedPercent = c.calculatePercentageFromAmount(
-			spec.TotalReplicaCount, availableReplicas)
+		var d diffutil.Diff
 
-		diff.Append(capacityutil.SetClusterCapacityCondition(status, *operationalCond))
-		diff.Append(capacityutil.SetClusterCapacityCondition(status, *readyCond))
-		c.reportConditionChange(ct, ClusterCapacityConditionChanged, diff)
+		ct.Status.Conditions, d = targetutil.SetTargetCondition(ct.Status.Conditions, operationalCond)
+		diff.Append(d)
+
+		ct.Status.Conditions, d = targetutil.SetTargetCondition(ct.Status.Conditions, readyCond)
+		diff.Append(d)
+
+		ct.Status.ObservedGeneration = ct.Generation
+		ct.Status.SadPods = sadPods
+		ct.Status.AvailableReplicas = availableReplicas
+		ct.Status.AchievedPercent = c.calculatePercentageFromAmount(
+			ct.Spec.TotalReplicaCount, availableReplicas)
+
+		if !diff.IsEmpty() {
+			c.recorder.Event(ct, corev1.EventTypeNormal, CapacityTargetConditionChanged, diff.String())
+		}
 	}()
 
-	appName, _ := objectutil.GetApplicationLabel(ct)
-	release, _ := objectutil.GetReleaseLabel(ct)
-	deployment, pods, err := c.getClusterObjects(spec.Name, ct.Namespace, appName, release)
+	deployment, pods, err := c.getClusterObjects(ct)
 	if err != nil {
-		operationalCond = capacityutil.NewClusterCapacityCondition(
-			shipper.ClusterConditionTypeOperational,
+		operationalCond = targetutil.NewTargetCondition(
+			shipper.TargetConditionTypeOperational,
 			corev1.ConditionFalse,
 			InternalError,
 			err.Error())
 
-		return err
+		return ct, err
 	}
 
-	operationalCond = capacityutil.NewClusterCapacityCondition(
-		shipper.ClusterConditionTypeOperational,
+	operationalCond = targetutil.NewTargetCondition(
+		shipper.TargetConditionTypeOperational,
 		corev1.ConditionTrue,
 		"",
 		"")
@@ -227,25 +283,27 @@ func (c *Controller) processCapacityTargetOnCluster(
 	// availableReplicas will be used by the defer at the top of this func
 	availableReplicas = deployment.Status.AvailableReplicas
 
-	desiredReplicas := int32(replicas.CalculateDesiredReplicaCount(uint(spec.TotalReplicaCount), float64(spec.Percent)))
+	desiredReplicas := int32(replicas.CalculateDesiredReplicaCount(uint(ct.Spec.TotalReplicaCount), float64(ct.Spec.Percent)))
 	if deployment.Spec.Replicas == nil || desiredReplicas != *deployment.Spec.Replicas {
-		_, err = c.patchDeploymentWithReplicaCount(deployment, spec.Name, desiredReplicas)
+		_, err = c.patchDeploymentWithReplicaCount(deployment, desiredReplicas)
 		if err != nil {
-			readyCond = capacityutil.NewClusterCapacityCondition(
-				shipper.ClusterConditionTypeReady,
+			readyCond = targetutil.NewTargetCondition(
+				shipper.TargetConditionTypeReady,
 				corev1.ConditionFalse,
 				InternalError,
 				err.Error(),
 			)
-			return err
+
+			return ct, err
 		} else {
-			readyCond = capacityutil.NewClusterCapacityCondition(
-				shipper.ClusterConditionTypeReady,
+			readyCond = targetutil.NewTargetCondition(
+				shipper.TargetConditionTypeReady,
 				corev1.ConditionFalse,
 				InProgress,
 				"",
 			)
-			return nil
+
+			return ct, nil
 		}
 	}
 
@@ -253,27 +311,27 @@ func (c *Controller) processCapacityTargetOnCluster(
 	// observed by the deployment controller yet, so our change is still in
 	// flight, and we can't trust the status yet.
 	if deployment.Generation > deployment.Status.ObservedGeneration {
-		readyCond = capacityutil.NewClusterCapacityCondition(
-			shipper.ClusterConditionTypeReady,
+		readyCond = targetutil.NewTargetCondition(
+			shipper.TargetConditionTypeReady,
 			corev1.ConditionFalse,
 			InProgress,
 			"",
 		)
 
-		return nil
+		return ct, nil
 	}
 
 	// If the number of available replicas matches what we want, the
 	// CapacityTarget is Ready and there's nothing left to check.
-	if replicas.AchievedDesiredReplicaPercentage(spec.TotalReplicaCount, availableReplicas, spec.Percent) {
-		readyCond = capacityutil.NewClusterCapacityCondition(
-			shipper.ClusterConditionTypeReady,
+	if replicas.AchievedDesiredReplicaPercentage(ct.Spec.TotalReplicaCount, availableReplicas, ct.Spec.Percent) {
+		readyCond = targetutil.NewTargetCondition(
+			shipper.TargetConditionTypeReady,
 			corev1.ConditionTrue,
 			"",
 			"",
 		)
 
-		return nil
+		return ct, nil
 	}
 
 	// Not all pods are availble, so we know for sure this cluster isn't
@@ -320,103 +378,14 @@ func (c *Controller) processCapacityTargetOnCluster(
 		reason = InProgress
 	}
 
-	readyCond = capacityutil.NewClusterCapacityCondition(
-		shipper.ClusterConditionTypeReady,
+	readyCond = targetutil.NewTargetCondition(
+		shipper.TargetConditionTypeReady,
 		corev1.ConditionFalse,
 		reason,
 		msg,
 	)
 
-	return nil
-}
-
-func (c *Controller) capacityTargetSyncHandler(key string) error {
-	namespace, name, err := cache.SplitMetaNamespaceKey(key)
-	if err != nil {
-		return shippererrors.NewUnrecoverableError(err)
-	}
-
-	initialCT, err := c.capacityTargetsLister.CapacityTargets(namespace).Get(name)
-	if err != nil {
-		if kerrors.IsNotFound(err) {
-			klog.V(3).Infof("CapacityTarget %q has been deleted", key)
-			return nil
-		}
-
-		return shippererrors.NewKubeclientGetError(namespace, name, err).
-			WithShipperKind("CapacityTarget")
-	}
-
-	ct, err := c.processCapacityTarget(initialCT.DeepCopy())
-
-	if !reflect.DeepEqual(initialCT, ct) {
-		_, err := c.clientset.ShipperV1alpha1().CapacityTargets(namespace).
-			UpdateStatus(ct)
-		if err != nil {
-			return shippererrors.NewKubeclientUpdateError(ct, err).
-				WithShipperKind("CapacityTarget")
-		}
-	}
-
-	return err
-}
-
-func (c *Controller) processCapacityTarget(ct *shipper.CapacityTarget) (*shipper.CapacityTarget, error) {
-	diff := diffutil.NewMultiDiff()
-	defer c.reportConditionChange(ct, CapacityTargetConditionChanged, diff)
-
-	// CapacityTarget is always Operational at the top level because it
-	// doesn't depend on anything.
-	ct.Status.Conditions = targetutil.TransitionToOperational(diff, ct.Status.Conditions)
-
-	clusterErrors := shippererrors.NewMultiError()
-	newClusterStatuses := make([]shipper.ClusterCapacityStatus, 0, len(ct.Spec.Clusters))
-
-	// This algorithm assumes cluster names are unique
-	curClusterStatuses := make(map[string]shipper.ClusterCapacityStatus)
-	for _, clusterStatus := range ct.Status.Clusters {
-		curClusterStatuses[clusterStatus.Name] = clusterStatus
-	}
-
-	for _, clusterSpec := range ct.Spec.Clusters {
-		clusterStatus, ok := curClusterStatuses[clusterSpec.Name]
-		if !ok {
-			clusterStatus = shipper.ClusterCapacityStatus{
-				Name: clusterSpec.Name,
-			}
-		}
-
-		err := c.processCapacityTargetOnCluster(ct, &clusterSpec, &clusterStatus)
-		if err != nil {
-			clusterErrors.Append(err)
-		}
-
-		newClusterStatuses = append(newClusterStatuses, clusterStatus)
-	}
-
-	sort.Sort(byClusterName(newClusterStatuses))
-
-	ct.Status.Clusters = newClusterStatuses
-	ct.Status.ObservedGeneration = ct.Generation
-
-	notReadyReasons := []string{}
-	for _, clusterStatus := range ct.Status.Clusters {
-		ready, reason := clusterstatusutil.IsClusterCapacityReady(clusterStatus.Conditions)
-		if !ready {
-			notReadyReasons = append(notReadyReasons,
-				fmt.Sprintf("%s: %s", clusterStatus.Name, reason))
-		}
-	}
-
-	if len(notReadyReasons) == 0 {
-		ct.Status.Conditions = targetutil.TransitionToReady(diff, ct.Status.Conditions)
-	} else {
-		ct.Status.Conditions = targetutil.TransitionToNotReady(
-			diff, ct.Status.Conditions,
-			ClustersNotReady, strings.Join(notReadyReasons, "; "))
-	}
-
-	return ct, clusterErrors.Flatten()
+	return ct, nil
 }
 
 func (c *Controller) enqueueCapacityTarget(obj interface{}) {
@@ -429,42 +398,27 @@ func (c *Controller) enqueueCapacityTarget(obj interface{}) {
 	c.workqueue.Add(key)
 }
 
-func (c *Controller) registerDeploymentEventHandlers(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory informers.SharedInformerFactory) {
-	handler := cache.FilteringResourceEventHandler{
-		FilterFunc: filters.BelongsToRelease,
-		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc:    c.enqueueCapacityTargetFromDeployment,
-			DeleteFunc: c.enqueueCapacityTargetFromDeployment,
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				c.enqueueCapacityTargetFromDeployment(newObj)
-			},
-		},
-	}
-	kubeInformerFactory.Apps().V1().Deployments().Informer().AddEventHandler(handler)
-}
-
-func (c *Controller) subscribeToDeployments(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory informers.SharedInformerFactory) {
-	kubeInformerFactory.Apps().V1().Deployments().Informer()
-	kubeInformerFactory.Core().V1().Pods().Informer()
-}
-
-func (c Controller) getClusterObjects(clusterName, ns, appName, release string) (*appsv1.Deployment, []*corev1.Pod, error) {
-	appClientset, err := c.store.GetApplicationClusterClientset(clusterName, AgentName)
+func (c Controller) getClusterObjects(ct *shipper.CapacityTarget) (*appsv1.Deployment, []*corev1.Pod, error) {
+	appName, err := objectutil.GetApplicationLabel(ct)
 	if err != nil {
 		return nil, nil, err
 	}
-	informerFactory := appClientset.GetKubeInformerFactory()
+
+	releaseName, err := objectutil.GetReleaseLabel(ct)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	deploymentSelector := labels.Set{
 		shipper.AppLabel:     appName,
-		shipper.ReleaseLabel: release,
+		shipper.ReleaseLabel: releaseName,
 	}.AsSelector()
 	deploymentGVK := corev1.SchemeGroupVersion.WithKind("Deployment")
-	deployments, err := informerFactory.Apps().V1().Deployments().
-		Lister().Deployments(ns).List(deploymentSelector)
+	deployments, err := c.deploymentsLister.
+		Deployments(ct.Namespace).List(deploymentSelector)
 	if err != nil {
 		return nil, nil, shippererrors.NewKubeclientListError(
-			deploymentGVK, ns, deploymentSelector, err)
+			deploymentGVK, ct.Namespace, deploymentSelector, err)
 	}
 
 	if l := len(deployments); l != 1 {
@@ -479,7 +433,7 @@ func (c Controller) getClusterObjects(clusterName, ns, appName, release string) 
 		return nil, nil, shippererrors.NewUnrecoverableError(fmt.Errorf("failed to transform label selector %v into a selector: %s", deployment.Spec.Selector, err))
 	}
 
-	pods, err := informerFactory.Core().V1().Pods().Lister().
+	pods, err := c.podsLister.
 		Pods(deployment.Namespace).List(podSelector)
 	if err != nil {
 		return nil, nil, shippererrors.NewKubeclientListError(
@@ -490,16 +444,13 @@ func (c Controller) getClusterObjects(clusterName, ns, appName, release string) 
 	return deployment, pods, nil
 }
 
-func (c *Controller) patchDeploymentWithReplicaCount(deployment *appsv1.Deployment, clusterName string, replicaCount int32) (*appsv1.Deployment, error) {
-	appClientset, err := c.store.GetApplicationClusterClientset(clusterName, AgentName)
-	if err != nil {
-		return nil, err
-	}
-	targetClusterClient := appClientset.GetKubeClient()
-
+func (c *Controller) patchDeploymentWithReplicaCount(
+	deployment *appsv1.Deployment,
+	replicaCount int32,
+) (*appsv1.Deployment, error) {
 	patch := []byte(fmt.Sprintf(`{"spec": {"replicas": %d}}`, replicaCount))
 
-	updatedDeployment, err := targetClusterClient.AppsV1().
+	updatedDeployment, err := c.kubeClient.AppsV1().
 		Deployments(deployment.Namespace).
 		Patch(deployment.Name, types.StrategicMergePatchType, patch)
 	if err != nil {
@@ -507,12 +458,6 @@ func (c *Controller) patchDeploymentWithReplicaCount(deployment *appsv1.Deployme
 	}
 
 	return updatedDeployment, nil
-}
-
-func (c *Controller) reportConditionChange(ct *shipper.CapacityTarget, reason string, diff diffutil.Diff) {
-	if !diff.IsEmpty() {
-		c.recorder.Event(ct, corev1.EventTypeNormal, reason, diff.String())
-	}
 }
 
 func getDeploymentCondition(
