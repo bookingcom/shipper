@@ -375,38 +375,12 @@ type TrafficTargetList struct {
 }
 
 type TrafficTargetStatus struct {
-	ObservedGeneration int64                   `json:"observedGeneration,omitempty"`
-	Clusters           []*ClusterTrafficStatus `json:"clusters,omitempty"`
-	Conditions         []TargetCondition       `json:"conditions,omitempty"`
-}
-
-type ClusterTrafficStatus struct {
-	Name            string                    `json:"name"`
-	AchievedTraffic uint32                    `json:"achievedTraffic"`
-	Conditions      []ClusterTrafficCondition `json:"conditions"`
-}
-
-type ClusterConditionType string
-
-const (
-	ClusterConditionTypeOperational ClusterConditionType = "Operational"
-	ClusterConditionTypeReady       ClusterConditionType = "Ready"
-)
-
-type ClusterTrafficCondition struct {
-	Type               ClusterConditionType   `json:"type"`
-	Status             corev1.ConditionStatus `json:"status"`
-	LastTransitionTime metav1.Time            `json:"lastTransitionTime,omitempty"`
-	Reason             string                 `json:"reason,omitempty"`
-	Message            string                 `json:"message,omitempty"`
+	ObservedGeneration int64             `json:"observedGeneration,omitempty"`
+	AchievedTraffic    uint32            `json:"achievedTraffic"`
+	Conditions         []TargetCondition `json:"conditions"`
 }
 
 type TrafficTargetSpec struct {
-	Clusters []ClusterTrafficTarget `json:"clusters"`
-}
-
-type ClusterTrafficTarget struct {
-	Name string `json:"name"`
 	// apimachinery intstr for percentages?
 	Weight uint32 `json:"weight"`
 }

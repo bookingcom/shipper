@@ -1,9 +1,6 @@
 package release
 
 import (
-	"sort"
-	"strings"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,37 +13,26 @@ import (
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	objectutil "github.com/bookingcom/shipper/pkg/util/object"
-	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 type Scheduler struct {
-	// TODO(jgreff): explain why we need this
-	clientset           shipperclientset.Interface
-	appClusterClientset shipperclientset.Interface
-
-	listers listers
-
+	clientset    shipperclientset.Interface
+	listers      listers
 	chartFetcher shipperrepo.ChartFetcher
-
-	recorder record.EventRecorder
+	recorder     record.EventRecorder
 }
 
 func NewScheduler(
 	clientset shipperclientset.Interface,
-	appClusterClientset shipperclientset.Interface,
 	listers listers,
 	chartFetcher shipperrepo.ChartFetcher,
 	recorder record.EventRecorder,
 ) *Scheduler {
 	return &Scheduler{
-		clientset:           clientset,
-		appClusterClientset: appClusterClientset,
-
-		listers: listers,
-
+		clientset:    clientset,
+		listers:      listers,
 		chartFetcher: chartFetcher,
-
-		recorder: recorder,
+		recorder:     recorder,
 	}
 }
 
@@ -58,17 +44,17 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*releaseInfo, error) 
 
 	releaseErrors := shippererrors.NewMultiError()
 
-	it, err := s.CreateOrUpdateInstallationTarget(rel)
+	it, err := s.createInstallationTarget(rel)
 	if err != nil {
 		releaseErrors.Append(err)
 	}
 
-	tt, err := s.CreateOrUpdateTrafficTarget(rel)
+	tt, err := s.createTrafficTarget(rel)
 	if err != nil {
 		releaseErrors.Append(err)
 	}
 
-	ct, err := s.CreateOrUpdateCapacityTarget(rel, replicaCount)
+	ct, err := s.createCapacityTarget(rel, replicaCount)
 	if err != nil {
 		releaseErrors.Append(err)
 	}
@@ -85,62 +71,7 @@ func (s *Scheduler) ScheduleRelease(rel *shipper.Release) (*releaseInfo, error) 
 	}, nil
 }
 
-func stringSliceEqual(arr1, arr2 []string) bool {
-	if len(arr1) != len(arr2) {
-		return false
-	}
-	for i := 0; i < len(arr1); i++ {
-		if arr1[i] != arr2[i] {
-			return false
-		}
-	}
-
-	return true
-}
-
-// getReleaseClusters is a helper function that returns a list of cluster names
-// annotating the release. It assumes cluster names are all unique.
-func getReleaseClusters(rel *shipper.Release) []string {
-	allRelClusters := releaseutil.GetSelectedClusters(rel)
-
-	uniqRelClusters := make([]string, 0, len(allRelClusters))
-	seen := make(map[string]struct{})
-	for _, cluster := range allRelClusters {
-		if _, ok := seen[cluster]; !ok {
-			uniqRelClusters = append(uniqRelClusters, cluster)
-			seen[cluster] = struct{}{}
-		}
-	}
-
-	sort.Strings(uniqRelClusters)
-
-	return uniqRelClusters
-}
-
-func trafficTargetClustersMatch(tt *shipper.TrafficTarget, clusters []string) bool {
-	ttClusters := make([]string, 0, len(tt.Spec.Clusters))
-	for _, ttc := range tt.Spec.Clusters {
-		ttClusters = append(ttClusters, ttc.Name)
-	}
-	sort.Strings(ttClusters)
-
-	return stringSliceEqual(clusters, ttClusters)
-}
-
-func setTrafficTargetClusters(tt *shipper.TrafficTarget, clusters []string) {
-	trafficTargetClusters := make([]shipper.ClusterTrafficTarget, 0, len(clusters))
-	for _, cluster := range clusters {
-		trafficTargetClusters = append(
-			trafficTargetClusters,
-			shipper.ClusterTrafficTarget{
-				Name:   cluster,
-				Weight: 0,
-			})
-	}
-	tt.Spec.Clusters = trafficTargetClusters
-}
-
-func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shipper.InstallationTarget, error) {
+func (s *Scheduler) createInstallationTarget(rel *shipper.Release) (*shipper.InstallationTarget, error) {
 	it, err := s.listers.installationTargetLister.InstallationTargets(rel.GetNamespace()).Get(rel.GetName())
 	if err != nil {
 		if !errors.IsNotFound(err) {
@@ -160,7 +91,7 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 			},
 		}
 
-		updIt, err := s.appClusterClientset.ShipperV1alpha1().InstallationTargets(rel.GetNamespace()).Create(it)
+		updIt, err := s.clientset.ShipperV1alpha1().InstallationTargets(rel.GetNamespace()).Create(it)
 		if err != nil {
 			return nil, shippererrors.NewKubeclientCreateError(it, err)
 		}
@@ -179,7 +110,7 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 	return it, nil
 }
 
-func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalReplicaCount int32) (*shipper.CapacityTarget, error) {
+func (s *Scheduler) createCapacityTarget(rel *shipper.Release, totalReplicaCount int32) (*shipper.CapacityTarget, error) {
 	ct, err := s.listers.capacityTargetLister.CapacityTargets(rel.GetNamespace()).Get(rel.GetName())
 	if err != nil {
 		if !errors.IsNotFound(err) {
@@ -197,7 +128,7 @@ func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalRepl
 			},
 		}
 
-		updCt, err := s.appClusterClientset.ShipperV1alpha1().CapacityTargets(rel.GetNamespace()).Create(ct)
+		updCt, err := s.clientset.ShipperV1alpha1().CapacityTargets(rel.GetNamespace()).Create(ct)
 		if err != nil {
 			return nil, shippererrors.NewKubeclientCreateError(ct, err)
 		}
@@ -216,9 +147,7 @@ func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalRepl
 	return ct, nil
 }
 
-func (s *Scheduler) CreateOrUpdateTrafficTarget(rel *shipper.Release) (*shipper.TrafficTarget, error) {
-	clusters := getReleaseClusters(rel)
-
+func (s *Scheduler) createTrafficTarget(rel *shipper.Release) (*shipper.TrafficTarget, error) {
 	tt, err := s.listers.trafficTargetLister.TrafficTargets(rel.GetNamespace()).Get(rel.GetName())
 	if err != nil {
 		if !errors.IsNotFound(err) {
@@ -229,12 +158,8 @@ func (s *Scheduler) CreateOrUpdateTrafficTarget(rel *shipper.Release) (*shipper.
 				Name:      rel.Name,
 				Namespace: rel.Namespace,
 				Labels:    rel.Labels,
-				OwnerReferences: []metav1.OwnerReference{
-					createOwnerRefFromRelease(rel),
-				},
 			},
 		}
-		setTrafficTargetClusters(tt, clusters)
 
 		updTt, err := s.clientset.ShipperV1alpha1().TrafficTargets(rel.GetNamespace()).Create(tt)
 		if err != nil {
@@ -249,26 +174,6 @@ func (s *Scheduler) CreateOrUpdateTrafficTarget(rel *shipper.Release) (*shipper.
 			objectutil.MetaKey(updTt),
 		)
 
-		return updTt, nil
-	}
-
-	if !objectBelongsToRelease(tt, rel) {
-		return nil, shippererrors.NewWrongOwnerReferenceError(tt, rel)
-	}
-
-	if !trafficTargetClustersMatch(tt, clusters) {
-		setTrafficTargetClusters(tt, clusters)
-		updTt, err := s.clientset.ShipperV1alpha1().TrafficTargets(rel.GetNamespace()).Update(tt)
-		if err != nil {
-			return nil, err
-		}
-		s.recorder.Eventf(
-			rel,
-			corev1.EventTypeNormal,
-			"ReleaseScheduled",
-			"Updated TrafficTarget %q cluster set to [%s]",
-			objectutil.MetaKey(updTt),
-			strings.Join(clusters, ","))
 		return updTt, nil
 	}
 
@@ -324,29 +229,4 @@ func extractReplicasFromChartForRel(chart *helmchart.Chart, rel *shipper.Release
 	}
 
 	return int32(*replicas), nil
-}
-
-// The strings here are insane, but if you create a fresh release object for
-// some reason it lands in the work queue with an empty TypeMeta. This is
-// resolved if you restart the controllers, so I'm not sure what's going on.
-// https://github.com/kubernetes/client-go/issues/60#issuecomment-281533822 and
-// https://github.com/kubernetes/client-go/issues/60#issuecomment-281747911 give
-// some potential context.
-func createOwnerRefFromRelease(r *shipper.Release) metav1.OwnerReference {
-	return metav1.OwnerReference{
-		APIVersion: shipper.SchemeGroupVersion.String(),
-		Kind:       "Release",
-		Name:       r.GetName(),
-		UID:        r.GetUID(),
-	}
-}
-
-func objectBelongsToRelease(obj metav1.Object, release *shipper.Release) bool {
-	for _, ref := range obj.GetOwnerReferences() {
-		if ref.Kind == "Release" && ref.UID == release.UID {
-			return true
-		}
-	}
-
-	return false
 }

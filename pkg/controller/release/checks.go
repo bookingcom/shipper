@@ -1,9 +1,6 @@
 package release
 
 import (
-	"fmt"
-	"sort"
-
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	targetutil "github.com/bookingcom/shipper/pkg/util/target"
 )
@@ -45,58 +42,18 @@ func checkTraffic(
 	*shipper.TrafficTargetSpec,
 	string,
 ) {
-	canProceed := true
-	newSpec := &shipper.TrafficTargetSpec{}
-	reason := ""
-
-	clustersNotReadyMap := make(map[string]struct{})
-	for _, spec := range tt.Spec.Clusters {
-		t := spec
-		if spec.Weight != stepTrafficWeight {
-			t = shipper.ClusterTrafficTarget{
-				Name:   spec.Name,
-				Weight: stepTrafficWeight,
-			}
-
-			clustersNotReadyMap[spec.Name] = struct{}{}
-			canProceed = false
+	if tt.Spec.Weight != stepTrafficWeight {
+		newSpec := &shipper.TrafficTargetSpec{
+			Weight: stepTrafficWeight,
 		}
-		newSpec.Clusters = append(newSpec.Clusters, t)
+
+		return false, newSpec, "patches pending"
 	}
 
-	if canProceed {
-		// We return an empty new spec if cluster spec check went fine
-		// so far.
-		newSpec = nil
-
-		if tt.Status.ObservedGeneration >= tt.Generation {
-			canProceed, reason = targetutil.IsReady(tt.Status.Conditions)
-		} else {
-			canProceed = false
-			clustersNotReady := make([]string, 0)
-			for _, c := range tt.Spec.Clusters {
-				clustersNotReady = append(clustersNotReady, c.Name)
-			}
-
-			// We need a sorted order, otherwise it will trigger
-			// unnecessary etcd update operations
-			sort.Strings(clustersNotReady)
-
-			reason = fmt.Sprintf("%v", clustersNotReady)
-		}
-
-	} else {
-		clustersNotReady := make([]string, 0)
-		for c, _ := range clustersNotReadyMap {
-			clustersNotReady = append(clustersNotReady, c)
-		}
-
-		// We need a sorted order, otherwise it will trigger
-		// unnecessary etcd update operations
-		sort.Strings(clustersNotReady)
-
-		reason = fmt.Sprintf("%v", clustersNotReady)
+	if tt.Status.ObservedGeneration >= tt.Generation {
+		canProceed, reason := targetutil.IsReady(tt.Status.Conditions)
+		return canProceed, nil, reason
 	}
 
-	return canProceed, newSpec, reason
+	return false, nil, "in progress"
 }

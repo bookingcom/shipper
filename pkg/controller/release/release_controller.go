@@ -58,9 +58,6 @@ type Controller struct {
 	clusterLister  shipperlisters.ClusterLister
 	clustersSynced cache.InformerSynced
 
-	trafficTargetLister  shipperlisters.TrafficTargetLister
-	trafficTargetsSynced cache.InformerSynced
-
 	rolloutBlockLister shipperlisters.RolloutBlockLister
 	rolloutBlockSynced cache.InformerSynced
 
@@ -94,7 +91,6 @@ func NewController(
 
 	releaseInformer := informerFactory.Shipper().V1alpha1().Releases()
 	clusterInformer := informerFactory.Shipper().V1alpha1().Clusters()
-	trafficTargetInformer := informerFactory.Shipper().V1alpha1().TrafficTargets()
 	rolloutBlockInformer := informerFactory.Shipper().V1alpha1().RolloutBlocks()
 
 	controller := &Controller{
@@ -106,9 +102,6 @@ func NewController(
 
 		clusterLister:  clusterInformer.Lister(),
 		clustersSynced: clusterInformer.Informer().HasSynced,
-
-		trafficTargetLister:  trafficTargetInformer.Lister(),
-		trafficTargetsSynced: trafficTargetInformer.Informer().HasSynced,
 
 		rolloutBlockLister: rolloutBlockInformer.Lister(),
 		rolloutBlockSynced: rolloutBlockInformer.Informer().HasSynced,
@@ -145,8 +138,6 @@ func NewController(
 		DeleteFunc: controller.enqueueReleaseFromAssociatedObject,
 	}
 
-	trafficTargetInformer.Informer().AddEventHandler(eventHandler)
-
 	store.AddSubscriptionCallback(func(kubeInformerFactory kubeinformers.SharedInformerFactory, shipperInformerFactory shipperinformers.SharedInformerFactory) {
 		shipperv1alpha1 := shipperInformerFactory.Shipper().V1alpha1()
 		shipperv1alpha1.InstallationTargets().Informer()
@@ -176,7 +167,6 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 		stopCh,
 		c.releasesSynced,
 		c.clustersSynced,
-		c.trafficTargetsSynced,
 		c.rolloutBlockSynced,
 	); !ok {
 		runtime.HandleError(fmt.Errorf("failed to wait for caches to sync"))
@@ -415,14 +405,12 @@ func (c *Controller) executeStrategyOnClusters(
 			return rel, err
 		}
 
-		// TODO(jgreff): replace mgmt cluster listers with app cluster
-		// ones once they're moved
 		informerFactory := clusterClientsets.GetShipperInformerFactory()
 		shipperv1alpha1 := informerFactory.Shipper().V1alpha1()
 		listers := listers{
 			installationTargetLister: shipperv1alpha1.InstallationTargets().Lister(),
 			capacityTargetLister:     shipperv1alpha1.CapacityTargets().Lister(),
-			trafficTargetLister:      c.trafficTargetLister,
+			trafficTargetLister:      shipperv1alpha1.TrafficTargets().Lister(),
 		}
 
 		clusterConditions[clusterName], err = c.executeReleaseStrategyForCluster(
@@ -494,7 +482,6 @@ func (c *Controller) executeReleaseStrategyForCluster(
 	var relinfoPrev, relinfoSucc *releaseInfo
 
 	scheduler := NewScheduler(
-		c.clientset,
 		appClusterClientset,
 		listers,
 		c.chartFetcher,
@@ -525,14 +512,13 @@ func (c *Controller) executeReleaseStrategyForCluster(
 	for _, patch := range patches {
 		namespace := relinfo.release.Namespace
 		name, gvk, b := patch.PatchSpec()
+		shipperv1alpha1 := appClusterClientset.ShipperV1alpha1()
 
 		var err error
 		switch gvk.Kind {
 		case "CapacityTarget":
-			shipperv1alpha1 := appClusterClientset.ShipperV1alpha1()
 			_, err = shipperv1alpha1.CapacityTargets(namespace).Patch(name, types.MergePatchType, b)
 		case "TrafficTarget":
-			shipperv1alpha1 := c.clientset.ShipperV1alpha1()
 			_, err = shipperv1alpha1.TrafficTargets(namespace).Patch(name, types.MergePatchType, b)
 		default:
 			err = fmt.Errorf(

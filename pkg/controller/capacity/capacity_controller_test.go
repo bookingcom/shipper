@@ -39,7 +39,7 @@ func TestSuccess(t *testing.T) {
 	runCapacityControllerTest(t,
 		[]runtime.Object{buildDeployment(shippertesting.TestApp, ctName, 0, expectedReplicaCount)},
 		ct,
-		buildSuccessStatus(ctName, ct.Spec),
+		buildSuccessStatus(ct.Spec),
 		expectedReplicaCount,
 	)
 }
