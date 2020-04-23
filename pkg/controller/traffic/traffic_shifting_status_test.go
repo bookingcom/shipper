@@ -227,12 +227,8 @@ func TestTrafficShiftingPodsLabeledButNotReady(t *testing.T) {
 	}
 
 	trafficStatus := buildTrafficShiftingStatus(
-		shippertesting.TestCluster, shippertesting.TestApp, releaseName,
-		clusterReleaseWeights{
-			shippertesting.TestCluster: map[string]uint32{
-				releaseName: releaseWeight,
-			},
-		},
+		shippertesting.TestApp, releaseName,
+		releaseWeights{releaseName: releaseWeight},
 		endpoints, appPods,
 	)
 
@@ -265,12 +261,8 @@ func TestTrafficShiftingUnmanagedPods(t *testing.T) {
 
 	endpoints := buildEndpoints(shippertesting.TestApp)
 	trafficStatus := buildTrafficShiftingStatus(
-		shippertesting.TestCluster, shippertesting.TestApp, releaseName,
-		clusterReleaseWeights{
-			shippertesting.TestCluster: map[string]uint32{
-				releaseName: releaseWeight,
-			},
-		},
+		shippertesting.TestApp, releaseName,
+		releaseWeights{releaseName: releaseWeight},
 		endpoints, appPods,
 	)
 
@@ -294,9 +286,7 @@ func runBuildTestTrafficShiftingStatus(
 		releaseName := fmt.Sprintf("release-%d", i)
 
 		trafficTargets = append(trafficTargets, buildTrafficTarget(
-			shippertesting.TestApp, releaseName, map[string]uint32{
-				shippertesting.TestCluster: release.weight,
-			},
+			shippertesting.TestApp, releaseName, release.weight,
 		))
 
 		podsWithTraffic := buildPods(
@@ -319,9 +309,9 @@ func runBuildTestTrafficShiftingStatus(
 		appPods = append(appPods, podsWithoutTraffic...)
 	}
 
-	clusterReleaseWeights, err := buildClusterReleaseWeights(trafficTargets)
+	releaseWeights, err := buildReleaseWeights(trafficTargets)
 	if err != nil {
-		t.Fatalf("cannot build cluster release weights: %s", err)
+		t.Fatalf("cannot build release weights: %s", err)
 	}
 
 	for i, expectation := range expectations {
@@ -334,8 +324,8 @@ func runBuildTestTrafficShiftingStatus(
 		}
 
 		trafficStatus := buildTrafficShiftingStatus(
-			shippertesting.TestCluster, shippertesting.TestApp, relName,
-			clusterReleaseWeights,
+			shippertesting.TestApp, relName,
+			releaseWeights,
 			endpoints, appPods,
 		)
 

@@ -280,12 +280,9 @@ func TestIntermediateStep(t *testing.T) {
 	cluster := buildCluster("cluster-a")
 	it, tt, ct := buildAssociatedObjectsWithStatus(rel, []*shipper.Cluster{cluster}, &achievedStep)
 
-	// NOTE(jgreff): you'll note that it is in app cluster while ct and tt
-	// are in mgmt. that's scaffolding that needs to remain in place until
-	// we migrate all the objects to the app cluster.
-	mgmtClusterObjects := []runtime.Object{rel, cluster, tt}
+	mgmtClusterObjects := []runtime.Object{rel, cluster}
 	appClusterObjects := map[string][]runtime.Object{
-		cluster.Name: []runtime.Object{it, ct},
+		cluster.Name: []runtime.Object{it, ct, tt},
 	}
 
 	expectedStatus := shipper.ReleaseStatus{
@@ -344,12 +341,9 @@ func TestLastStep(t *testing.T) {
 	cluster := buildCluster("cluster-a")
 	it, tt, ct := buildAssociatedObjectsWithStatus(rel, []*shipper.Cluster{cluster}, &achievedStep)
 
-	// NOTE(jgreff): you'll note that it is in app cluster while ct and tt
-	// are in mgmt. that's scaffolding that needs to remain in place until
-	// we migrate all the objects to the app cluster.
-	mgmtClusterObjects := []runtime.Object{rel, cluster, tt}
+	mgmtClusterObjects := []runtime.Object{rel, cluster}
 	appClusterObjects := map[string][]runtime.Object{
-		cluster.Name: []runtime.Object{it, ct},
+		cluster.Name: []runtime.Object{it, ct, tt},
 	}
 
 	expectedStatus := shipper.ReleaseStatus{

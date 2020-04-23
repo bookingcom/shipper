@@ -32,8 +32,6 @@ spec:
           - "-v"
           - "4"
           - "-logtostderr"
-          - "--enable"
-          - "installation,capacity"
         ports:
         - name: metrics
           containerPort: 8889

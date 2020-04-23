@@ -36,7 +36,7 @@ func buildCapacityTarget(app, release string, spec shipper.CapacityTargetSpec) *
 	}
 }
 
-func buildSuccessStatus(name string, spec shipper.CapacityTargetSpec) shipper.CapacityTargetStatus {
+func buildSuccessStatus(spec shipper.CapacityTargetSpec) shipper.CapacityTargetStatus {
 	return shipper.CapacityTargetStatus{
 		AchievedPercent:   spec.Percent,
 		AvailableReplicas: spec.TotalReplicaCount * spec.Percent / 100,

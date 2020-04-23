@@ -404,9 +404,10 @@ func startTrafficController(cfg *cfg) (bool, error) {
 	}
 
 	c := traffic.NewController(
+		client.NewKubeClientOrDie(traffic.AgentName, cfg.restCfg),
+		cfg.kubeInformerFactory,
 		client.NewShipperClientOrDie(traffic.AgentName, cfg.restCfg),
 		cfg.shipperInformerFactory,
-		cfg.store,
 		cfg.recorder(traffic.AgentName),
 	)
 
