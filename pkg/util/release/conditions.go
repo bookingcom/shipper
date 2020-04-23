@@ -123,3 +123,13 @@ func filterOutCondition(conditions []shipper.ReleaseCondition, condType shipper.
 	}
 	return newConditions
 }
+
+func GetReleaseStrategyConditionByType(strategyStatus *shipper.ReleaseStrategyStatus, strategyType shipper.StrategyConditionType) *shipper.ReleaseStrategyCondition {
+	for _, condition := range strategyStatus.Conditions {
+		if condition.Type == strategyType {
+			return &condition
+		}
+	}
+
+	return nil
+}
