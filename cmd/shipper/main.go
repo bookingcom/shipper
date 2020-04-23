@@ -38,6 +38,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller/capacity"
 	"github.com/bookingcom/shipper/pkg/controller/installation"
 	"github.com/bookingcom/shipper/pkg/controller/janitor"
+	"github.com/bookingcom/shipper/pkg/controller/metrics"
 	"github.com/bookingcom/shipper/pkg/controller/release"
 	"github.com/bookingcom/shipper/pkg/controller/rolloutblock"
 	"github.com/bookingcom/shipper/pkg/controller/traffic"
@@ -55,6 +56,7 @@ var controllers = []string{
 	"rolloutblock",
 	"janitor",
 	"webhook",
+	"metrics",
 }
 
 const defaultRESTTimeout time.Duration = 10 * time.Second
@@ -363,6 +365,7 @@ func buildInitializers() map[string]initFunc {
 	controllers["rolloutblock"] = startRolloutBlockController
 	controllers["janitor"] = startJanitorController
 	controllers["webhook"] = startWebhook
+	controllers["metrics"] = startMetricsController
 	return controllers
 }
 
@@ -501,6 +504,28 @@ func startRolloutBlockController(cfg *cfg) (bool, error) {
 		client.NewShipperClientOrDie(cfg.restCfg, rolloutblock.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
 		cfg.recorder(rolloutblock.AgentName),
+	)
+
+	cfg.wg.Add(1)
+	go func() {
+		c.Run(cfg.workers, cfg.stopCh)
+		cfg.wg.Done()
+	}()
+
+	return true, nil
+}
+
+func startMetricsController(cfg *cfg) (bool, error) {
+	enabled := cfg.enabledControllers["metrics"]
+	if !enabled {
+		return false, nil
+	}
+
+	c := metrics.NewController(
+		client.NewShipperClientOrDie(metrics.AgentName, cfg.restCfg),
+		cfg.shipperInformerFactory,
+		cfg.recorder(metrics.AgentName),
+		metrics.NewMetricsBundle(),
 	)
 
 	cfg.wg.Add(1)
