@@ -84,10 +84,12 @@ var (
 type metricsCfg struct {
 	readyCh chan struct{}
 
-	wqMetrics   *shippermetrics.PrometheusWorkqueueProvider
-	restLatency *shippermetrics.RESTLatencyMetric
-	restResult  *shippermetrics.RESTResultMetric
-	certExpire  *shippermetrics.WebhookMetric
+	wqMetrics     *shippermetrics.PrometheusWorkqueueProvider
+	restLatency   *shippermetrics.RESTLatencyMetric
+	restResult    *shippermetrics.RESTResultMetric
+	certExpire    *shippermetrics.WebhookMetric
+	stateMetrics  statemetrics.Metrics
+	metricsBundle *metrics.MetricsBundle
 }
 
 type cfg struct {
@@ -212,11 +214,13 @@ func main() {
 		stopCh: stopCh,
 
 		metrics: &metricsCfg{
-			readyCh:     metricsReadyCh,
-			wqMetrics:   shippermetrics.NewProvider(),
-			restLatency: shippermetrics.NewRESTLatencyMetric(),
-			restResult:  shippermetrics.NewRESTResultMetric(),
-			certExpire:   shippermetrics.NewTLSCertExpireMetric(),
+			readyCh:       metricsReadyCh,
+			wqMetrics:     shippermetrics.NewProvider(),
+			restLatency:   shippermetrics.NewRESTLatencyMetric(),
+			restResult:    shippermetrics.NewRESTResultMetric(),
+			certExpire:    shippermetrics.NewTLSCertExpireMetric(),
+			stateMetrics:  ssm,
+			metricsBundle: metrics.NewMetricsBundle(),
 		},
 	}
 
@@ -246,6 +250,8 @@ func runMetrics(cfg *metricsCfg) {
 	prometheus.MustRegister(cfg.restLatency.Summary, cfg.restResult.Counter)
 	prometheus.MustRegister(cfg.certExpire.GetMetrics()...)
 	prometheus.MustRegister(instrumentedclient.GetMetrics()...)
+	prometheus.MustRegister(cfg.stateMetrics)
+	prometheus.MustRegister(cfg.metricsBundle.TimeToInstallation)
 
 	srv := http.Server{
 		Addr: *metricsAddr,
@@ -525,7 +531,7 @@ func startMetricsController(cfg *cfg) (bool, error) {
 		client.NewShipperClientOrDie(metrics.AgentName, cfg.restCfg),
 		cfg.shipperInformerFactory,
 		cfg.recorder(metrics.AgentName),
-		metrics.NewMetricsBundle(),
+		cfg.metrics.metricsBundle,
 	)
 
 	cfg.wg.Add(1)
