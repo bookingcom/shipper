@@ -20,13 +20,15 @@ import (
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 
 	"k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog"
 )
 
 const (
-	AgentName = "metrics-controller"
+	AgentName               = "metrics-controller"
+	cacheExpirationDuration = 1 * time.Hour
 )
 
 // Controller is the controller implementation for gathering metrics
@@ -42,10 +44,19 @@ type Controller struct {
 
 	shipperClientset clientset.Interface
 
-	appLastModifiedTimes     map[string]time.Time
+	appLastModifiedTimes     map[string]*appLastModifiedTimeEntry
 	appLastModifiedTimesLock sync.Mutex
 
 	metricsBundle *MetricsBundle
+}
+
+// appLastModifiedTimeEntry encapsulates when an app was last
+// modified, and when that timestamp was recorded. This is so that we
+// can later clean up data that has been in the cache for a long time
+// for no reason.
+type appLastModifiedTimeEntry struct {
+	time      time.Time
+	entryTime time.Time
 }
 
 func NewController(
@@ -88,7 +99,7 @@ func NewController(
 // as syncing informer caches and starting workers. It will block until stopCh
 // is closed, at which point it will shutdown the workqueue and wait for
 // workers to finish processing their current work items.
-func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
+func (c *Controller) Run(stopCh <-chan struct{}) {
 	defer runtime.HandleCrash()
 
 	klog.V(2).Info("Starting Metrics controller")
@@ -100,6 +111,8 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	}
 
 	klog.V(4).Info("Started Metrics controller")
+
+	wait.Until(c.cleanCache, 1*time.Hour, stopCh)
 
 	<-stopCh
 }
@@ -116,7 +129,10 @@ func (c *Controller) handleAppCreates(obj interface{}) {
 	// We don't need the extra marshalling support that
 	// metav1.Time provides, because we're not going to pass this
 	// value around with HTTP
-	c.appLastModifiedTimes[app.Name] = app.GetCreationTimestamp().Time
+	c.appLastModifiedTimes[app.Name] = &appLastModifiedTimeEntry{
+		time:      app.GetCreationTimestamp().Time,
+		entryTime: time.Now(),
+	}
 
 	return
 }
@@ -144,7 +160,10 @@ func (c *Controller) handleAppUpdates(old, new interface{}) {
 	// Kubernetes doesn't give us the last modified time, so we'll
 	// just have to use the time from our side
 	// TODO: if there is a better way to do this, please go ahead!
-	c.appLastModifiedTimes[newApp.Name] = time.Now()
+	c.appLastModifiedTimes[newApp.Name] = &appLastModifiedTimeEntry{
+		time:      time.Now(),
+		entryTime: time.Now(),
+	}
 
 	return
 }
@@ -201,6 +220,22 @@ func (c *Controller) handleReleaseUpdates(old, new interface{}) {
 		return
 	}
 
-	installationDuration := newInstallationCondition.LastTransitionTime.Sub(lastModifiedTime)
+	installationDuration := newInstallationCondition.LastTransitionTime.Sub(lastModifiedTime.time)
 	c.metricsBundle.TimeToInstallation.Observe(installationDuration.Seconds())
+
+	// Remove last modified time since we don't need it any more
+	c.appLastModifiedTimesLock.Lock()
+	delete(c.appLastModifiedTimes, appName)
+	c.appLastModifiedTimesLock.Unlock()
+}
+
+func (c *Controller) cleanCache() {
+	c.appLastModifiedTimesLock.Lock()
+	defer c.appLastModifiedTimesLock.Unlock()
+
+	for appName, lastModifiedTime := range c.appLastModifiedTimes {
+		if time.Since(lastModifiedTime.entryTime) > cacheExpirationDuration {
+			delete(c.appLastModifiedTimes, appName)
+		}
+	}
 }
