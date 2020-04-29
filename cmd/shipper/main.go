@@ -536,7 +536,7 @@ func startMetricsController(cfg *cfg) (bool, error) {
 
 	cfg.wg.Add(1)
 	go func() {
-		c.Run(cfg.workers, cfg.stopCh)
+		c.Run(cfg.stopCh)
 		cfg.wg.Done()
 	}()
 
