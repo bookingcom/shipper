@@ -205,6 +205,75 @@ func (f *fixture) waitForReleaseStrategyState(waitingFor string, releaseName str
 	f.t.Logf("waiting for %s took %s", waitingFor, time.Since(start))
 }
 
+func (f *fixture) waitForReleaseVirtualStrategyState(waitingFor string, releaseName string, step, virtualStep int) {
+	var state, newState string
+	start := time.Now()
+	err := poll(globalTimeout, func() (bool, error) {
+		defer func() {
+			if state != newState {
+				f.t.Logf("release strategy state transition: %q -> %q", state, newState)
+				state = newState
+			}
+		}()
+		rel, err := shipperClient.ShipperV1alpha1().Releases(f.namespace).Get(releaseName, metav1.GetOptions{})
+		if err != nil {
+			f.t.Fatalf("failed to fetch release: %q: %q", releaseName, err)
+		}
+
+		if rel.Status.Strategy == nil {
+			newState = fmt.Sprintf("release %q has no strategy status reported yet", releaseName)
+			return false, nil
+		}
+
+		if rel.Status.AchievedVirtualStep == nil {
+			newState = fmt.Sprintf("release %q has no achievedVirtualStep reported yet", releaseName)
+			return false, nil
+		}
+
+		condAchieved := false
+		switch waitingFor {
+		case "installation":
+			condAchieved = rel.Status.Strategy.State.WaitingForInstallation == shipper.StrategyStateTrue
+		case "capacity":
+			condAchieved = rel.Status.Strategy.State.WaitingForCapacity == shipper.StrategyStateTrue
+		case "traffic":
+			condAchieved = rel.Status.Strategy.State.WaitingForTraffic == shipper.StrategyStateTrue
+		case "command":
+			condAchieved = rel.Status.Strategy.State.WaitingForCommand == shipper.StrategyStateTrue
+		case "none":
+			condAchieved = rel.Status.Strategy.State.WaitingForInstallation == shipper.StrategyStateFalse &&
+				rel.Status.Strategy.State.WaitingForCapacity == shipper.StrategyStateFalse &&
+				rel.Status.Strategy.State.WaitingForTraffic == shipper.StrategyStateFalse &&
+				rel.Status.Strategy.State.WaitingForCommand == shipper.StrategyStateFalse
+
+		}
+
+		newState = fmt.Sprintf("step %d virtual step %d {installation: %s, capacity: %s, traffic: %s, command: %s}",
+			rel.Status.AchievedVirtualStep.Step,
+			rel.Status.AchievedVirtualStep.VirtualStep,
+			rel.Status.Strategy.State.WaitingForInstallation,
+			rel.Status.Strategy.State.WaitingForCapacity,
+			rel.Status.Strategy.State.WaitingForTraffic,
+			rel.Status.Strategy.State.WaitingForCommand,
+		)
+
+		if condAchieved && rel.Status.AchievedVirtualStep.Step == int32(step) && rel.Status.AchievedVirtualStep.VirtualStep == int32(virtualStep) {
+			return true, nil
+		}
+
+		return false, nil
+	})
+
+	if err != nil {
+		if err == wait.ErrWaitTimeout {
+			f.t.Fatalf("timed out waiting for release to be waiting for %s for target step %d virtual step %d: waited %s. final state: %s", waitingFor, step, virtualStep, globalTimeout, state)
+		}
+		f.t.Fatalf("error waiting for release to be waiting for %s: %q", waitingFor, err)
+	}
+
+	f.t.Logf("waiting for %s took %s", waitingFor, time.Since(start))
+}
+
 func (f *fixture) waitForComplete(releaseName string) {
 	start := time.Now()
 	err := poll(globalTimeout, func() (bool, error) {

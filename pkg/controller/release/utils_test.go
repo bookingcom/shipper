@@ -9,6 +9,7 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	"github.com/bookingcom/shipper/pkg/util/release"
 )
 
 var (
@@ -65,6 +66,10 @@ func buildRelease(
 		},
 	}
 
+	virtualStrategy, err := release.BuildVirtualStrategy(&vanguard, 100)
+	if err != nil {
+		virtualStrategy = &shipper.RolloutVirtualStrategy{Steps: []shipper.RolloutStrategyVirtualStep{}}
+	}
 	return &shipper.Release{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:       namespace,
@@ -87,6 +92,7 @@ func buildRelease(
 				},
 				ClusterRequirements: clusterRequirements,
 			},
+			VirtualStrategy: virtualStrategy,
 		},
 	}
 }

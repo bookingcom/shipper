@@ -10,11 +10,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	intstrutil "k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	"github.com/bookingcom/shipper/pkg/util/release"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 
@@ -30,7 +32,7 @@ var (
 	inspectFailed  = flag.Bool("inspectfailed", false, "Set this flag to skip deleting the namespaces for failed tests. Useful for debugging.")
 	kubeconfig     = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
 	appClusterName = flag.String("appcluster", "minikube", "The application cluster that E2E tests will check to determine success/failure")
-	timeoutFlag    = flag.String("progresstimeout", "30s", "timeout when waiting for things to change")
+	timeoutFlag    = flag.String("progresstimeout", "60s", "timeout when waiting for things to change")
 )
 
 var (
@@ -71,6 +73,11 @@ var vanguard = shipper.RolloutStrategy{
 		},
 	},
 }
+
+var (
+	surgeOnePod  = intstrutil.FromInt(1)
+	surgeDefault = intstrutil.FromString("100%")
+)
 
 func TestMain(m *testing.M) {
 	flag.Parse()
@@ -127,6 +134,46 @@ func TestNewAppAllIn(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
+
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
+	if err != nil {
+		t.Fatalf("could not create application %q: %q", appName, err)
+	}
+
+	t.Logf("waiting for a new release for new application %q", appName)
+	rel := f.waitForRelease(appName, 0)
+	relName := rel.GetName()
+	t.Logf("waiting for release %q to complete", relName)
+	f.waitForComplete(rel.GetName())
+	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
+	f.checkReadyPods(relName, targetReplicas)
+}
+
+func TestNewAppAllInWithMaxSurge(t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+	t.Parallel()
+
+	targetReplicas := 4
+	ns, err := setupNamespace(t.Name())
+	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(ns.GetName())
+	}()
+
+	newApp := newApplication(ns.GetName(), appName, &allIn)
+	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Chart.Name = "test-nginx"
+	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeOnePod}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -171,6 +218,7 @@ func TestNewAppAllInWithRolloutBlockOverride(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -213,6 +261,7 @@ func TestBlockNewAppWithRolloutBlock(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -247,6 +296,7 @@ func TestNewAppAllInWithRolloutBlockNonExisting(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -280,6 +330,7 @@ func TestBlockNewAppProgressWithRolloutBlock(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -317,6 +368,7 @@ func TestRolloutAllIn(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -389,6 +441,7 @@ func TestBrokenRolloutAllIn(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -471,6 +524,7 @@ func TestRolloutAllInWithRolloutBlockOverride(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -528,6 +582,11 @@ func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
+	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, 100)
+	if err != nil {
+		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
+	}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -546,13 +605,73 @@ func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
 			t.Logf("waiting for release %q to complete", relName)
 			f.waitForComplete(relName)
 		} else {
+			lastVirtualStep := len(expectedVirtualStrategy.Steps[i].VirtualSteps) - 1
 			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
+			f.waitForReleaseVirtualStrategyState("command", relName, i, lastVirtualStep)
 			f.waitForReleaseStrategyState("command", relName, i)
 		}
 
 		expectedCapacity := int(replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas)))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
 		f.checkReadyPods(relName, expectedCapacity)
+	}
+}
+
+func testNewApplicationVanguardWithMaxSurge(targetReplicas int32, t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+
+	t.Parallel()
+	ns, err := setupNamespace(t.Name())
+	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(ns.GetName())
+	}()
+
+	newApp := newApplication(ns.GetName(), appName, &vanguard)
+	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Chart.Name = "test-nginx"
+	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeOnePod}
+	surgePercent := int(100 * (float32(1) / float32(targetReplicas)))
+	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, surgePercent)
+	if err != nil {
+		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
+	}
+
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
+	if err != nil {
+		t.Fatalf("could not create application %q: %q", appName, err)
+	}
+
+	t.Logf("waiting for a new release for new application %q", appName)
+	rel := f.waitForRelease(appName, 0)
+	relName := rel.GetName()
+
+	for i, step := range vanguard.Steps {
+		t.Logf("setting release %q targetStep to %d", relName, i)
+		f.targetStep(i, relName)
+
+		if i == len(vanguard.Steps)-1 {
+			t.Logf("waiting for release %q to complete", relName)
+			f.waitForComplete(relName)
+		} else {
+			lastVirtualStep := len(expectedVirtualStrategy.Steps[i].VirtualSteps) - 1
+			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
+			f.waitForReleaseVirtualStrategyState("command", relName, i, lastVirtualStep)
+			f.waitForReleaseStrategyState("command", relName, i)
+		}
+
+		expectedCapacity := int32(replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas)))
+		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
+		f.checkReadyPods(relName, int(expectedCapacity))
 	}
 }
 
@@ -584,6 +703,11 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int, t *t
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
+	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, 100)
+	if err != nil {
+		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
+	}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -602,7 +726,9 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int, t *t
 			t.Logf("waiting for release %q to complete", relName)
 			f.waitForComplete(relName)
 		} else {
+			lastVirtualStep := len(expectedVirtualStrategy.Steps[i].VirtualSteps) - 1
 			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
+			f.waitForReleaseVirtualStrategyState("command", relName, i, lastVirtualStep)
 			f.waitForReleaseStrategyState("command", relName, i)
 		}
 
@@ -617,6 +743,13 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int, t *t
 // strategy until it hopefully converges on the final desired state.
 func TestNewApplicationVanguardMultipleReplicas(t *testing.T) {
 	testNewApplicationVanguard(3, t)
+}
+
+// TestNewApplicationVanguardMultipleReplicasMaxSurge tests the creation of a new
+// application with multiple replicas and max surge, marching through the specified vanguard
+// strategy and virtual strategy until it hopefully converges on the final desired state.
+func TestNewApplicationVanguardMultipleReplicasMaxSurge(t *testing.T) {
+	testNewApplicationVanguardWithMaxSurge(3, t)
 }
 
 func TestNewApplicationVanguardMultipleReplicasRBOverride(t *testing.T) {
@@ -660,6 +793,11 @@ func testRolloutVanguard(targetReplicas int, t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
+	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, 100)
+	if err != nil {
+		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
+	}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -696,7 +834,9 @@ func testRolloutVanguard(targetReplicas int, t *testing.T) {
 			t.Logf("waiting for release %q to complete", contenderName)
 			f.waitForComplete(contenderName)
 		} else {
+			lastVirtualStep := len(expectedVirtualStrategy.Steps[i].VirtualSteps) - 1
 			t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
+			f.waitForReleaseVirtualStrategyState("command", contenderName, i, lastVirtualStep)
 			f.waitForReleaseStrategyState("command", contenderName, i)
 		}
 
@@ -744,6 +884,11 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
+	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, 100)
+	if err != nil {
+		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
+	}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -754,17 +899,81 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 	rel := f.waitForRelease(appName, 0)
 	relName := rel.GetName()
 
+	virtualStep := len(expectedVirtualStrategy.Steps[0].VirtualSteps) - 1
 	for _, i := range []int{0, 1, 0} {
 		step := vanguard.Steps[i]
 		t.Logf("setting release %q targetStep to %d", relName, i)
 		f.targetStep(i, relName)
 
 		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
+		f.waitForReleaseVirtualStrategyState("command", relName, i, virtualStep)
 		f.waitForReleaseStrategyState("command", relName, i)
 
 		expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
 		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
 		f.checkReadyPods(relName, int(expectedCapacity))
+		virtualStep = len(expectedVirtualStrategy.Steps[1].VirtualSteps) - 1
+	}
+}
+
+func TestNewApplicationMovingStrategyBackwardsMaxSurge(t *testing.T) {
+	if !*runEndToEnd {
+		t.Skip("skipping end-to-end tests: --e2e is false")
+	}
+
+	t.Parallel()
+	var targetReplicas int32 = 5
+	ns, err := setupNamespace(t.Name())
+	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
+	defer func() {
+		if *inspectFailed && t.Failed() {
+			return
+		}
+		teardownNamespace(ns.GetName())
+	}()
+
+	app := newApplication(ns.GetName(), appName, &vanguard)
+	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Chart.Name = "test-nginx"
+	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeOnePod}
+	surgePercent := int(100 * (float32(1) / float32(targetReplicas)))
+	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, surgePercent)
+	if err != nil {
+		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
+	}
+
+	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
+	if err != nil {
+		t.Fatalf("could not create application %q: %q", appName, err)
+	}
+
+	t.Logf("waiting for a new release for new application %q", appName)
+	rel := f.waitForRelease(appName, 0)
+	relName := rel.GetName()
+
+	virtualStep := len(expectedVirtualStrategy.Steps[0].VirtualSteps) - 1
+	for _, i := range []int{0, 1, 0} {
+		step := vanguard.Steps[i]
+		t.Logf("setting release %q targetStep to %d", relName, i)
+		f.targetStep(i, relName)
+
+		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d and virtualStep %d", relName, i, virtualStep)
+		f.waitForReleaseVirtualStrategyState("command", relName, i, virtualStep)
+		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
+		f.waitForReleaseStrategyState("command", relName, i)
+
+		expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
+		t.Logf("checking that release %q has %d pods (strategy step %d aka %q)", relName, expectedCapacity, i, step.Name)
+		f.checkReadyPods(relName, int(expectedCapacity))
+		if i == 1 {
+			virtualStep = len(expectedVirtualStrategy.Steps[0].VirtualSteps) - 1
+		} else {
+			virtualStep = len(expectedVirtualStrategy.Steps[1].VirtualSteps) - 1
+		}
 	}
 }
 
@@ -791,6 +1000,11 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
+	expectedVirtualStrategy, err := release.BuildVirtualStrategy(&vanguard, 100)
+	if err != nil {
+		t.Fatalf("could not build virtual strategy %q: %q", appName, err)
+	}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -810,7 +1024,9 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 		t.Logf("setting release %q targetStep to %d", relName, i)
 		f.targetStep(i, relName)
 
+		lastVirtualStep := len(expectedVirtualStrategy.Steps[i].VirtualSteps) - 1
 		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, i)
+		f.waitForReleaseVirtualStrategyState("command", relName, i, lastVirtualStep)
 		f.waitForReleaseStrategyState("command", relName, i)
 
 		expectedCapacity = replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
@@ -833,6 +1049,7 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 	}
 
 	t.Logf("release %q should stay in waitingForCommand for targetStep %d", relName, 1)
+	f.waitForReleaseVirtualStrategyState("command", relName, 1, 1)
 	f.waitForReleaseStrategyState("command", relName, 1)
 
 	t.Logf("checking that release %q still has %d pods (strategy step %d aka %q)", relName, expectedCapacity, 1, step.Name)
@@ -863,6 +1080,7 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -893,12 +1111,14 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 
 	// The strategy emulates deployment all way down to 50/50 and then revert
 	// to the previous step (staging).
+	virtualStep := 1
 	for _, i := range []int{0, 1, 0} {
 		step := vanguard.Steps[i]
 		t.Logf("setting release %q targetStep to %d", contenderName, i)
 		f.targetStep(i, contenderName)
 
 		t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
+		f.waitForReleaseVirtualStrategyState("command", contenderName, i, virtualStep)
 		f.waitForReleaseStrategyState("command", contenderName, i)
 
 		expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
@@ -938,6 +1158,7 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -974,6 +1195,7 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 	f.targetStep(i, contenderName)
 
 	t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", contenderName, i)
+	f.waitForReleaseVirtualStrategyState("command", contenderName, i, 1)
 	f.waitForReleaseStrategyState("command", contenderName, i)
 
 	expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
@@ -1004,6 +1226,7 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 	}
 
 	t.Logf("release %q should stay in waitingForCommand for targetStep %d", contenderName, 0)
+	f.waitForReleaseVirtualStrategyState("command", contenderName, 0, 1)
 	f.waitForReleaseStrategyState("command", contenderName, 0)
 
 	t.Logf(
@@ -1045,6 +1268,7 @@ func TestNewApplicationAbort(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -1061,6 +1285,7 @@ func TestNewApplicationAbort(t *testing.T) {
 	f.targetStep(targetStep, relName)
 
 	t.Logf("waiting for release %q to achieve waitingForCommand for targetStep %d", relName, targetStep)
+	f.waitForReleaseVirtualStrategyState("command", relName, targetStep, 1)
 	f.waitForReleaseStrategyState("command", relName, targetStep)
 
 	expectedCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
@@ -1075,6 +1300,7 @@ func TestNewApplicationAbort(t *testing.T) {
 	}
 
 	// Now the release should be waiting for a command
+	f.waitForReleaseVirtualStrategyState("command", relName, 0, 1)
 	f.waitForReleaseStrategyState("command", relName, 0)
 
 	// It's back to step 0, let's check the number of pods
@@ -1106,6 +1332,7 @@ func TestRolloutAbort(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -1140,6 +1367,7 @@ func TestRolloutAbort(t *testing.T) {
 	f.targetStep(targetStep, contenderName)
 
 	t.Logf("waiting for contender release %q to achieve waitingForCommand for targetStep %d", contenderName, targetStep)
+	f.waitForReleaseVirtualStrategyState("command", contenderName, targetStep, 1)
 	f.waitForReleaseStrategyState("command", contenderName, targetStep)
 
 	expectedContenderCapacity := replicas.CalculateDesiredReplicaCount(uint(step.Capacity.Contender), float64(targetReplicas))
@@ -1163,10 +1391,12 @@ func TestRolloutAbort(t *testing.T) {
 	// capacity state (step 1 according to the vanguard definition) for a bit
 	// until shipper detects the need for capacity and spins up the missing
 	// pods
+	f.waitForReleaseVirtualStrategyState("capacity", incumbentName, 0, 1)
 	f.waitForReleaseStrategyState("capacity", incumbentName, 0)
 
 	// Once the need for capacity triggers, the test waits for all-clear state
 	// (all 4 strategy states indicate no demand).
+	f.waitForReleaseVirtualStrategyState("none", incumbentName, 0, 1)
 	f.waitForReleaseStrategyState("none", incumbentName, 0)
 
 	// By this moment shipper is expected to have recovered the missing capacity
@@ -1214,6 +1444,7 @@ func TestNewRolloutBlockAddOverrides(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(namespace).Create(newApp)
 	if err != nil {
@@ -1280,6 +1511,7 @@ func TestNewGlobalRolloutBlockAddOverrides(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -1290,6 +1522,7 @@ func TestNewGlobalRolloutBlockAddOverrides(t *testing.T) {
 	rel := f.waitForRelease(appName, 0)
 	relName := rel.GetName()
 	t.Logf("waiting for release %q to complete", relName)
+	f.waitForReleaseStrategyState("none", rel.GetName(), 0)
 	f.waitForComplete(rel.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
 	f.checkReadyPods(relName, targetReplicas)
@@ -1341,6 +1574,7 @@ func TestNewRolloutBlockRemoveRelease(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -1430,6 +1664,7 @@ func TestNewGlobalRolloutBlockRemoveRelease(t *testing.T) {
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(testNamespace).Create(app)
 	if err != nil {
@@ -1497,6 +1732,7 @@ func TestDeletedDeploymentsAreReinstalled(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {
@@ -1516,9 +1752,11 @@ func TestDeletedDeploymentsAreReinstalled(t *testing.T) {
 		t.Fatalf("could not delete deployment %q: %q", deploymentName, err)
 	}
 
+	f.waitForReleaseVirtualStrategyState("capacity", rel.GetName(), 0, 1)
 	f.waitForReleaseStrategyState("capacity", rel.GetName(), 0)
 
 	t.Logf("waiting for release %q to complete again", relName)
+	f.waitForReleaseVirtualStrategyState("none", rel.GetName(), 0, 1)
 	f.waitForReleaseStrategyState("none", rel.GetName(), 0)
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
 	f.checkReadyPods(relName, targetReplicas)
@@ -1546,6 +1784,7 @@ func TestConsistentTrafficBalanceOnStraightFullOn(t *testing.T) {
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": 0}
+	app.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -1612,6 +1851,7 @@ func TestMultipleAppsInNamespace(t *testing.T) {
 		}
 		newApp.Spec.Template.Chart.Name = "test-nginx"
 		newApp.Spec.Template.Chart.Version = "0.0.1"
+		newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 		_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 		if err != nil {
@@ -1659,6 +1899,7 @@ func TestDeleteRelease(t *testing.T) {
 	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
+	newApp.Spec.Template.Strategy.RollingUpdate = &shipper.RollingUpdate{MaxSurge: surgeDefault}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
 	if err != nil {

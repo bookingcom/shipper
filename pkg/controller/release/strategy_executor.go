@@ -1,13 +1,11 @@
 package release
 
 import (
-	"fmt"
 	"time"
 
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	"github.com/bookingcom/shipper/pkg/util/conditions"
 	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
@@ -62,19 +60,20 @@ func (p *Pipeline) Process(strategyStep shipper.RolloutStrategyStep, cond condit
 }
 
 type StrategyExecutor struct {
-	strategy *shipper.RolloutStrategy
-	step     int32
+	strategy        *shipper.RolloutStrategy
+	virtualStrategy *shipper.RolloutVirtualStrategy
+	step            int32
+	virtualStep     int32
+	progressing     bool
 }
 
-func NewStrategyExecutor(strategy *shipper.RolloutStrategy, step int32) (*StrategyExecutor, error) {
-	if step >= int32(len(strategy.Steps)) {
-		return nil, shippererrors.NewUnrecoverableError(
-			fmt.Errorf("no step %d in strategy", step))
-	}
-
+func NewStrategyExecutor(strategy *shipper.RolloutStrategy, virtualStrategy *shipper.RolloutVirtualStrategy, step, virtualStep int32, progressing bool) (*StrategyExecutor, error) {
 	return &StrategyExecutor{
-		strategy: strategy,
-		step:     step,
+		strategy:        strategy,
+		virtualStrategy: virtualStrategy,
+		step:            step,
+		virtualStep:     virtualStep,
+		progressing:     progressing,
 	}, nil
 }
 
@@ -95,7 +94,7 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (conditions.St
 	// might be following it's successor) it could be that a preliminary action
 	// would create more noise than help really.
 	if !isHead {
-		if !releaseutil.ReleaseAchievedTargetStep(succ.release) {
+		if !releaseutil.HasReleaseAchievedTargetStep(succ.release) {
 			return nil, nil
 		}
 	}
@@ -109,26 +108,42 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (conditions.St
 	pipeline := NewPipeline()
 	pipeline.Enqueue(genInstallationEnforcer(ctx, curr, succ))
 
-	if isHead {
-		pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
-		pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
-		if hasTail {
-			// This is the moment where a contender is performing a look-behind.
-			// Incumbent's context is completely identical to it's successor
-			// except that it's not the head of the chain anymore.
-			prevctx := ctx.Copy()
-			prevctx.isHead = false
-			pipeline.Enqueue(genTrafficEnforcer(prevctx, prev, curr))
-			pipeline.Enqueue(genCapacityEnforcer(prevctx, prev, curr))
+	if e.progressing {
+		if isHead {
+			pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
+			pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
+			if hasTail {
+				// This is the moment where a contender is performing a look-behind.
+				// Incumbent's context is completely identical to it's successor
+				// except that it's not the head of the chain anymore.
+				prevctx := ctx.Copy()
+				prevctx.isHead = false
+				pipeline.Enqueue(genTrafficEnforcer(prevctx, prev, curr))
+				pipeline.Enqueue(genCapacityEnforcer(prevctx, prev, curr))
+			}
+		} else {
+			pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
+			pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
 		}
 	} else {
-		pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
-		pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
+		if isHead {
+			if hasTail {
+				prevctx := ctx.Copy()
+				prevctx.isHead = false
+				pipeline.Enqueue(genCapacityEnforcer(prevctx, prev, curr))
+				pipeline.Enqueue(genTrafficEnforcer(prevctx, prev, curr))
+			}
+			pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
+			pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
+		} else {
+			pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
+			pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
+		}
 	}
 
 	var releaseStrategyConditions []shipper.ReleaseStrategyCondition
 	cond := conditions.NewStrategyConditions(releaseStrategyConditions...)
-	strategyStep := e.strategy.Steps[e.step]
+	strategyStep := e.virtualStrategy.Steps[e.step].VirtualSteps[e.virtualStep]
 
 	return pipeline.Process(strategyStep, cond)
 }

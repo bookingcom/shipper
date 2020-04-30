@@ -39,9 +39,10 @@ import (
 const (
 	AgentName = "release-controller"
 
-	ClustersChosen          = "ClustersChosen"
-	InternalError           = "InternalError"
-	StrategyExecutionFailed = "StrategyExecutionFailed"
+	ClustersChosen             = "ClustersChosen"
+	InternalError              = "InternalError"
+	StrategyExecutionFailed    = "StrategyExecutionFailed"
+	VirtualStrategyBuildFailed = "VirtualStrategyBuildFailed"
 )
 
 // Controller is a Kubernetes controller whose role is to pick up a newly created
@@ -326,6 +327,19 @@ func (c *Controller) processRelease(rel *shipper.Release) (*shipper.Release, err
 	)
 	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
+	err = c.SetVirtualStrategy(rel)
+	if err != nil {
+		releaseStrategyExecutedCond := releaseutil.NewReleaseCondition(
+			shipper.ReleaseConditionTypeStrategyExecuted,
+			corev1.ConditionFalse,
+			VirtualStrategyBuildFailed,
+			err.Error(),
+		)
+		diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *releaseStrategyExecutedCond))
+
+		return rel, err
+	}
+
 	rel, err = c.executeStrategyOnClusters(rel, clusterNames, diff)
 	if err != nil {
 		releaseStrategyExecutedCond := releaseutil.NewReleaseCondition(
@@ -348,6 +362,41 @@ func (c *Controller) processRelease(rel *shipper.Release) (*shipper.Release, err
 	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
 	return rel, nil
+}
+
+func (c *Controller) SetVirtualStrategy(rel *shipper.Release) error {
+	if rel.Spec.VirtualStrategy == nil {
+		replicaCount, err := c.fetchChartAndExtractReplicaCount(rel)
+		if err != nil {
+			return err
+		}
+		strategy := rel.Spec.Environment.Strategy
+
+		surgeWeight, err := releaseutil.GetMaxSurgePercent(rel.Spec.Environment.Strategy.RollingUpdate, replicaCount)
+		if err != nil {
+			return err
+		}
+		virtualStrategy, err := releaseutil.BuildVirtualStrategy(strategy, surgeWeight)
+		if err != nil {
+			return err
+		}
+		rel.Spec.VirtualStrategy = virtualStrategy
+	}
+	return nil
+}
+
+func (c *Controller) fetchChartAndExtractReplicaCount(rel *shipper.Release) (int32, error) {
+	chart, err := c.chartFetcher(&rel.Spec.Environment.Chart)
+	if err != nil {
+		return 0, err
+	}
+
+	replicas, err := extractReplicasFromChartForRel(chart, rel)
+	if err != nil {
+		return 0, err
+	}
+
+	return replicas, nil
 }
 
 // NOTE(jgreff): executeStrategyOnClusters still refers to Schedule. this is
@@ -382,18 +431,42 @@ func (c *Controller) executeStrategyOnClusters(
 	}
 
 	var strategy *shipper.RolloutStrategy
-	var targetStep int32
+	var virtualStrategy *shipper.RolloutVirtualStrategy
 	// A head release uses it's local spec-defined strategy, any other release
 	// follows it's successor state, therefore looking into the forecoming spec.
 	if isHead {
 		strategy = rel.Spec.Environment.Strategy
-		targetStep = rel.Spec.TargetStep
+		virtualStrategy = rel.Spec.VirtualStrategy
 	} else {
 		strategy = succ.Spec.Environment.Strategy
-		targetStep = succ.Spec.TargetStep
+		virtualStrategy = succ.Spec.VirtualStrategy
 	}
 
-	executor, err := NewStrategyExecutor(strategy, targetStep)
+	progressing := releaseutil.IsReleaseProgressing(rel.Status.AchievedStep, rel.Spec.TargetStep)
+	hasAchievedTargetStep := releaseutil.HasReleaseAchievedTargetStep(rel)
+	stepsFromAchievedStep := releaseutil.StepsFromAchievedStep(rel.Status.AchievedStep, rel.Spec.TargetStep)
+	if !isHead {
+		// head is the one that's supposed to decide if this is a rolling forward or backward.
+		progressing = releaseutil.IsReleaseProgressing(succ.Status.AchievedStep, succ.Spec.TargetStep)
+		hasAchievedTargetStep = releaseutil.HasReleaseAchievedTargetStep(succ)
+		stepsFromAchievedStep = releaseutil.StepsFromAchievedStep(succ.Status.AchievedStep, succ.Spec.TargetStep)
+	}
+
+	targetStep := releaseutil.GetTargetStep(rel, succ, strategy, stepsFromAchievedStep, progressing, hasAchievedTargetStep)
+	if targetStep >= int32(len(strategy.Steps)) {
+		return rel, shippererrors.NewUnrecoverableError(
+			fmt.Errorf("no step %d in strategy", targetStep))
+	}
+
+	if virtualStrategy == nil {
+		// wait for virtual strategy to be built
+		err := fmt.Errorf("release %q missing a virtual strategy", objectutil.MetaKey(rel))
+		return rel, shippererrors.NewUnrecoverableError(err)
+	}
+	processTargetStep := releaseutil.GetProcessedTargetStep(virtualStrategy, targetStep, progressing, hasAchievedTargetStep)
+	virtualTargetStep := releaseutil.GetVirtualTargetStep(rel, succ, virtualStrategy, targetStep, processTargetStep, progressing, hasAchievedTargetStep)
+
+	executor, err := NewStrategyExecutor(strategy, virtualStrategy, processTargetStep, virtualTargetStep, progressing)
 	if err != nil {
 		return rel, err
 	}
@@ -425,6 +498,10 @@ func (c *Controller) executeStrategyOnClusters(
 	}
 
 	isLastStep := int(targetStep) == len(strategy.Steps)-1
+	isLastVirtualStep := int(virtualTargetStep) == len(virtualStrategy.Steps[processTargetStep].VirtualSteps)-1
+	if !progressing {
+		isLastVirtualStep = virtualTargetStep == 0
+	}
 	stepComplete, strategyStatus := consolidateStrategyStatus(
 		isHead, isLastStep, clusterConditions)
 
@@ -432,18 +509,21 @@ func (c *Controller) executeStrategyOnClusters(
 
 	if stepComplete {
 		prevStep := rel.Status.AchievedStep
+		prevVirtualStep := rel.Status.AchievedVirtualStep
 
-		var achievedStep int32
+		var achievedStep, achievedVirtualStep int32
 		var achievedStepName string
 		if isHead {
 			achievedStep = targetStep
 			achievedStepName = strategy.Steps[achievedStep].Name
+			achievedVirtualStep = virtualTargetStep
 		} else {
 			achievedStep = int32(len(rel.Spec.Environment.Strategy.Steps)) - 1
 			achievedStepName = rel.Spec.Environment.Strategy.Steps[achievedStep].Name
+			achievedVirtualStep = int32(len(rel.Spec.VirtualStrategy.Steps[achievedStep].VirtualSteps)) - 1
 		}
 
-		if prevStep == nil || achievedStep != prevStep.Step {
+		if isLastVirtualStep && (prevStep == nil || achievedStep != prevStep.Step) {
 			rel.Status.AchievedStep = &shipper.AchievedStep{
 				Step: achievedStep,
 				Name: achievedStepName,
@@ -457,7 +537,21 @@ func (c *Controller) executeStrategyOnClusters(
 			)
 		}
 
-		if isLastStep {
+		if prevVirtualStep == nil || (prevVirtualStep.Step != achievedStep || prevVirtualStep.VirtualStep != achievedVirtualStep) {
+			rel.Status.AchievedVirtualStep = &shipper.AchievedVirtualStep{
+				Step:        achievedStep,
+				VirtualStep: achievedVirtualStep,
+			}
+			c.recorder.Eventf(
+				rel,
+				corev1.EventTypeNormal,
+				"StrategyApplied",
+				"virtual step [%d] finished",
+				achievedVirtualStep,
+			)
+		}
+
+		if isLastStep && isLastVirtualStep {
 			condition := releaseutil.NewReleaseCondition(
 				shipper.ReleaseConditionTypeComplete,
 				corev1.ConditionTrue,
@@ -465,6 +559,13 @@ func (c *Controller) executeStrategyOnClusters(
 				"",
 			)
 			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
+		}
+
+		if !isLastVirtualStep {
+			rel.Spec.TargetVirtualStep = virtualTargetStep + 1
+			if !progressing {
+				rel.Spec.TargetVirtualStep = virtualTargetStep - 1
+			}
 		}
 	}
 
