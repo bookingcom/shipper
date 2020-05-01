@@ -32,7 +32,7 @@ var (
 	inspectFailed  = flag.Bool("inspectfailed", false, "Set this flag to skip deleting the namespaces for failed tests. Useful for debugging.")
 	kubeconfig     = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
 	appClusterName = flag.String("appcluster", "minikube", "The application cluster that E2E tests will check to determine success/failure")
-	timeoutFlag    = flag.String("progresstimeout", "60s", "timeout when waiting for things to change")
+	timeoutFlag    = flag.String("progresstimeout", "90s", "timeout when waiting for things to change")
 )
 
 var (
