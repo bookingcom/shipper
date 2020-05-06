@@ -3,7 +3,7 @@
 Building Shipper yourself
 =========================
 
-Shipper uses ``go build`` to produce binaries. All dependencies are present in Shipper's repository, and managed with `dep <https://github.com/golang/dep>`_.
+Shipper uses ``go build`` to produce binaries. All dependencies are present in Shipper's repository, and managed with Go modules.
 
 .. _install_requirements:
 
@@ -11,18 +11,15 @@ Requirements
 ------------
 
 * Go 1.10+
-* Go dep
 
 Building Shipper
 ----------------
 
-Assuming you have Go installed and the *GOPATH* environment variable properly defined:
+Assuming you have Go installed, after changing to the directory that you'd like to clone Shipper into, run:
 
 .. code-block:: shell
     :caption: build.sh
     :name: shipper_build_sh
 
-    mkdir $GOPATH/src/github.com/bookingcom
-    cd $GOPATH/src/github.com/bookingcom
     git clone git@github.com:bookingcom/shipper.git
     go build cmd/shipper

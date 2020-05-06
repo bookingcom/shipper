@@ -10,7 +10,7 @@ ways: pod labels and Service objects, service mesh manipulation, or something
 else. For the moment only vanilla Kubernetes traffic shifting is supported: pod
 labels and Service objects.
 
-It is manipulated by the Strategy Controller as part of executing a release
+It is manipulated by the Release Controller as part of executing a release
 strategy.
 
 *******
@@ -25,53 +25,34 @@ Example
 Spec
 ****
 
-``.spec.clusters``
-====================
+``.spec.weight``
+================
+
+``weight`` specifies the desired traffic weight for this *Release* in
+the cluster where the *TrafficTarget* object lives.  The Traffic
+controller calculates the correct traffic ratio for this *Release* by
+summing weights from all *TrafficTarget* objects available. This
+allows Shipper to support a scenario in the future where multiple
+releases are serving traffic simultaneously.
 
 .. literalinclude:: ../../examples/traffictarget.yaml
     :language: yaml
-    :lines: 6-11
+    :lines: 6-7
     :linenos:
-
-``clusters`` is a list of cluster entries and the desired traffic weight for
-this *Release* in that cluster. The Traffic controller calculates the correct
-traffic ratio for this *Release* by summing weights from all *TrafficTarget*
-objects available.
 
 ******
 Status
 ******
 
-``.status.clusters``
-====================
+``.status.achievedTraffic``
+===========================
 
-``.status.clusters`` is a list of objects representing the traffic status
-of all clusters where the associated Release objects must be installed.
+The traffic weight achieved by Shipper for this cluster.
 
-.. literalinclude:: ../../examples/traffictarget.yaml
-    :language: yaml
-    :lines: 12-
-    :linenos:
-
-The following table displays the keys a cluster status entry should have:
-
-.. list-table::
-    :widths: 1 99
-    :header-rows: 1
-
-    * - Key
-      - Description
-    * - **name**
-      - The Application Cluster name. For example, **kube-us-east1-a**.
-    * - **status**
-      - **Failed** in case of failure, or **Synced** in case of success.
-    * - **achievedTraffic**
-      - The traffic weight achieved by Shipper for this cluster.
-    * - **conditions**
-      - A list of all conditions observed for this particular Application Cluster.
-
-``.status.clusters.conditions``
+``.status.conditions``
 ===============================
+
+A list of all conditions observed for this particular Application Cluster.
 
 The following table displays the different conditions statuses and reasons reported in the
 *TrafficTarget* object for the **Operational** condition type:

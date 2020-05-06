@@ -9,14 +9,40 @@ Step 0: procure a cluster
 *************************
 
 The rest of this document assumes that you have access to a Kubernetes cluster
-and admin privileges on it. If you don't have this, check out `microk8s
-<https://microk8s.io/>`_ or `minikube
+and admin privileges on it. If you don't have this, check out `docker desktop <https://www.docker.com/products/docker-desktop>`_,
+`kind <https://kind.sigs.k8s.io/docs/user/quick-start>`_, `microk8s <https://microk8s.io/>`_ or `minikube
 <https://github.com/kubernetes/minikube>`_. Cloud clusters like GKE are also
-fine. Shipper requires Kubernetes 1.11 or later, and you'll need to be an admin
+fine. Shipper requires Kubernetes 1.14 or later, and you'll need to be an admin
 on the cluster you're working with. [#f1]_
 
 Make sure that ``kubectl`` works and can connect to your cluster before
 continuing.
+
+------------------------
+Setting up kind clusters
+------------------------
+
+| How to set-up an application kind cluster and a management kind cluster:
+| We would like to setup two clusters, *mgmt* and *app*.
+Lets write a ``kind.yaml`` manifest to configure our clusters:
+
+.. code-block:: yaml
+    :caption: kind.yaml
+
+    kind: Cluster
+    apiVersion: kind.x-k8s.io/v1alpha4
+
+    nodes:
+    - role: control-plane
+
+Now we'll use this to create the clusters:
+
+.. code-block:: shell
+
+    $ kind create cluster --name app --config kind.yaml --image kindest/node:v1.15.7
+    $ kind create cluster --name mgmt --config kind.yaml --image kindest/node:v1.15.7
+
+Congratulations, you have created your clusters!
 
 **************************
 Step 1: get ``shipperctl``
@@ -38,54 +64,87 @@ Find out the name of your context like so:
 
 .. code-block:: shell
 
-	$ kubectl config get-contexts
-	CURRENT   NAME       CLUSTER            AUTHINFO   NAMESPACE
-	*         microk8s   microk8s-cluster   admin
+    $ kubectl config get-contexts
+    CURRENT   NAME              CLUSTER         AUTHINFO            NAMESPACE
+              kind-app          kind-app        kind-app
+    *         kind-mgmt         kind-mgmt       kind-mgmt
 
-In my setup, the context name is **microk8s**. Let's write a ``clusters.yaml``
-manifest to configure Shipper here:
+In my setup, the context name of the application cluster is **kind-app**.
+
+This configuration will allow management cluster to communicate with application cluster.
+The cluster API server URL stored in the kubeconfig is a local address (127.0.0.1),
+we need an actual ip address for our kind-app cluster. This is how you can get it:
+
+.. code-block:: shell
+
+    $ kind get kubeconfig --name app --internal | grep server
+
+Note that **app** is the name we gave to ``kind`` when creating the application cluster.
+Copy the URL of the server.
+
+Now let's write a ``clusters.yaml`` manifest to configure Shipper here:
 
 .. code-block:: yaml
     :caption: clusters.yaml
 
-    managementClusters:
-    - name: microk8s # name of a context; will also be the Cluster object name
     applicationClusters:
-    - name: microk8s
+    - name: kind-app
       region: local
+      apiMaster: "SERVER_URL"
+
+Paste your server URL as a string.
 
 **************************
 Step 3: apply the manifest
 **************************
+
+Before you run ``shipperctl``, make sure that your ``kubectl`` context
+is set to the management cluster:
+
+.. code-block:: shell
+
+    $ kubectl config get-contexts
+    CURRENT   NAME          CLUSTER                  AUTHINFO            NAMESPACE
+              kind-app      kind-app                 kind-app
+    *         kind-mgmt     kind-mgmt                kind-mgmt
 
 Now we'll give ``clusters.yaml`` to ``shipperctl`` to configure the cluster for
 Shipper:
 
 .. code-block:: shell
 
-	$ shipperctl admin clusters apply -f clusters.yaml
-	Setting up management cluster microk8s:
-	Registering or updating custom resource definitions... done
-	Creating a namespace called shipper-system... done
-	Creating a service account called shipper-management-cluster... done
-	Creating a ClusterRole called shipper:management-cluster... done
-	Creating a ClusterRoleBinding called shipper:management-cluster... done
-	Finished setting up cluster microk8s
+    $ shipperctl clusters setup management -n shipper-system
+    Setting up management cluster:
+    Registering or updating custom resource definitions... done
+    Creating a namespace called shipper-system... already exists. Skipping
+    Creating a namespace called rollout-blocks-global... already exists. Skipping
+    Creating a service account called shipper-management-cluster... already exists. Skipping
+    Creating a ClusterRole called shipper:management-cluster... already exists. Skipping
+    Creating a ClusterRoleBinding called shipper:management-cluster... already exists. Skipping
+    Checking if a secret already exists for the validating webhook in the shipper-system namespace... yes. Skipping
+    Creating the ValidatingWebhookConfiguration in shipper-system namespace... done
+    Creating a Service object for the validating webhook... done
+    Finished setting up management cluster
 
-	Setting up application cluster microk8s:
-	Creating a namespace called shipper-system... already exists. Skipping
-	Creating a service account called shipper-application-cluster... done
-	Creating a ClusterRoleBinding called shipper:application-cluster... done
-	Finished setting up cluster microk8s
+    $ shipperctl clusters join -f clusters.yaml -n shipper-system
+    Creating application cluster accounts in cluster kind-app:
+    Creating a namespace called shipper-system... already exists. Skipping
+    Creating a service account called shipper-application-cluster... already exists. Skipping
+    Creating a ClusterRoleBinding called shipper:application-cluster... already exists. Skipping
+    Finished creating application cluster accounts in cluster kind-app
 
-	Joining management cluster microk8s to application cluster microk8s:
-	Creating or updating the cluster object for cluster microk8s on the management cluster... done
-	Checking whether a secret for the microk8s cluster exists in the shipper-system namespace... no. Fetching secret for service account shipper-application-cluster from the microk8s cluster... done
-	Copying the secret to the management cluster... done
-	Finished joining cluster microk8s and microk8s together
+    Joining management cluster to application cluster kind-app:
+    Creating or updating the cluster object for cluster kind-app on the management cluster... done
+    Checking whether a secret for the kind-app cluster exists in the shipper-system namespace... yes. Skipping
+    Finished joining management cluster to application cluster kind-app
 
-	Cluster configuration applied successfully!
+    $ shipperctl clusters setup application -n shipper-system
+    Setting up 1 application clusters:
+    Setting up application clusters kind-app:
+    Registering or updating custom resource definitions... done
+    Finished setting up application clusters
 
+.. _deploy-shipper:
 **********************
 Step 4: deploy shipper
 **********************
@@ -95,16 +154,21 @@ service accounts, and so on, let's create the Shipper *Deployment*:
 
 .. code-block:: shell
 
-    $ kubectl create -f https://github.com/bookingcom/shipper/releases/latest/download/shipper.deployment.yaml
-    deployment.apps/shipper created
+    $ kubectl --context kind-app -n shipper-system apply -f https://github.com/bookingcom/shipper/releases/latest/download/shipper-app.deployment.yaml
+    deployment.apps/shipper-app created
+    $ kubectl --context kind-mgmt -n shipper-system apply -f https://github.com/bookingcom/shipper/releases/latest/download/shipper-mgmt.deployment.yaml
+    deployment.apps/shipper-mgmt created
 
-This will create an instance of Shipper in the ``shipper-system`` namespace.
+This will create an instance of Shipper in the ``shipper-system`` namespace in both clusters.
+
+.. note::
+    | To deploy shipper on one cluster (management and application cluster in one), create the **management** and **application** deployments  on the same cluster.
 
 *********************
 Step 5: do a rollout!
 *********************
 
-Now we should have a working Shipper installation. :ref:`Let's roll something out! <user_rolling-out>`
+Now you should have a working Shipper installation. :ref:`Let's roll something out! <user_rolling-out>`
 
 .. rubric:: Footnotes
 

@@ -25,8 +25,16 @@ Application clusters
 ********************
 
 **Application** clusters are where Shipper installs and rolls out user
-workloads. Shipper does not run any custom software in the **application**
-clusters: it only needs a service account and associated RBAC configuration.
+workloads.
+
+Prior to version 0.9, Shipper did not run any custom software in the
+**application** clusters: it only needed a service account and
+associated RBAC configuration.
+
+However, to make Shipper more resilient to pod crashes or deletions,
+and the management cluster losing connection with **Application**
+clusters, it is now required to run Shipper both on **management** and
+**application** clusters.
 
 ********
 Patterns
@@ -48,6 +56,9 @@ cluster are the same. This is how Shipper is developed, and also how you would
 use Shipper if you only have a single Kubernetes cluster in your
 infrastructure. You can think about this configuration as using Shipper to
 provide a better *Deployment* object, but without any multi-cluster federation.
+
+Note that since version 0.9, you will need to run both
+**shipper-mgmt** and **shipper-app** on your single cluster.
 
 Multiple **management**, each with own set of **application**
 -------------------------------------------------------------
