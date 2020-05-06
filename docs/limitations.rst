@@ -71,11 +71,12 @@ requested.
 New *Pods* don't get traffic if Shipper is not working
 ------------------------------------------------------
 
-Shipper adds the ``shipper-traffic-status: enabled`` label to *Pods* after they
-start. This allows Shipper to correctly manage the number of *Pods* exposed to
-traffic. However, if a *Pod* is deleted and Shipper is not currently running or
-cannot contact the cluster, the new *Pod* spawned by the *ReplicaSet* will not
-get traffic until Shipper is working again.
+Shipper adds the ``shipper-traffic-status: enabled`` label to *Pods*
+after they start. This allows Shipper to correctly manage the number
+of *Pods* exposed to traffic. However, if a *Pod* is deleted and
+Shipper is not currently running on that cluster, the new *Pod*
+spawned by the *ReplicaSet* will not get traffic until Shipper is
+working again.
 
 The primary issue is that we cannot "cork" a successfully completed rollout by
 adding the traffic label to the *Deployment* or *ReplicaSet* without triggering

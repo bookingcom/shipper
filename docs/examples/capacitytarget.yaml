@@ -3,32 +3,20 @@ kind: CapacityTarget
 metadata:
   name: reviewsapi-deadbeef-0
   namespace: reviewsapi
-  annotations:
-    "shipper.booking.com/v1/finalReplicaCount": 10
   labels:
-    release: reviewsapi-4
+    shipper-app: reviewsapi
+    shipper-release: reviewsapi-4
 spec:
-  clusters:
-  - name: kube-us-east1-a
-    percent: 10
-  - name: kube-eu-west2-b
-    percent: 10
+  percent: 100
+  totalReplicaCount: 2
 status:
-  clusters:
-  - name: kube-us-east1-a
-    availableReplicas: 1
-    achievedPercent: 10
-  - name: kube-eu-west2-b
-    availableReplicas: 1
-    achievedPercent: 10
-    sadPods:
-    - name: reviewsapi-deadbeef-0-cafebabe
-      phase: Terminated
-      containers:
-      - name: app
-        status: CrashLoopBackOff
-      condition:
-        type: Ready
-        status: False
-        reason: ContainersNotReady
-        message: "unready containers [app]"
+  achievedPercent: 100
+  availableReplicas: 2
+  conditions:
+  - lastTransitionTime: "2020-07-13T09:56:57Z"
+    status: "True"
+    type: Operational
+  - lastTransitionTime: "2020-07-13T09:58:02Z"
+    status: "True"
+    type: Ready
+  observedGeneration: 3

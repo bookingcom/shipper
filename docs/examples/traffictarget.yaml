@@ -4,31 +4,14 @@ metadata:
   name: reviewsapi-deadbeaf-0
   namespace: reviewsapi
 spec:
-  clusters:
-  - name: kube-us-east1-a
-    weight: 30
-  - name: kube-eu-west2-b
-    weight: 30
+  weight: 100
 status:
-  clusters:
-  - achievedTraffic: 100
-    conditions:
-    - lastTransitionTime: 2018-12-06T12:43:09Z
-      status: "True"
-      type: Operational
-    - lastTransitionTime: 2018-12-06T12:43:09Z
-      status: "True"
-      type: Ready
-    name: kube-us-east1-a
-    status: Synced
-  - achievedTraffic: 100
-    conditions:
-    - lastTransitionTime: 2018-12-06T12:43:09Z
-      status: "True"
-      type: Operational
-    - lastTransitionTime: 2018-12-06T12:43:09Z
-      status: "True"
-      type: Ready
-    name: kube-eu-west2-b
-    status: Synced
-
+  achievedTraffic: 100
+  conditions:
+  - lastTransitionTime: "2020-07-13T09:56:57Z"
+    status: "True"
+    type: Operational
+  - lastTransitionTime: "2020-07-13T09:58:02Z"
+    status: "True"
+    type: Ready
+  observedGeneration: 3

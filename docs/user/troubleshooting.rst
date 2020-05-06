@@ -23,7 +23,7 @@ Shipper objects form a hierarchy:
     CapacityTarget
     TrafficTarget
 
-You already know Applications and Releases, but there's more. Below Release you
+You already know Applications and Releases, but there's more. Below Releases you
 have what we call "target objects". Each represents an important chunk of work
 we do when rolling out:
 
@@ -50,7 +50,7 @@ The universal troubleshooting algorithm
 ---------------------------------------
 
 Shipper is a fairly complex system that runs on top of an even more complex one.
-Things can fail in many different way. It's not really feasible for us to list
+Things can fail in many different ways. It's not really feasible for us to list
 all the possible problems and solutions for them. Instead, we'll give you a
 rough algorithm that should help you deal with commonly encountered problems.
 
@@ -74,21 +74,25 @@ Release's status:
     $ kubectl describe rel nginx-vj7sn-7cb440f1-0
     ...
     Status:
-      Achieved Step:  0
+      Achieved Step:
+        Name:  staging
+        Step:  0
       Conditions:
         Last Transition Time:  2018-07-27T07:21:14Z
         Status:                True
         Type:                  Scheduled
       Strategy:
-        Conditions:
-          Last Transition Time:  2018-07-27T07:23:29Z
-          Message:               clusters pending capacity adjustments: [minikube]
-          Reason:                ClustersNotReady
-          Status:                False
-          Type:                  ContenderAchievedCapacity
-          Last Transition Time:  2018-07-27T07:23:29Z
-          Status:                True
-          Type:                  ContenderAchievedInstallation
+        Clusters:
+          Conditions:
+            Last Transition Time:  2018-07-27T07:23:29Z
+            Message:               clusters pending capacity adjustments: [minikube]
+            Reason:                ClustersNotReady
+            Status:                False
+            Type:                  ContenderAchievedCapacity
+            Last Transition Time:  2018-07-27T07:23:29Z
+            Status:                True
+            Type:                  ContenderAchievedInstallation
+          Name: minikube
         State:
           Waiting For Capacity:      True
           Waiting For Command:       False
@@ -96,7 +100,7 @@ Release's status:
           Waiting For Traffic:       False
     ...
 
-We already looked at `status.strategy.status.waitingForCommand` but there are more fields there: one for every type of target objects. If your rollout isn't finished and not waiting for input, these fields tell you which stage you're at.
+We already looked at ``status.strategy.states.waitingForCommand`` but there are more fields there: one for every type of target objects. If your rollout isn't finished and not waiting for input, these fields tell you which stage you're at.
 
 .. list-table::
     :widths: 25 75
@@ -135,10 +139,9 @@ The next step would be to look at the corresponding target object. Since we're w
 
 .. code-block:: shell
 
-    $ kubectl describe ct nginx-vj7sn-7cb440f1-0
+    $ kubectl describe --context kind-app ct nginx-vj7sn-7cb440f1-0
     ...
     Status:
-      Clusters:
         Achieved Percent:    0
         Available Replicas:  0
         Conditions:
@@ -150,31 +153,14 @@ The next step would be to look at the corresponding target object. Since we're w
           Reason:                PodsNotReady
           Status:                False
           Type:                  Ready
-        Name:                    minikube
-        Sad Pods:
-          Condition:
-            Last Probe Time:       <nil>
-            Last Transition Time:  2018-07-27T07:23:14Z
-            Status:                True
-            Type:                  PodScheduled
-          Containers:
-            Image:     nginx:boom
-            Image ID:
-            Last State:
-            Name:           nginx
-            Ready:          false
-            Restart Count:  0
-            State:
-              Waiting:
-                Message:    Back-off pulling image "nginx:boom"
-                Reason:     ImagePullBackOff
-          Init Containers:  <nil>
-          Name:             nginx-vj7sn-7cb440f1-0-nginx-9b5c4d7c9-2gjwl
     ...
 
 .. important::
-    For installation the command would be ``kubectl describe it <release name>``,
-    for traffic ``kubectl describe tt <release name>``.
+    For installation the command would be ``kubectl describe --context kind-app it <release name>``,
+    for traffic ``kubectl describe --context kind-app tt <release name>``.
+
+.. important::
+   In the commands above, ``kind-app`` refers to the particular application cluster you'd like to look at.
 
 If we inspect ``.status.conditions`` of the InstallationTarget we'll notice a condition called ``Ready`` which has status ``False`` and reason ``PodsNotReady``. Further inspection will reveal that we have a pod called ``nginx-vj7sn-7cb440f1-0-nginx-9b5c4d7c9-2gjwl`` and that Kubernetes can't pull the Docker image for one if its containers:
 
