@@ -291,7 +291,7 @@ func setupNamespace(name string) (*corev1.Namespace, error) {
 	// happens we'll just ignore it.
 
 	ns, err := appKubeClient.CoreV1().Namespaces().Create(newNs)
-	if err != nil {
+	if err != nil && !errors.IsAlreadyExists(err) {
 		return nil, err
 	}
 
@@ -305,6 +305,10 @@ func setupNamespace(name string) (*corev1.Namespace, error) {
 
 func teardownNamespace(name string) {
 	err := kubeClient.CoreV1().Namespaces().Delete(name, &metav1.DeleteOptions{})
+	if err != nil {
+		klog.Fatalf("failed to clean up namespace %q: %q", name, err)
+	}
+	err = appKubeClient.CoreV1().Namespaces().Delete(name, &metav1.DeleteOptions{})
 	if err != nil {
 		klog.Fatalf("failed to clean up namespace %q: %q", name, err)
 	}
@@ -346,6 +350,43 @@ func purgeTestNamespaces() {
 
 	err = poll(globalTimeout, func() (bool, error) {
 		list, listErr := kubeClient.CoreV1().Namespaces().List(listOptions)
+		if listErr != nil {
+			klog.Fatalf("failed to list namespaces: %q", listErr)
+		}
+
+		if len(list.Items) == 0 {
+			return true, nil
+		}
+
+		return false, nil
+	})
+
+	if err != nil {
+		klog.Fatalf("timed out waiting for namespaces to be cleaned up before testing")
+	}
+
+	list, err = appKubeClient.CoreV1().Namespaces().List(listOptions)
+	if err != nil {
+		klog.Fatalf("failed to list namespaces: %q", err)
+	}
+
+	if len(list.Items) == 0 {
+		return
+	}
+
+	for _, namespace := range list.Items {
+		err = appKubeClient.CoreV1().Namespaces().Delete(namespace.GetName(), &metav1.DeleteOptions{})
+		if err != nil {
+			if errors.IsConflict(err) {
+				// this means the namespace is still cleaning up from some other delete, so we should poll and wait
+				continue
+			}
+			klog.Fatalf("failed to delete namespace %q: %q", namespace.GetName(), err)
+		}
+	}
+
+	err = poll(globalTimeout, func() (bool, error) {
+		list, listErr := appKubeClient.CoreV1().Namespaces().List(listOptions)
 		if listErr != nil {
 			klog.Fatalf("failed to list namespaces: %q", listErr)
 		}
