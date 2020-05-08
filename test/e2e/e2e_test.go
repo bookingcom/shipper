@@ -13,6 +13,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 
+	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
@@ -24,13 +25,14 @@ const (
 )
 
 var (
-	masterURL      = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
-	runEndToEnd    = flag.Bool("e2e", false, "Set this flag to enable E2E tests against the local minikube")
-	testCharts     = flag.String("testcharts", "", "The address of the Helm repository holding the test charts")
-	inspectFailed  = flag.Bool("inspectfailed", false, "Set this flag to skip deleting the namespaces for failed tests. Useful for debugging.")
-	kubeconfig     = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
-	appClusterName = flag.String("appcluster", "minikube", "The application cluster that E2E tests will check to determine success/failure")
-	timeoutFlag    = flag.String("progresstimeout", "30s", "timeout when waiting for things to change")
+	masterURL                = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
+	runEndToEnd              = flag.Bool("e2e", false, "Set this flag to enable E2E tests against the local minikube")
+	testCharts               = flag.String("testcharts", "", "The address of the Helm repository holding the test charts")
+	inspectFailed            = flag.Bool("inspectfailed", false, "Set this flag to skip deleting the namespaces for failed tests. Useful for debugging.")
+	kubeconfig               = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
+	appClusterName           = flag.String("appcluster", "minikube", "The application cluster that E2E tests will check to determine success/failure")
+	timeoutFlag              = flag.String("progresstimeout", "30s", "timeout when waiting for things to change")
+	appClusterFromKubeConfig = flag.Bool("appClusterFromKubeConfig", false, "Set this flag to get application clusters url from kubeconfig")
 )
 
 var (
@@ -93,6 +95,15 @@ func TestMain(m *testing.M) {
 
 		testRegion = appCluster.Spec.Region
 
+		if *appClusterFromKubeConfig {
+			kubeCluster, err := configurator.NewClusterConfiguratorFromKubeConfig(*kubeconfig, *appClusterName)
+			if err != nil {
+				klog.Fatalf("could not fetch cluster config from kubeconfig for cluster %q: %q", *appClusterName, err)
+			}
+
+			appCluster.Spec.APIMaster = kubeCluster.Host
+		}
+
 		appKubeClient = buildApplicationClient(appCluster)
 		purgeTestNamespaces()
 	}
@@ -112,10 +123,10 @@ func TestNewAppAllIn(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -150,10 +161,10 @@ func TestNewAppAllInWithRolloutBlockOverride(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -231,10 +242,10 @@ func TestNewAppAllInWithRolloutBlockNonExisting(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	_ = newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	_ = newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -265,10 +276,10 @@ func TestBlockNewAppProgressWithRolloutBlock(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -302,10 +313,10 @@ func TestRolloutAllIn(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -374,10 +385,10 @@ func TestBrokenRolloutAllIn(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -450,10 +461,10 @@ func TestRolloutAllInWithRolloutBlockOverride(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -513,10 +524,10 @@ func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
 
 	t.Parallel()
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -563,10 +574,10 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int, t *t
 
 	t.Parallel()
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -644,10 +655,10 @@ func testRolloutVanguard(targetReplicas int, t *testing.T) {
 
 	t.Parallel()
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -729,10 +740,10 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 	t.Parallel()
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -776,10 +787,10 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 	t.Parallel()
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -847,10 +858,10 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 	t.Parallel()
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -922,10 +933,10 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 	t.Parallel()
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1030,10 +1041,10 @@ func TestNewApplicationAbort(t *testing.T) {
 	t.Parallel()
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1090,10 +1101,10 @@ func TestRolloutAbort(t *testing.T) {
 	t.Parallel()
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1183,11 +1194,11 @@ func TestNewRolloutBlockAddOverrides(t *testing.T) {
 
 	targetReplicas := 1
 	ns, err := setupNamespace(t.Name())
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
+	}
 	namespace := ns.GetName()
 	f := newFixture(namespace, t)
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", namespace, err)
-	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1244,10 +1255,10 @@ func TestNewGlobalRolloutBlockAddOverrides(t *testing.T) {
 
 	targetReplicas := 1
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1311,10 +1322,10 @@ func TestNewRolloutBlockRemoveRelease(t *testing.T) {
 
 	targetReplicas := 1
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1391,11 +1402,11 @@ func TestNewGlobalRolloutBlockRemoveRelease(t *testing.T) {
 
 	targetReplicas := 1
 	ns, err := setupNamespace(t.Name())
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
+	}
 	testNamespace := ns.GetName()
 	f := newFixture(testNamespace, t)
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", testNamespace, err)
-	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1482,10 +1493,10 @@ func TestDeletedDeploymentsAreReinstalled(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1531,10 +1542,10 @@ func TestConsistentTrafficBalanceOnStraightFullOn(t *testing.T) {
 	t.Parallel()
 
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1588,10 +1599,10 @@ func TestMultipleAppsInNamespace(t *testing.T) {
 
 	targetReplicas := 1
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1644,10 +1655,10 @@ func TestDeleteRelease(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	f := newFixture(ns.GetName(), t)
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
+	f := newFixture(ns.GetName(), t)
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
