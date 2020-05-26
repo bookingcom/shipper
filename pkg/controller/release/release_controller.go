@@ -66,6 +66,10 @@ type Controller struct {
 	chartFetcher shipperrepo.ChartFetcher
 
 	recorder record.EventRecorder
+
+	trafficTargetLister      shipperlisters.TrafficTargetLister      // Deprecated
+	capacityTargetLister     shipperlisters.CapacityTargetLister     // Deprecated
+	installationTargetLister shipperlisters.InstallationTargetLister // Deprecated
 }
 
 type releaseInfo struct {
@@ -93,6 +97,11 @@ func NewController(
 	clusterInformer := informerFactory.Shipper().V1alpha1().Clusters()
 	rolloutBlockInformer := informerFactory.Shipper().V1alpha1().RolloutBlocks()
 
+	// Deprecated
+	trafficTargetInformer := informerFactory.Shipper().V1alpha1().TrafficTargets()
+	capacityTargetInformer := informerFactory.Shipper().V1alpha1().CapacityTargets()
+	installationTargetInformer := informerFactory.Shipper().V1alpha1().InstallationTargets()
+
 	controller := &Controller{
 		clientset: clientset,
 		store:     store,
@@ -114,6 +123,11 @@ func NewController(
 		chartFetcher: chartFetcher,
 
 		recorder: recorder,
+
+		// Deprecated
+		trafficTargetLister:      trafficTargetInformer.Lister(),
+		capacityTargetLister:     capacityTargetInformer.Lister(),
+		installationTargetLister: installationTargetInformer.Lister(),
 	}
 
 	releaseInformer.Informer().AddEventHandler(
@@ -325,6 +339,19 @@ func (c *Controller) processRelease(rel *shipper.Release) (*shipper.Release, err
 		strings.Join(clusterNames, ","),
 	)
 	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
+
+	err = c.migrateTargetObjects(rel.Name, rel.Namespace)
+	if err != nil {
+		releaseStrategyExecutedCond := releaseutil.NewReleaseCondition(
+			shipper.ReleaseConditionTypeStrategyExecuted,
+			corev1.ConditionFalse,
+			StrategyExecutionFailed,
+			err.Error(),
+		)
+		diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *releaseStrategyExecutedCond))
+
+		return rel, err
+	}
 
 	rel, err = c.executeStrategyOnClusters(rel, clusterNames, diff)
 	if err != nil {

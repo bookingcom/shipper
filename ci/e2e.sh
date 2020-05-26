@@ -19,7 +19,6 @@ rm -f build/*.latest.yaml
 
 # Output all of the logs from the shipper pods, for reference
 kubectl --context kind-mgmt -n shipper-system logs $(kubectl --context kind-mgmt -n shipper-system get pod -l component=shipper-mgmt -o jsonpath='{.items[0].metadata.name}')
-kubectl --context kind-mgmt -n shipper-system logs $(kubectl --context kind-mgmt -n shipper-system get pod -l component=shipper-app -o jsonpath='{.items[0].metadata.name}') -p
 
 kubectl --context kind-app -n shipper-system logs $(kubectl --context kind-app -n shipper-system get pod -l component=shipper-app -o jsonpath='{.items[0].metadata.name}')
 

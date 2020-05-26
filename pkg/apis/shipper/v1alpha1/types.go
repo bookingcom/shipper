@@ -11,8 +11,8 @@ const (
 	ShipperNamespace            = "shipper-system"
 	GlobalRolloutBlockNamespace = "rollout-blocks-global"
 
-	ShipperManagementServiceAccount  = "shipper-management-cluster"
-	ShipperApplicationServiceAccount = "shipper-application-cluster"
+	ShipperManagementServiceAccount  = "shipper-mgmt-cluster"
+	ShipperApplicationServiceAccount = "shipper-app-cluster"
 
 	ReleaseLabel                 = "shipper-release"
 	AppLabel                     = "shipper-app"
@@ -299,12 +299,33 @@ type InstallationTargetList struct {
 
 type InstallationTargetStatus struct {
 	Conditions []TargetCondition `json:"conditions,omitempty"`
+
+	// Deprecated
+	Clusters []*ClusterInstallationStatus `json:"clusters,omitempty"`
+}
+
+// Deprecated
+type ClusterInstallationStatus struct {
+	Name       string                         `json:"name"`
+	Conditions []ClusterInstallationCondition `json:"conditions,omitempty"`
+}
+
+// Deprecated
+type ClusterInstallationCondition struct {
+	Type               ClusterConditionType   `json:"type"`
+	Status             corev1.ConditionStatus `json:"status"`
+	LastTransitionTime metav1.Time            `json:"lastTransitionTime,omitempty"`
+	Reason             string                 `json:"reason,omitempty"`
+	Message            string                 `json:"message,omitempty"`
 }
 
 type InstallationTargetSpec struct {
 	CanOverride bool        `json:"canOverride"`
 	Chart       Chart       `json:"chart"`
 	Values      ChartValues `json:"values,omitempty"`
+
+	// Deprecated
+	Clusters []string `json:"clusters,omitempty"`
 }
 
 // +genclient
@@ -333,6 +354,16 @@ type CapacityTargetList struct {
 type CapacityTargetSpec struct {
 	Percent           int32 `json:"percent"`
 	TotalReplicaCount int32 `json:"totalReplicaCount"`
+
+	// Deprecated
+	Clusters []ClusterCapacityTarget `json:"clusters,omitempty"`
+}
+
+// Deprecated
+type ClusterCapacityTarget struct {
+	Name              string `json:"name"`
+	Percent           int32  `json:"percent"`
+	TotalReplicaCount int32  `json:"totalReplicaCount"`
 }
 
 type CapacityTargetStatus struct {
@@ -341,6 +372,27 @@ type CapacityTargetStatus struct {
 	AchievedPercent    int32             `json:"achievedPercent"`
 	SadPods            []PodStatus       `json:"sadPods,omitempty"`
 	Conditions         []TargetCondition `json:"conditions,omitempty"`
+
+	// Deprecated
+	Clusters []ClusterCapacityStatus `json:"clusters,omitempty"`
+}
+
+// Deprecated
+type ClusterCapacityStatus struct {
+	Name              string                     `json:"name"`
+	AvailableReplicas int32                      `json:"availableReplicas"`
+	AchievedPercent   int32                      `json:"achievedPercent"`
+	SadPods           []PodStatus                `json:"sadPods,omitempty"`
+	Conditions        []ClusterCapacityCondition `json:"conditions,omitempty"`
+}
+
+// Deprecated
+type ClusterCapacityCondition struct {
+	Type               ClusterConditionType   `json:"type"`
+	Status             corev1.ConditionStatus `json:"status"`
+	LastTransitionTime metav1.Time            `json:"lastTransitionTime,omitempty"`
+	Reason             string                 `json:"reason,omitempty"`
+	Message            string                 `json:"message,omitempty"`
 }
 
 type PodStatus struct {
@@ -378,9 +430,41 @@ type TrafficTargetStatus struct {
 	ObservedGeneration int64             `json:"observedGeneration,omitempty"`
 	AchievedTraffic    uint32            `json:"achievedTraffic"`
 	Conditions         []TargetCondition `json:"conditions"`
+
+	// Deprecated
+	Clusters []*ClusterTrafficStatus `json:"clusters,omitempty"`
+}
+
+// Deprecated
+type ClusterTrafficStatus struct {
+	Name            string                    `json:"name"`
+	AchievedTraffic uint32                    `json:"achievedTraffic"`
+	Conditions      []ClusterTrafficCondition `json:"conditions"`
+}
+
+// Deprecated
+type ClusterConditionType string
+
+// Deprecated
+type ClusterTrafficCondition struct {
+	Type               ClusterConditionType   `json:"type"`
+	Status             corev1.ConditionStatus `json:"status"`
+	LastTransitionTime metav1.Time            `json:"lastTransitionTime,omitempty"`
+	Reason             string                 `json:"reason,omitempty"`
+	Message            string                 `json:"message,omitempty"`
 }
 
 type TrafficTargetSpec struct {
+	// apimachinery intstr for percentages?
+	Weight uint32 `json:"weight"`
+
+	// Deprecated
+	Clusters []ClusterTrafficTarget `json:"clusters,omitempty"`
+}
+
+// Deprecated
+type ClusterTrafficTarget struct {
+	Name string `json:"name"`
 	// apimachinery intstr for percentages?
 	Weight uint32 `json:"weight"`
 }
@@ -388,6 +472,9 @@ type TrafficTargetSpec struct {
 type ReleaseStrategyStatus struct {
 	State    ReleaseStrategyState    `json:"state,omitempty"`
 	Clusters []ClusterStrategyStatus `json:"clusters,omitempty"`
+
+	// Deprecated
+	Conditions []ReleaseStrategyCondition `json:"conditions,omitempty"`
 }
 
 type ClusterStrategyStatus struct {

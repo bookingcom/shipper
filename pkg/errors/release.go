@@ -199,3 +199,26 @@ func NewInconsistentReleaseTargetStep(relKey string, gotTargetStep, wantTargetSt
 		wantTargetStep: wantTargetStep,
 	}
 }
+
+type MultipleTargetObjectsForReleaseError struct {
+	ns          string
+	kind        string
+	releaseName string
+}
+
+func (e MultipleTargetObjectsForReleaseError) Error() string {
+	return fmt.Sprintf(`multiple Target objects of kind %s for the same release "%s/%s"`,
+		e.kind, e.ns, e.releaseName)
+}
+
+func (e MultipleTargetObjectsForReleaseError) ShouldRetry() bool {
+	return false
+}
+
+func NewMultipleTargetObjectsForReleaseError(kind, ns, releaseName string) MultipleTargetObjectsForReleaseError {
+	return MultipleTargetObjectsForReleaseError{
+		ns:          ns,
+		kind:        kind,
+		releaseName: releaseName,
+	}
+}
