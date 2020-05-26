@@ -175,6 +175,8 @@ build/shipperctl.%-amd64: cmd/shipperctl/*.go $(PKG)
 build/e2e.test: $(PKG) test/e2e/*
 	go test -c ./test/e2e/ -o build/e2e.test
 
+build-shipperctl-all: $(foreach os,$(OS),build/shipperctl.$(os)-amd64)
+
 IMAGE_NAME_WITH_SHA256 = $(shell cat build/$*.image.$(IMAGE_TAG))
 IMAGE_NAME_TO_USE = $(if $(USE_IMAGE_NAME_WITH_SHA256),$(IMAGE_NAME_WITH_SHA256),$(IMAGE_NAME_WITH_TAG))
 build/%.deployment.$(IMAGE_TAG).yaml: kubernetes/%.deployment.yaml build/%.image.$(IMAGE_TAG) build

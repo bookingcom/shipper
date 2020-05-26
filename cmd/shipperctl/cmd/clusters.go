@@ -71,10 +71,10 @@ const (
 
 	validatingWebhookName = "shipper-validating-webhook"
 
-	managementClusterRoleName         = "shipper:management-cluster"
-	managementClusterRoleBindingName  = "shipper:management-cluster"
+	managementClusterRoleName         = "shipper:mgmt-cluster"
+	managementClusterRoleBindingName  = "shipper:mgmt-cluster"
 	applicationClusterRoleName        = "cluster-admin" // needs to be able to install any kind of Helm chart
-	applicationClusterRoleBindingName = "shipper:application-cluster"
+	applicationClusterRoleBindingName = "shipper:app-cluster"
 )
 
 func init() {
@@ -316,7 +316,6 @@ func createOrUpdateManagementCrds(cmd *cobra.Command, configurator *configurator
 		crds.RolloutBlock,
 		crds.Application,
 		crds.Release,
-		crds.TrafficTarget,
 	}
 
 	for _, crd := range crds {

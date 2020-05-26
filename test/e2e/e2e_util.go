@@ -364,7 +364,6 @@ func purgeTestNamespaces() {
 	if err != nil {
 		klog.Fatalf("timed out waiting for namespaces to be cleaned up before testing")
 	}
-
 	list, err = appKubeClient.CoreV1().Namespaces().List(listOptions)
 	if err != nil {
 		klog.Fatalf("failed to list namespaces: %q", err)
@@ -507,7 +506,7 @@ func createRolloutBlock(namespace, name string) (*shipper.RolloutBlock, error) {
 	rb, err := shipperClient.ShipperV1alpha1().RolloutBlocks(namespace).Get(name, metav1.GetOptions{})
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			return nil, err
+			return nil, fmt.Errorf("failed to fetch existing rolloutblock: %s", err)
 		}
 
 		rolloutBlock := &shipper.RolloutBlock{
@@ -526,7 +525,7 @@ func createRolloutBlock(namespace, name string) (*shipper.RolloutBlock, error) {
 
 		rb, err = shipperClient.ShipperV1alpha1().RolloutBlocks(namespace).Create(rolloutBlock)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to fetch existing rolloutblock: %s", err)
 		}
 
 		// RolloutBlocks frequently take a little bit to propagate to
