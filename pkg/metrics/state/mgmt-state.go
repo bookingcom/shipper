@@ -61,7 +61,7 @@ var (
 
 var everything = labels.Everything()
 
-type Metrics struct {
+type MgmtMetrics struct {
 	AppsLister     shipperlisters.ApplicationLister
 	RelsLister     shipperlisters.ReleaseLister
 	ClustersLister shipperlisters.ClusterLister
@@ -75,21 +75,21 @@ type Metrics struct {
 	ReleaseDurationBuckets []float64
 }
 
-func (ssm Metrics) Collect(ch chan<- prometheus.Metric) {
+func (ssm MgmtMetrics) Collect(ch chan<- prometheus.Metric) {
 	ssm.collectApplications(ch)
 	ssm.collectReleases(ch)
 	ssm.collectClusters(ch)
 	ssm.collectRolloutBlocks(ch)
 }
 
-func (ssm Metrics) Describe(ch chan<- *prometheus.Desc) {
+func (ssm MgmtMetrics) Describe(ch chan<- *prometheus.Desc) {
 	ch <- appsDesc
 	ch <- relsDesc
 	ch <- clustersDesc
 	ch <- rolloutblocksDesc
 }
 
-func (ssm Metrics) collectApplications(ch chan<- prometheus.Metric) {
+func (ssm MgmtMetrics) collectApplications(ch chan<- prometheus.Metric) {
 	nss, err := getNamespaces(ssm.NssLister)
 	if err != nil {
 		klog.Warningf("collect Namespaces: %s", err)
@@ -119,7 +119,7 @@ func (ssm Metrics) collectApplications(ch chan<- prometheus.Metric) {
 	}
 }
 
-func (ssm Metrics) collectReleases(ch chan<- prometheus.Metric) {
+func (ssm MgmtMetrics) collectReleases(ch chan<- prometheus.Metric) {
 	rels, err := ssm.RelsLister.List(everything)
 	if err != nil {
 		klog.Warningf("collect Releases: %s", err)
@@ -191,7 +191,7 @@ func (ssm Metrics) collectReleases(ch chan<- prometheus.Metric) {
 	}
 }
 
-func (ssm Metrics) collectClusters(ch chan<- prometheus.Metric) {
+func (ssm MgmtMetrics) collectClusters(ch chan<- prometheus.Metric) {
 	clusters, err := ssm.ClustersLister.List(everything)
 	if err != nil {
 		klog.Warningf("collect Clusters: %s", err)
@@ -215,7 +215,7 @@ func (ssm Metrics) collectClusters(ch chan<- prometheus.Metric) {
 	}
 }
 
-func (ssm Metrics) collectRolloutBlocks(ch chan<- prometheus.Metric) {
+func (ssm MgmtMetrics) collectRolloutBlocks(ch chan<- prometheus.Metric) {
 	nss, err := getNamespaces(ssm.NssLister)
 	if err != nil {
 		klog.Errorf("collect Namespaces: %s", err)

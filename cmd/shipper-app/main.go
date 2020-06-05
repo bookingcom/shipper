@@ -40,6 +40,7 @@ import (
 	"github.com/bookingcom/shipper/pkg/controller/traffic"
 	"github.com/bookingcom/shipper/pkg/metrics/instrumentedclient"
 	shippermetrics "github.com/bookingcom/shipper/pkg/metrics/prometheus"
+	statemetrics "github.com/bookingcom/shipper/pkg/metrics/state"
 )
 
 var controllers = []string{
@@ -67,9 +68,10 @@ var (
 type metricsCfg struct {
 	readyCh chan struct{}
 
-	wqMetrics   *shippermetrics.PrometheusWorkqueueProvider
-	restLatency *shippermetrics.RESTLatencyMetric
-	restResult  *shippermetrics.RESTResultMetric
+	wqMetrics    *shippermetrics.PrometheusWorkqueueProvider
+	restLatency  *shippermetrics.RESTLatencyMetric
+	restResult   *shippermetrics.RESTResultMetric
+	stateMetrics statemetrics.AppMetrics
 }
 
 type cfg struct {
@@ -168,6 +170,14 @@ func main() {
 		stopCh,
 	)
 
+	ssm := statemetrics.AppMetrics{
+		ItsLister: shipperInformerFactory.Shipper().V1alpha1().InstallationTargets().Lister(),
+		CtsLister: shipperInformerFactory.Shipper().V1alpha1().CapacityTargets().Lister(),
+		TtsLister: shipperInformerFactory.Shipper().V1alpha1().TrafficTargets().Lister(),
+
+		NssLister: kubeInformerFactory.Core().V1().Namespaces().Lister(),
+	}
+
 	controllerRestCfg := rest.CopyConfig(restCfg)
 	if restTimeout != nil {
 		controllerRestCfg.Timeout = *restTimeout
@@ -196,10 +206,11 @@ func main() {
 		stopCh: stopCh,
 
 		metrics: &metricsCfg{
-			readyCh:     metricsReadyCh,
-			wqMetrics:   shippermetrics.NewProvider(),
-			restLatency: shippermetrics.NewRESTLatencyMetric(),
-			restResult:  shippermetrics.NewRESTResultMetric(),
+			readyCh:      metricsReadyCh,
+			wqMetrics:    shippermetrics.NewProvider(),
+			restLatency:  shippermetrics.NewRESTLatencyMetric(),
+			restResult:   shippermetrics.NewRESTResultMetric(),
+			stateMetrics: ssm,
 		},
 	}
 
@@ -228,6 +239,7 @@ func runMetrics(cfg *metricsCfg) {
 	prometheus.MustRegister(cfg.wqMetrics.GetMetrics()...)
 	prometheus.MustRegister(cfg.restLatency.Summary, cfg.restResult.Counter)
 	prometheus.MustRegister(instrumentedclient.GetMetrics()...)
+	prometheus.MustRegister(cfg.stateMetrics)
 
 	srv := http.Server{
 		Addr: *metricsAddr,
