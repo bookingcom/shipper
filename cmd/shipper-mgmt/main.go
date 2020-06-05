@@ -79,7 +79,7 @@ type metricsCfg struct {
 	wqMetrics    *shippermetrics.PrometheusWorkqueueProvider
 	restLatency  *shippermetrics.RESTLatencyMetric
 	restResult   *shippermetrics.RESTResultMetric
-	stateMetrics statemetrics.Metrics
+	stateMetrics statemetrics.MgmtMetrics
 }
 
 type cfg struct {
@@ -179,7 +179,7 @@ func main() {
 		stopCh,
 	)
 
-	ssm := statemetrics.Metrics{
+	ssm := statemetrics.MgmtMetrics{
 		AppsLister:     shipperInformerFactory.Shipper().V1alpha1().Applications().Lister(),
 		RelsLister:     shipperInformerFactory.Shipper().V1alpha1().Releases().Lister(),
 		ClustersLister: shipperInformerFactory.Shipper().V1alpha1().Clusters().Lister(),
