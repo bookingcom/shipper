@@ -68,12 +68,11 @@ func (c *Controller) migrateCapacityTargets(relName, namespace string, selector 
 	ct.Spec.TotalReplicaCount = initialCt.Spec.Clusters[0].TotalReplicaCount
 
 	ct.ObjectMeta = metav1.ObjectMeta{
-		Name:            initialCt.Name,
-		Namespace:       initialCt.Namespace,
-		Generation:      initialCt.Generation,
-		Labels:          initialCt.Labels,
-		Annotations:     initialCt.Annotations,
-		OwnerReferences: initialCt.OwnerReferences,
+		Name:        initialCt.Name,
+		Namespace:   initialCt.Namespace,
+		Generation:  initialCt.Generation,
+		Labels:      initialCt.Labels,
+		Annotations: initialCt.Annotations,
 	}
 
 	// put in application clusters:
@@ -138,12 +137,11 @@ func (c *Controller) migrateTrafficTargets(relName, namespace string, selector l
 	tt := initialTt.DeepCopy()
 	tt.Spec.Weight = initialTt.Spec.Clusters[0].Weight
 	tt.ObjectMeta = metav1.ObjectMeta{
-		Name:            initialTt.Name,
-		Namespace:       initialTt.Namespace,
-		Generation:      initialTt.Generation,
-		Labels:          initialTt.Labels,
-		Annotations:     initialTt.Annotations,
-		OwnerReferences: initialTt.OwnerReferences,
+		Name:        initialTt.Name,
+		Namespace:   initialTt.Namespace,
+		Generation:  initialTt.Generation,
+		Labels:      initialTt.Labels,
+		Annotations: initialTt.Annotations,
 	}
 
 	// put in application clusters:
@@ -203,12 +201,11 @@ func (c *Controller) migrateInstallationTargets(relName, namespace string, selec
 	// create a new installation target to put in application clusters
 	it := initialIt.DeepCopy()
 	it.ObjectMeta = metav1.ObjectMeta{
-		Name:            initialIt.Name,
-		Namespace:       initialIt.Namespace,
-		Generation:      initialIt.Generation,
-		Labels:          initialIt.Labels,
-		Annotations:     initialIt.Annotations,
-		OwnerReferences: initialIt.OwnerReferences,
+		Name:        initialIt.Name,
+		Namespace:   initialIt.Namespace,
+		Generation:  initialIt.Generation,
+		Labels:      initialIt.Labels,
+		Annotations: initialIt.Annotations,
 	}
 
 	// put in application clusters:
