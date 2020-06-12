@@ -8,6 +8,7 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 )
 
 func (c *Controller) migrateTargetObjects(relName, namespace string) error {
@@ -48,25 +49,28 @@ func (c *Controller) migrateCapacityTargets(relName, namespace string, selector 
 	}
 
 	if len(capacityTargets) == 0 {
+		// no objects to migrate
+		return nil
+	}
+
+	// checking if we should migrate object
+	initialCt := capacityTargets[0]
+	migrationLabel, _ := objectutil.GetMigrationLabel(initialCt)
+	if migrationLabel {
 		// already migrated
 		return nil
 	}
 
-	initialCt := capacityTargets[0]
 	if initialCt.Spec.Clusters == nil || len(initialCt.Spec.Clusters) == 0 {
 		// this capacity target doesn't have spec.clusters. moving on.
 		return nil
 	}
 
-	if initialCt.Spec.Percent > 0 {
-		return nil
-	}
 	klog.Infof("migrating capacity target for release %s/%s", namespace, relName)
 	// create a new capacity target to put in application clusters
 	ct := initialCt.DeepCopy()
 	ct.Spec.Percent = initialCt.Spec.Clusters[0].Percent
 	ct.Spec.TotalReplicaCount = initialCt.Spec.Clusters[0].TotalReplicaCount
-
 	ct.ObjectMeta = metav1.ObjectMeta{
 		Name:        initialCt.Name,
 		Namespace:   initialCt.Namespace,
@@ -83,19 +87,35 @@ func (c *Controller) migrateCapacityTargets(relName, namespace string, selector 
 			return err
 		}
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().CapacityTargets(ct.Namespace).Create(ct)
-		if err != nil {
-			if errors.IsAlreadyExists(err) {
-				ct.ResourceVersion = initialCt.ResourceVersion
-				_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().CapacityTargets(ct.Namespace).Update(ct)
-				if err != nil {
-					if errors.IsConflict(err) {
-						klog.Infof("capacity target %s/%s already migrated", ct.Namespace, ct.Name)
-						return nil
-					}
-					return err
-				}
-				return nil
+		if err == nil {
+			// update initial object with migrated label
+			initialCt.Annotations[shipper.MigrationAnnotation] = "true"
+			_, err = c.clientset.ShipperV1alpha1().CapacityTargets(namespace).Update(initialCt)
+			if err != nil {
+				klog.Error(err)
+				return err
 			}
+			continue
+		}
+
+		if !errors.IsAlreadyExists(err) {
+			return err
+		}
+		// checking if existing object was migrated already
+		capacityTarget, err := clusterClientsets.GetShipperClient().ShipperV1alpha1().CapacityTargets(ct.Namespace).Get(ct.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		migrationLabel, _ := objectutil.GetMigrationLabel(capacityTarget)
+		if migrationLabel {
+			klog.Infof("capacity target %s/%s already migrated", ct.Namespace, ct.Name)
+			continue
+		}
+		// migrating object and updating object in application cluster with migrated label
+		ct.ResourceVersion = initialCt.ResourceVersion
+		ct.Labels[shipper.MigrationAnnotation] = "true"
+		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().CapacityTargets(ct.Namespace).Update(ct)
+		if err != nil {
 			return err
 		}
 	}
@@ -119,19 +139,23 @@ func (c *Controller) migrateTrafficTargets(relName, namespace string, selector l
 	}
 
 	if len(trafficTargets) == 0 {
+		// no objects to migrate
+		return nil
+	}
+
+	// checking if we should migrate object
+	initialTt := trafficTargets[0]
+	migrationLabel, _ := objectutil.GetMigrationLabel(initialTt)
+	if migrationLabel {
 		// already migrated
 		return nil
 	}
 
-	initialTt := trafficTargets[0]
 	if initialTt.Spec.Clusters == nil || len(initialTt.Spec.Clusters) == 0 {
 		// this traffic target doesn't have spec.clusters. moving on.
 		return nil
 	}
 
-	if initialTt.Spec.Weight > 0 {
-		return nil
-	}
 	klog.Infof("migrating traffic target for release %s/%s", namespace, relName)
 	// create a new traffic target to put in application clusters
 	tt := initialTt.DeepCopy()
@@ -152,19 +176,35 @@ func (c *Controller) migrateTrafficTargets(relName, namespace string, selector l
 			return err
 		}
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().TrafficTargets(tt.Namespace).Create(tt)
-		if err != nil {
-			if errors.IsAlreadyExists(err) {
-				tt.ResourceVersion = initialTt.ResourceVersion
-				_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().TrafficTargets(tt.Namespace).Update(tt)
-				if err != nil {
-					if errors.IsConflict(err) {
-						klog.Infof("traffic target %s/%s already migrated", tt.Namespace, tt.Name)
-						return nil
-					}
-					return err
-				}
-				return nil
+		if err == nil {
+			// update initial object with migrated label
+			initialTt.Labels[shipper.MigrationAnnotation] = "true"
+			_, err = c.clientset.ShipperV1alpha1().TrafficTargets(namespace).Update(initialTt)
+			if err != nil {
+				klog.Error(err)
+				return err
 			}
+			continue
+		}
+
+		if !errors.IsAlreadyExists(err) {
+			return err
+		}
+		// checking if existing object was migrated already
+		trafficTarget, err := clusterClientsets.GetShipperClient().ShipperV1alpha1().TrafficTargets(tt.Namespace).Get(tt.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		migrationLabel, _ := objectutil.GetMigrationLabel(trafficTarget)
+		if migrationLabel {
+			klog.Infof("traffic target %s/%s already migrated", tt.Namespace, tt.Name)
+			continue
+		}
+		// migrating object and updating object in application cluster with migrated label
+		tt.ResourceVersion = initialTt.ResourceVersion
+		tt.Labels[shipper.MigrationAnnotation] = "true"
+		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().TrafficTargets(tt.Namespace).Update(tt)
+		if err != nil {
 			return err
 		}
 	}
@@ -188,11 +228,18 @@ func (c *Controller) migrateInstallationTargets(relName, namespace string, selec
 	}
 
 	if len(installationTargets) == 0 {
+		// no objects to migrate
+		return nil
+	}
+
+	// checking if we should migrate object
+	initialIt := installationTargets[0]
+	migrationLabel, _ := objectutil.GetMigrationLabel(initialIt)
+	if migrationLabel {
 		// already migrated
 		return nil
 	}
 
-	initialIt := installationTargets[0]
 	if initialIt.Spec.Clusters == nil || len(initialIt.Spec.Clusters) == 0 {
 		// this installation target doesn't have spec.clusters. moving on.
 		return nil
@@ -214,13 +261,36 @@ func (c *Controller) migrateInstallationTargets(relName, namespace string, selec
 		if err != nil {
 			return err
 		}
-		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().InstallationTargets(it.Namespace).Get(it.Name, metav1.GetOptions{})
-		if err != nil && errors.IsNotFound(err) {
-			klog.Infof("migrating installation target for release %s/%s", namespace, relName)
-			_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().InstallationTargets(it.Namespace).Create(it)
+		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().InstallationTargets(it.Namespace).Create(it)
+		if err == nil {
+			// update initial object with migrated label
+			initialIt.Labels[shipper.MigrationAnnotation] = "true"
+			_, err = c.clientset.ShipperV1alpha1().InstallationTargets(namespace).Update(initialIt)
 			if err != nil {
+				klog.Error(err)
 				return err
 			}
+			continue
+		}
+
+		if !errors.IsAlreadyExists(err) {
+			return err
+		}
+		// checking if existing object was migrated already
+		capacityTarget, err := clusterClientsets.GetShipperClient().ShipperV1alpha1().InstallationTargets(it.Namespace).Get(it.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		migrationLabel, _ := objectutil.GetMigrationLabel(capacityTarget)
+		if migrationLabel {
+			klog.Infof("installation target %s/%s already migrated", it.Namespace, it.Name)
+			continue
+		}
+		// updating object in application cluster with migrated label
+		it.Labels[shipper.MigrationAnnotation] = "true"
+		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().InstallationTargets(it.Namespace).Update(it)
+		if err != nil {
+			return err
 		}
 	}
 	return nil

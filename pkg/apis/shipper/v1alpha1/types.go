@@ -34,6 +34,8 @@ const (
 
 	RolloutBlocksOverrideAnnotation = "shipper.booking.com/rollout-block.override"
 
+	MigrationAnnotation = "shipper.booking.com/target.object.migration.0.9.completed"
+
 	LBLabel         = "shipper-lb"
 	LBForProduction = "production"
 

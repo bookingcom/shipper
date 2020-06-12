@@ -24,3 +24,12 @@ func GetReleaseLabel(obj metav1.Object) (string, error) {
 
 	return release, nil
 }
+
+func GetMigrationLabel(obj metav1.Object) (bool, error) {
+	migrated, ok := obj.GetLabels()[shipper.MigrationAnnotation]
+	if !ok || len(migrated) == 0 {
+		return false, shippererrors.NewMissingShipperLabelError(obj, shipper.ReleaseLabel)
+	}
+
+	return migrated == "true", nil
+}
