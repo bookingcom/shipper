@@ -245,6 +245,7 @@ func (c *Controller) migrateInstallationTargets(relName, namespace string, selec
 		return nil
 	}
 
+	klog.Infof("migrating installation target for release %s/%s", namespace, relName)
 	// create a new installation target to put in application clusters
 	it := initialIt.DeepCopy()
 	it.ObjectMeta = metav1.ObjectMeta{
