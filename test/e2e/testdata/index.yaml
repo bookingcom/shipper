@@ -2,7 +2,7 @@ apiVersion: v1
 entries:
   broken-image:
   - apiVersion: v1
-    created: "2020-06-22T15:03:19.064186+02:00"
+    created: "2020-06-22T15:03:54.090887+02:00"
     description: This chart does not work because it references an invalid docker
       image
     digest: d299bb164e70e1717b4f9ca1c79eb9894f79fb7e64e6b1367f8d36caaba5d4b3
@@ -12,9 +12,9 @@ entries:
     version: 0.0.1
   go:
   - apiVersion: v1
-    created: "2020-06-22T15:03:19.06535+02:00"
+    created: "2020-06-22T15:03:54.091651+02:00"
     description: Golang Chart (Unofficial)
-    digest: 10e819fbe7fff6fbe9f301387b61a74af5e64890cf70e4fdc5c9bc426e881881
+    digest: 8e48b344db673be23a611aecb09358afadf56517914db280550f6a88aa0c6345
     home: https://gitlab.booking.com/bplatform/core-charts
     maintainers:
     - email: oleksandr.shchapov@booking.com
@@ -25,7 +25,7 @@ entries:
     version: 0.0.1
   invalid-chart-template:
   - apiVersion: v1
-    created: "2020-06-22T15:03:19.066183+02:00"
+    created: "2020-06-22T15:03:54.092103+02:00"
     description: This chart does not render because it references a missing template
     digest: bbe3055963135ec59b96d202a38fa706638a71923d594938cebc2d6a1423de46
     name: invalid-chart-template
@@ -35,7 +35,7 @@ entries:
   nginx:
   - apiVersion: v1
     appVersion: 1.14.2
-    created: "2020-06-22T15:03:19.068114+02:00"
+    created: "2020-06-22T15:03:54.093334+02:00"
     description: Chart for the nginx server, with minor tweaks for use as a Shipper
       demo
     digest: e7f4c982819f540e13891f6df39f672be71cbd724400f4158211f7948469a7ba
@@ -46,7 +46,7 @@ entries:
     version: 0.0.2
   - apiVersion: v1
     appVersion: 1.14.2
-    created: "2020-06-22T15:03:19.067126+02:00"
+    created: "2020-06-22T15:03:54.092634+02:00"
     description: Chart for the nginx server, with minor tweaks for use as a Shipper
       demo
     digest: 16ee8f96e107460e4c0076ea0b6993a03780d7cf771b47145b4eb32e11a76d08
@@ -57,7 +57,7 @@ entries:
     version: 0.0.1
   test-nginx:
   - apiVersion: v1
-    created: "2020-06-22T15:03:19.069428+02:00"
+    created: "2020-06-22T15:03:54.094254+02:00"
     description: A basic chart for nginx
     digest: 30b7033edaaf51ef8fad5abce5bc7895cfad22f7a30f0e95dc75e2c574f8af1f
     name: test-nginx
@@ -65,11 +65,11 @@ entries:
     - test-nginx-0.0.2.tgz
     version: 0.0.2
   - apiVersion: v1
-    created: "2020-06-22T15:03:19.068804+02:00"
+    created: "2020-06-22T15:03:54.093765+02:00"
     description: A basic chart for nginx
     digest: db8f2ed6c6cc0f2429060d2b01439fa90b1e923bed9add02e80adcf4d255a117
     name: test-nginx
     urls:
     - test-nginx-0.0.1.tgz
     version: 0.0.1
-generated: "2020-06-22T15:03:19.061686+02:00"
+generated: "2020-06-22T15:03:54.089958+02:00"
