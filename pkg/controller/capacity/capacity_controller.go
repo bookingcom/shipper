@@ -303,7 +303,7 @@ func (c *Controller) processCapacityTarget(ct *shipper.CapacityTarget) (*shipper
 				"",
 			)
 
-			return ct, nil
+			return ct, shippererrors.NewCapacityInProgressError(ct.Name)
 		}
 	}
 
@@ -318,7 +318,7 @@ func (c *Controller) processCapacityTarget(ct *shipper.CapacityTarget) (*shipper
 			"",
 		)
 
-		return ct, nil
+		return ct, shippererrors.NewCapacityInProgressError(ct.Name)
 	}
 
 	// If the number of available replicas matches what we want, the
@@ -384,6 +384,10 @@ func (c *Controller) processCapacityTarget(ct *shipper.CapacityTarget) (*shipper
 		reason,
 		msg,
 	)
+
+	if reason == InProgress {
+		return ct, shippererrors.NewCapacityInProgressError(ct.Name)
+	}
 
 	return ct, nil
 }
