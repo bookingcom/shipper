@@ -26,7 +26,7 @@ func GetReleaseLabel(obj metav1.Object) (string, error) {
 }
 
 func GetMigrationLabel(obj metav1.Object) (bool, error) {
-	migrated, ok := obj.GetLabels()[shipper.MigrationAnnotation]
+	migrated, ok := obj.GetLabels()[shipper.MigrationLabel]
 	if !ok || len(migrated) == 0 {
 		return false, shippererrors.NewMissingShipperLabelError(obj, shipper.ReleaseLabel)
 	}

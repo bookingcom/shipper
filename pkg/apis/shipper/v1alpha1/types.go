@@ -19,6 +19,7 @@ const (
 	ReleaseEnvironmentHashLabel  = "shipper-release-hash"
 	PodTrafficStatusLabel        = "shipper-traffic-status"
 	InstallationTargetOwnerLabel = "shipper-owned-by"
+	MigrationLabel               = "shipper.booking.com/target.object.migration.0.9.completed" // 57 characters. careful, keep less then 63 characters.
 
 	AppHighestObservedGenerationAnnotation = "shipper.booking.com/app.highestObservedGeneration"
 
@@ -33,8 +34,6 @@ const (
 	SecretClusterSkipTlsVerifyAnnotation = "shipper.booking.com/cluster-secret.insecure-tls-skip-verify"
 
 	RolloutBlocksOverrideAnnotation = "shipper.booking.com/rollout-block.override"
-
-	MigrationAnnotation = "shipper.booking.com/target.object.migration.0.9.completed"
 
 	LBLabel         = "shipper-lb"
 	LBForProduction = "production"
