@@ -17,8 +17,7 @@ create_cluster () {
 		--name $CLUSTER \
 		--config ci/kind.yaml \
 		--image kindest/node:v1.15.7 \
-		--kubeconfig $CONFIG \
-		--quiet
+		--kubeconfig $CONFIG
 
 	# get a kubeconfig with an actual ip address instead of 127.0.0.1
 	kind get kubeconfig --name $CLUSTER --internal > $CONFIG
