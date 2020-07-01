@@ -89,7 +89,7 @@ func (c *Controller) migrateCapacityTargets(relName, namespace string, selector 
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().CapacityTargets(ct.Namespace).Create(ct)
 		if err == nil {
 			// update initial object with migrated label
-			initialCt.Annotations[shipper.MigrationAnnotation] = "true"
+			initialCt.Labels[shipper.MigrationLabel] = "true"
 			_, err = c.clientset.ShipperV1alpha1().CapacityTargets(namespace).Update(initialCt)
 			if err != nil {
 				klog.Error(err)
@@ -113,7 +113,7 @@ func (c *Controller) migrateCapacityTargets(relName, namespace string, selector 
 		}
 		// migrating object and updating object in application cluster with migrated label
 		ct.ResourceVersion = initialCt.ResourceVersion
-		ct.Labels[shipper.MigrationAnnotation] = "true"
+		ct.Labels[shipper.MigrationLabel] = "true"
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().CapacityTargets(ct.Namespace).Update(ct)
 		if err != nil {
 			return err
@@ -178,7 +178,7 @@ func (c *Controller) migrateTrafficTargets(relName, namespace string, selector l
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().TrafficTargets(tt.Namespace).Create(tt)
 		if err == nil {
 			// update initial object with migrated label
-			initialTt.Labels[shipper.MigrationAnnotation] = "true"
+			initialTt.Labels[shipper.MigrationLabel] = "true"
 			_, err = c.clientset.ShipperV1alpha1().TrafficTargets(namespace).Update(initialTt)
 			if err != nil {
 				klog.Error(err)
@@ -202,7 +202,7 @@ func (c *Controller) migrateTrafficTargets(relName, namespace string, selector l
 		}
 		// migrating object and updating object in application cluster with migrated label
 		tt.ResourceVersion = initialTt.ResourceVersion
-		tt.Labels[shipper.MigrationAnnotation] = "true"
+		tt.Labels[shipper.MigrationLabel] = "true"
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().TrafficTargets(tt.Namespace).Update(tt)
 		if err != nil {
 			return err
@@ -265,7 +265,7 @@ func (c *Controller) migrateInstallationTargets(relName, namespace string, selec
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().InstallationTargets(it.Namespace).Create(it)
 		if err == nil {
 			// update initial object with migrated label
-			initialIt.Labels[shipper.MigrationAnnotation] = "true"
+			initialIt.Labels[shipper.MigrationLabel] = "true"
 			_, err = c.clientset.ShipperV1alpha1().InstallationTargets(namespace).Update(initialIt)
 			if err != nil {
 				klog.Error(err)
@@ -288,7 +288,7 @@ func (c *Controller) migrateInstallationTargets(relName, namespace string, selec
 			continue
 		}
 		// updating object in application cluster with migrated label
-		it.Labels[shipper.MigrationAnnotation] = "true"
+		it.Labels[shipper.MigrationLabel] = "true"
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().InstallationTargets(it.Namespace).Update(it)
 		if err != nil {
 			return err
