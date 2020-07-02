@@ -19,7 +19,7 @@ const (
 	ReleaseEnvironmentHashLabel  = "shipper-release-hash"
 	PodTrafficStatusLabel        = "shipper-traffic-status"
 	InstallationTargetOwnerLabel = "shipper-owned-by"
-	MigrationLabel               = "shipper.booking.com/target.object.migration.0.9.completed" // 57 characters. careful, keep less then 63 characters.
+	MigrationLabel               = "shipper-target-object-migration-0.9-completed"
 
 	AppHighestObservedGenerationAnnotation = "shipper.booking.com/app.highestObservedGeneration"
 
