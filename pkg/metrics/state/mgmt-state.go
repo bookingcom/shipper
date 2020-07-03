@@ -136,6 +136,8 @@ func (ssm MgmtMetrics) collectReleases(ch chan<- prometheus.Metric) {
 	conditions := []shipper.ReleaseConditionType{
 		shipper.ReleaseConditionTypeComplete,
 		shipper.ReleaseConditionTypeBlocked,
+		shipper.ReleaseConditionTypeClustersChosen,
+		shipper.ReleaseConditionTypeStrategyExecuted,
 	}
 
 	for _, rel := range rels {
