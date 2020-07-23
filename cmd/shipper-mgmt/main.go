@@ -79,6 +79,7 @@ type metricsCfg struct {
 	wqMetrics    *shippermetrics.PrometheusWorkqueueProvider
 	restLatency  *shippermetrics.RESTLatencyMetric
 	restResult   *shippermetrics.RESTResultMetric
+	certExpire   *shippermetrics.TLSCertExpireMetric
 	stateMetrics statemetrics.MgmtMetrics
 }
 
@@ -230,6 +231,7 @@ func main() {
 			wqMetrics:    shippermetrics.NewProvider(),
 			restLatency:  shippermetrics.NewRESTLatencyMetric(),
 			restResult:   shippermetrics.NewRESTResultMetric(),
+			certExpire:   shippermetrics.NewTLSCertExpireMetric(),
 			stateMetrics: ssm,
 		},
 	}
@@ -258,6 +260,7 @@ func (klogStdLogger) Println(v ...interface{}) {
 func runMetrics(cfg *metricsCfg) {
 	prometheus.MustRegister(cfg.wqMetrics.GetMetrics()...)
 	prometheus.MustRegister(cfg.restLatency.Summary, cfg.restResult.Counter)
+	prometheus.MustRegister(cfg.certExpire.Gauge)
 	prometheus.MustRegister(instrumentedclient.GetMetrics()...)
 	prometheus.MustRegister(cfg.stateMetrics)
 
@@ -479,7 +482,8 @@ func startWebhook(cfg *cfg) (bool, error) {
 		cfg.webhookKeyPath,
 		cfg.webhookCertPath,
 		client.NewShipperClientOrDie(webhook.AgentName, cfg.restCfg),
-		cfg.shipperInformerFactory)
+		cfg.shipperInformerFactory,
+		*cfg.metrics.certExpire)
 
 	cfg.wg.Add(1)
 	go func() {

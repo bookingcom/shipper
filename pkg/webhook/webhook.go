@@ -2,6 +2,8 @@ package webhook
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -21,6 +23,7 @@ import (
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
+	"github.com/bookingcom/shipper/pkg/metrics/prometheus"
 	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
@@ -38,6 +41,8 @@ type Webhook struct {
 
 	tlsCertFile       string
 	tlsPrivateKeyFile string
+
+	certExpire prometheus.TLSCertExpireMetric
 }
 
 var (
@@ -50,6 +55,7 @@ func NewWebhook(
 	bindAddr, bindPort, tlsPrivateKeyFile, tlsCertFile string,
 	shipperClientset clientset.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
+	certExpire prometheus.TLSCertExpireMetric,
 ) *Webhook {
 	rolloutBlocksInformer := shipperInformerFactory.Shipper().V1alpha1().RolloutBlocks()
 
@@ -63,6 +69,8 @@ func NewWebhook(
 
 		tlsPrivateKeyFile: tlsPrivateKeyFile,
 		tlsCertFile:       tlsCertFile,
+
+		certExpire: certExpire,
 	}
 }
 
@@ -84,6 +92,20 @@ func (c *Webhook) Run(stopCh <-chan struct{}) {
 		if c.tlsCertFile == "" || c.tlsPrivateKeyFile == "" {
 			serverError = server.ListenAndServe()
 		} else {
+			cert, err := tls.LoadX509KeyPair(c.tlsCertFile, c.tlsPrivateKeyFile)
+			if err == nil {
+				certificate, err := x509.ParseCertificate(cert.Certificate[0])
+				if err == nil {
+					expiryTime := certificate.NotAfter
+					c.certExpire.Observe(addr, expiryTime)
+					klog.V(8).Infof("Shipper Validating Webhooks TLS certificate expires on %v", certificate.NotAfter)
+				} else {
+					klog.Errorf("fail to parse TLS certificate %v", err)
+				}
+			} else {
+				klog.Errorf("fail to load TLS certificate from file with private key %v", err)
+			}
+
 			serverError = server.ListenAndServeTLS(c.tlsCertFile, c.tlsPrivateKeyFile)
 		}
 
