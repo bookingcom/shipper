@@ -54,6 +54,7 @@ var controllers = []string{
 
 const defaultRESTTimeout time.Duration = 10 * time.Second
 const defaultResync time.Duration = 0 * time.Second
+const defaultHeartbeat time.Duration = 5 * time.Second
 
 var (
 	masterURL           = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
@@ -71,6 +72,7 @@ var (
 	webhookBindAddr     = flag.String("webhook-addr", "0.0.0.0", "Addr to bind the webhook controller.")
 	webhookBindPort     = flag.String("webhook-port", "9443", "Port to bind the webhook controller.")
 	relDurationBuckets  = flag.String("release-duration-buckets", "15,30,45,60,120", "Comma-separated list of buckets for the shipper_objects_release_durations histogram, in seconds")
+	heartbeatPeriod     = flag.Duration("metrics-webhook-heartbeat-period", defaultHeartbeat, "time between two heartbeats of validating webhook")
 )
 
 type metricsCfg struct {
@@ -260,7 +262,7 @@ func (klogStdLogger) Println(v ...interface{}) {
 func runMetrics(cfg *metricsCfg) {
 	prometheus.MustRegister(cfg.wqMetrics.GetMetrics()...)
 	prometheus.MustRegister(cfg.restLatency.Summary, cfg.restResult.Counter)
-	prometheus.MustRegister(cfg.certExpire.Gauge)
+	prometheus.MustRegister(cfg.certExpire.GetMetrics()...)
 	prometheus.MustRegister(instrumentedclient.GetMetrics()...)
 	prometheus.MustRegister(cfg.stateMetrics)
 
@@ -483,7 +485,8 @@ func startWebhook(cfg *cfg) (bool, error) {
 		cfg.webhookCertPath,
 		client.NewShipperClientOrDie(webhook.AgentName, cfg.restCfg),
 		cfg.shipperInformerFactory,
-		*cfg.metrics.certExpire)
+		*cfg.metrics.certExpire,
+		*heartbeatPeriod)
 
 	cfg.wg.Add(1)
 	go func() {

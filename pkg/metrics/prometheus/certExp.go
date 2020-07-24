@@ -7,7 +7,8 @@ import (
 )
 
 type TLSCertExpireMetric struct {
-	Gauge *prom.GaugeVec
+	ExpirationGauge *prom.GaugeVec
+	HeartbeatGauge  *prom.GaugeVec
 }
 
 func NewTLSCertExpireMetric() *TLSCertExpireMetric {
@@ -19,9 +20,29 @@ func NewTLSCertExpireMetric() *TLSCertExpireMetric {
 			Help:      "When does Shipper Validating Webhooks TLS certificate expire",
 		},
 		[]string{"host"},
-	)}
+	),
+		prom.NewGaugeVec(
+			prom.GaugeOpts{
+				Namespace: ns,
+				Subsystem: tlsSubsys,
+				Name:      "heartbeat",
+				Help:      "The last time Shipper Validating Webhooks sent a heartbeat",
+			},
+			[]string{"host"},
+		)}
 }
 
 func (m *TLSCertExpireMetric) Observe(host string, exp time.Time) {
-	m.Gauge.WithLabelValues(host).Set(float64(exp.Unix()))
+	m.ExpirationGauge.WithLabelValues(host).Set(float64(exp.Unix()))
+}
+
+func (m *TLSCertExpireMetric) ObserveHeartBeat(host string) {
+	m.HeartbeatGauge.WithLabelValues(host).SetToCurrentTime()
+}
+
+func (m *TLSCertExpireMetric) GetMetrics() []prom.Collector {
+	return []prom.Collector{
+		m.ExpirationGauge,
+		m.HeartbeatGauge,
+	}
 }
