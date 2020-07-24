@@ -10,6 +10,7 @@ import (
 	"mime"
 	"net/http"
 	"reflect"
+	"time"
 
 	admission "k8s.io/api/admission/v1beta1"
 	kubeclient "k8s.io/api/admission/v1beta1"
@@ -42,7 +43,8 @@ type Webhook struct {
 	tlsCertFile       string
 	tlsPrivateKeyFile string
 
-	certExpire prometheus.TLSCertExpireMetric
+	certExpire      prometheus.TLSCertExpireMetric
+	heartbeatPeriod time.Duration
 }
 
 var (
@@ -56,6 +58,7 @@ func NewWebhook(
 	shipperClientset clientset.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
 	certExpire prometheus.TLSCertExpireMetric,
+	heartbeatPeriod time.Duration,
 ) *Webhook {
 	rolloutBlocksInformer := shipperInformerFactory.Shipper().V1alpha1().RolloutBlocks()
 
@@ -70,7 +73,8 @@ func NewWebhook(
 		tlsPrivateKeyFile: tlsPrivateKeyFile,
 		tlsCertFile:       tlsCertFile,
 
-		certExpire: certExpire,
+		certExpire:      certExpire,
+		heartbeatPeriod: heartbeatPeriod,
 	}
 }
 
@@ -86,6 +90,9 @@ func (c *Webhook) Run(stopCh <-chan struct{}) {
 		klog.Fatalf("failed to wait for caches to sync")
 		return
 	}
+
+	ctx, cancelHeartbeat := context.WithCancel(context.Background())
+	c.startHeartbeatRoutine(ctx, addr)
 
 	go func() {
 		var serverError error
@@ -111,6 +118,7 @@ func (c *Webhook) Run(stopCh <-chan struct{}) {
 
 		if serverError != nil && serverError != http.ErrServerClosed {
 			klog.Fatalf("failed to start shipper-webhook: %v", serverError)
+			cancelHeartbeat()
 		}
 	}()
 
@@ -123,6 +131,21 @@ func (c *Webhook) Run(stopCh <-chan struct{}) {
 	if err := server.Shutdown(context.Background()); err != nil {
 		klog.Errorf(`HTTP server Shutdown: %v`, err)
 	}
+}
+
+func (c *Webhook) startHeartbeatRoutine(ctx context.Context, host string) {
+	ticker := time.NewTicker(c.heartbeatPeriod)
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				c.certExpire.ObserveHeartBeat(host)
+			case <-ctx.Done():
+				ticker.Stop()
+				return
+			}
+		}
+	}()
 }
 
 func (c *Webhook) initializeHandlers() *http.ServeMux {
