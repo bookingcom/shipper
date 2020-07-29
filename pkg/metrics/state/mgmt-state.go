@@ -107,7 +107,7 @@ func (ssm MgmtMetrics) collectApplications(ch chan<- prometheus.Metric) {
 		appsPerNamespace[app.Namespace]++
 	}
 
-	klog.V(4).Infof("apps: %v", appsPerNamespace)
+	klog.V(8).Infof("apps: %v", appsPerNamespace)
 
 	for _, ns := range nss {
 		n, ok := appsPerNamespace[ns.Name]
@@ -235,7 +235,7 @@ func (ssm MgmtMetrics) collectRolloutBlocks(ch chan<- prometheus.Metric) {
 		rbsPerNamespace[rolloutBlock.Namespace]++
 	}
 
-	klog.V(4).Infof("RolloutBlocks: %v", rbsPerNamespace)
+	klog.V(8).Infof("RolloutBlocks: %v", rbsPerNamespace)
 
 	for _, ns := range nss {
 		n, ok := rbsPerNamespace[ns.Name]

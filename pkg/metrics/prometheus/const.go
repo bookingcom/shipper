@@ -1,8 +1,8 @@
 package prometheus
 
 const (
-	ns         = "shipper"
-	wqSubsys   = "workqueue"
-	restSubsys = "rest_client"
-	tlsSubsys  = "TLS_cert"
+	ns            = "shipper"
+	wqSubsys      = "workqueue"
+	restSubsys    = "rest_client"
+	webhookSubsys = "webhook_health"
 )

@@ -6,16 +6,16 @@ import (
 	prom "github.com/prometheus/client_golang/prometheus"
 )
 
-type TLSCertExpireMetric struct {
+type WebhookMetric struct {
 	ExpirationGauge *prom.GaugeVec
 	HeartbeatGauge  *prom.GaugeVec
 }
 
-func NewTLSCertExpireMetric() *TLSCertExpireMetric {
-	return &TLSCertExpireMetric{prom.NewGaugeVec(
+func NewTLSCertExpireMetric() *WebhookMetric {
+	return &WebhookMetric{prom.NewGaugeVec(
 		prom.GaugeOpts{
 			Namespace: ns,
-			Subsystem: tlsSubsys,
+			Subsystem: webhookSubsys,
 			Name:      "expire_time_epoch",
 			Help:      "When does Shipper Validating Webhooks TLS certificate expire",
 		},
@@ -24,7 +24,7 @@ func NewTLSCertExpireMetric() *TLSCertExpireMetric {
 		prom.NewGaugeVec(
 			prom.GaugeOpts{
 				Namespace: ns,
-				Subsystem: tlsSubsys,
+				Subsystem: webhookSubsys,
 				Name:      "heartbeat",
 				Help:      "The last time Shipper Validating Webhooks sent a heartbeat",
 			},
@@ -32,15 +32,15 @@ func NewTLSCertExpireMetric() *TLSCertExpireMetric {
 		)}
 }
 
-func (m *TLSCertExpireMetric) Observe(host string, exp time.Time) {
+func (m *WebhookMetric) ObserveCertificateExpiration(host string, exp time.Time) {
 	m.ExpirationGauge.WithLabelValues(host).Set(float64(exp.Unix()))
 }
 
-func (m *TLSCertExpireMetric) ObserveHeartBeat(host string) {
+func (m *WebhookMetric) ObserveHeartBeat(host string) {
 	m.HeartbeatGauge.WithLabelValues(host).SetToCurrentTime()
 }
 
-func (m *TLSCertExpireMetric) GetMetrics() []prom.Collector {
+func (m *WebhookMetric) GetMetrics() []prom.Collector {
 	return []prom.Collector{
 		m.ExpirationGauge,
 		m.HeartbeatGauge,
