@@ -206,7 +206,7 @@ func TestBlockNewAppWithRolloutBlock(t *testing.T) {
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
 	}
 	defer func() {
 		if *inspectFailed && t.Failed() {

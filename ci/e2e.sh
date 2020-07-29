@@ -3,7 +3,7 @@
 kubectl config use-context kind-mgmt
 
 # Setup shipper's clusters
-make setup
+SETUP_MGMT_FLAGS="--webhook-ignore" make setup
 
 # Run the e2e tests, save exit code for later
 make -j e2e \

@@ -35,6 +35,8 @@ var (
 	managementClusterServiceAccount  string
 	applicationClusterServiceAccount string
 
+	webhookFailurePolicyIgnore bool
+
 	setupCmd = &cobra.Command{
 		Use:   "setup",
 		Short: "setup Shipper in clusters",
@@ -91,6 +93,7 @@ func init() {
 
 	setupMgmtCmd.Flags().StringVarP(&globalRolloutBlockNamespace, "rollout-blocks-global-namespace", "g", shipper.GlobalRolloutBlockNamespace, "the namespace where global RolloutBlocks should be created")
 	setupMgmtCmd.Flags().StringVar(&managementClusterServiceAccount, "management-cluster-service-account", shipper.ShipperManagementServiceAccount, "the name of the service account Shipper will use in the management cluster")
+	setupMgmtCmd.Flags().BoolVar(&webhookFailurePolicyIgnore, "webhook-ignore", false, "set shippers validating webhook failure policy to Ignore")
 
 	setupAppCmd.Flags().StringVar(&applicationClusterServiceAccount, "application-cluster-service-account", shipper.ShipperApplicationServiceAccount, "the name of the service account Shipper will use for the application cluster")
 
@@ -284,6 +287,12 @@ func joinClusters(
 		return err
 	}
 
+	// update failure policy of webhook to Fail
+	err = updateFailurePolicyForValidatingWebhook(cmd, mgmtConfigurator)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -452,12 +461,22 @@ func createValidatingWebhookConfiguration(cmd *cobra.Command, configurator *conf
 		return err
 	}
 
-	if err := configurator.CreateOrUpdateValidatingWebhookConfiguration(caBundle, shipperNamespace); err != nil {
+	if err := configurator.CreateOrUpdateValidatingWebhookConfiguration(caBundle, shipperNamespace, webhookFailurePolicyIgnore); err != nil {
 		if errors.IsAlreadyExists(err) {
 			cmd.Println("already exists. Skipping")
 			return nil
 		}
 
+		return err
+	}
+	cmd.Println("done")
+
+	return nil
+}
+
+func updateFailurePolicyForValidatingWebhook(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	cmd.Printf("Updating the failure policy of the ValidatingWebhookConfiguration in %s namespace... ", shipperNamespace)
+	if err := configurator.UpdateValidatingWebhookConfigurationFailurePolicy(); err != nil {
 		return err
 	}
 	cmd.Println("done")

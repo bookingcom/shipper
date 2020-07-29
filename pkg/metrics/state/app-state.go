@@ -69,7 +69,7 @@ func (ssm AppMetrics) collectInstallationTargets(ch chan<- prometheus.Metric) {
 		itsPerNamespace[it.Namespace]++
 	}
 
-	klog.V(4).Infof("its: %v", itsPerNamespace)
+	klog.V(8).Infof("its: %v", itsPerNamespace)
 
 	for _, ns := range nss {
 		n, ok := itsPerNamespace[ns.Name]
@@ -99,7 +99,7 @@ func (ssm AppMetrics) collectCapacityTargets(ch chan<- prometheus.Metric) {
 		ctsPerNamespace[it.Namespace]++
 	}
 
-	klog.V(4).Infof("cts: %v", ctsPerNamespace)
+	klog.V(8).Infof("cts: %v", ctsPerNamespace)
 
 	for _, ns := range nss {
 		n, ok := ctsPerNamespace[ns.Name]
@@ -129,7 +129,7 @@ func (ssm AppMetrics) collectTrafficTargets(ch chan<- prometheus.Metric) {
 		ttsPerNamespace[it.Namespace]++
 	}
 
-	klog.V(4).Infof("tts: %v", ttsPerNamespace)
+	klog.V(8).Infof("tts: %v", ttsPerNamespace)
 
 	for _, ns := range nss {
 		n, ok := ttsPerNamespace[ns.Name]

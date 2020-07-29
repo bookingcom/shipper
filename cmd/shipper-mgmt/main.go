@@ -81,7 +81,7 @@ type metricsCfg struct {
 	wqMetrics    *shippermetrics.PrometheusWorkqueueProvider
 	restLatency  *shippermetrics.RESTLatencyMetric
 	restResult   *shippermetrics.RESTResultMetric
-	certExpire   *shippermetrics.TLSCertExpireMetric
+	certExpire   *shippermetrics.WebhookMetric
 	stateMetrics statemetrics.MgmtMetrics
 }
 

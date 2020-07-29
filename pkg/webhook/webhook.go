@@ -43,8 +43,8 @@ type Webhook struct {
 	tlsCertFile       string
 	tlsPrivateKeyFile string
 
-	certExpire      prometheus.TLSCertExpireMetric
-	heartbeatPeriod time.Duration
+	webhookHealthMetric prometheus.WebhookMetric
+	heartbeatPeriod     time.Duration
 }
 
 var (
@@ -57,7 +57,7 @@ func NewWebhook(
 	bindAddr, bindPort, tlsPrivateKeyFile, tlsCertFile string,
 	shipperClientset clientset.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
-	certExpire prometheus.TLSCertExpireMetric,
+	webhookMetric prometheus.WebhookMetric,
 	heartbeatPeriod time.Duration,
 ) *Webhook {
 	rolloutBlocksInformer := shipperInformerFactory.Shipper().V1alpha1().RolloutBlocks()
@@ -73,8 +73,8 @@ func NewWebhook(
 		tlsPrivateKeyFile: tlsPrivateKeyFile,
 		tlsCertFile:       tlsCertFile,
 
-		certExpire:      certExpire,
-		heartbeatPeriod: heartbeatPeriod,
+		webhookHealthMetric: webhookMetric,
+		heartbeatPeriod:     heartbeatPeriod,
 	}
 }
 
@@ -99,19 +99,7 @@ func (c *Webhook) Run(stopCh <-chan struct{}) {
 		if c.tlsCertFile == "" || c.tlsPrivateKeyFile == "" {
 			serverError = server.ListenAndServe()
 		} else {
-			cert, err := tls.LoadX509KeyPair(c.tlsCertFile, c.tlsPrivateKeyFile)
-			if err == nil {
-				certificate, err := x509.ParseCertificate(cert.Certificate[0])
-				if err == nil {
-					expiryTime := certificate.NotAfter
-					c.certExpire.Observe(addr, expiryTime)
-					klog.V(8).Infof("Shipper Validating Webhooks TLS certificate expires on %v", certificate.NotAfter)
-				} else {
-					klog.Errorf("fail to parse TLS certificate %v", err)
-				}
-			} else {
-				klog.Errorf("fail to load TLS certificate from file with private key %v", err)
-			}
+			c.observeCertificateExpiration(addr)
 
 			serverError = server.ListenAndServeTLS(c.tlsCertFile, c.tlsPrivateKeyFile)
 		}
@@ -133,13 +121,29 @@ func (c *Webhook) Run(stopCh <-chan struct{}) {
 	}
 }
 
+func (c *Webhook) observeCertificateExpiration(addr string) {
+	cert, err := tls.LoadX509KeyPair(c.tlsCertFile, c.tlsPrivateKeyFile)
+	if err != nil {
+		klog.Errorf("fail to load TLS certificate from file with private key %v", err)
+		return
+	}
+	certificate, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		klog.Errorf("fail to parse TLS certificate %v", err)
+		return
+	}
+	expiryTime := certificate.NotAfter
+	c.webhookHealthMetric.ObserveCertificateExpiration(addr, expiryTime)
+	klog.V(8).Infof("Shipper Validating Webhooks TLS certificate expires on %v", certificate.NotAfter)
+}
+
 func (c *Webhook) startHeartbeatRoutine(ctx context.Context, host string) {
 	ticker := time.NewTicker(c.heartbeatPeriod)
 	go func() {
 		for {
 			select {
 			case <-ticker.C:
-				c.certExpire.ObserveHeartBeat(host)
+				c.webhookHealthMetric.ObserveHeartBeat(host)
 			case <-ctx.Done():
 				ticker.Stop()
 				return
