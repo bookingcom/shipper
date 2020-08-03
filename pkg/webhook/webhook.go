@@ -283,8 +283,14 @@ func (c *Webhook) validateRelease(request *admission.AdmissionRequest, release s
 			return err
 		}
 
+		// validate against rollout blocks
 		if !reflect.DeepEqual(release.Spec, oldRelease.Spec) {
 			err = rolloutblock.ValidateBlocks(existingBlocks, overrides)
+		}
+
+		// make sure the environment wasn't changed
+		if !reflect.DeepEqual(release.Spec.Environment, oldRelease.Spec.Environment) {
+			return fmt.Errorf("the Release environment must not be changed; consider editing the Application object")
 		}
 	}
 
