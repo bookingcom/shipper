@@ -23,6 +23,9 @@ communication between the management and application clusters
   it's not useful now that the target objects are in the application
   clusters. Instead, we've made the status of the Release object more
   useful ([#288][])
+* Shipper now rejects all modifications to the `environment` field of
+  all releases. This fixes an issue where users would modify this
+  field and cause an unsupported behavior ([#340][])
 * Shipper now exposes metrics on the health of the webhook. For now,
   that means the time that the SSL certificate expires, and a secondly
   heartbeat ([#338][])
@@ -75,4 +78,5 @@ communication between the management and application clusters
 [#292]: https://github.com/bookingcom/shipper/pull/292
 [#320]: https://github.com/bookingcom/shipper/pull/320
 [#338]: https://github.com/bookingcom/shipper/pull/338
+[#340]: https://github.com/bookingcom/shipper/pull/340
 [failure policy]: https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#failure-policy
