@@ -23,6 +23,14 @@ communication between the management and application clusters
   it's not useful now that the target objects are in the application
   clusters. Instead, we've made the status of the Release object more
   useful ([#288][])
+* Shipper now exposes metrics on the health of the webhook. For now,
+  that means the time that the SSL certificate expires, and a secondly
+  heartbeat ([#338][])
+* Shipperctl now creates and modifies the webhook with the [failure
+  policy][] set to `fail` ([#338][]. This means that the webhook
+  becomes a very important piece of the user experience, and we
+  suggest you monitor the Shipper webhook's health using the metrics
+  mentioned above.
 
 ### Migrating to 0.9
 
@@ -48,6 +56,9 @@ communication between the management and application clusters
   context and running `kubectl delete it --all
   --all-namespaces`,`kubectl delete ct --all --all-namespaces` and
   `kubectl delete tt --all --all-namespaces`
+- Start monitoring the health of the webhook. You can use the
+  `shipper_webhook_health_expire_time_epoch` and
+  `shipper_webhook_health_heartbeat` Prometheus metrics.
 
 ### Reverting to 0.8
 
@@ -63,3 +74,5 @@ communication between the management and application clusters
 [#288]: https://github.com/bookingcom/shipper/pull/288
 [#292]: https://github.com/bookingcom/shipper/pull/292
 [#320]: https://github.com/bookingcom/shipper/pull/320
+[#338]: https://github.com/bookingcom/shipper/pull/338
+[failure policy]: https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#failure-policy
