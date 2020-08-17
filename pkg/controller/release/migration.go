@@ -14,22 +14,26 @@ import (
 func (c *Controller) migrateTargetObjects(relName, namespace string) error {
 	selector := labels.Set{shipper.ReleaseLabel: relName}.AsSelector()
 
+	migrationErrors := shippererrors.NewMultiError()
 	err := c.migrateCapacityTargets(relName, namespace, selector)
 	if err != nil {
-		return err
+		//return err
+		migrationErrors.Append(err)
 	}
 
 	err = c.migrateTrafficTargets(relName, namespace, selector)
 	if err != nil {
-		return err
+		//return err
+		migrationErrors.Append(err)
 	}
 
 	err = c.migrateInstallationTargets(relName, namespace, selector)
 	if err != nil {
-		return err
+		//return err
+		migrationErrors.Append(err)
 	}
 
-	return nil
+	return migrationErrors.Flatten()
 }
 
 func (c *Controller) migrateCapacityTargets(relName, namespace string, selector labels.Selector) error {
@@ -79,12 +83,19 @@ func (c *Controller) migrateCapacityTargets(relName, namespace string, selector 
 		Annotations: initialCt.Annotations,
 	}
 
+	ctErrors := shippererrors.NewMultiError()
 	// put in application clusters:
 	for _, cluster := range initialCt.Spec.Clusters {
+		//if decommissioned cluster => skip!!!
+		if cluster.Name == "kind-app-d" {
+			continue
+		}
 		clusterName := cluster.Name
 		clusterClientsets, err := c.store.GetApplicationClusterClientset(clusterName, AgentName)
 		if err != nil {
-			return err
+			//return err
+			ctErrors.Append(err)
+			continue
 		}
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().CapacityTargets(ct.Namespace).Create(ct)
 		if err == nil {
@@ -93,18 +104,23 @@ func (c *Controller) migrateCapacityTargets(relName, namespace string, selector 
 			_, err = c.clientset.ShipperV1alpha1().CapacityTargets(namespace).Update(initialCt)
 			if err != nil {
 				klog.Error(err)
-				return err
+				//return err
+				ctErrors.Append(err)
 			}
 			continue
 		}
 
 		if !errors.IsAlreadyExists(err) {
-			return err
+			//return err
+			ctErrors.Append(err)
+			continue
 		}
 		// checking if existing object was migrated already
 		capacityTarget, err := clusterClientsets.GetShipperClient().ShipperV1alpha1().CapacityTargets(ct.Namespace).Get(ct.Name, metav1.GetOptions{})
 		if err != nil {
-			return err
+			//return err
+			ctErrors.Append(err)
+			continue
 		}
 		migrationLabel, _ := objectutil.GetMigrationLabel(capacityTarget)
 		if migrationLabel {
@@ -116,10 +132,11 @@ func (c *Controller) migrateCapacityTargets(relName, namespace string, selector 
 		ct.Labels[shipper.MigrationLabel] = "true"
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().CapacityTargets(ct.Namespace).Update(ct)
 		if err != nil {
-			return err
+			ctErrors.Append(err)
+			//return err
 		}
 	}
-	return nil
+	return ctErrors.Flatten()
 }
 
 func (c *Controller) migrateTrafficTargets(relName, namespace string, selector labels.Selector) error {
@@ -168,12 +185,19 @@ func (c *Controller) migrateTrafficTargets(relName, namespace string, selector l
 		Annotations: initialTt.Annotations,
 	}
 
+	ttErrors := shippererrors.NewMultiError()
 	// put in application clusters:
 	for _, cluster := range initialTt.Spec.Clusters {
+		//if decommissioned cluster => skip!!!
+		if cluster.Name == "kind-app-d" {
+			continue
+		}
 		clusterName := cluster.Name
 		clusterClientsets, err := c.store.GetApplicationClusterClientset(clusterName, AgentName)
 		if err != nil {
-			return err
+			//return err
+			ttErrors.Append(err)
+			continue
 		}
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().TrafficTargets(tt.Namespace).Create(tt)
 		if err == nil {
@@ -182,18 +206,23 @@ func (c *Controller) migrateTrafficTargets(relName, namespace string, selector l
 			_, err = c.clientset.ShipperV1alpha1().TrafficTargets(namespace).Update(initialTt)
 			if err != nil {
 				klog.Error(err)
-				return err
+				//return err
+				ttErrors.Append(err)
 			}
 			continue
 		}
 
 		if !errors.IsAlreadyExists(err) {
-			return err
+			//return err
+			ttErrors.Append(err)
+			continue
 		}
 		// checking if existing object was migrated already
 		trafficTarget, err := clusterClientsets.GetShipperClient().ShipperV1alpha1().TrafficTargets(tt.Namespace).Get(tt.Name, metav1.GetOptions{})
 		if err != nil {
-			return err
+			//return err
+			ttErrors.Append(err)
+			continue
 		}
 		migrationLabel, _ := objectutil.GetMigrationLabel(trafficTarget)
 		if migrationLabel {
@@ -205,10 +234,11 @@ func (c *Controller) migrateTrafficTargets(relName, namespace string, selector l
 		tt.Labels[shipper.MigrationLabel] = "true"
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().TrafficTargets(tt.Namespace).Update(tt)
 		if err != nil {
-			return err
+			//return err
+			ttErrors.Append(err)
 		}
 	}
-	return nil
+	return ttErrors.Flatten()
 }
 
 func (c *Controller) migrateInstallationTargets(relName, namespace string, selector labels.Selector) error {
@@ -256,11 +286,18 @@ func (c *Controller) migrateInstallationTargets(relName, namespace string, selec
 		Annotations: initialIt.Annotations,
 	}
 
+	itErrors := shippererrors.NewMultiError()
 	// put in application clusters:
 	for _, clusterName := range initialIt.Spec.Clusters {
+		//if decommissioned cluster => skip!!!
+		if clusterName == "kind-app-d" {
+			continue
+		}
 		clusterClientsets, err := c.store.GetApplicationClusterClientset(clusterName, AgentName)
 		if err != nil {
-			return err
+			//return err
+			itErrors.Append(err)
+			continue
 		}
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().InstallationTargets(it.Namespace).Create(it)
 		if err == nil {
@@ -269,18 +306,23 @@ func (c *Controller) migrateInstallationTargets(relName, namespace string, selec
 			_, err = c.clientset.ShipperV1alpha1().InstallationTargets(namespace).Update(initialIt)
 			if err != nil {
 				klog.Error(err)
-				return err
+				//return err
+				itErrors.Append(err)
 			}
 			continue
 		}
 
 		if !errors.IsAlreadyExists(err) {
-			return err
+			//return err
+			itErrors.Append(err)
+			continue
 		}
 		// checking if existing object was migrated already
 		capacityTarget, err := clusterClientsets.GetShipperClient().ShipperV1alpha1().InstallationTargets(it.Namespace).Get(it.Name, metav1.GetOptions{})
 		if err != nil {
-			return err
+			//return err
+			itErrors.Append(err)
+			continue
 		}
 		migrationLabel, _ := objectutil.GetMigrationLabel(capacityTarget)
 		if migrationLabel {
@@ -291,8 +333,9 @@ func (c *Controller) migrateInstallationTargets(relName, namespace string, selec
 		it.Labels[shipper.MigrationLabel] = "true"
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().InstallationTargets(it.Namespace).Update(it)
 		if err != nil {
-			return err
+			//return err
+			itErrors.Append(err)
 		}
 	}
-	return nil
+	return itErrors.Flatten()
 }
