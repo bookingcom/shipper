@@ -84,6 +84,7 @@ func (c *Controller) migrateCapacityTargets(relName, namespace string, selector 
 	}
 
 	ctErrors := shippererrors.NewMultiError()
+	shouldTag := false
 	// put in application clusters:
 	for _, cluster := range initialCt.Spec.Clusters {
 		//if decommissioned cluster => skip!!!
@@ -99,14 +100,7 @@ func (c *Controller) migrateCapacityTargets(relName, namespace string, selector 
 		}
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().CapacityTargets(ct.Namespace).Create(ct)
 		if err == nil {
-			// update initial object with migrated label
-			initialCt.Labels[shipper.MigrationLabel] = "true"
-			_, err = c.clientset.ShipperV1alpha1().CapacityTargets(namespace).Update(initialCt)
-			if err != nil {
-				klog.Error(err)
-				//return err
-				ctErrors.Append(err)
-			}
+			shouldTag = true
 			continue
 		}
 
@@ -134,6 +128,16 @@ func (c *Controller) migrateCapacityTargets(relName, namespace string, selector 
 		if err != nil {
 			ctErrors.Append(err)
 			//return err
+		}
+	}
+	if ctErrors.Flatten() == nil && shouldTag {
+		// update initial object with migrated label
+		initialCt.Labels[shipper.MigrationLabel] = "true"
+		_, err = c.clientset.ShipperV1alpha1().CapacityTargets(namespace).Update(initialCt)
+		if err != nil {
+			klog.Error(err)
+			//return err
+			ctErrors.Append(err)
 		}
 	}
 	return ctErrors.Flatten()
@@ -186,6 +190,7 @@ func (c *Controller) migrateTrafficTargets(relName, namespace string, selector l
 	}
 
 	ttErrors := shippererrors.NewMultiError()
+	shouldTag := false
 	// put in application clusters:
 	for _, cluster := range initialTt.Spec.Clusters {
 		//if decommissioned cluster => skip!!!
@@ -201,14 +206,7 @@ func (c *Controller) migrateTrafficTargets(relName, namespace string, selector l
 		}
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().TrafficTargets(tt.Namespace).Create(tt)
 		if err == nil {
-			// update initial object with migrated label
-			initialTt.Labels[shipper.MigrationLabel] = "true"
-			_, err = c.clientset.ShipperV1alpha1().TrafficTargets(namespace).Update(initialTt)
-			if err != nil {
-				klog.Error(err)
-				//return err
-				ttErrors.Append(err)
-			}
+			shouldTag = true
 			continue
 		}
 
@@ -234,6 +232,16 @@ func (c *Controller) migrateTrafficTargets(relName, namespace string, selector l
 		tt.Labels[shipper.MigrationLabel] = "true"
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().TrafficTargets(tt.Namespace).Update(tt)
 		if err != nil {
+			//return err
+			ttErrors.Append(err)
+		}
+	}
+	if ttErrors.Flatten() == nil && shouldTag {
+		// update initial object with migrated label
+		initialTt.Labels[shipper.MigrationLabel] = "true"
+		_, err = c.clientset.ShipperV1alpha1().TrafficTargets(namespace).Update(initialTt)
+		if err != nil {
+			klog.Error(err)
 			//return err
 			ttErrors.Append(err)
 		}
@@ -287,6 +295,7 @@ func (c *Controller) migrateInstallationTargets(relName, namespace string, selec
 	}
 
 	itErrors := shippererrors.NewMultiError()
+	shouldTag := false
 	// put in application clusters:
 	for _, clusterName := range initialIt.Spec.Clusters {
 		//if decommissioned cluster => skip!!!
@@ -301,14 +310,7 @@ func (c *Controller) migrateInstallationTargets(relName, namespace string, selec
 		}
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().InstallationTargets(it.Namespace).Create(it)
 		if err == nil {
-			// update initial object with migrated label
-			initialIt.Labels[shipper.MigrationLabel] = "true"
-			_, err = c.clientset.ShipperV1alpha1().InstallationTargets(namespace).Update(initialIt)
-			if err != nil {
-				klog.Error(err)
-				//return err
-				itErrors.Append(err)
-			}
+			shouldTag = true
 			continue
 		}
 
@@ -318,13 +320,13 @@ func (c *Controller) migrateInstallationTargets(relName, namespace string, selec
 			continue
 		}
 		// checking if existing object was migrated already
-		capacityTarget, err := clusterClientsets.GetShipperClient().ShipperV1alpha1().InstallationTargets(it.Namespace).Get(it.Name, metav1.GetOptions{})
+		installationTarget, err := clusterClientsets.GetShipperClient().ShipperV1alpha1().InstallationTargets(it.Namespace).Get(it.Name, metav1.GetOptions{})
 		if err != nil {
 			//return err
 			itErrors.Append(err)
 			continue
 		}
-		migrationLabel, _ := objectutil.GetMigrationLabel(capacityTarget)
+		migrationLabel, _ := objectutil.GetMigrationLabel(installationTarget)
 		if migrationLabel {
 			klog.Infof("installation target %s/%s already migrated", it.Namespace, it.Name)
 			continue
@@ -333,6 +335,16 @@ func (c *Controller) migrateInstallationTargets(relName, namespace string, selec
 		it.Labels[shipper.MigrationLabel] = "true"
 		_, err = clusterClientsets.GetShipperClient().ShipperV1alpha1().InstallationTargets(it.Namespace).Update(it)
 		if err != nil {
+			//return err
+			itErrors.Append(err)
+		}
+	}
+	if itErrors.Flatten() == nil && shouldTag {
+		// update initial object with migrated label
+		initialIt.Labels[shipper.MigrationLabel] = "true"
+		_, err = c.clientset.ShipperV1alpha1().InstallationTargets(namespace).Update(initialIt)
+		if err != nil {
+			klog.Error(err)
 			//return err
 			itErrors.Append(err)
 		}
