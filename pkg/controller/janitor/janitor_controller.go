@@ -2,7 +2,6 @@ package janitor
 
 import (
 	"fmt"
-	"sort"
 	"time"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -22,6 +21,7 @@ import (
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	"github.com/bookingcom/shipper/pkg/util/filters"
 	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
@@ -204,8 +204,9 @@ func (c *Controller) syncHandler(key string) error {
 		selectedClusters := releaseutil.GetSelectedClusters(rel)
 
 		for _, cluster := range clusters {
-			n := sort.SearchStrings(selectedClusters, cluster.Name)
-			if n > 0 {
+			clusterSelected := filters.SliceContainsString(selectedClusters, cluster.Name)
+			// garbage collect only of this cluster is *not* chosen
+			if !clusterSelected {
 				clustersToGarbageCollect = append(clustersToGarbageCollect, cluster.Name)
 			}
 		}

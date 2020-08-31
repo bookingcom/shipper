@@ -342,6 +342,7 @@ func (c *Controller) processRelease(rel *shipper.Release) (*shipper.Release, err
 
 	err = c.migrateTargetObjects(rel.Name, rel.Namespace)
 	if err != nil {
+		klog.Warningf("error migrating release %d : %v", rel.Name, err)
 		releaseStrategyExecutedCond := releaseutil.NewReleaseCondition(
 			shipper.ReleaseConditionTypeStrategyExecuted,
 			corev1.ConditionFalse,
