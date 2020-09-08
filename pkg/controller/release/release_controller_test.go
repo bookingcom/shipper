@@ -2,6 +2,7 @@ package release
 
 import (
 	"fmt"
+	"github.com/bookingcom/shipper/pkg/metrics/prometheus"
 	"strings"
 	"testing"
 	"time"
@@ -504,6 +505,7 @@ func runController(f *shippertesting.ControllerTestFixture) {
 		f.ShipperInformerFactory,
 		shippertesting.LocalFetchChart,
 		f.Recorder,
+		*prometheus.NewEnqueueMetric(),
 	)
 
 	stopCh := make(chan struct{})
