@@ -124,7 +124,7 @@ func (c *Controller) migrateCapacityTargets(relName, namespace string, selector 
 		initialCt.Labels[shipper.MigrationLabel] = "true"
 		_, err = c.clientset.ShipperV1alpha1().CapacityTargets(namespace).Update(initialCt)
 		if err != nil {
-			klog.Error(err)
+			klog.Errorf("error updating initial capacity target %v", err)
 			ctErrors.Append(err)
 		}
 	}
@@ -221,7 +221,7 @@ func (c *Controller) migrateTrafficTargets(relName, namespace string, selector l
 		initialTt.Labels[shipper.MigrationLabel] = "true"
 		_, err = c.clientset.ShipperV1alpha1().TrafficTargets(namespace).Update(initialTt)
 		if err != nil {
-			klog.Error(err)
+			klog.Errorf("error updating initial traffic target %v", err)
 			ttErrors.Append(err)
 		}
 	}
@@ -315,7 +315,7 @@ func (c *Controller) migrateInstallationTargets(relName, namespace string, selec
 		initialIt.Labels[shipper.MigrationLabel] = "true"
 		_, err = c.clientset.ShipperV1alpha1().InstallationTargets(namespace).Update(initialIt)
 		if err != nil {
-			klog.Error(err)
+			klog.Errorf("error updating initial installation target %v", err)
 			itErrors.Append(err)
 		}
 	}
