@@ -18,6 +18,8 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(cmd.ClustersCmd)
+	rootCmd.AddCommand(cmd.CountCmd)
+	rootCmd.AddCommand(cmd.CleanCmd)
 }
 
 func main() {
