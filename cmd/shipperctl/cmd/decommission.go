@@ -49,15 +49,15 @@ var (
 )
 
 func init() {
-	// Flags common to all commands under `shipperctl clusters`
-	for _, cmd := range []*cobra.Command{countReleasesCmd, countContendersCmd, cleanDeadClustersCmd} {
-		cmd.Flags().StringVar(&kubeConfigFile, kubeConfigFlagName, "~/.kube/config", "the path to the Kubernetes configuration file")
-		if err := cmd.MarkFlagFilename(kubeConfigFlagName, "yaml"); err != nil {
-			cmd.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
+	// Flags common to all commands under `shipperctl decommission`
+	for _, command := range []*cobra.Command{countReleasesCmd, countContendersCmd, cleanDeadClustersCmd} {
+		command.Flags().StringVar(&kubeConfigFile, kubeConfigFlagName, "~/.kube/config", "the path to the Kubernetes configuration file")
+		if err := command.MarkFlagFilename(kubeConfigFlagName, "yaml"); err != nil {
+			command.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
 		}
 
-		cmd.Flags().StringVar(&managementClusterContext, "management-cluster-context", "", "the name of the context to use to communicate with the management cluster. defaults to the current one")
-		cmd.Flags().StringSliceVar(&decommissionedClusters, "decommissionedClusters", decommissionedClusters, "list of decommissioned clusters")
+		command.Flags().StringVar(&managementClusterContext, "management-cluster-context", "", "the name of the context to use to communicate with the management cluster. defaults to the current one")
+		command.Flags().StringSliceVar(&decommissionedClusters, "decommissionedClusters", decommissionedClusters, "list of decommissioned clusters")
 	}
 
 	CleanCmd.AddCommand(cleanDeadClustersCmd)
