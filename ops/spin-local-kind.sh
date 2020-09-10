@@ -40,13 +40,6 @@ kubectl config use-context kind-mgmt
 # setup clusters
 SETUP_MGMT_FLAGS="--webhook-ignore" make clean setup
 
-# fix kind-app clusters:
-for node in $(kind get nodes --name app); do
-  APIMASTER=$(kind get kubeconfig --name app --internal | grep server | grep -Eo 'https.*')
-  PATCH="{\"spec\":{\"apiMaster\":\"${APIMASTER}\"}}"
-  kubectl patch clusters kind-app --type=merge -p "${PATCH}"
-done
-
 INSTALL=${INSTALL:="false"}
 if [[ ${INSTALL} == "true" ]]; then
     echo " =============== Installing shipper-mgmt"
@@ -57,3 +50,10 @@ if [[ ${INSTALL} == "true" ]]; then
         DOCKER_REGISTRY=${REGISTRY} IMAGE_TAG=${IMAGE_TAG} SHIPPER_APP_IMAGE=${SHIPPER_APP_IMAGE} make install-shipper-app
     fi
 fi
+
+# fix kind-app clusters:
+for node in $(kind get nodes --name app); do
+  APIMASTER=$(kind get kubeconfig --name app --internal | grep server | grep -Eo 'https.*')
+  PATCH="{\"spec\":{\"apiMaster\":\"${APIMASTER}\"}}"
+  kubectl patch clusters kind-app --type=merge -p "${PATCH}"
+done

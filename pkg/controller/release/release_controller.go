@@ -27,6 +27,7 @@ import (
 	shipperlisters "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	shippermetrics "github.com/bookingcom/shipper/pkg/metrics/prometheus"
 	"github.com/bookingcom/shipper/pkg/util/conditions"
 	"github.com/bookingcom/shipper/pkg/util/diff"
 	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
@@ -67,6 +68,8 @@ type Controller struct {
 
 	recorder record.EventRecorder
 
+	enqueueMetric shippermetrics.EnqueueMetric
+
 	trafficTargetLister      shipperlisters.TrafficTargetLister      // Deprecated
 	capacityTargetLister     shipperlisters.CapacityTargetLister     // Deprecated
 	installationTargetLister shipperlisters.InstallationTargetLister // Deprecated
@@ -91,6 +94,7 @@ func NewController(
 	informerFactory shipperinformers.SharedInformerFactory,
 	chartFetcher shipperrepo.ChartFetcher,
 	recorder record.EventRecorder,
+	enqueueMetric shippermetrics.EnqueueMetric,
 ) *Controller {
 
 	releaseInformer := informerFactory.Shipper().V1alpha1().Releases()
@@ -123,6 +127,8 @@ func NewController(
 		chartFetcher: chartFetcher,
 
 		recorder: recorder,
+
+		enqueueMetric: enqueueMetric,
 
 		// Deprecated
 		trafficTargetLister:      trafficTargetInformer.Lister(),
@@ -662,9 +668,11 @@ func (c *Controller) enqueueReleaseAndNeighbours(obj interface{}) {
 	}
 	if predecessor != nil {
 		c.enqueueRelease(predecessor)
+		c.observeEnqueueRelease(rel, predecessor, predecessor.Name)
 	}
 	if ancestor != nil {
 		c.enqueueRelease(ancestor)
+		c.observeEnqueueRelease(rel, ancestor, ancestor.Name)
 	}
 }
 
@@ -723,7 +731,19 @@ func (c *Controller) enqueueReleaseFromAssociatedObject(obj interface{}) {
 		}
 	}
 
+	c.observeEnqueueRelease(kubeobj, rel, releaseName)
 	c.enqueueReleaseAndNeighbours(rel)
+}
+
+func (c *Controller) observeEnqueueRelease(kubeobj metav1.Object, enqueuedRelease *shipper.Release, enqueuedReleaseName string) {
+	objKey := objectutil.MetaKey(kubeobj)
+	objKind := objectutil.Kind(kubeobj)
+	klog.V(8).Infof("Triggering enqueue on release %s and neighbours from object %s %s", enqueuedReleaseName, objKind, objKey)
+	var selectedClusters []string
+	if enqueuedRelease != nil {
+		selectedClusters = releaseutil.GetSelectedClusters(enqueuedRelease)
+	}
+	c.enqueueMetric.ObserveEnqueueRelease(selectedClusters, enqueuedReleaseName, objKey, objKind)
 }
 
 func (c *Controller) getSiblingReleases(rel *shipper.Release) (*shipper.Release, *shipper.Release, error) {

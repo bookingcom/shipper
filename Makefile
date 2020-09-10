@@ -106,6 +106,11 @@ setup: $(SHIPPER_CLUSTERS_YAML) build/shipperctl.$(GOOS)-amd64
 # running `make -j e2e` should get you up and running immediately. Do remember
 # do setup your clusters with `make setup` though.
 e2e: install build/e2e.test
+	sleep 5s
+	kubectl --context $(MGMT_KUBE_CONTEXT) -n $(SHIPPER_NAMESPACE) wait --for=condition=Available deploy/shipper-mgmt
+	kubectl --context $(APP_KUBE_CONTEXT) -n $(SHIPPER_NAMESPACE) wait --for=condition=Available deploy/shipper-app
+	kubectl --context $(MGMT_KUBE_CONTEXT) -n $(SHIPPER_NAMESPACE) wait --for=condition=Ready pod --all
+	kubectl --context $(APP_KUBE_CONTEXT) -n $(SHIPPER_NAMESPACE) wait --for=condition=Ready pod --all
 	./build/e2e.test --e2e --kubeconfig ~/.kube/config \
 		--appcluster $(SHIPPER_CLUSTER) \
 		--testcharts $(TEST_HELM_REPO_URL) \

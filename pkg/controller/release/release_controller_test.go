@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shippermetrics "github.com/bookingcom/shipper/pkg/metrics/prometheus"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	"github.com/bookingcom/shipper/pkg/util/conditions"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
@@ -504,6 +505,7 @@ func runController(f *shippertesting.ControllerTestFixture) {
 		f.ShipperInformerFactory,
 		shippertesting.LocalFetchChart,
 		f.Recorder,
+		*shippermetrics.NewEnqueueMetric(),
 	)
 
 	stopCh := make(chan struct{})
