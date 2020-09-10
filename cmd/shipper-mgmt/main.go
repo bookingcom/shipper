@@ -82,6 +82,7 @@ type metricsCfg struct {
 	restLatency  *shippermetrics.RESTLatencyMetric
 	restResult   *shippermetrics.RESTResultMetric
 	certExpire   *shippermetrics.WebhookMetric
+	enqueueRel   *shippermetrics.EnqueueMetric
 	stateMetrics statemetrics.MgmtMetrics
 }
 
@@ -234,6 +235,7 @@ func main() {
 			restLatency:  shippermetrics.NewRESTLatencyMetric(),
 			restResult:   shippermetrics.NewRESTResultMetric(),
 			certExpire:   shippermetrics.NewTLSCertExpireMetric(),
+			enqueueRel:   shippermetrics.NewEnqueueMetric(),
 			stateMetrics: ssm,
 		},
 	}
@@ -263,6 +265,7 @@ func runMetrics(cfg *metricsCfg) {
 	prometheus.MustRegister(cfg.wqMetrics.GetMetrics()...)
 	prometheus.MustRegister(cfg.restLatency.Summary, cfg.restResult.Counter)
 	prometheus.MustRegister(cfg.certExpire.GetMetrics()...)
+	prometheus.MustRegister(cfg.enqueueRel.GetMetrics()...)
 	prometheus.MustRegister(instrumentedclient.GetMetrics()...)
 	prometheus.MustRegister(cfg.stateMetrics)
 
@@ -440,6 +443,7 @@ func startReleaseController(cfg *cfg) (bool, error) {
 		cfg.shipperInformerFactory,
 		cfg.chartFetcher,
 		cfg.recorder(release.AgentName),
+		*cfg.metrics.enqueueRel,
 	)
 
 	cfg.wg.Add(1)
