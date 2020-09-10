@@ -24,8 +24,8 @@ var (
 		Short: "clean Shipper objects",
 	}
 
-	cleanRelCmd = &cobra.Command{
-		Use:   "releases",
+	cleanDeadClustersCmd = &cobra.Command{
+		Use:   "decommissioned-clusters",
 		Short: "clean Shipper releases from decommissioned clusters",
 		RunE:  runCleanCommand,
 	}
@@ -50,7 +50,7 @@ var (
 
 func init() {
 	// Flags common to all commands under `shipperctl clusters`
-	for _, cmd := range []*cobra.Command{countReleasesCmd, countContendersCmd, cleanRelCmd} {
+	for _, cmd := range []*cobra.Command{countReleasesCmd, countContendersCmd, cleanDeadClustersCmd} {
 		cmd.Flags().StringVar(&kubeConfigFile, kubeConfigFlagName, "~/.kube/config", "the path to the Kubernetes configuration file")
 		if err := cmd.MarkFlagFilename(kubeConfigFlagName, "yaml"); err != nil {
 			cmd.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
@@ -60,7 +60,7 @@ func init() {
 		cmd.Flags().StringSliceVar(&decommissionedClusters, "decommissionedClusters", decommissionedClusters, "list of decommissioned clusters")
 	}
 
-	CleanCmd.AddCommand(cleanRelCmd)
+	CleanCmd.AddCommand(cleanDeadClustersCmd)
 	CountCmd.AddCommand(countContendersCmd)
 	CountCmd.AddCommand(countReleasesCmd)
 }
