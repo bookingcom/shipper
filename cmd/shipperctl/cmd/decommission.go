@@ -1,10 +1,14 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
+	"github.com/ghodss/yaml"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -16,9 +20,14 @@ import (
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
+const (
+	decommissionedClustersFlagName = "decommissionedClusters"
+)
+
 var (
 	decommissionedClusters []string
 	dryrun                 bool
+	printOption            string
 
 	CleanCmd = &cobra.Command{
 		Use:   "clean",
@@ -28,12 +37,23 @@ var (
 	cleanDeadClustersCmd = &cobra.Command{
 		Use:   "decommissioned-clusters",
 		Short: "clean Shipper releases from decommissioned clusters",
-		RunE:  runCleanCommand,
+		Long: "deleting releases that are scheduled *only* on decommissioned clusters and are not contenders, " +
+			"removing decommissioned clusters from annotations of releases that are scheduled partially on decommissioned clusters.",
+		RunE: runCleanCommand,
 	}
 
 	CountCmd = &cobra.Command{
 		Use:   "count",
 		Short: "count Shipper releases that are scheduled *only* on decommissioned clusters",
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			switch printOption {
+			case "", "json", "yaml":
+				return
+			default:
+				cmd.Printf("error: output format %q not supported, allowed formats are: json, yaml\n", printOption)
+				os.Exit(1)
+			}
+		},
 	}
 
 	countContendersCmd = &cobra.Command{
@@ -49,18 +69,29 @@ var (
 	}
 )
 
+type OutputRelease struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
 func init() {
-	// Flags common to all commands under `shipperctl decommission`
-	for _, command := range []*cobra.Command{countReleasesCmd, countContendersCmd, cleanDeadClustersCmd} {
-		command.Flags().StringVar(&kubeConfigFile, kubeConfigFlagName, "~/.kube/config", "the path to the Kubernetes configuration file")
-		if err := command.MarkFlagFilename(kubeConfigFlagName, "yaml"); err != nil {
+	// Flags common to all commands under `shipperctl clean/count`
+	for _, command := range []*cobra.Command{CountCmd, CleanCmd} {
+		command.PersistentFlags().StringVar(&kubeConfigFile, kubeConfigFlagName, "~/.kube/config", "the path to the Kubernetes configuration file")
+		if err := command.MarkPersistentFlagFilename(kubeConfigFlagName, "yaml"); err != nil {
 			command.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
 		}
 
-		command.Flags().BoolVar(&dryrun, "dryrun", false, "if true, only prints the objects that will be modifies/deleted")
-		command.Flags().StringVar(&managementClusterContext, "management-cluster-context", "", "the name of the context to use to communicate with the management cluster. defaults to the current one")
-		command.Flags().StringSliceVar(&decommissionedClusters, "decommissionedClusters", decommissionedClusters, "list of decommissioned clusters")
+		command.PersistentFlags().BoolVar(&dryrun, "dryrun", false, "If true, only prints the objects that will be modifies/deleted")
+		command.PersistentFlags().StringVar(&managementClusterContext, "management-cluster-context", "", "The name of the context to use to communicate with the management cluster. defaults to the current one")
+		command.PersistentFlags().StringSliceVar(&decommissionedClusters, decommissionedClustersFlagName, decommissionedClusters, "List of decommissioned clusters. (Required)")
+		if err := command.MarkPersistentFlagRequired(decommissionedClustersFlagName); err != nil {
+			command.Printf("warning: could not mark %q as required: %s\n", decommissionedClustersFlagName, err)
+		}
+
 	}
+	// Flags common to all commands under `shipperctl count`
+	CountCmd.PersistentFlags().StringVarP(&printOption, "output", "o", "", "Output format. One of: json|yaml. Optional")
 
 	CleanCmd.AddCommand(cleanDeadClustersCmd)
 	CountCmd.AddCommand(countContendersCmd)
@@ -90,7 +121,6 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 				sort.Strings(trueClusters)
 
 				if strings.Join(trueClusters, ",") == rel.Annotations[shipper.ReleaseClustersAnnotation] {
-					cmd.Printf("skipping release %s/%s\n", rel.Namespace, rel.Name)
 					continue
 				}
 				rel.Annotations[shipper.ReleaseClustersAnnotation] = strings.Join(trueClusters, ",")
@@ -144,6 +174,7 @@ func runCountContenderCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	var errList []string
+	var countedReleases []OutputRelease
 	for _, ns := range namespaceList.Items {
 		applicationList, err := configurator.ShipperClient.ShipperV1alpha1().Applications(ns.Name).List(metav1.ListOptions{})
 		if err != nil {
@@ -159,11 +190,21 @@ func runCountContenderCommand(cmd *cobra.Command, args []string) error {
 			trueClusters := getFilteredSelectedClusters(contender)
 			if len(trueClusters) == 0 {
 				counter++
+				countedReleases = append(
+					countedReleases,
+					OutputRelease{
+						Namespace: contender.Namespace,
+						Name:      contender.Name,
+					})
 			}
 		}
 	}
 
-	cmd.Println("Number of *contenders* that are scheduled only on decommissioned clusters: ", counter)
+	if printOption == "" {
+		cmd.Println("Number of *contenders* that are scheduled only on decommissioned clusters: ", counter)
+	} else {
+		printCountedRelease(countedReleases)
+	}
 	if len(errList) > 0 {
 		return fmt.Errorf(strings.Join(errList, ","))
 	}
@@ -183,6 +224,7 @@ func runCountReleasesCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	var errList []string
+	var countedReleases []OutputRelease
 	for _, ns := range namespaceList.Items {
 		releaseList, err := configurator.ShipperClient.ShipperV1alpha1().Releases(ns.Name).List(metav1.ListOptions{})
 		if err != nil {
@@ -193,15 +235,45 @@ func runCountReleasesCommand(cmd *cobra.Command, args []string) error {
 			trueClusters := getFilteredSelectedClusters(&rel)
 			if len(trueClusters) == 0 {
 				counter++
+				countedReleases = append(
+					countedReleases,
+					OutputRelease{
+						Namespace: rel.Namespace,
+						Name:      rel.Name,
+					})
 			}
 		}
 	}
 
-	cmd.Println("Number of *releases* that are scheduled only on decommissioned clusters: ", counter)
+	if printOption == "" {
+		cmd.Println("Number of *releases* that are scheduled only on decommissioned clusters: ", counter)
+	} else {
+		printCountedRelease(countedReleases)
+	}
 	if len(errList) > 0 {
 		return fmt.Errorf(strings.Join(errList, ","))
 	}
 	return nil
+}
+
+func printCountedRelease(outputReleases []OutputRelease) {
+	var err error
+	var data []byte
+
+	switch printOption {
+	case "yaml":
+		data, err = yaml.Marshal(outputReleases)
+	case "json":
+		data, err = json.MarshalIndent(outputReleases, "", "    ")
+	case "":
+		return
+	}
+	if err != nil {
+		os.Stderr.Write(bytes.NewBufferString(err.Error()).Bytes())
+		return
+	}
+
+	_, _ = os.Stdout.Write(data)
 }
 
 func getFilteredSelectedClusters(rel *shipper.Release) []string {
