@@ -2,16 +2,17 @@ package cmd
 
 import (
 	"fmt"
+	"k8s.io/client-go/kubernetes"
 	"sort"
 	"strings"
-
-	"github.com/spf13/cobra"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
 	cmdutil "github.com/bookingcom/shipper/cmd/shipperctl/util"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
+	"github.com/spf13/cobra"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -35,6 +36,13 @@ var (
 		RunE: runCleanCommand,
 	}
 )
+
+type ReleaseAndFilteredAnnotations struct {
+	OldClusterAnnotation      string
+	FilteredClusterAnnotation string
+	Namespace                 string
+	Name                      string
+}
 
 func init() {
 	// Flags common to all commands under `shipperctl clean`
@@ -64,9 +72,25 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	namespaceList, err := kubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
+	//deleteReleases, updateAnnotations, err := collectReleases(kubeClient, shipperClient)
+	_, _, err = collectReleases(kubeClient, shipperClient)
 	if err != nil {
 		return err
+	}
+
+	var errList []string
+	if len(errList) > 0 {
+		return fmt.Errorf(strings.Join(errList, ","))
+	}
+	return nil
+}
+
+func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclientset.Interface) ([]ReleaseAndFilteredAnnotations, []ReleaseAndFilteredAnnotations, error) {
+	var deleteReleases []ReleaseAndFilteredAnnotations
+	var updateAnnotations []ReleaseAndFilteredAnnotations
+	namespaceList, err := kubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
+	if err != nil {
+		return nil, nil, err
 	}
 	var errList []string
 	for _, ns := range namespaceList.Items {
@@ -76,24 +100,34 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		for _, rel := range releaseList.Items {
+			selectedClusters := releaseutil.GetSelectedClusters(&rel)
 			filteredClusters := cmdutil.FilterSelectedClusters(releaseutil.GetSelectedClusters(&rel), clusters)
 			if len(filteredClusters) > 0 {
 				sort.Strings(filteredClusters)
 
-				if strings.Join(filteredClusters, ",") == rel.Annotations[shipper.ReleaseClustersAnnotation] {
+				filteredClusterAnnotation := strings.Join(filteredClusters, ",")
+				if filteredClusterAnnotation == rel.Annotations[shipper.ReleaseClustersAnnotation] {
 					continue
 				}
-				rel.Annotations[shipper.ReleaseClustersAnnotation] = strings.Join(filteredClusters, ",")
-				cmd.Printf("Editing annotations of release %s/%s to %s...", rel.Namespace, rel.Name, rel.Annotations[shipper.ReleaseClustersAnnotation])
-				if !dryrun {
-					_, err := shipperClient.ShipperV1alpha1().Releases(ns.Name).Update(&rel)
-					if err != nil {
-						errList = append(errList, err.Error())
-					}
-					cmd.Println("done")
-				} else {
-					cmd.Println("dryrun")
-				}
+				//rel.Annotations[shipper.ReleaseClustersAnnotation] = strings.Join(filteredClusters, ",")
+				//cmd.Printf("Editing annotations of release %s/%s to %s...", rel.Namespace, rel.Name, rel.Annotations[shipper.ReleaseClustersAnnotation])
+				//if !dryrun {
+				//	_, err := shipperClient.ShipperV1alpha1().Releases(ns.Name).Update(&rel)
+				//	if err != nil {
+				//		errList = append(errList, err.Error())
+				//	}
+				//	cmd.Println("done")
+				//} else {
+				//	cmd.Println("dryrun")
+				//}
+				updateAnnotations = append(
+					updateAnnotations,
+					ReleaseAndFilteredAnnotations{
+						OldClusterAnnotation:      strings.Join(selectedClusters, ","),
+						FilteredClusterAnnotation: filteredClusterAnnotation,
+						Namespace:                 rel.Namespace,
+						Name:                      rel.Name,
+					})
 				continue
 			}
 			isContender, err := cmdutil.IsContender(&rel, shipperClient)
@@ -102,22 +136,25 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 				continue
 			}
 			if len(filteredClusters) == 0 && !isContender {
-				cmd.Printf("Deleting release %s/%s...", rel.Namespace, rel.Name)
-				if !dryrun {
-					err := shipperClient.ShipperV1alpha1().Releases(ns.Name).Delete(rel.Name, &metav1.DeleteOptions{})
-					if err != nil {
-						errList = append(errList, err.Error())
-					}
-					cmd.Println("done")
-				} else {
-					cmd.Println("dryrun")
+				//cmd.Printf("Deleting release %s/%s...", rel.Namespace, rel.Name)
+				//if !dryrun {
+				//	err := shipperClient.ShipperV1alpha1().Releases(ns.Name).Delete(rel.Name, &metav1.DeleteOptions{})
+				//	if err != nil {
+				//		errList = append(errList, err.Error())
+				//	}
+				//	cmd.Println("done")
+				//} else {
+				//	cmd.Println("dryrun")
+				//}
+				outputRelease := ReleaseAndFilteredAnnotations{
+					OldClusterAnnotation:      strings.Join(selectedClusters, ","),
+					FilteredClusterAnnotation: "",
+					Namespace:                 rel.Namespace,
+					Name:                      rel.Name,
 				}
+				deleteReleases = append(deleteReleases, outputRelease)
 			}
 		}
 	}
-
-	if len(errList) > 0 {
-		return fmt.Errorf(strings.Join(errList, ","))
-	}
-	return nil
+	return deleteReleases, updateAnnotations, fmt.Errorf(strings.Join(errList, ","))
 }
