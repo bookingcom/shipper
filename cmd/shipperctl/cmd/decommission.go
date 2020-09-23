@@ -11,6 +11,7 @@ import (
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	"github.com/bookingcom/shipper/pkg/util/filters"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
@@ -56,18 +57,23 @@ func init() {
 }
 
 func runCleanCommand(cmd *cobra.Command, args []string) error {
-	configurator, err := configurator.NewClusterConfiguratorFromKubeConfig(kubeConfigFile, managementClusterContext)
+	kubeClient, err := configurator.NewKubeClientFromKubeConfig(kubeConfigFile, managementClusterContext)
 	if err != nil {
 		return err
 	}
 
-	namespaceList, err := configurator.KubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
+	shipperClient, err := configurator.NewShipperClientFromKubeConfig(kubeConfigFile, managementClusterContext)
+	if err != nil {
+		return err
+	}
+
+	namespaceList, err := kubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
 	var errList []string
 	for _, ns := range namespaceList.Items {
-		releaseList, err := configurator.ShipperClient.ShipperV1alpha1().Releases(ns.Name).List(metav1.ListOptions{})
+		releaseList, err := shipperClient.ShipperV1alpha1().Releases(ns.Name).List(metav1.ListOptions{})
 		if err != nil {
 			errList = append(errList, err.Error())
 			continue
@@ -83,7 +89,7 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 				rel.Annotations[shipper.ReleaseClustersAnnotation] = strings.Join(filteredClusters, ",")
 				cmd.Printf("Editing annotations of release %s/%s to %s...", rel.Namespace, rel.Name, rel.Annotations[shipper.ReleaseClustersAnnotation])
 				if !dryrun {
-					_, err := configurator.ShipperClient.ShipperV1alpha1().Releases(ns.Name).Update(&rel)
+					_, err := shipperClient.ShipperV1alpha1().Releases(ns.Name).Update(&rel)
 					if err != nil {
 						errList = append(errList, err.Error())
 					}
@@ -93,7 +99,7 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 				}
 				continue
 			}
-			isContender, err := isContender(&rel, configurator)
+			isContender, err := isContender(&rel, shipperClient)
 			if err != nil {
 				errList = append(errList, err.Error())
 				continue
@@ -101,7 +107,7 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 			if len(filteredClusters) == 0 && !isContender {
 				cmd.Printf("Deleting release %s/%s...", rel.Namespace, rel.Name)
 				if !dryrun {
-					err := configurator.ShipperClient.ShipperV1alpha1().Releases(ns.Name).Delete(rel.Name, &metav1.DeleteOptions{})
+					err := shipperClient.ShipperV1alpha1().Releases(ns.Name).Delete(rel.Name, &metav1.DeleteOptions{})
 					if err != nil {
 						errList = append(errList, err.Error())
 					}
@@ -130,23 +136,23 @@ func getFilteredSelectedClusters(rel *shipper.Release) []string {
 	return filteredClusters
 }
 
-func isContender(rel *shipper.Release, configurator *configurator.Cluster) (bool, error) {
+func isContender(rel *shipper.Release, shipperClient shipperclientset.Interface) (bool, error) {
 	appName := rel.Labels[shipper.AppLabel]
-	app, err := configurator.ShipperClient.ShipperV1alpha1().Applications(rel.Namespace).Get(appName, metav1.GetOptions{})
+	app, err := shipperClient.ShipperV1alpha1().Applications(rel.Namespace).Get(appName, metav1.GetOptions{})
 	if err != nil {
 		return false, err
 	}
-	contender, err := getContender(app, configurator)
+	contender, err := getContender(app, shipperClient)
 	if err != nil {
 		return false, err
 	}
 	return contender.Name == rel.Name && contender.Namespace == rel.Namespace, nil
 }
 
-func getContender(app *shipper.Application, configurator *configurator.Cluster) (*shipper.Release, error) {
+func getContender(app *shipper.Application, shipperClient shipperclientset.Interface) (*shipper.Release, error) {
 	appName := app.Name
 	selector := labels.Set{shipper.AppLabel: appName}.AsSelector()
-	releaseList, err := configurator.ShipperClient.ShipperV1alpha1().Releases(app.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	releaseList, err := shipperClient.ShipperV1alpha1().Releases(app.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, err
 	}
