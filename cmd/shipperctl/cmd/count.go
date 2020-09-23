@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 	"os"
 	"strings"
 
@@ -15,6 +16,7 @@ import (
 )
 
 var (
+	clusters    []string
 	printOption string
 
 	CountCmd = &cobra.Command{
@@ -57,10 +59,7 @@ func init() {
 	}
 
 	CountCmd.PersistentFlags().StringVar(&managementClusterContext, "management-cluster-context", "", "The name of the context to use to communicate with the management cluster. defaults to the current one")
-	CountCmd.PersistentFlags().StringSliceVar(&clusters, clustersFlagName, clusters, "List of comma separated clusters to count releases that are scheduled on. (Required)")
-	if err := CountCmd.MarkPersistentFlagRequired(clustersFlagName); err != nil {
-		CountCmd.Printf("warning: could not mark %q as required: %s\n", clustersFlagName, err)
-	}
+	CountCmd.PersistentFlags().StringSliceVar(&clusters, clustersFlagName, clusters, "List of comma separated clusters to count releases that are scheduled on. If empty, will count without filtering")
 	CountCmd.PersistentFlags().StringVarP(&printOption, "output", "o", "", "Output format. One of: json|yaml. (Optional)")
 
 	CountCmd.AddCommand(countContendersCmd)
@@ -69,30 +68,35 @@ func init() {
 
 func runCountContenderCommand(cmd *cobra.Command, args []string) error {
 	counter := 0
-	configurator, err := configurator.NewClusterConfiguratorFromKubeConfig(kubeConfigFile, managementClusterContext)
+	kubeClient, err := configurator.NewKubeClientFromKubeConfig(kubeConfigFile, managementClusterContext)
 	if err != nil {
 		return err
 	}
 
-	namespaceList, err := configurator.KubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
+	shipperClient, err := configurator.NewShipperClientFromKubeConfig(kubeConfigFile, managementClusterContext)
+	if err != nil {
+		return err
+	}
+
+	namespaceList, err := kubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
 	var errList []string
 	var countedReleases []OutputRelease
 	for _, ns := range namespaceList.Items {
-		applicationList, err := configurator.ShipperClient.ShipperV1alpha1().Applications(ns.Name).List(metav1.ListOptions{})
+		applicationList, err := shipperClient.ShipperV1alpha1().Applications(ns.Name).List(metav1.ListOptions{})
 		if err != nil {
 			errList = append(errList, err.Error())
 			continue
 		}
 		for _, app := range applicationList.Items {
-			contender, err := getContender(&app, configurator)
+			contender, err := getContender(&app, shipperClient)
 			if err != nil {
 				errList = append(errList, err.Error())
 				continue
 			}
-			trueClusters := getFilteredSelectedClusters(contender)
+			trueClusters := getFilteredScheduledClusters(releaseutil.GetSelectedClusters(contender), decommissionedClusters)
 			if len(trueClusters) == 0 {
 				counter++
 				countedReleases = append(
@@ -119,25 +123,30 @@ func runCountContenderCommand(cmd *cobra.Command, args []string) error {
 func runCountReleasesCommand(cmd *cobra.Command, args []string) error {
 	counter := 0
 
-	configurator, err := configurator.NewClusterConfiguratorFromKubeConfig(kubeConfigFile, managementClusterContext)
+	kubeClient, err := configurator.NewKubeClientFromKubeConfig(kubeConfigFile, managementClusterContext)
 	if err != nil {
 		return err
 	}
 
-	namespaceList, err := configurator.KubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
+	shipperClient, err := configurator.NewShipperClientFromKubeConfig(kubeConfigFile, managementClusterContext)
+	if err != nil {
+		return err
+	}
+
+	namespaceList, err := kubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
 	var errList []string
 	var countedReleases []OutputRelease
 	for _, ns := range namespaceList.Items {
-		releaseList, err := configurator.ShipperClient.ShipperV1alpha1().Releases(ns.Name).List(metav1.ListOptions{})
+		releaseList, err := shipperClient.ShipperV1alpha1().Releases(ns.Name).List(metav1.ListOptions{})
 		if err != nil {
 			errList = append(errList, err.Error())
 			continue
 		}
 		for _, rel := range releaseList.Items {
-			trueClusters := getFilteredSelectedClusters(&rel)
+			trueClusters := getFilteredScheduledClusters(releaseutil.GetSelectedClusters(&rel), decommissionedClusters)
 			if len(trueClusters) == 0 {
 				counter++
 				countedReleases = append(
