@@ -3,6 +3,7 @@ package repo
 import (
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -73,7 +74,7 @@ func TestCreateRepoIfNotExist(t *testing.T) {
 		{
 			name:    "invalid URL",
 			url:     "an invalid url string",
-			err:     fmt.Errorf("internal chart repo client error: parse an invalid url string: invalid URI for request"),
+			err:     fmt.Errorf("internal chart repo client error"),
 			factory: testCacheFactory,
 		},
 	}
@@ -90,7 +91,7 @@ func TestCreateRepoIfNotExist(t *testing.T) {
 			_, err := c.CreateRepoIfNotExist(testCase.url)
 			if (err == nil && testCase.err != nil) ||
 				(err != nil && testCase.err == nil) ||
-				(err != nil && err.Error() != testCase.err.Error()) {
+				(err != nil && !strings.Contains(err.Error(), testCase.err.Error())) {
 				t.Fatalf("Unexpected error on calling NewCatalog(): got: %q, want: %q", err, testCase.err)
 			}
 		})

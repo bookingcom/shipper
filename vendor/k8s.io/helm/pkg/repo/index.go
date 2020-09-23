@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/Masterminds/semver"
 	"github.com/ghodss/yaml"
+	yaml2 "gopkg.in/yaml.v2"
 
 	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/proto/hapi/chart"
@@ -82,6 +84,17 @@ type IndexFile struct {
 	PublicKeys []string                 `json:"publicKeys,omitempty"`
 }
 
+// IndexValidation is used to validate the integrity of an index file
+type IndexValidation struct {
+	// This is used ONLY for validation against chartmuseum's index files and
+	// is discarded after validation.
+	ServerInfo map[string]interface{} `yaml:"serverInfo,omitempty"`
+	APIVersion string                 `yaml:"apiVersion"`
+	Generated  time.Time              `yaml:"generated"`
+	Entries    map[string]interface{} `yaml:"entries"`
+	PublicKeys []string               `yaml:"publicKeys,omitempty"`
+}
+
 // NewIndexFile initializes an index.
 func NewIndexFile() *IndexFile {
 	return &IndexFile{
@@ -110,7 +123,7 @@ func (i IndexFile) Add(md *chart.Metadata, filename, baseURL, digest string) {
 		_, file := filepath.Split(filename)
 		u, err = urlutil.URLJoin(baseURL, file)
 		if err != nil {
-			u = filepath.Join(baseURL, file)
+			u = path.Join(baseURL, file)
 		}
 	}
 	cr := &ChartVersion{
@@ -146,7 +159,8 @@ func (i IndexFile) SortEntries() {
 
 // Get returns the ChartVersion for the given name.
 //
-// If version is empty, this will return the chart with the highest version.
+// If version is empty, this will return the chart with the latest stable version,
+// prerelease versions will be skipped.
 func (i IndexFile) Get(name, version string) (*ChartVersion, error) {
 	vs, ok := i.Entries[name]
 	if !ok {
@@ -164,6 +178,15 @@ func (i IndexFile) Get(name, version string) (*ChartVersion, error) {
 		constraint, err = semver.NewConstraint(version)
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	// when customer input exact version, check whether have exact match one first
+	if len(version) != 0 {
+		for _, ver := range vs {
+			if version == ver.Version {
+				return ver, nil
+			}
 		}
 	}
 
@@ -246,9 +269,11 @@ func IndexDirectory(dir, baseURL string) (*IndexFile, error) {
 
 		var parentDir string
 		parentDir, fname = filepath.Split(fname)
+		// filepath.Split appends an extra slash to the end of parentDir. We want to strip that out.
+		parentDir = strings.TrimSuffix(parentDir, string(os.PathSeparator))
 		parentURL, err := urlutil.URLJoin(baseURL, parentDir)
 		if err != nil {
-			parentURL = filepath.Join(baseURL, parentDir)
+			parentURL = path.Join(baseURL, parentDir)
 		}
 
 		c, err := chartutil.Load(arch)
@@ -270,9 +295,14 @@ func IndexDirectory(dir, baseURL string) (*IndexFile, error) {
 // This will fail if API Version is not set (ErrNoAPIVersion) or if the unmarshal fails.
 func loadIndex(data []byte) (*IndexFile, error) {
 	i := &IndexFile{}
+	if err := validateIndex(data); err != nil {
+		return i, err
+	}
+
 	if err := yaml.Unmarshal(data, i); err != nil {
 		return i, err
 	}
+
 	i.SortEntries()
 	if i.APIVersion == "" {
 		// When we leave Beta, we should remove legacy support and just
@@ -281,6 +311,16 @@ func loadIndex(data []byte) (*IndexFile, error) {
 		return loadUnversionedIndex(data)
 	}
 	return i, nil
+}
+
+// validateIndex validates that the index is well-formed.
+func validateIndex(data []byte) error {
+	// This is done ONLY for validation. We need to use ghodss/yaml for the actual parsing.
+	validation := &IndexValidation{}
+	if err := yaml2.UnmarshalStrict(data, validation); err != nil {
+		return err
+	}
+	return nil
 }
 
 // unversionedEntry represents a deprecated pre-Alpha.5 format.

@@ -79,6 +79,7 @@ type controller struct {
 	clock          clock.Clock
 }
 
+// Controller is a generic controller framework.
 type Controller interface {
 	Run(stopCh <-chan struct{})
 	HasSynced() bool
@@ -117,11 +118,11 @@ func (c *controller) Run(stopCh <-chan struct{}) {
 	c.reflectorMutex.Unlock()
 
 	var wg wait.Group
-	defer wg.Wait()
 
 	wg.StartWithChannel(stopCh, r.Run)
 
 	wait.Until(c.processLoop, time.Second, stopCh)
+	wg.Wait()
 }
 
 // Returns true once this controller has completed an initial resource listing
@@ -130,6 +131,8 @@ func (c *controller) HasSynced() bool {
 }
 
 func (c *controller) LastSyncResourceVersion() string {
+	c.reflectorMutex.RLock()
+	defer c.reflectorMutex.RUnlock()
 	if c.reflector == nil {
 		return ""
 	}
@@ -149,7 +152,7 @@ func (c *controller) processLoop() {
 	for {
 		obj, err := c.config.Queue.Pop(PopProcessFunc(c.config.Process))
 		if err != nil {
-			if err == FIFOClosedError {
+			if err == ErrFIFOClosed {
 				return
 			}
 			if c.config.RetryOnError {

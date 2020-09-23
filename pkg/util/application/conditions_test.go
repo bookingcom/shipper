@@ -43,15 +43,15 @@ func TestConditionDiffIsEmpty(t *testing.T) {
 		{
 			Name: "equivalent conditions",
 			Cond1: &shipper.ApplicationCondition{
-				Type:               shipper.ApplicationConditionType(42),
-				Status:             corev1.ConditionStatus(42),
+				Type:               shipper.ApplicationConditionType("42"),
+				Status:             corev1.ConditionStatus("42"),
 				LastTransitionTime: metav1.Time{Time: time.Now()},
 				Reason:             "reason 42",
 				Message:            "message 42",
 			},
 			Cond2: &shipper.ApplicationCondition{
-				Type:               shipper.ApplicationConditionType(42),
-				Status:             corev1.ConditionStatus(42),
+				Type:               shipper.ApplicationConditionType("42"),
+				Status:             corev1.ConditionStatus("42"),
 				LastTransitionTime: metav1.Time{Time: time.Now()},
 				Reason:             "reason 42",
 				Message:            "message 42",
