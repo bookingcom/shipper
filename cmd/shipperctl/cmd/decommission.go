@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/rodaine/table"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -18,7 +19,7 @@ import (
 )
 
 const (
-	decommissionedClustersFlagName = "decommissioned-clusters"
+	decommissionedClustersFlagName = "decommissionedClusters"
 )
 
 var (
@@ -162,7 +163,10 @@ func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclien
 			}
 		}
 	}
-	return deleteReleases, updateAnnotations, fmt.Errorf(strings.Join(errList, ","))
+	if len(errList) > 0 {
+		return nil, nil, fmt.Errorf(strings.Join(errList, ","))
+	}
+	return deleteReleases, updateAnnotations, nil
 }
 
 func reviewActions(cmd *cobra.Command, deleteReleases []ReleaseAndFilteredAnnotations, updateAnnotations []ReleaseAndFilteredAnnotations) error {
@@ -172,86 +176,33 @@ func reviewActions(cmd *cobra.Command, deleteReleases []ReleaseAndFilteredAnnota
 		return err
 	}
 	if confirm {
-		tt := &metav1.Table{
-			TypeMeta: metav1.TypeMeta{},
-			ListMeta: metav1.ListMeta{},
-			ColumnDefinitions: []metav1.TableColumnDefinition{
-				{
-					Name: "Namespace",
-					Type: "string",
-				},
-				{
-					Name: "Name",
-					Type: "string",
-				},
+		tbl := table.New(
+			"NAMESPACE",
+			"NAME",
+			"ACTION TAKEN",
+			"OLD CLUSTER ANNOTATIONS",
+			"NEW CLUSTER ANNOTATIONS",
+		)
 
-				{
-					Name: "Action Taken",
-					Type: "string",
-				},
-
-				{
-					Name: "Old Clusters Annotations",
-					Type: "string",
-				},
-
-				{
-					Name: "New Clusters Annotations",
-					Type: "string",
-				},
-			},
-			Rows: nil,
-		}
-		//tbl, err := prettytable.NewTable([]prettytable.Column{
-		//	{Header: "NAMESPACE"},
-		//	{Header: "NAME"},
-		//	{Header: "ACTION TAKEN"},
-		//	{Header: "OLD CLUSTER ANNOTATIONS"},
-		//	{Header: "NEW CLUSTER ANNOTATIONS"},
-		//}...)
-		//if err != nil {
-		//	return err
-		//}
 		for _, release := range deleteReleases {
-			tt.Rows = append(tt.Rows, metav1.TableRow{
-				Cells: []interface{}{
-					release.Namespace,
-					release.Name,
-					" DELETE ",
-					release.OldClusterAnnotation,
-					release.FilteredClusterAnnotation,
-				},
-			})
-			//tbl.AddRow(
-			//	release.Namespace,
-			//	release.Name,
-			//	" DELETE ",
-			//	release.OldClusterAnnotation,
-			//	release.FilteredClusterAnnotation,
-			//)
+			tbl.AddRow(
+				release.Namespace,
+				release.Name,
+				"DELETE",
+				release.OldClusterAnnotation,
+				release.FilteredClusterAnnotation,
+			)
 		}
 		for _, release := range updateAnnotations {
-			tt.Rows = append(tt.Rows, metav1.TableRow{
-				Cells: []interface{}{
-					release.Namespace,
-					release.Name,
-					"UPDATE",
-					release.OldClusterAnnotation,
-					release.FilteredClusterAnnotation,
-				},
-			})
-			//tbl.AddRow(
-			//	release.Namespace,
-			//	release.Name,
-			//	"UPDATE",
-			//	release.OldClusterAnnotation,
-			//	release.FilteredClusterAnnotation,
-			//)
+			tbl.AddRow(
+				release.Namespace,
+				release.Name,
+				"UPDATE",
+				release.OldClusterAnnotation,
+				release.FilteredClusterAnnotation,
+			)
 		}
-		//tbl.Print()
-		//printer := printers.NewTablePrinter(printers.PrintOptions{})
-		//printer.PrintObj(tt, cmd.OutOrStdout())
-		//cmd.Println()
+		tbl.Print()
 	}
 	return nil
 }
