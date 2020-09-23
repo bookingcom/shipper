@@ -7,13 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
+	cmdutil "github.com/bookingcom/shipper/cmd/shipperctl/util"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	apputil "github.com/bookingcom/shipper/pkg/util/application"
-	"github.com/bookingcom/shipper/pkg/util/filters"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
@@ -79,7 +76,7 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		for _, rel := range releaseList.Items {
-			filteredClusters := filterSelectedClusters(releaseutil.GetSelectedClusters(&rel), clusters)
+			filteredClusters := cmdutil.FilterSelectedClusters(releaseutil.GetSelectedClusters(&rel), clusters)
 			if len(filteredClusters) > 0 {
 				sort.Strings(filteredClusters)
 
@@ -99,7 +96,7 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 				}
 				continue
 			}
-			isContender, err := isContender(&rel, shipperClient)
+			isContender, err := cmdutil.IsContender(&rel, shipperClient)
 			if err != nil {
 				errList = append(errList, err.Error())
 				continue
@@ -123,46 +120,4 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf(strings.Join(errList, ","))
 	}
 	return nil
-}
-
-func filterSelectedClusters(selectedClusters []string, clustersToRemove []string) []string {
-	var filteredClusters []string
-	for _, selectedCluster := range selectedClusters {
-		if !filters.SliceContainsString(clustersToRemove, selectedCluster) {
-			filteredClusters = append(filteredClusters, selectedCluster)
-		}
-	}
-	return filteredClusters
-}
-
-func isContender(rel *shipper.Release, shipperClient shipperclientset.Interface) (bool, error) {
-	appName := rel.Labels[shipper.AppLabel]
-	app, err := shipperClient.ShipperV1alpha1().Applications(rel.Namespace).Get(appName, metav1.GetOptions{})
-	if err != nil {
-		return false, err
-	}
-	contender, err := getContender(app, shipperClient)
-	if err != nil {
-		return false, err
-	}
-	return contender.Name == rel.Name && contender.Namespace == rel.Namespace, nil
-}
-
-func getContender(app *shipper.Application, shipperClient shipperclientset.Interface) (*shipper.Release, error) {
-	appName := app.Name
-	selector := labels.Set{shipper.AppLabel: appName}.AsSelector()
-	releaseList, err := shipperClient.ShipperV1alpha1().Releases(app.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
-	if err != nil {
-		return nil, err
-	}
-	rels := make([]*shipper.Release, len(releaseList.Items))
-	for i, _ := range releaseList.Items {
-		rels[i] = &releaseList.Items[i]
-	}
-	rels = releaseutil.SortByGenerationDescending(rels)
-	contender, err := apputil.GetContender(appName, rels)
-	if err != nil {
-		return nil, err
-	}
-	return contender, nil
 }
