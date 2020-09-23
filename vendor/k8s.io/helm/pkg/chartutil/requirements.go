@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -17,7 +17,9 @@ package chartutil
 
 import (
 	"errors"
+	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"time"
 
@@ -45,7 +47,7 @@ var (
 type Dependency struct {
 	// Name is the name of the dependency.
 	//
-	// This must mach the name in the dependency's Chart.yaml.
+	// This must match the name in the dependency's Chart.yaml.
 	Name string `json:"name"`
 	// Version is the version (range) of this chart.
 	//
@@ -85,7 +87,7 @@ type Requirements struct {
 //
 // It represents the state that the dependencies should be in.
 type RequirementsLock struct {
-	// Genderated is the date the lock file was last generated.
+	// Generated is the date the lock file was last generated.
 	Generated time.Time `json:"generated"`
 	// Digest is a hash of the requirements file used to generate it.
 	Digest string `json:"digest"`
@@ -124,7 +126,7 @@ func LoadRequirementsLock(c *chart.Chart) (*RequirementsLock, error) {
 }
 
 // ProcessRequirementsConditions disables charts based on condition path value in values
-func ProcessRequirementsConditions(reqs *Requirements, cvals Values) {
+func ProcessRequirementsConditions(reqs *Requirements, cvals Values, cpath string) {
 	var cond string
 	var conds []string
 	if reqs == nil || len(reqs.Dependencies) == 0 {
@@ -143,7 +145,7 @@ func ProcessRequirementsConditions(reqs *Requirements, cvals Values) {
 			for _, c := range conds {
 				if len(c) > 0 {
 					// retrieve value
-					vv, err := cvals.PathValue(c)
+					vv, err := cvals.PathValue(cpath + c)
 					if err == nil {
 						// if not bool, warn
 						if bv, ok := vv.(bool); ok {
@@ -219,6 +221,9 @@ func ProcessRequirementsTags(reqs *Requirements, cvals Values) {
 
 }
 
+// Validate alias names against this regexp
+var aliasRegexp = regexp.MustCompile("^[a-zA-Z0-9-_]+$")
+
 func getAliasDependency(charts []*chart.Chart, aliasChart *Dependency) *chart.Chart {
 	var chartFound chart.Chart
 	for _, existingChart := range charts {
@@ -237,6 +242,11 @@ func getAliasDependency(charts []*chart.Chart, aliasChart *Dependency) *chart.Ch
 		chartFound = *existingChart
 		newMetadata := *existingChart.Metadata
 		if aliasChart.Alias != "" {
+			// Make sure Alias is well-formed
+			if !aliasRegexp.MatchString(aliasChart.Alias) {
+				fmt.Printf("Invalid alias in dependency %q. Skipping.", aliasChart.Name)
+				continue
+			}
 			newMetadata.Name = aliasChart.Alias
 		}
 		chartFound.Metadata = &newMetadata
@@ -247,6 +257,10 @@ func getAliasDependency(charts []*chart.Chart, aliasChart *Dependency) *chart.Ch
 
 // ProcessRequirementsEnabled removes disabled charts from dependencies
 func ProcessRequirementsEnabled(c *chart.Chart, v *chart.Config) error {
+	return doProcessRequirementsEnabled(c, v, "")
+}
+
+func doProcessRequirementsEnabled(c *chart.Chart, v *chart.Config, path string) error {
 	reqs, err := LoadRequirements(c)
 	if err != nil {
 		// if not just missing requirements file, return error
@@ -282,6 +296,9 @@ func ProcessRequirementsEnabled(c *chart.Chart, v *chart.Config) error {
 			chartDependencies = append(chartDependencies, chartDependency)
 		}
 		if req.Alias != "" {
+			if !aliasRegexp.MatchString(req.Alias) {
+				return fmt.Errorf("illegal alias name in %q", req.Name)
+			}
 			req.Name = req.Alias
 		}
 	}
@@ -303,7 +320,7 @@ func ProcessRequirementsEnabled(c *chart.Chart, v *chart.Config) error {
 	cc := chart.Config{Raw: yvals}
 	// flag dependencies as enabled/disabled
 	ProcessRequirementsTags(reqs, cvals)
-	ProcessRequirementsConditions(reqs, cvals)
+	ProcessRequirementsConditions(reqs, cvals, path)
 	// make a map of charts to remove
 	rm := map[string]bool{}
 	for _, r := range reqs.Dependencies {
@@ -323,7 +340,8 @@ func ProcessRequirementsEnabled(c *chart.Chart, v *chart.Config) error {
 	}
 	// recursively call self to process sub dependencies
 	for _, t := range cd {
-		err := ProcessRequirementsEnabled(t, &cc)
+		subpath := path + t.Metadata.Name + "."
+		err := doProcessRequirementsEnabled(t, &cc, subpath)
 		// if its not just missing requirements file, return error
 		if nerr, ok := err.(ErrNoRequirementsFile); !ok && err != nil {
 			return nerr
@@ -394,46 +412,52 @@ func processImportValues(c *chart.Chart) error {
 	b := make(map[string]interface{}, 0)
 	// import values from each dependency if specified in import-values
 	for _, r := range reqs.Dependencies {
+		// only process raw requirement that is found in chart's dependencies (enabled)
+		found := false
+		name := r.Name
+		for _, v := range c.Dependencies {
+			if v.Metadata.Name == r.Name {
+				found = true
+			}
+			if v.Metadata.Name == r.Alias {
+				found = true
+				name = r.Alias
+			}
+		}
+		if !found {
+			continue
+		}
 		if len(r.ImportValues) > 0 {
 			var outiv []interface{}
 			for _, riv := range r.ImportValues {
+				nm := make(map[string]string, 0)
 				switch iv := riv.(type) {
 				case map[string]interface{}:
-					nm := map[string]string{
-						"child":  iv["child"].(string),
-						"parent": iv["parent"].(string),
-					}
-					outiv = append(outiv, nm)
-					s := r.Name + "." + nm["child"]
-					// get child table
-					vv, err := cvals.Table(s)
-					if err != nil {
-						log.Printf("Warning: ImportValues missing table: %v", err)
-						continue
-					}
-					// create value map from child to be merged into parent
-					vm := pathToMap(nm["parent"], vv.AsMap())
-					b = coalesceTables(cvals, vm)
+					nm["child"] = iv["child"].(string)
+					nm["parent"] = iv["parent"].(string)
 				case string:
-					nm := map[string]string{
-						"child":  "exports." + iv,
-						"parent": ".",
-					}
-					outiv = append(outiv, nm)
-					s := r.Name + "." + nm["child"]
-					vm, err := cvals.Table(s)
-					if err != nil {
-						log.Printf("Warning: ImportValues missing table: %v", err)
-						continue
-					}
-					b = coalesceTables(b, vm.AsMap())
+					nm["child"] = "exports." + iv
+					nm["parent"] = "."
 				}
+
+				outiv = append(outiv, nm)
+				s := name + "." + nm["child"]
+				// get child table
+				vv, err := cvals.Table(s)
+				if err != nil {
+					log.Printf("Warning: ImportValues missing table: %v", err)
+					continue
+				}
+				// create value map from child to be merged into parent
+				vm := pathToMap(nm["parent"], vv.AsMap())
+				b = coalesceTables(b, vm, c.Metadata.Name)
+
 			}
 			// set our formatted import values
 			r.ImportValues = outiv
 		}
 	}
-	b = coalesceTables(b, cvals)
+	b = coalesceTables(b, cvals, c.Metadata.Name)
 	y, err := yaml.Marshal(b)
 	if err != nil {
 		return err
