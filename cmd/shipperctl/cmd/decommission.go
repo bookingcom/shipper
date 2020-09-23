@@ -75,20 +75,101 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	deleteReleases, updateAnnotations, err := collectReleases(kubeClient, shipperClient)
+	releasesToDelete, releasesToUpdate, err := collectReleases(kubeClient, shipperClient)
 	if err != nil {
 		return err
 	}
 
-	err = reviewActions(cmd, deleteReleases, updateAnnotations)
+	err = reviewActions(cmd, releasesToDelete, releasesToUpdate)
 	if err != nil {
 		return err
 	}
 
 	var errList []string
+	if !dryrun {
+		err := deleteReleases(cmd, shipperClient, releasesToDelete)
+		if err != nil {
+			errList = append(errList, err.Error())
+		}
+
+		err = updateReleases(cmd, shipperClient, releasesToUpdate)
+		if err != nil {
+			errList = append(errList, err.Error())
+		}
+	}
+
 	if len(errList) > 0 {
 		return fmt.Errorf(strings.Join(errList, ","))
 	}
+
+	return nil
+}
+
+func deleteReleases(cmd *cobra.Command, shipperClient shipperclientset.Interface, releasesToDelete []ReleaseAndFilteredAnnotations) error {
+	confirm, err := cmdutil.AskForConfirmation(os.Stdin, "This will delete releases. Are you sure?")
+	if err != nil {
+		return err
+	}
+	if !confirm {
+		return nil
+	}
+
+	var errList []string
+	for _, rel := range releasesToDelete {
+		cmd.Printf("Deleting release %s/%s ...", rel.Namespace, rel.Name)
+		err := shipperClient.ShipperV1alpha1().Releases(rel.Namespace).Delete(rel.Name, &metav1.DeleteOptions{})
+		if err != nil {
+			errList = append(errList, fmt.Sprintf("failed to delete release: %s", err.Error()))
+			cmd.Printf("errored: %s\n", err.Error())
+			continue
+		}
+		cmd.Println("done")
+	}
+
+	if len(errList) > 0 {
+		return fmt.Errorf(strings.Join(errList, ","))
+	}
+
+	return nil
+}
+
+func updateReleases(cmd *cobra.Command, shipperClient shipperclientset.Interface, releasesToUpdate []ReleaseAndFilteredAnnotations) error {
+	confirm, err := cmdutil.AskForConfirmation(os.Stdin, "This will updates releases. Are you sure?")
+	if err != nil {
+		return err
+	}
+	if !confirm {
+		return nil
+	}
+
+	var errList []string
+	for _, rel := range releasesToUpdate {
+		relObject, err := shipperClient.ShipperV1alpha1().Releases(rel.Namespace).Get(rel.Name, metav1.GetOptions{})
+		if err != nil {
+			errList = append(errList, fmt.Sprintf("failed to get release: %s", err.Error()))
+			continue
+		}
+		cmd.Printf(
+			"Editing annotations of release %s/%s from %s to %s ...",
+			rel.Namespace,
+			rel.Name,
+			relObject.Annotations[shipper.ReleaseClustersAnnotation],
+			rel.FilteredClusterAnnotation,
+		)
+		relObject.Annotations[shipper.ReleaseClustersAnnotation] = rel.FilteredClusterAnnotation
+		_, err = shipperClient.ShipperV1alpha1().Releases(rel.Namespace).Update(relObject)
+		if err != nil {
+			errList = append(errList, fmt.Sprintf("failed to update release: %s", err.Error()))
+			cmd.Printf("errored: %s\n", err.Error())
+			continue
+		}
+		cmd.Println("done")
+	}
+
+	if len(errList) > 0 {
+		return fmt.Errorf(strings.Join(errList, ","))
+	}
+
 	return nil
 }
 
@@ -169,8 +250,8 @@ func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclien
 	return deleteReleases, updateAnnotations, nil
 }
 
-func reviewActions(cmd *cobra.Command, deleteReleases []ReleaseAndFilteredAnnotations, updateAnnotations []ReleaseAndFilteredAnnotations) error {
-	cmd.Printf("About to edit %d releases and and delete %d releases\n", len(updateAnnotations), len(deleteReleases))
+func reviewActions(cmd *cobra.Command, releasesToDelete []ReleaseAndFilteredAnnotations, releasesToUpdate []ReleaseAndFilteredAnnotations) error {
+	cmd.Printf("About to edit %d releases and and delete %d releases\n", len(releasesToUpdate), len(releasesToDelete))
 	confirm, err := cmdutil.AskForConfirmation(os.Stdin, "Would you like to see the releases? (This will not start the process)")
 	if err != nil {
 		return err
@@ -184,7 +265,7 @@ func reviewActions(cmd *cobra.Command, deleteReleases []ReleaseAndFilteredAnnota
 			"NEW CLUSTER ANNOTATIONS",
 		)
 
-		for _, release := range deleteReleases {
+		for _, release := range releasesToDelete {
 			tbl.AddRow(
 				release.Namespace,
 				release.Name,
@@ -193,7 +274,7 @@ func reviewActions(cmd *cobra.Command, deleteReleases []ReleaseAndFilteredAnnota
 				release.FilteredClusterAnnotation,
 			)
 		}
-		for _, release := range updateAnnotations {
+		for _, release := range releasesToUpdate {
 			tbl.AddRow(
 				release.Namespace,
 				release.Name,
