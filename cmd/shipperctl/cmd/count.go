@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
+	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
 const (
@@ -98,7 +99,7 @@ func runCountContenderCommand(cmd *cobra.Command, args []string) error {
 				errList = append(errList, err.Error())
 				continue
 			}
-			trueClusters := getFilteredSelectedClusters(contender)
+			trueClusters := filterSelectedClusters(releaseutil.GetSelectedClusters(contender), clusters)
 			if len(trueClusters) == 0 {
 				counter++
 				countedReleases = append(
@@ -148,7 +149,7 @@ func runCountReleasesCommand(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		for _, rel := range releaseList.Items {
-			trueClusters := getFilteredSelectedClusters(&rel)
+			trueClusters := filterSelectedClusters(releaseutil.GetSelectedClusters(&rel), clusters)
 			if len(trueClusters) == 0 {
 				counter++
 				countedReleases = append(

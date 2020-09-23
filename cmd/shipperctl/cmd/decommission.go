@@ -79,7 +79,7 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		for _, rel := range releaseList.Items {
-			filteredClusters := getFilteredSelectedClusters(&rel)
+			filteredClusters := filterSelectedClusters(releaseutil.GetSelectedClusters(&rel), clusters)
 			if len(filteredClusters) > 0 {
 				sort.Strings(filteredClusters)
 
@@ -125,11 +125,10 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func getFilteredSelectedClusters(rel *shipper.Release) []string {
-	selectedClusters := releaseutil.GetSelectedClusters(rel)
+func filterSelectedClusters(selectedClusters []string, clustersToRemove []string) []string {
 	var filteredClusters []string
 	for _, selectedCluster := range selectedClusters {
-		if !filters.SliceContainsString(clusters, selectedCluster) {
+		if !filters.SliceContainsString(clustersToRemove, selectedCluster) {
 			filteredClusters = append(filteredClusters, selectedCluster)
 		}
 	}
