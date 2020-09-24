@@ -219,8 +219,12 @@ func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclien
 				errList = append(errList, err.Error())
 				continue
 			}
+			// emptying the scheduled clusters annotation will make shipper re-schedule this release.
+			// If this release is a history release, Shipper will enforce strategy correctly (no capacity and no traffic)
+			// However, if this release is contender, Shipper will possibly give capacity and traffic to a release
+			// that did not have running workload. This might cause an un monitored, unexpected and unwanted behaviour
+			// from this release. So we are not touching contenders.
 			if len(filteredClusters) == 0 && !isContender {
-
 				outputRelease := ReleaseAndFilteredAnnotations{
 					OldClusterAnnotation:      strings.Join(selectedClusters, ","),
 					FilteredClusterAnnotation: "",
