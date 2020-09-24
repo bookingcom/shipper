@@ -34,6 +34,19 @@ func IsContender(rel *shipper.Release, shipperClient shipperclientset.Interface)
 	return contender.Name == rel.Name && contender.Namespace == rel.Namespace, nil
 }
 
+func IsIncumbent(rel *shipper.Release, shipperClient shipperclientset.Interface) (bool, error) {
+	appName := rel.Labels[shipper.AppLabel]
+	app, err := shipperClient.ShipperV1alpha1().Applications(rel.Namespace).Get(appName, metav1.GetOptions{})
+	if err != nil {
+		return false, err
+	}
+	incumbent, err := GetIncumbent(app, shipperClient)
+	if err != nil {
+		return false, err
+	}
+	return incumbent.Name == rel.Name && incumbent.Namespace == rel.Namespace, nil
+}
+
 func GetContender(app *shipper.Application, shipperClient shipperclientset.Interface) (*shipper.Release, error) {
 	appName := app.Name
 	selector := labels.Set{shipper.AppLabel: appName}.AsSelector()
@@ -51,4 +64,23 @@ func GetContender(app *shipper.Application, shipperClient shipperclientset.Inter
 		return nil, err
 	}
 	return contender, nil
+}
+
+func GetIncumbent(app *shipper.Application, shipperClient shipperclientset.Interface) (*shipper.Release, error) {
+	appName := app.Name
+	selector := labels.Set{shipper.AppLabel: appName}.AsSelector()
+	releaseList, err := shipperClient.ShipperV1alpha1().Releases(app.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	if err != nil {
+		return nil, err
+	}
+	rels := make([]*shipper.Release, len(releaseList.Items))
+	for i, _ := range releaseList.Items {
+		rels[i] = &releaseList.Items[i]
+	}
+	rels = releaseutil.SortByGenerationDescending(rels)
+	incumbent, err := apputil.GetIncumbent(appName, rels)
+	if err != nil {
+		return nil, err
+	}
+	return incumbent, nil
 }

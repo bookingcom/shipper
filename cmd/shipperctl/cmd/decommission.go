@@ -87,11 +87,6 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 
 	var errList []string
 	if !dryrun {
-		//err := deleteReleases(cmd, shipperClient, releasesToDelete)
-		//if err != nil {
-		//	errList = append(errList, err.Error())
-		//}
-
 		err = updateReleases(cmd, shipperClient, releasesToUpdate)
 		if err != nil {
 			errList = append(errList, err.Error())
@@ -104,37 +99,6 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 
 	return nil
 }
-
-//func deleteReleases(cmd *cobra.Command, shipperClient shipperclientset.Interface, releasesToDelete []ReleaseAndFilteredAnnotations) error {
-//	if len(releasesToDelete) == 0 {
-//		return nil
-//	}
-//	confirm, err := cmdutil.AskForConfirmation(os.Stdin, "This will delete releases. Are you sure?")
-//	if err != nil {
-//		return err
-//	}
-//	if !confirm {
-//		return nil
-//	}
-//
-//	var errList []string
-//	for _, rel := range releasesToDelete {
-//		cmd.Printf("Deleting release %s/%s ...", rel.Namespace, rel.Name)
-//		err := shipperClient.ShipperV1alpha1().Releases(rel.Namespace).Delete(rel.Name, &metav1.DeleteOptions{})
-//		if err != nil {
-//			errList = append(errList, fmt.Sprintf("failed to delete release: %s", err.Error()))
-//			cmd.Printf("errored: %s\n", err.Error())
-//			continue
-//		}
-//		cmd.Println("done")
-//	}
-//
-//	if len(errList) > 0 {
-//		return fmt.Errorf(strings.Join(errList, ","))
-//	}
-//
-//	return nil
-//}
 
 func updateReleases(cmd *cobra.Command, shipperClient shipperclientset.Interface, releasesToUpdate []ReleaseAndFilteredAnnotations) error {
 	if len(releasesToUpdate) == 0 {
@@ -180,7 +144,6 @@ func updateReleases(cmd *cobra.Command, shipperClient shipperclientset.Interface
 }
 
 func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclientset.Interface) ([]ReleaseAndFilteredAnnotations, error) {
-	//var deleteReleases []ReleaseAndFilteredAnnotations
 	var updateAnnotations []ReleaseAndFilteredAnnotations
 	namespaceList, err := kubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
 	if err != nil {
@@ -219,12 +182,18 @@ func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclien
 				errList = append(errList, err.Error())
 				continue
 			}
+			isIncumbent, err := cmdutil.IsIncumbent(&rel, shipperClient)
+			if err != nil {
+				errList = append(errList, err.Error())
+				continue
+			}
 			// emptying the scheduled clusters annotation will make shipper re-schedule this release.
 			// If this release is a history release, Shipper will enforce strategy correctly (no capacity and no traffic)
 			// However, if this release is contender, Shipper will possibly give capacity and traffic to a release
 			// that did not have running workload. This might cause an un monitored, unexpected and unwanted behaviour
 			// from this release. So we are not touching contenders.
-			if len(filteredClusters) == 0 && !isContender {
+			// This applies for incumbents in an incomplete rollout.
+			if len(filteredClusters) == 0 && !isContender && !isIncumbent {
 				outputRelease := ReleaseAndFilteredAnnotations{
 					OldClusterAnnotation:      strings.Join(selectedClusters, ","),
 					FilteredClusterAnnotation: "",
