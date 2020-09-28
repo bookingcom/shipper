@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -68,6 +69,9 @@ func init() {
 
 	CountCmd.AddCommand(countContendersCmd)
 	CountCmd.AddCommand(countReleasesCmd)
+	for _, command := range []*cobra.Command{countContendersCmd, countReleasesCmd} {
+		command.SetOutput(os.Stdout)
+	}
 }
 
 func runCountContenderCommand(cmd *cobra.Command, args []string) error {
@@ -87,7 +91,7 @@ func runCountContenderCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	var errList []string
-	var countedReleases []OutputRelease
+	countedReleases := []OutputRelease{}
 	for _, ns := range namespaceList.Items {
 		applicationList, err := shipperClient.ShipperV1alpha1().Applications(ns.Name).List(metav1.ListOptions{})
 		if err != nil {
@@ -116,7 +120,7 @@ func runCountContenderCommand(cmd *cobra.Command, args []string) error {
 	if printOption == "" {
 		cmd.Println("Number of *contenders* that are scheduled only on decommissioned clusters: ", counter)
 	} else {
-		printCountedRelease(countedReleases)
+		printCountedRelease(cmd.OutOrStdout(), countedReleases)
 	}
 	if len(errList) > 0 {
 		return fmt.Errorf(strings.Join(errList, ","))
@@ -142,7 +146,7 @@ func runCountReleasesCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	var errList []string
-	var countedReleases []OutputRelease
+	countedReleases := []OutputRelease{}
 	for _, ns := range namespaceList.Items {
 		releaseList, err := shipperClient.ShipperV1alpha1().Releases(ns.Name).List(metav1.ListOptions{})
 		if err != nil {
@@ -166,7 +170,7 @@ func runCountReleasesCommand(cmd *cobra.Command, args []string) error {
 	if printOption == "" {
 		cmd.Println("Number of *releases* that are scheduled only on decommissioned clusters: ", counter)
 	} else {
-		printCountedRelease(countedReleases)
+		printCountedRelease(cmd.OutOrStdout(), countedReleases)
 	}
 	if len(errList) > 0 {
 		return fmt.Errorf(strings.Join(errList, ","))
@@ -174,7 +178,7 @@ func runCountReleasesCommand(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func printCountedRelease(outputReleases []OutputRelease) {
+func printCountedRelease(stdout io.Writer, outputReleases []OutputRelease) {
 	var err error
 	var data []byte
 
@@ -187,9 +191,9 @@ func printCountedRelease(outputReleases []OutputRelease) {
 		return
 	}
 	if err != nil {
-		os.Stderr.Write(bytes.NewBufferString(err.Error()).Bytes())
+		stdout.Write(bytes.NewBufferString(err.Error()).Bytes())
 		return
 	}
 
-	_, _ = os.Stdout.Write(data)
+	_, _ = stdout.Write(data)
 }
