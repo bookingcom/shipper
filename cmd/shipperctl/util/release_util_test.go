@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestGetFilteredScheduledClusters(t *testing.T) {
+func TestFilterSelectedClusters(t *testing.T) {
 	tests := []struct {
 		Name                     string
 		ScheduledClusters        []string
@@ -57,13 +57,13 @@ func TestGetFilteredScheduledClusters(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.Name, func(t *testing.T) {
-			filteredClusters := FilterSelectedClusters(tt.ScheduledClusters, tt.DecommissionedClusters)
-			if !reflect.DeepEqual(tt.ExpectedFilteredClusters, filteredClusters) {
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			filteredClusters := FilterSelectedClusters(test.ScheduledClusters, test.DecommissionedClusters)
+			if !reflect.DeepEqual(test.ExpectedFilteredClusters, filteredClusters) {
 				t.Fatalf(
 					"expected filtered clusters %q got %q",
-					strings.Join(tt.ExpectedFilteredClusters, ","),
+					strings.Join(test.ExpectedFilteredClusters, ","),
 					strings.Join(filteredClusters, ","))
 			}
 		})
