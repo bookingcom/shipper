@@ -1,4 +1,4 @@
-package util
+package release
 
 import (
 	"reflect"
@@ -54,6 +54,12 @@ func TestFilterSelectedClusters(t *testing.T) {
 			ScheduledClusters:        []string{"cluster-A", "cluster-B"},
 			DecommissionedClusters:   []string{"cluster-C", "cluster-D"},
 			ExpectedFilteredClusters: []string{"cluster-A", "cluster-B"},
+		},
+		{
+			Name:                     "decomissioned clusters is a superset of the scheduled clusters",
+			ScheduledClusters:        []string{"cluster-A"},
+			DecommissionedClusters:   []string{"cluster-A", "cluster-B"},
+			ExpectedFilteredClusters: nil,
 		},
 	}
 

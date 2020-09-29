@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
-	cmdutil "github.com/bookingcom/shipper/cmd/shipperctl/util"
+	"github.com/bookingcom/shipper/cmd/shipperctl/release"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
 )
 
@@ -51,7 +51,7 @@ var (
 	}
 )
 
-type OutputRelease struct {
+type outputRelease struct {
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
 }
@@ -91,7 +91,7 @@ func runCountContenderCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	var errList []string
-	countedReleases := []OutputRelease{}
+	countedReleases := []outputRelease{}
 	for _, ns := range namespaceList.Items {
 		applicationList, err := shipperClient.ShipperV1alpha1().Applications(ns.Name).List(metav1.ListOptions{})
 		if err != nil {
@@ -99,17 +99,17 @@ func runCountContenderCommand(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		for _, app := range applicationList.Items {
-			contender, err := cmdutil.GetContender(&app, shipperClient)
+			contender, err := release.GetContender(&app, shipperClient)
 			if err != nil {
 				errList = append(errList, err.Error())
 				continue
 			}
-			trueClusters := cmdutil.FilterSelectedClusters(releaseutil.GetSelectedClusters(contender), clusters)
+			trueClusters := release.FilterSelectedClusters(releaseutil.GetSelectedClusters(contender), clusters)
 			if len(trueClusters) == 0 {
 				counter++
 				countedReleases = append(
 					countedReleases,
-					OutputRelease{
+					outputRelease{
 						Namespace: contender.Namespace,
 						Name:      contender.Name,
 					})
@@ -146,7 +146,7 @@ func runCountReleasesCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	var errList []string
-	countedReleases := []OutputRelease{}
+	countedReleases := []outputRelease{}
 	for _, ns := range namespaceList.Items {
 		releaseList, err := shipperClient.ShipperV1alpha1().Releases(ns.Name).List(metav1.ListOptions{})
 		if err != nil {
@@ -154,12 +154,12 @@ func runCountReleasesCommand(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		for _, rel := range releaseList.Items {
-			trueClusters := cmdutil.FilterSelectedClusters(releaseutil.GetSelectedClusters(&rel), clusters)
+			trueClusters := release.FilterSelectedClusters(releaseutil.GetSelectedClusters(&rel), clusters)
 			if len(trueClusters) == 0 {
 				counter++
 				countedReleases = append(
 					countedReleases,
-					OutputRelease{
+					outputRelease{
 						Namespace: rel.Namespace,
 						Name:      rel.Name,
 					})
@@ -178,7 +178,7 @@ func runCountReleasesCommand(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func printCountedRelease(stdout io.Writer, outputReleases []OutputRelease) {
+func printCountedRelease(stdout io.Writer, outputReleases []outputRelease) {
 	var err error
 	var data []byte
 
@@ -195,5 +195,7 @@ func printCountedRelease(stdout io.Writer, outputReleases []OutputRelease) {
 		return
 	}
 
-	_, _ = stdout.Write(data)
+	if _, err := stdout.Write(data); err != nil {
+		panic(err)
+	}
 }

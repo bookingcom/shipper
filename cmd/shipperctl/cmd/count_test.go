@@ -11,21 +11,21 @@ func TestPrintCountedRelease(t *testing.T) {
 	tests := []struct {
 		Name                   string
 		Stdout                 *bytes.Buffer
-		OutputReleases         []OutputRelease
+		OutputReleases         []outputRelease
 		OutputFlag             string
 		ExpectedOutputReleases string
 	}{
 		{
 			Name:                   "No releases to print",
 			Stdout:                 bytes.NewBufferString(""),
-			OutputReleases:         []OutputRelease{},
+			OutputReleases:         []outputRelease{},
 			OutputFlag:             "json",
 			ExpectedOutputReleases: "[]",
 		},
 		{
 			Name:   "No output flag, no releases printed",
 			Stdout: bytes.NewBufferString(""),
-			OutputReleases: []OutputRelease{
+			OutputReleases: []outputRelease{
 				{
 					Namespace: "default",
 					Name:      "super-server-8de83afb-0",
@@ -36,7 +36,7 @@ func TestPrintCountedRelease(t *testing.T) {
 		{
 			Name:   "One release to print yaml",
 			Stdout: bytes.NewBufferString(""),
-			OutputReleases: []OutputRelease{
+			OutputReleases: []outputRelease{
 				{
 					Namespace: "default",
 					Name:      "super-server-8de83afb-0",
@@ -48,7 +48,7 @@ func TestPrintCountedRelease(t *testing.T) {
 		{
 			Name:   "One release to print json",
 			Stdout: bytes.NewBufferString(""),
-			OutputReleases: []OutputRelease{
+			OutputReleases: []outputRelease{
 				{
 					Namespace: "default",
 					Name:      "super-server-8de83afb-0",

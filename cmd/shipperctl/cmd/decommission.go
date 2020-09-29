@@ -12,7 +12,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
-	cmdutil "github.com/bookingcom/shipper/cmd/shipperctl/util"
+	"github.com/bookingcom/shipper/cmd/shipperctl/release"
+	"github.com/bookingcom/shipper/cmd/shipperctl/ui"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
@@ -80,15 +81,13 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	err = reviewActions(cmd, releasesToUpdate)
-	if err != nil {
+	if err := reviewActions(cmd, releasesToUpdate); err != nil {
 		return err
 	}
 
 	var errList []string
 	if !dryrun {
-		err = updateReleases(cmd, shipperClient, releasesToUpdate)
-		if err != nil {
+		if err := updateReleases(cmd, shipperClient, releasesToUpdate); err != nil {
 			errList = append(errList, err.Error())
 		}
 	}
@@ -104,7 +103,7 @@ func updateReleases(cmd *cobra.Command, shipperClient shipperclientset.Interface
 	if len(releasesToUpdate) == 0 {
 		return nil
 	}
-	confirm, err := cmdutil.AskForConfirmation(os.Stdin, fmt.Sprintf("This will updates %d releases. Are you sure?", len(releasesToUpdate)))
+	confirm, err := ui.AskForConfirmation(os.Stdin, fmt.Sprintf("This will update %d releases. Are you sure?", len(releasesToUpdate)))
 	if err != nil {
 		return err
 	}
@@ -144,7 +143,7 @@ func updateReleases(cmd *cobra.Command, shipperClient shipperclientset.Interface
 }
 
 func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclientset.Interface) ([]ReleaseAndFilteredAnnotations, error) {
-	var updateAnnotations []ReleaseAndFilteredAnnotations
+	var releaseToUpdate []ReleaseAndFilteredAnnotations
 	namespaceList, err := kubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -158,7 +157,7 @@ func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclien
 		}
 		for _, rel := range releaseList.Items {
 			selectedClusters := releaseutil.GetSelectedClusters(&rel)
-			filteredClusters := cmdutil.FilterSelectedClusters(releaseutil.GetSelectedClusters(&rel), clusters)
+			filteredClusters := release.FilterSelectedClusters(releaseutil.GetSelectedClusters(&rel), clusters)
 			if len(filteredClusters) > 0 {
 				sort.Strings(filteredClusters)
 
@@ -167,8 +166,8 @@ func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclien
 					continue
 				}
 
-				updateAnnotations = append(
-					updateAnnotations,
+				releaseToUpdate = append(
+					releaseToUpdate,
 					ReleaseAndFilteredAnnotations{
 						OldClusterAnnotation:      strings.Join(selectedClusters, ","),
 						FilteredClusterAnnotation: filteredClusterAnnotation,
@@ -177,12 +176,12 @@ func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclien
 					})
 				continue
 			}
-			isContender, err := cmdutil.IsContender(&rel, shipperClient)
+			isContender, err := release.IsContender(&rel, shipperClient)
 			if err != nil {
 				errList = append(errList, err.Error())
 				continue
 			}
-			isIncumbent, err := cmdutil.IsIncumbent(&rel, shipperClient)
+			isIncumbent, err := release.IsIncumbent(&rel, shipperClient)
 			if err != nil {
 				errList = append(errList, err.Error())
 				continue
@@ -200,19 +199,19 @@ func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclien
 					Namespace:                 rel.Namespace,
 					Name:                      rel.Name,
 				}
-				updateAnnotations = append(updateAnnotations, outputRelease)
+				releaseToUpdate = append(releaseToUpdate, outputRelease)
 			}
 		}
 	}
 	if len(errList) > 0 {
 		return nil, fmt.Errorf(strings.Join(errList, ","))
 	}
-	return updateAnnotations, nil
+	return releaseToUpdate, nil
 }
 
 func reviewActions(cmd *cobra.Command, releasesToUpdate []ReleaseAndFilteredAnnotations) error {
 	cmd.Printf("About to edit %d releases\n", len(releasesToUpdate))
-	confirm, err := cmdutil.AskForConfirmation(os.Stdin, "Would you like to see the releases? (This will not start the process)")
+	confirm, err := ui.AskForConfirmation(os.Stdin, "Would you like to see the releases? (This will not start the process)")
 	if err != nil {
 		return err
 	}
