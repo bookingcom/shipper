@@ -16,8 +16,9 @@ create_cluster () {
 	kind create cluster \
 		--name $CLUSTER \
 		--config ci/kind.yaml \
-		--image kindest/node:v1.17.2 \
-		--kubeconfig $CONFIG
+		--image kindest/node:v1.15.7 \
+		--kubeconfig $CONFIG \
+		--quiet
 
 	# get a kubeconfig with an actual ip address instead of 127.0.0.1
 	kind get kubeconfig --name $CLUSTER --internal > $CONFIG
@@ -38,6 +39,9 @@ wait $PIDS
 
 mkdir -p ~/.kube
 KUBECONFIG=$(find /tmp/kind -type f | tr \\n ':') kubectl config view --flatten > ~/.kube/config
+
+echo $KUBECONFIG
+cat ~/.kube/config
 
 # add the registry to /etc/hosts on the host
 echo "127.0.0.1 registry kubernetes.default" | sudo tee -a /etc/hosts

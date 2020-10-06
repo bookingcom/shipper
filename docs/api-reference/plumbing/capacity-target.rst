@@ -4,12 +4,12 @@
 Capacity Target
 ###############
 
-A *CapacityTarget* is the interface used by the Release Controller to change
-the target number of replicas for an application in a cluster. It is
+A *CapacityTarget* is the interface used by the Strategy Controller to change
+the target number of replicas for an application in a set of clusters. It is
 acted upon by the Capacity Controller.
 
-The ``status`` resource allows the Release Controller
-to determine when the Capacity Controller is complete in a cluster and it can
+The ``status`` resource includes status per-cluster so that the Strategy
+Controller can determine when the Capacity Controller is complete and it can
 move to the traffic step.
 
 *******
@@ -24,40 +24,59 @@ Example
 Spec
 ****
 
-``.spec.percent``
-=================
+``.spec.clusters``
+===================
 
-This field declares how much capacity the *Release* should have
-in this cluster relative to the final
+``clusters`` is a list of clusters the associated *Release* object is present
+in. Each item in the list has a ``name``, which should map to a :ref:`Cluster
+<api-reference_cluster>` object, and a ``percent``. ``percent`` declares how
+much capacity the *Release* should have in this cluster relative to the final
 replica count. For example, if the final replica count is 10 and the
 ``percent`` is 50, the Deployment object for this *Release* will be patched to
 have 5 pods.
 
-
-``.spec.totalReplicaCount``
-===========================
-
-This field specifies the final replica count the *Release* should have in this cluster
+.. literalinclude:: ../../examples/capacitytarget.yaml
+    :language: yaml
+    :lines: 9-14
+    :linenos:
 
 ******
 Status
 ******
 
-``.status.availableReplicas``
-===========================
+``.status.clusters``
+====================
 
-The number of pods that have successfully started up
+``.status.clusters`` is a list of objects representing the capacity status
+of all clusters where the associated Release objects must be installed.
 
-``.status.achievedPercent``
-===========================
+.. literalinclude:: ../../examples/capacitytarget.yaml
+    :language: yaml
+    :lines: 15-
+    :linenos:
 
-This field shows the percentage of the final replica count does **availableReplicas**
-represent.
+The following table displays the keys a cluster status entry should have:
 
-``.status.conditions``
-======================
+.. list-table::
+    :widths: 1 99
+    :header-rows: 1
 
-A list of all conditions observed for this particular Application Cluster.
+    * - Key
+      - Description
+    * - **name**
+      - The Application Cluster name. For example, **kube-us-east1-a**.
+    * - **availableReplicas**
+      - The number of pods that have successfully started up
+    * - **achievedPercent**
+      - What percentage of the final replica count does **availableReplicas**
+        represent.
+    * - **sadPods**
+      - Pod Statuses for up to 5 Pods which are not yet Ready.
+    * - **conditions**
+      - A list of all conditions observed for this particular Application Cluster.
+
+``.status.clusters.conditions``
+===============================
 
 The following table displays the different conditions statuses and reasons reported in the
 *CapacityTarget* object for the **Operational** condition type:

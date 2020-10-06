@@ -2,15 +2,12 @@ package webhook
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"mime"
 	"net/http"
 	"reflect"
-	"time"
 
 	admission "k8s.io/api/admission/v1beta1"
 	kubeclient "k8s.io/api/admission/v1beta1"
@@ -24,7 +21,6 @@ import (
 	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
-	"github.com/bookingcom/shipper/pkg/metrics/prometheus"
 	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
@@ -42,9 +38,6 @@ type Webhook struct {
 
 	tlsCertFile       string
 	tlsPrivateKeyFile string
-
-	webhookHealthMetric prometheus.WebhookMetric
-	heartbeatPeriod     time.Duration
 }
 
 var (
@@ -57,8 +50,6 @@ func NewWebhook(
 	bindAddr, bindPort, tlsPrivateKeyFile, tlsCertFile string,
 	shipperClientset clientset.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
-	webhookMetric prometheus.WebhookMetric,
-	heartbeatPeriod time.Duration,
 ) *Webhook {
 	rolloutBlocksInformer := shipperInformerFactory.Shipper().V1alpha1().RolloutBlocks()
 
@@ -72,9 +63,6 @@ func NewWebhook(
 
 		tlsPrivateKeyFile: tlsPrivateKeyFile,
 		tlsCertFile:       tlsCertFile,
-
-		webhookHealthMetric: webhookMetric,
-		heartbeatPeriod:     heartbeatPeriod,
 	}
 }
 
@@ -91,22 +79,16 @@ func (c *Webhook) Run(stopCh <-chan struct{}) {
 		return
 	}
 
-	ctx, cancelHeartbeat := context.WithCancel(context.Background())
-	c.startHeartbeatRoutine(ctx, addr)
-
 	go func() {
 		var serverError error
 		if c.tlsCertFile == "" || c.tlsPrivateKeyFile == "" {
 			serverError = server.ListenAndServe()
 		} else {
-			c.observeCertificateExpiration(addr)
-
 			serverError = server.ListenAndServeTLS(c.tlsCertFile, c.tlsPrivateKeyFile)
 		}
 
 		if serverError != nil && serverError != http.ErrServerClosed {
 			klog.Fatalf("failed to start shipper-webhook: %v", serverError)
-			cancelHeartbeat()
 		}
 	}()
 
@@ -119,37 +101,6 @@ func (c *Webhook) Run(stopCh <-chan struct{}) {
 	if err := server.Shutdown(context.Background()); err != nil {
 		klog.Errorf(`HTTP server Shutdown: %v`, err)
 	}
-}
-
-func (c *Webhook) observeCertificateExpiration(addr string) {
-	cert, err := tls.LoadX509KeyPair(c.tlsCertFile, c.tlsPrivateKeyFile)
-	if err != nil {
-		klog.Errorf("fail to load TLS certificate from file with private key %v", err)
-		return
-	}
-	certificate, err := x509.ParseCertificate(cert.Certificate[0])
-	if err != nil {
-		klog.Errorf("fail to parse TLS certificate %v", err)
-		return
-	}
-	expiryTime := certificate.NotAfter
-	c.webhookHealthMetric.ObserveCertificateExpiration(addr, expiryTime)
-	klog.V(8).Infof("Shipper Validating Webhooks TLS certificate expires on %v", certificate.NotAfter)
-}
-
-func (c *Webhook) startHeartbeatRoutine(ctx context.Context, host string) {
-	ticker := time.NewTicker(c.heartbeatPeriod)
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				c.webhookHealthMetric.ObserveHeartBeat(host)
-			case <-ctx.Done():
-				ticker.Stop()
-				return
-			}
-		}
-	}()
 }
 
 func (c *Webhook) initializeHandlers() *http.ServeMux {
@@ -283,14 +234,8 @@ func (c *Webhook) validateRelease(request *admission.AdmissionRequest, release s
 			return err
 		}
 
-		// validate against rollout blocks
 		if !reflect.DeepEqual(release.Spec, oldRelease.Spec) {
 			err = rolloutblock.ValidateBlocks(existingBlocks, overrides)
-		}
-
-		// make sure the environment wasn't changed
-		if !reflect.DeepEqual(release.Spec.Environment, oldRelease.Spec.Environment) {
-			return fmt.Errorf("the Release environment must not be changed; consider editing the Application object")
 		}
 	}
 

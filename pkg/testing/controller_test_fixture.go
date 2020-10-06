@@ -3,12 +3,19 @@ package testing
 import (
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
+
+	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
+	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
+	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 )
 
 type ControllerTestFixture struct {
-	*FakeCluster
+	ShipperClient          *shipperfake.Clientset
+	ShipperInformerFactory shipperinformers.SharedInformerFactory
 
 	Clusters           map[string]*FakeCluster
 	ClusterClientStore *FakeClusterClientStore
@@ -19,38 +26,21 @@ type ControllerTestFixture struct {
 func NewControllerTestFixture() *ControllerTestFixture {
 	const recorderBufSize = 42
 
-	store := NewFakeClusterClientStore()
-	fakeCluster := NewNamedFakeCluster("mgmt")
+	shipperClient := shipperfake.NewSimpleClientset()
+	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(
+		shipperClient, NoResyncPeriod)
+
+	store := NewFakeClusterClientStore(map[string]*FakeCluster{})
 
 	return &ControllerTestFixture{
-		FakeCluster: fakeCluster,
+		ShipperClient:          shipperClient,
+		ShipperInformerFactory: shipperInformerFactory,
 
 		Clusters:           make(map[string]*FakeCluster),
 		ClusterClientStore: store,
 
 		Recorder: record.NewFakeRecorder(recorderBufSize),
 	}
-}
-
-func NewManagementControllerTestFixture(
-	mgmtClusterObjects []runtime.Object,
-	appClusterShipperObjects map[string][]runtime.Object,
-) *ControllerTestFixture {
-	f := NewControllerTestFixture()
-
-	for clusterName, objects := range appClusterShipperObjects {
-		cluster := f.AddNamedCluster(clusterName)
-
-		for _, object := range objects {
-			cluster.ShipperClient.Tracker().Add(object)
-		}
-	}
-
-	for _, object := range mgmtClusterObjects {
-		f.ShipperClient.Tracker().Add(object)
-	}
-
-	return f
 }
 
 func (f *ControllerTestFixture) AddNamedCluster(name string) *FakeCluster {
@@ -67,12 +57,19 @@ func (f *ControllerTestFixture) AddCluster() *FakeCluster {
 	return f.AddNamedCluster(name)
 }
 
-func (f *ControllerTestFixture) Run(stopCh chan struct{}) {
-	f.KubeInformerFactory.Start(stopCh)
-	f.KubeInformerFactory.WaitForCacheSync(stopCh)
+func (f *ControllerTestFixture) DynamicClientBuilder(
+	kind *schema.GroupVersionKind,
+	restConfig *rest.Config,
+	cluster *shipper.Cluster,
+) dynamic.Interface {
+	if fdc, ok := f.Clusters[cluster.Name]; ok {
+		return fdc.DynamicClient
+	}
+	panic(fmt.Sprintf(`couldn't find client for %q`, cluster.Name))
+}
 
+func (f *ControllerTestFixture) Run(stopCh chan struct{}) {
 	f.ShipperInformerFactory.Start(stopCh)
 	f.ShipperInformerFactory.WaitForCacheSync(stopCh)
-
 	f.ClusterClientStore.Run(stopCh)
 }

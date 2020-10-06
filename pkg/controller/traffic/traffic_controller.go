@@ -3,6 +3,7 @@ package traffic
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -12,8 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
-	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -23,79 +22,62 @@ import (
 	shipperclient "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
+	"github.com/bookingcom/shipper/pkg/clusterclientstore"
+	shippercontroller "github.com/bookingcom/shipper/pkg/controller"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	clusterstatusutil "github.com/bookingcom/shipper/pkg/util/clusterstatus"
 	diffutil "github.com/bookingcom/shipper/pkg/util/diff"
 	"github.com/bookingcom/shipper/pkg/util/filters"
-	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 	targetutil "github.com/bookingcom/shipper/pkg/util/target"
+	trafficutil "github.com/bookingcom/shipper/pkg/util/traffic"
 	shipperworkqueue "github.com/bookingcom/shipper/pkg/workqueue"
 )
 
 const (
 	AgentName = "traffic-controller"
 
+	ClustersNotReady   = "ClustersNotReady"
 	InProgress         = "InProgress"
 	InternalError      = "InternalError"
 	PodsNotInEndpoints = "PodsNotInEndpoints"
 	PodsNotReady       = "PodsNotReady"
 
-	TrafficTargetConditionChanged = "TrafficTargetConditionChanged"
+	TrafficTargetConditionChanged  = "TrafficTargetConditionChanged"
+	ClusterTrafficConditionChanged = "ClusterTrafficConditionChanged"
 )
 
 // Controller is the controller implementation for TrafficTarget resources.
 type Controller struct {
-	shipperClient shipperclient.Interface
-	kubeClient    kubernetes.Interface
-
+	shipperclientset     shipperclient.Interface
+	clusterClientStore   clusterclientstore.Interface
 	trafficTargetsLister listers.TrafficTargetLister
 	trafficTargetsSynced cache.InformerSynced
-
-	podsLister corelisters.PodLister
-	podsSynced cache.InformerSynced
-
-	servicesLister corelisters.ServiceLister
-	servicesSynced cache.InformerSynced
-
-	endpointsLister corelisters.EndpointsLister
-	endpointsSynced cache.InformerSynced
-
-	workqueue workqueue.RateLimitingInterface
-	recorder  record.EventRecorder
+	workqueue            workqueue.RateLimitingInterface
+	recorder             record.EventRecorder
 }
 
 // NewController returns a new TrafficTarget controller.
 func NewController(
-	kubeClient kubernetes.Interface,
-	kubeInformerFactory kubeinformers.SharedInformerFactory,
-	shipperClient shipperclient.Interface,
+	shipperclientset shipperclient.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
+	store clusterclientstore.Interface,
 	recorder record.EventRecorder,
 ) *Controller {
+
+	// Obtain references to shared index informers for the TrafficTarget type.
 	trafficTargetInformer := shipperInformerFactory.Shipper().V1alpha1().TrafficTargets()
-	podsInformer := kubeInformerFactory.Core().V1().Pods()
-	servicesInformer := kubeInformerFactory.Core().V1().Services()
-	endpointsInformer := kubeInformerFactory.Core().V1().Endpoints()
 
 	controller := &Controller{
-		shipperClient: shipperClient,
-		kubeClient:    kubeClient,
+		shipperclientset:   shipperclientset,
+		clusterClientStore: store,
 
 		trafficTargetsLister: trafficTargetInformer.Lister(),
 		trafficTargetsSynced: trafficTargetInformer.Informer().HasSynced,
-
-		podsLister: podsInformer.Lister(),
-		podsSynced: podsInformer.Informer().HasSynced,
-
-		servicesLister: servicesInformer.Lister(),
-		servicesSynced: servicesInformer.Informer().HasSynced,
-
-		endpointsLister: endpointsInformer.Lister(),
-		endpointsSynced: endpointsInformer.Informer().HasSynced,
-
-		workqueue: workqueue.NewNamedRateLimitingQueue(shipperworkqueue.NewDefaultControllerRateLimiter(), "traffic_controller_traffictargets"),
-		recorder:  recorder,
+		workqueue:            workqueue.NewNamedRateLimitingQueue(shipperworkqueue.NewDefaultControllerRateLimiter(), "traffic_controller_traffictargets"),
+		recorder:             recorder,
 	}
 
+	klog.Info("Setting up event handlers")
 	trafficTargetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueAllTrafficTargets,
 		UpdateFunc: func(old, new interface{}) {
@@ -104,33 +86,45 @@ func NewController(
 		DeleteFunc: controller.enqueueAllTrafficTargets,
 	})
 
-	// an event on an Endpoints object enqueues all traffic targets for an
-	// app, as a change in one of them might affect the weight in the others. For
-	// Pods, we only enqueue the owning traffic target, and only for adds and
-	// deletes, as any changes relevant for traffic will be reflected in the
-	// Endpoints object anyway. In case a new or deleted pod does change traffic
-	// shifting in any way, the update to the traffic target itself will trigger a
-	// new evaluation of all traffic targets for an app.
-	endpointsInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
+	store.AddSubscriptionCallback(controller.subscribeToAppClusterEvents)
+	store.AddEventHandlerCallback(controller.registerAppClusterEventHandlers)
+
+	return controller
+}
+
+// registerAppClusterEventHandlers listens to events on both Endpoints and
+// Pods. An event on an Endpoints object enqueues all traffic targets for an
+// app, as a change in one of them might affect the weight in the others. For
+// Pods, we only enqueue the owning traffic target, and only for adds and
+// deletes, as any changes relevant for traffic will be reflected in the
+// Endpoints object anyway. In case a new or deleted pod does change traffic
+// shifting in any way, the update to the traffic target itself will trigger a
+// new evaluation of all traffic targets for an app.
+func (c *Controller) registerAppClusterEventHandlers(informerFactory kubeinformers.SharedInformerFactory, clusterName string) {
+	informerFactory.Core().V1().Endpoints().Informer().AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: filters.BelongsToApp,
 		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc:    controller.enqueueAllTrafficTargets,
-			DeleteFunc: controller.enqueueAllTrafficTargets,
+			AddFunc:    c.enqueueAllTrafficTargets,
+			DeleteFunc: c.enqueueAllTrafficTargets,
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				controller.enqueueAllTrafficTargets(newObj)
+				c.enqueueAllTrafficTargets(newObj)
 			},
 		},
 	})
 
-	podsInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
+	informerFactory.Core().V1().Pods().Informer().AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: filters.BelongsToRelease,
 		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc:    controller.enqueueTrafficTargetFromPod,
-			DeleteFunc: controller.enqueueTrafficTargetFromPod,
+			AddFunc:    c.enqueueTrafficTargetFromPod,
+			DeleteFunc: c.enqueueTrafficTargetFromPod,
 		},
 	})
+}
 
-	return controller
+func (c *Controller) subscribeToAppClusterEvents(informerFactory kubeinformers.SharedInformerFactory) {
+	informerFactory.Core().V1().Pods().Informer()
+	informerFactory.Core().V1().Services().Informer()
+	informerFactory.Core().V1().Endpoints().Informer()
 }
 
 // Run will set up the event handlers for types we are interested in, as well as
@@ -222,7 +216,7 @@ func (c *Controller) syncHandler(key string) error {
 	tt, err := c.processTrafficTarget(initialTT.DeepCopy())
 
 	if !reflect.DeepEqual(initialTT, tt) {
-		if _, err := c.shipperClient.ShipperV1alpha1().TrafficTargets(namespace).UpdateStatus(tt); err != nil {
+		if _, err := c.shipperclientset.ShipperV1alpha1().TrafficTargets(namespace).UpdateStatus(tt); err != nil {
 			return shippererrors.NewKubeclientUpdateError(tt, err).
 				WithShipperKind("TrafficTarget")
 		}
@@ -233,46 +227,11 @@ func (c *Controller) syncHandler(key string) error {
 
 func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.TrafficTarget, error) {
 	diff := diffutil.NewMultiDiff()
-	operationalCond := targetutil.NewTargetCondition(
-		shipper.TargetConditionTypeOperational,
-		corev1.ConditionUnknown,
-		"",
-		"")
-	readyCond := targetutil.NewTargetCondition(
-		shipper.TargetConditionTypeReady,
-		corev1.ConditionUnknown,
-		"",
-		"")
+	defer c.reportConditionChange(tt, TrafficTargetConditionChanged, diff)
 
-	var achievedTraffic uint32
-
-	defer func() {
-		var d diffutil.Diff
-
-		tt.Status.Conditions, d = targetutil.SetTargetCondition(tt.Status.Conditions, operationalCond)
-		diff.Append(d)
-
-		tt.Status.Conditions, d = targetutil.SetTargetCondition(tt.Status.Conditions, readyCond)
-		diff.Append(d)
-
-		tt.Status.ObservedGeneration = tt.Generation
-		tt.Status.AchievedTraffic = achievedTraffic
-
-		if !diff.IsEmpty() {
-			c.recorder.Event(tt, corev1.EventTypeNormal, TrafficTargetConditionChanged, diff.String())
-		}
-	}()
-
-	appName, err := objectutil.GetApplicationLabel(tt)
-	if err != nil {
-		tt.Status.Conditions = targetutil.TransitionToNotOperational(
-			diff, tt.Status.Conditions,
-			InternalError, err.Error())
-		return tt, err
-	}
-
-	releaseName, err := objectutil.GetReleaseLabel(tt)
-	if err != nil {
+	appName, ok := tt.Labels[shipper.AppLabel]
+	if !ok {
+		err := shippererrors.NewMissingShipperLabelError(tt, shipper.AppLabel)
 		tt.Status.Conditions = targetutil.TransitionToNotOperational(
 			diff, tt.Status.Conditions,
 			InternalError, err.Error())
@@ -291,7 +250,7 @@ func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.T
 		return tt, err
 	}
 
-	releaseWeights, err := buildReleaseWeights(allTTs)
+	clusterReleaseWeights, err := buildClusterReleaseWeights(allTTs)
 	if err != nil {
 		tt.Status.Conditions = targetutil.TransitionToNotOperational(
 			diff, tt.Status.Conditions,
@@ -299,62 +258,154 @@ func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.T
 		return tt, err
 	}
 
-	appPods, endpoints, err := c.getClusterObjects(tt)
+	tt.Status.Conditions = targetutil.TransitionToOperational(diff, tt.Status.Conditions)
+
+	clusterErrors := shippererrors.NewMultiError()
+	newClusterStatuses := make([]*shipper.ClusterTrafficStatus, 0, len(tt.Spec.Clusters))
+
+	// This algorithm assumes cluster names are unique
+	curClusterStatuses := make(map[string]*shipper.ClusterTrafficStatus)
+	for _, clusterStatus := range tt.Status.Clusters {
+		curClusterStatuses[clusterStatus.Name] = clusterStatus
+	}
+
+	for _, clusterSpec := range tt.Spec.Clusters {
+		clusterStatus, ok := curClusterStatuses[clusterSpec.Name]
+		if !ok {
+			clusterStatus = &shipper.ClusterTrafficStatus{
+				Name: clusterSpec.Name,
+			}
+		}
+
+		err := c.processTrafficTargetOnCluster(tt, &clusterSpec, clusterStatus, clusterReleaseWeights)
+		if err != nil {
+			clusterErrors.Append(err)
+		}
+
+		newClusterStatuses = append(newClusterStatuses, clusterStatus)
+	}
+
+	sort.Sort(byClusterName(newClusterStatuses))
+
+	tt.Status.Clusters = newClusterStatuses
+	tt.Status.ObservedGeneration = tt.Generation
+
+	clustersNotReady := []string{}
+	for _, clusterStatus := range tt.Status.Clusters {
+		if !clusterstatusutil.IsClusterTrafficReady(clusterStatus.Conditions) {
+			clustersNotReady = append(clustersNotReady, clusterStatus.Name)
+		}
+	}
+
+	if len(clustersNotReady) == 0 {
+		tt.Status.Conditions = targetutil.TransitionToReady(diff, tt.Status.Conditions)
+	} else {
+		tt.Status.Conditions = targetutil.TransitionToNotReady(
+			diff, tt.Status.Conditions,
+			ClustersNotReady, fmt.Sprintf("%v", clustersNotReady))
+	}
+
+	return tt, clusterErrors.Flatten()
+}
+
+func (c *Controller) processTrafficTargetOnCluster(
+	tt *shipper.TrafficTarget,
+	spec *shipper.ClusterTrafficTarget,
+	status *shipper.ClusterTrafficStatus,
+	clusterReleaseWeights clusterReleaseWeights,
+) error {
+	diff := diffutil.NewMultiDiff()
+	operationalCond := trafficutil.NewClusterTrafficCondition(
+		shipper.ClusterConditionTypeOperational,
+		corev1.ConditionUnknown,
+		"",
+		"")
+	readyCond := trafficutil.NewClusterTrafficCondition(
+		shipper.ClusterConditionTypeReady,
+		corev1.ConditionUnknown,
+		"",
+		"")
+
+	var achievedTraffic uint32
+	defer func() {
+		status.AchievedTraffic = achievedTraffic
+
+		diff.Append(trafficutil.SetClusterTrafficCondition(status, *operationalCond))
+		diff.Append(trafficutil.SetClusterTrafficCondition(status, *readyCond))
+		c.reportConditionChange(tt, ClusterTrafficConditionChanged, diff)
+	}()
+
+	clientset, err := c.clusterClientStore.GetClient(spec.Name, AgentName)
 	if err != nil {
-		operationalCond = targetutil.NewTargetCondition(
-			shipper.TargetConditionTypeOperational,
+		operationalCond = trafficutil.NewClusterTrafficCondition(
+			shipper.ClusterConditionTypeOperational,
 			corev1.ConditionFalse,
 			InternalError,
 			err.Error(),
 		)
 
-		return tt, err
+		return err
 	}
 
-	operationalCond = targetutil.NewTargetCondition(
-		shipper.TargetConditionTypeOperational,
+	appName := tt.Labels[shipper.AppLabel]
+	releaseName := tt.Labels[shipper.ReleaseLabel]
+
+	appPods, endpoints, err := c.getClusterObjects(spec.Name, tt.Namespace, appName)
+	if err != nil {
+		operationalCond = trafficutil.NewClusterTrafficCondition(
+			shipper.ClusterConditionTypeOperational,
+			corev1.ConditionFalse,
+			InternalError,
+			err.Error(),
+		)
+
+		return err
+	}
+
+	operationalCond = trafficutil.NewClusterTrafficCondition(
+		shipper.ClusterConditionTypeOperational,
 		corev1.ConditionTrue,
 		"",
 		"",
 	)
 
 	trafficStatus := buildTrafficShiftingStatus(
-		appName, releaseName,
-		releaseWeights,
+		spec.Name, appName, releaseName,
+		clusterReleaseWeights,
 		endpoints, appPods)
 
 	// achievedTraffic is used by the defer at the top of this func
 	achievedTraffic = trafficStatus.achievedTrafficWeight
 
 	if trafficStatus.ready {
-		readyCond = targetutil.NewTargetCondition(
-			shipper.TargetConditionTypeReady,
+		readyCond = trafficutil.NewClusterTrafficCondition(
+			shipper.ClusterConditionTypeReady,
 			corev1.ConditionTrue,
 			"",
 			"",
 		)
 
-		return tt, nil
+		return nil
 	}
 
 	if trafficStatus.podsToShift != nil {
 		// If we have pods to shift, our job can only be done after the
 		// change is made and observed, so we definitely still in
 		// progress.
-		err := shiftPodLabels(c.kubeClient, trafficStatus.podsToShift)
+		err := shiftPodLabels(clientset, trafficStatus.podsToShift)
 		if err != nil {
-			readyCond = targetutil.NewTargetCondition(
-				shipper.TargetConditionTypeReady,
+			readyCond = trafficutil.NewClusterTrafficCondition(
+				shipper.ClusterConditionTypeReady,
 				corev1.ConditionFalse,
 				InternalError,
 				err.Error(),
 			)
 
-			return tt, err
+			return err
 		}
 
-		readyCond = targetutil.NewTargetCondition(
-			shipper.TargetConditionTypeReady,
+		readyCond = trafficutil.NewClusterTrafficCondition(
+			shipper.ClusterConditionTypeReady,
 			corev1.ConditionFalse,
 			InProgress,
 			"",
@@ -363,10 +414,10 @@ func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.T
 		// All the pods have been shifted, made it to endpoints, but
 		// some aren't ready.
 		msg := fmt.Sprintf(
-			"%d/%d pods designated to receive traffic are not ready",
-			trafficStatus.podsNotReady, trafficStatus.podsLabeled)
-		readyCond = targetutil.NewTargetCondition(
-			shipper.TargetConditionTypeReady,
+			"%d out of %d pods designated to receive traffic are not ready. this might require intervention, try `kubectl describe ct %s` for more information",
+			trafficStatus.podsNotReady, trafficStatus.podsLabeled, releaseName)
+		readyCond = trafficutil.NewClusterTrafficCondition(
+			shipper.ClusterConditionTypeReady,
 			corev1.ConditionFalse,
 			PodsNotReady,
 			msg,
@@ -377,27 +428,32 @@ func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.T
 		// means that they haven't made it there yet, or that the
 		// service selector does not match any pods.
 		msg := fmt.Sprintf(
-			"%d/%d pods designated to receive traffic are not yet in endpoints",
+			"%d out of %d pods designated to receive traffic are not yet in endpoints",
 			trafficStatus.podsLabeled-trafficStatus.podsReady, trafficStatus.podsLabeled)
-		readyCond = targetutil.NewTargetCondition(
-			shipper.TargetConditionTypeReady,
+		readyCond = trafficutil.NewClusterTrafficCondition(
+			shipper.ClusterConditionTypeReady,
 			corev1.ConditionFalse,
 			PodsNotInEndpoints,
 			msg,
 		)
 	}
 
-	return tt, nil
+	return nil
 }
 
-func (c *Controller) getClusterObjects(tt *shipper.TrafficTarget) ([]*corev1.Pod, *corev1.Endpoints, error) {
-	appName, _ := objectutil.GetApplicationLabel(tt)
+func (c *Controller) getClusterObjects(cluster, ns, appName string) ([]*corev1.Pod, *corev1.Endpoints, error) {
+	informerFactory, err := c.clusterClientStore.GetInformerFactory(cluster)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	appSelector := labels.Set{shipper.AppLabel: appName}.AsSelector()
-	appPods, err := c.podsLister.Pods(tt.Namespace).List(appSelector)
+	appPods, err := informerFactory.Core().V1().Pods().Lister().
+		Pods(ns).List(appSelector)
 	if err != nil {
 		return nil, nil, shippererrors.NewKubeclientListError(
 			corev1.SchemeGroupVersion.WithKind("Pod"),
-			tt.Namespace, appSelector, err)
+			ns, appSelector, err)
 	}
 
 	serviceSelector := labels.Set(map[string]string{
@@ -405,10 +461,11 @@ func (c *Controller) getClusterObjects(tt *shipper.TrafficTarget) ([]*corev1.Pod
 		shipper.LBLabel:  shipper.LBForProduction,
 	}).AsSelector()
 	serviceGVK := corev1.SchemeGroupVersion.WithKind("Service")
-	services, err := c.servicesLister.Services(tt.Namespace).List(serviceSelector)
+	services, err := informerFactory.Core().V1().Services().Lister().
+		Services(ns).List(serviceSelector)
 	if err != nil {
 		return nil, nil, shippererrors.NewKubeclientListError(
-			serviceGVK, tt.Namespace, serviceSelector, err)
+			serviceGVK, ns, serviceSelector, err)
 	}
 
 	if len(services) != 1 {
@@ -419,7 +476,8 @@ func (c *Controller) getClusterObjects(tt *shipper.TrafficTarget) ([]*corev1.Pod
 
 	svc := services[0]
 
-	endpoints, err := c.endpointsLister.Endpoints(svc.Namespace).Get(svc.Name)
+	endpoints, err := informerFactory.Core().V1().Endpoints().Lister().
+		Endpoints(svc.Namespace).Get(svc.Name)
 	if err != nil {
 		return nil, nil, shippererrors.NewKubeclientGetError(svc.Namespace, svc.Name, err).
 			WithCoreV1Kind("Endpoints")
@@ -449,11 +507,10 @@ func (c *Controller) enqueueAllTrafficTargets(obj interface{}) {
 	}
 
 	namespace := kubeobj.GetNamespace()
-	appName, err := objectutil.GetApplicationLabel(kubeobj)
-	if err != nil {
-		runtime.HandleError(fmt.Errorf(
-			"object %q does not belong to an application. FilterFunc not working?",
-			objectutil.MetaKey(kubeobj)))
+	appName, ok := kubeobj.GetLabels()[shipper.AppLabel]
+	if !ok {
+		runtime.HandleError(fmt.Errorf("object %q is missing label %s. FilterFunc not working?",
+			shippercontroller.MetaKey(kubeobj), shipper.AppLabel))
 		return
 	}
 
@@ -478,11 +535,11 @@ func (c *Controller) enqueueTrafficTargetFromPod(obj interface{}) {
 		return
 	}
 
-	release, err := objectutil.GetReleaseLabel(pod)
-	if err != nil {
+	release, ok := pod.GetLabels()[shipper.ReleaseLabel]
+	if !ok {
 		runtime.HandleError(fmt.Errorf(
-			"pod %q does not belong to a release. FilterFunc not working?",
-			objectutil.MetaKey(pod)))
+			"object %q does not have label %s. FilterFunc not working?",
+			shippercontroller.MetaKey(pod), shipper.ReleaseLabel))
 		return
 	}
 
@@ -508,4 +565,10 @@ func (c *Controller) enqueueTrafficTargetFromPod(obj interface{}) {
 	}
 
 	c.enqueueTrafficTarget(trafficTargets[0])
+}
+
+func (c *Controller) reportConditionChange(tt *shipper.TrafficTarget, reason string, diff diffutil.Diff) {
+	if !diff.IsEmpty() {
+		c.recorder.Event(tt, corev1.EventTypeNormal, reason, diff.String())
+	}
 }

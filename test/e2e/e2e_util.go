@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,7 +24,6 @@ import (
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
-	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
 type fixture struct {
@@ -291,7 +292,7 @@ func setupNamespace(name string) (*corev1.Namespace, error) {
 	// happens we'll just ignore it.
 
 	ns, err := appKubeClient.CoreV1().Namespaces().Create(newNs)
-	if err != nil && !errors.IsAlreadyExists(err) {
+	if err != nil {
 		return nil, err
 	}
 
@@ -305,10 +306,6 @@ func setupNamespace(name string) (*corev1.Namespace, error) {
 
 func teardownNamespace(name string) {
 	err := kubeClient.CoreV1().Namespaces().Delete(name, &metav1.DeleteOptions{})
-	if err != nil {
-		klog.Fatalf("failed to clean up namespace %q: %q", name, err)
-	}
-	err = appKubeClient.CoreV1().Namespaces().Delete(name, &metav1.DeleteOptions{})
 	if err != nil {
 		klog.Fatalf("failed to clean up namespace %q: %q", name, err)
 	}
@@ -350,42 +347,6 @@ func purgeTestNamespaces() {
 
 	err = poll(globalTimeout, func() (bool, error) {
 		list, listErr := kubeClient.CoreV1().Namespaces().List(listOptions)
-		if listErr != nil {
-			klog.Fatalf("failed to list namespaces: %q", listErr)
-		}
-
-		if len(list.Items) == 0 {
-			return true, nil
-		}
-
-		return false, nil
-	})
-
-	if err != nil {
-		klog.Fatalf("timed out waiting for namespaces to be cleaned up before testing")
-	}
-	list, err = appKubeClient.CoreV1().Namespaces().List(listOptions)
-	if err != nil {
-		klog.Fatalf("failed to list namespaces: %q", err)
-	}
-
-	if len(list.Items) == 0 {
-		return
-	}
-
-	for _, namespace := range list.Items {
-		err = appKubeClient.CoreV1().Namespaces().Delete(namespace.GetName(), &metav1.DeleteOptions{})
-		if err != nil {
-			if errors.IsConflict(err) {
-				// this means the namespace is still cleaning up from some other delete, so we should poll and wait
-				continue
-			}
-			klog.Fatalf("failed to delete namespace %q: %q", namespace.GetName(), err)
-		}
-	}
-
-	err = poll(globalTimeout, func() (bool, error) {
-		list, listErr := appKubeClient.CoreV1().Namespaces().List(listOptions)
 		if listErr != nil {
 			klog.Fatalf("failed to list namespaces: %q", listErr)
 		}
@@ -496,7 +457,7 @@ func newApplication(namespace, name string, strategy *shipper.RolloutStrategy) *
 				// target cluster we care about (or just panic if that cluster isn't
 				// listed).
 				ClusterRequirements: shipper.ClusterRequirements{Regions: []shipper.RegionRequirement{{Name: testRegion}}},
-				Values:              shipper.ChartValues{},
+				Values:              &shipper.ChartValues{},
 			},
 		},
 	}
@@ -506,7 +467,7 @@ func createRolloutBlock(namespace, name string) (*shipper.RolloutBlock, error) {
 	rb, err := shipperClient.ShipperV1alpha1().RolloutBlocks(namespace).Get(name, metav1.GetOptions{})
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			return nil, fmt.Errorf("failed to fetch existing rolloutblock: %s", err)
+			return nil, err
 		}
 
 		rolloutBlock := &shipper.RolloutBlock{
@@ -525,15 +486,8 @@ func createRolloutBlock(namespace, name string) (*shipper.RolloutBlock, error) {
 
 		rb, err = shipperClient.ShipperV1alpha1().RolloutBlocks(namespace).Create(rolloutBlock)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch existing rolloutblock: %s", err)
+			return nil, err
 		}
-
-		// RolloutBlocks frequently take a little bit to propagate to
-		// Shipper's informers, making tests fail for no good reason.
-		// Since we have found no way to verify that they have
-		// propagated, we use the good ol' sleep as the second best
-		// thing.
-		time.Sleep(1 * time.Second)
 	}
 
 	return rb, nil

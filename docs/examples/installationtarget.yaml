@@ -4,18 +4,26 @@ metadata:
   name: api-3f498d25-0
   namespace: service-directory
 spec:
-  canOverride: false
-  chart:
-    name: nginx
-    repoUrl: https://raw.githubusercontent.com/bookingcom/shipper/master/test/e2e/testdata
-    version: 0.0.1
-  values:
-    replicaCount: 2
+  clusters:
+  - kube-us-east1-a
+  - kube-eu-west2-b
 status:
-  conditions:
-  - lastTransitionTime: "2020-07-13T09:56:57Z"
-    status: "True"
-    type: Operational
-  - lastTransitionTime: "2020-07-13T09:56:57Z"
-    status: "True"
-    type: Ready
+  clusters:
+  - conditions:
+    - lastTransitionTime: 2018-12-06T16:53:24Z
+      status: "True"
+      type: Operational
+    - lastTransitionTime: 2018-12-06T16:53:24Z
+      status: "True"
+      type: Ready
+    name: kube-us-east1-a
+    status: Installed
+  - conditions:
+    - lastTransitionTime: 2018-12-06T16:53:24Z
+      status: "True"
+      type: Operational
+    - lastTransitionTime: 2018-12-06T16:53:24Z
+      status: "True"
+      type: Ready
+    name: kube-eu-west2-b
+    status: Installed

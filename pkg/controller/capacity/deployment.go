@@ -13,7 +13,6 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
-	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 )
 
 func (c *Controller) enqueueCapacityTargetFromDeployment(obj interface{}) {
@@ -23,15 +22,16 @@ func (c *Controller) enqueueCapacityTargetFromDeployment(obj interface{}) {
 		return
 	}
 
-	rel, err := objectutil.GetReleaseLabel(deployment)
-	if err != nil {
-		runtime.HandleError(fmt.Errorf("cannot get release from deployment %q: %#v", objectutil.MetaKey(deployment), err))
-		return
-	}
-
+	// Using ReleaseLabel here instead of the full set of Deployment labels because
+	// we can't guarantee that there isn't extra stuff there that was put directly
+	// in the chart.
+	// Also not using ObjectReference here because it would go over cluster
+	// boundaries. While technically it's probably ok, I feel like it'd be abusing
+	// the feature.
+	rel := deployment.GetLabels()[shipper.ReleaseLabel]
 	ct, err := c.getCapacityTargetForReleaseAndNamespace(rel, deployment.GetNamespace())
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("cannot get capacity target for deployment %q: %#v", objectutil.MetaKey(deployment), err))
+		runtime.HandleError(fmt.Errorf("cannot get capacity target for release '%s/%s': %#v", rel, deployment.GetNamespace(), err))
 		return
 	}
 

@@ -1,5 +1,5 @@
 /*
-Copyright The Helm Authors.
+Copyright 2016 The Kubernetes Authors All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -42,16 +42,10 @@ const (
 	DeploymentName = "deployment.yaml"
 	// ServiceName is the name of the example service file.
 	ServiceName = "service.yaml"
-	// ServiceAccountName is the name of the example serviceaccount file.
-	ServiceAccountName = "serviceaccount.yaml"
 	// NotesName is the name of the example NOTES.txt file.
 	NotesName = "NOTES.txt"
-	// HelpersName is the name of the example helpers file.
+	// HelpersName is the name of the example NOTES.txt file.
 	HelpersName = "_helpers.tpl"
-	// TemplatesTestsDir is the relative directory name for templates tests.
-	TemplatesTestsDir = "templates/tests"
-	// TestConnectionName is the name of the example connection test file.
-	TestConnectionName = "test-connection.yaml"
 )
 
 const defaultValues = `# Default values for %s.
@@ -65,28 +59,6 @@ image:
   tag: stable
   pullPolicy: IfNotPresent
 
-imagePullSecrets: []
-nameOverride: ""
-fullnameOverride: ""
-
-serviceAccount:
-  # Specifies whether a service account should be created
-  create: true
-  # The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template
-  name: ""
-
-podSecurityContext: {}
-  # fsGroup: 2000
-
-securityContext: {}
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
-
 service:
   type: ClusterIP
   port: 80
@@ -96,10 +68,9 @@ ingress:
   annotations: {}
     # kubernetes.io/ingress.class: nginx
     # kubernetes.io/tls-acme: "true"
+  path: /
   hosts:
-    - host: chart-example.local
-      paths: []
-
+    - chart-example.local
   tls: []
   #  - secretName: chart-example-tls
   #    hosts:
@@ -111,11 +82,11 @@ resources: {}
   # resources, such as Minikube. If you do want to specify resources, uncomment the following
   # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
   # limits:
-  #   cpu: 100m
-  #   memory: 128Mi
+  #  cpu: 100m
+  #  memory: 128Mi
   # requests:
-  #   cpu: 100m
-  #   memory: 128Mi
+  #  cpu: 100m
+  #  memory: 128Mi
 
 nodeSelector: {}
 
@@ -145,81 +116,72 @@ const defaultIgnore = `# Patterns to ignore when building packages.
 .project
 .idea/
 *.tmproj
-.vscode/
 `
 
 const defaultIngress = `{{- if .Values.ingress.enabled -}}
 {{- $fullName := include "<CHARTNAME>.fullname" . -}}
-{{- $svcPort := .Values.service.port -}}
-{{- if semverCompare ">=1.14-0" .Capabilities.KubeVersion.GitVersion -}}
-apiVersion: networking.k8s.io/v1beta1
-{{- else -}}
+{{- $servicePort := .Values.service.port -}}
+{{- $ingressPath := .Values.ingress.path -}}
 apiVersion: extensions/v1beta1
-{{- end }}
 kind: Ingress
 metadata:
   name: {{ $fullName }}
   labels:
-{{ include "<CHARTNAME>.labels" . | indent 4 }}
-  {{- with .Values.ingress.annotations }}
+    app: {{ template "<CHARTNAME>.name" . }}
+    chart: {{ template "<CHARTNAME>.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+{{- with .Values.ingress.annotations }}
   annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
+{{ toYaml . | indent 4 }}
+{{- end }}
 spec:
 {{- if .Values.ingress.tls }}
   tls:
   {{- range .Values.ingress.tls }}
     - hosts:
       {{- range .hosts }}
-        - {{ . | quote }}
+        - {{ . }}
       {{- end }}
       secretName: {{ .secretName }}
   {{- end }}
 {{- end }}
   rules:
   {{- range .Values.ingress.hosts }}
-    - host: {{ .host | quote }}
+    - host: {{ . }}
       http:
         paths:
-        {{- range .paths }}
-          - path: {{ . }}
+          - path: {{ $ingressPath }}
             backend:
               serviceName: {{ $fullName }}
-              servicePort: {{ $svcPort }}
-        {{- end }}
+              servicePort: http
   {{- end }}
 {{- end }}
 `
 
-const defaultDeployment = `apiVersion: apps/v1
+const defaultDeployment = `apiVersion: apps/v1beta2
 kind: Deployment
 metadata:
-  name: {{ include "<CHARTNAME>.fullname" . }}
+  name: {{ template "<CHARTNAME>.fullname" . }}
   labels:
-{{ include "<CHARTNAME>.labels" . | indent 4 }}
+    app: {{ template "<CHARTNAME>.name" . }}
+    chart: {{ template "<CHARTNAME>.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "<CHARTNAME>.name" . }}
-      app.kubernetes.io/instance: {{ .Release.Name }}
+      app: {{ template "<CHARTNAME>.name" . }}
+      release: {{ .Release.Name }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: {{ include "<CHARTNAME>.name" . }}
-        app.kubernetes.io/instance: {{ .Release.Name }}
+        app: {{ template "<CHARTNAME>.name" . }}
+        release: {{ .Release.Name }}
     spec:
-    {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-    {{- end }}
-      serviceAccountName: {{ template "<CHARTNAME>.serviceAccountName" . }}
-      securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: {{ .Chart.Name }}
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
@@ -235,27 +197,30 @@ spec:
               path: /
               port: http
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
-      {{- with .Values.nodeSelector }}
+{{ toYaml .Values.resources | indent 12 }}
+    {{- with .Values.nodeSelector }}
       nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+{{ toYaml . | indent 8 }}
+    {{- end }}
     {{- with .Values.affinity }}
       affinity:
-        {{- toYaml . | nindent 8 }}
+{{ toYaml . | indent 8 }}
     {{- end }}
     {{- with .Values.tolerations }}
       tolerations:
-        {{- toYaml . | nindent 8 }}
+{{ toYaml . | indent 8 }}
     {{- end }}
 `
 
 const defaultService = `apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "<CHARTNAME>.fullname" . }}
+  name: {{ template "<CHARTNAME>.fullname" . }}
   labels:
-{{ include "<CHARTNAME>.labels" . | indent 4 }}
+    app: {{ template "<CHARTNAME>.name" . }}
+    chart: {{ template "<CHARTNAME>.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
 spec:
   type: {{ .Values.service.type }}
   ports:
@@ -264,37 +229,26 @@ spec:
       protocol: TCP
       name: http
   selector:
-    app.kubernetes.io/name: {{ include "<CHARTNAME>.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
-`
-const defaultServiceAccount = `{{- if .Values.serviceAccount.create -}}
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: {{ template "<CHARTNAME>.serviceAccountName" . }}
-  labels:
-{{ include "<CHARTNAME>.labels" . | indent 4 }}
-{{- end -}}
+    app: {{ template "<CHARTNAME>.name" . }}
+    release: {{ .Release.Name }}
 `
 
 const defaultNotes = `1. Get the application URL by running these commands:
 {{- if .Values.ingress.enabled }}
-{{- range $host := .Values.ingress.hosts }}
-  {{- range .paths }}
-  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ . }}
-  {{- end }}
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ . }}{{ $.Values.ingress.path }}
 {{- end }}
 {{- else if contains "NodePort" .Values.service.type }}
-  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "<CHARTNAME>.fullname" . }})
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ template "<CHARTNAME>.fullname" . }})
   export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
   echo http://$NODE_IP:$NODE_PORT
 {{- else if contains "LoadBalancer" .Values.service.type }}
      NOTE: It may take a few minutes for the LoadBalancer IP to be available.
-           You can watch the status of by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "<CHARTNAME>.fullname" . }}'
-  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "<CHARTNAME>.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+           You can watch the status of by running 'kubectl get svc -w {{ template "<CHARTNAME>.fullname" . }}'
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ template "<CHARTNAME>.fullname" . }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
   echo http://$SERVICE_IP:{{ .Values.service.port }}
 {{- else if contains "ClusterIP" .Values.service.type }}
-  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "<CHARTNAME>.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app={{ template "<CHARTNAME>.name" . }},release={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
   echo "Visit http://127.0.0.1:8080 to use your application"
   kubectl port-forward $POD_NAME 8080:80
 {{- end }}
@@ -332,47 +286,6 @@ Create chart name and version as used by the chart label.
 {{- define "<CHARTNAME>.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
-
-{{/*
-Common labels
-*/}}
-{{- define "<CHARTNAME>.labels" -}}
-app.kubernetes.io/name: {{ include "<CHARTNAME>.name" . }}
-helm.sh/chart: {{ include "<CHARTNAME>.chart" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
-{{- if .Chart.AppVersion }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-{{- end }}
-app.kubernetes.io/managed-by: {{ .Release.Service }}
-{{- end -}}
-
-{{/*
-Create the name of the service account to use
-*/}}
-{{- define "<CHARTNAME>.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create -}}
-    {{ default (include "<CHARTNAME>.fullname" .) .Values.serviceAccount.name }}
-{{- else -}}
-    {{ default "default" .Values.serviceAccount.name }}
-{{- end -}}
-{{- end -}}
-`
-
-const defaultTestConnection = `apiVersion: v1
-kind: Pod
-metadata:
-  name: "{{ include "<CHARTNAME>.fullname" . }}-test-connection"
-  labels:
-{{ include "<CHARTNAME>.labels" . | indent 4 }}
-  annotations:
-    "helm.sh/hook": test-success
-spec:
-  containers:
-    - name: wget
-      image: busybox
-      command: ['wget']
-      args:  ['{{ include "<CHARTNAME>.fullname" . }}:{{ .Values.service.port }}']
-  restartPolicy: Never
 `
 
 // CreateFrom creates a new chart, but scaffolds it from the src chart.
@@ -392,9 +305,8 @@ func CreateFrom(chartfile *chart.Metadata, dest string, src string) error {
 	}
 
 	schart.Templates = updatedTemplates
-	if schart.Values != nil {
-		schart.Values = &chart.Config{Raw: string(Transform(schart.Values.Raw, "<CHARTNAME>", schart.Metadata.Name))}
-	}
+	schart.Values = &chart.Config{Raw: string(Transform(schart.Values.Raw, "<CHARTNAME>", schart.Metadata.Name))}
+
 	return SaveDir(schart, dest)
 }
 
@@ -439,7 +351,7 @@ func Create(chartfile *chart.Metadata, dir string) (string, error) {
 		}
 	}
 
-	for _, d := range []string{TemplatesDir, TemplatesTestsDir, ChartsDir} {
+	for _, d := range []string{TemplatesDir, ChartsDir} {
 		if err := os.MkdirAll(filepath.Join(cdir, d), 0755); err != nil {
 			return cdir, err
 		}
@@ -475,11 +387,6 @@ func Create(chartfile *chart.Metadata, dir string) (string, error) {
 			content: Transform(defaultService, "<CHARTNAME>", chartfile.Name),
 		},
 		{
-			// serviceaccount.yaml
-			path:    filepath.Join(cdir, TemplatesDir, ServiceAccountName),
-			content: Transform(defaultServiceAccount, "<CHARTNAME>", chartfile.Name),
-		},
-		{
 			// NOTES.txt
 			path:    filepath.Join(cdir, TemplatesDir, NotesName),
 			content: Transform(defaultNotes, "<CHARTNAME>", chartfile.Name),
@@ -488,11 +395,6 @@ func Create(chartfile *chart.Metadata, dir string) (string, error) {
 			// _helpers.tpl
 			path:    filepath.Join(cdir, TemplatesDir, HelpersName),
 			content: Transform(defaultHelpers, "<CHARTNAME>", chartfile.Name),
-		},
-		{
-			// test-connection.yaml
-			path:    filepath.Join(cdir, TemplatesTestsDir, TestConnectionName),
-			content: Transform(defaultTestConnection, "<CHARTNAME>", chartfile.Name),
 		},
 	}
 

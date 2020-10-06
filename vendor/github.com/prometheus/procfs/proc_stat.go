@@ -16,10 +16,10 @@ package procfs
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"os"
 
 	"github.com/prometheus/procfs/internal/fs"
-	"github.com/prometheus/procfs/internal/util"
 )
 
 // Originally, this USER_HZ value was dynamically retrieved via a sysconf call
@@ -105,15 +105,14 @@ type ProcStat struct {
 }
 
 // NewStat returns the current status information of the process.
-//
-// Deprecated: use p.Stat() instead
 func (p Proc) NewStat() (ProcStat, error) {
-	return p.Stat()
-}
+	f, err := os.Open(p.path("stat"))
+	if err != nil {
+		return ProcStat{}, err
+	}
+	defer f.Close()
 
-// Stat returns the current status information of the process.
-func (p Proc) Stat() (ProcStat, error) {
-	data, err := util.ReadFileNoStat(p.path("stat"))
+	data, err := ioutil.ReadAll(f)
 	if err != nil {
 		return ProcStat{}, err
 	}
@@ -179,7 +178,7 @@ func (s ProcStat) ResidentMemory() int {
 // StartTime returns the unix timestamp of the process in seconds.
 func (s ProcStat) StartTime() (float64, error) {
 	fs := FS{proc: s.proc}
-	stat, err := fs.Stat()
+	stat, err := fs.NewStat()
 	if err != nil {
 		return 0, err
 	}

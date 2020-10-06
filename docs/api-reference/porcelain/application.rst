@@ -58,14 +58,13 @@ goes wrong.
 The ``.spec.template`` is the only required field of the ``.spec``.
 
 The ``.spec.template`` is a *Release* template. It has the same schema as the
-environment of a *Release* object.
-Please refer to :ref:`.spec.environment <api-reference_release_environment>`
-section for more details.
+:ref:`.spec.environment <api-reference_release_environment>` in a *Release*
+object.
 
-*Application*'s ``.spec.template.chart`` can define either a specific chart version,
+*Application*'s ``.spec.template`` can define either a specific chart version,
 or a SemVer constraint.
 
-Please refer to `Semantic Version Ranges`_ section for more details on supported constraints.
+Please refer to `Semantic Version Ranges`_ section for more details on supported cosntrtaints.
 
 ******
 Status

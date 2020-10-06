@@ -89,8 +89,6 @@ if the *Release* has no required capabilities.
 
 ``clusterRequirements.regions`` is a list of regions this *Release* must run in. It is required.
 
-.. _api-reference_release_environment_strategy:
-
 ``.spec.environment.strategy``
 ------------------------------
 
@@ -117,11 +115,11 @@ executed in order to complete a release. A step should have the follwing keys:
 
     * - ``.capacity.incumbent``
       - The percentage of replicas, from the total number of required replicas
-        the **incumbent Release** (previous release) should have at this step.
+        the **incumbent Release** should have at this step.
 
     * - ``.capacity.contender``
       - The percentage of replicas, from the total number of required replicas
-        the **contender Release** (latest release) should have at this step.
+        the **contender Release** should have at this step.
 
     * - ``.traffic.incumbent``
       - The weight the **incumbent Release** has when load balancing traffic
@@ -159,48 +157,29 @@ All conditions contain five fields: ``lastTransitionTime``, ``status``, ``type``
 ``reason``, and ``message``. Typically ``reason`` and ``message`` are omitted in the
 expected case, and populated in the error or unexpected case.
 
-``type: Blocked``
------------------
-
-This condition indicates whether a *Release* is blocked by a
-:ref:`rollout block <operations_blocking-rollouts>` or not.
-
-``type: ClustersChosen``
-------------------------
-
-This condition indicates whether the ``clusterRequirements`` were satisfied and
-a concrete set of clusters selected for this *Release*.
-
 ``type: Complete``
 ------------------
 
 This condition indicates whether a *Release* has finished its strategy, and
 should be considered complete.
 
-``type: StrategyExecuted``
---------------------------
+``type: Scheduled``
+-------------------
 
-This condition indicates whether a *Release* has achieved a strategy step.
-This means the installation, capacity and traffic specified in the
-:ref:`.spec.environment.strategy <api-reference_release_environment_strategy>` step were achieved.
-
+This condition indicates whether the ``clusterRequirements`` were satisfied and
+a concrete set of clusters selected for this *Release*.
 
 ``.status.strategy``
 ====================
 
 This section contains information on the progression of the strategy.
 
-``.status.strategy.clusters``
------------------------------
-
-This section contains information on the progress of strategy per cluster.
-
-``.status.strategy.clusters[].conditions``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``.status.strategy.conditions``
+-------------------------------
 
 These conditions represent the precise state of the strategy: for each of the
 **incumbent** and **contender**, whether they have converged on the state
-defined by the given strategy step in a specific cluster.
+defined by the given strategy step.
 
 ``.status.strategy.state``
 --------------------------

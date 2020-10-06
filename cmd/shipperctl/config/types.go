@@ -5,6 +5,7 @@ import (
 )
 
 type ClustersConfiguration struct {
+	ManagementClusters  []*ClusterConfiguration `yaml:"managementClusters"`
 	ApplicationClusters []*ClusterConfiguration `yaml:"applicationClusters"`
 }
 

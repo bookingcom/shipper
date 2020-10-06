@@ -5,15 +5,15 @@ Installation Target
 ###################
 
 An *InstallationTarget* describes the concrete set of clusters where the release
-should be installed, and lives in these clusters. It is created by the Release Controller's Scheduler
-after the concrete clusters are picked using ``clusterRequirements``.
+should be installed. It is created by the Schedule Controller after the
+concrete clusters are picked using ``clusterRequirements``.
 
 The Installation Controller acts on InstallationTarget objects by getting the
 chart, values, and sidecars from the associated Release object,
-rendering the chart in-cluster, and inserting those objects into the
+rendering the chart per-cluster, and inserting those objects into each target
 cluster. Where applicable, these objects are always created with 0 replicas.
 
-It updates the ``status`` resource to indicate progress in the target cluster.
+It updates the ``status`` resource to indicate progress for each target cluster.
 
 *******
 Example
@@ -27,24 +27,53 @@ Example
 Spec
 ****
 
-``.spec.canOverride``
+``.spec.clusters``
 ====================
 
-This field allows the installation target to override objects that are not owned by it.
+The ``clusters`` field is a list of cluster names :ref:`known to Shipper
+<api-reference_cluster>` where the associated *Release* should be installed.
+Installation means rendering all the objects in the Chart and inserting them
+into the cluster.
 
-``.spec.chart`` ``.spec.values``
-================================
-
-These fields are copied from the :ref:`Release object <api-reference_release_environment>`.
+.. literalinclude:: ../../examples/installationtarget.yaml
+    :language: yaml
+    :lines: 6-9
+    :linenos:
 
 ******
 Status
 ******
 
-``.status.conditions``
-===============================
+``.status.clusters``
+====================
 
-A list of all conditions observed for this particular Application Cluster.
+``.status.clusters`` is a list of objects representing the installation status
+of all clusters where the associated Release objects must be installed.
+
+.. literalinclude:: ../../examples/installationtarget.yaml
+    :language: yaml
+    :lines: 10-
+    :linenos:
+
+The following table displays the keys a cluster status entry should have:
+
+.. list-table::
+    :widths: 1 99
+    :header-rows: 1
+
+    * - Key
+      - Description
+    * - **name**
+      - The Application Cluster name. For example, **kube-us-east1-a**.
+    * - **status**
+      - **Failed** in case of failure, or **Installed** in case of success.
+    * - **message**
+      - A message describing the reason Shipper decided that it has failed.
+    * - **conditions**
+      - A list of all conditions observed for this particular Application Cluster.
+
+``.status.clusters.conditions``
+===============================
 
 The following table displays the different conditions statuses and reasons reported in the
 *InstallationTarget* object for the **Operational** condition type:

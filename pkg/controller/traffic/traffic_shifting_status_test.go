@@ -9,7 +9,6 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
-	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 )
 
 type release struct {
@@ -227,8 +226,12 @@ func TestTrafficShiftingPodsLabeledButNotReady(t *testing.T) {
 	}
 
 	trafficStatus := buildTrafficShiftingStatus(
-		shippertesting.TestApp, releaseName,
-		releaseWeights{releaseName: releaseWeight},
+		shippertesting.TestCluster, shippertesting.TestApp, releaseName,
+		clusterReleaseWeights{
+			shippertesting.TestCluster: map[string]uint32{
+				releaseName: releaseWeight,
+			},
+		},
 		endpoints, appPods,
 	)
 
@@ -261,8 +264,12 @@ func TestTrafficShiftingUnmanagedPods(t *testing.T) {
 
 	endpoints := buildEndpoints(shippertesting.TestApp)
 	trafficStatus := buildTrafficShiftingStatus(
-		shippertesting.TestApp, releaseName,
-		releaseWeights{releaseName: releaseWeight},
+		shippertesting.TestCluster, shippertesting.TestApp, releaseName,
+		clusterReleaseWeights{
+			shippertesting.TestCluster: map[string]uint32{
+				releaseName: releaseWeight,
+			},
+		},
 		endpoints, appPods,
 	)
 
@@ -286,7 +293,9 @@ func runBuildTestTrafficShiftingStatus(
 		releaseName := fmt.Sprintf("release-%d", i)
 
 		trafficTargets = append(trafficTargets, buildTrafficTarget(
-			shippertesting.TestApp, releaseName, release.weight,
+			shippertesting.TestApp, releaseName, map[string]uint32{
+				shippertesting.TestCluster: release.weight,
+			},
 		))
 
 		podsWithTraffic := buildPods(
@@ -309,23 +318,17 @@ func runBuildTestTrafficShiftingStatus(
 		appPods = append(appPods, podsWithoutTraffic...)
 	}
 
-	releaseWeights, err := buildReleaseWeights(trafficTargets)
+	clusterReleaseWeights, err := buildClusterReleaseWeights(trafficTargets)
 	if err != nil {
-		t.Fatalf("cannot build release weights: %s", err)
+		t.Fatalf("cannot build cluster release weights: %s", err)
 	}
 
 	for i, expectation := range expectations {
 		tt := trafficTargets[i]
-		relName, err := objectutil.GetReleaseLabel(tt)
-		if err != nil {
-			t.Fatalf(
-				"traffic target %q does not belong to a release: %s",
-				objectutil.MetaKey(tt), err.Error())
-		}
-
+		relName := tt.Labels[shipper.ReleaseLabel]
 		trafficStatus := buildTrafficShiftingStatus(
-			shippertesting.TestApp, relName,
-			releaseWeights,
+			shippertesting.TestCluster, shippertesting.TestApp, relName,
+			clusterReleaseWeights,
 			endpoints, appPods,
 		)
 

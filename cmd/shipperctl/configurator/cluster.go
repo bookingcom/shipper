@@ -1,9 +1,12 @@
 package configurator
 
 import (
+	"encoding/hex"
 	"fmt"
+	"hash/crc32"
 	"time"
 
+	homedir "github.com/mitchellh/go-homedir"
 	certificatesv1beta1 "k8s.io/api/certificates/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -17,10 +20,10 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	client "github.com/bookingcom/shipper/pkg/client"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	"github.com/mitchellh/go-homedir"
 	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -88,11 +91,6 @@ func (c *Cluster) CreateClusterRole(domain, name string) error {
 				Verbs:     []string{"update", "get", "list", "watch"},
 				APIGroups: []string{""},
 				Resources: []string{"secrets"},
-			},
-			rbacv1.PolicyRule{
-				Verbs:     []string{"get", "list", "watch"},
-				APIGroups: []string{""},
-				Resources: []string{"namespaces"},
 			},
 			rbacv1.PolicyRule{
 				Verbs:     []string{rbacv1.VerbAll},
@@ -174,15 +172,12 @@ func (c *Cluster) FetchSecretForServiceAccount(name, namespace string) (*corev1.
 	}
 
 	secretName := serviceAccount.Secrets[0].Name
-	return c.FetchSecret(secretName, namespace)
-}
+	secret, err := c.KubeClient.CoreV1().Secrets(namespace).Get(secretName, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
 
-func (c *Cluster) FetchSecret(name, namespace string) (*corev1.Secret, error) {
-	return c.KubeClient.CoreV1().Secrets(namespace).Get(name, metav1.GetOptions{})
-}
-
-func (c *Cluster) ListClusters() (*shipper.ClusterList, error) {
-	return c.ShipperClient.ShipperV1alpha1().Clusters().List(metav1.ListOptions{})
+	return secret, nil
 }
 
 func (c *Cluster) FetchCluster(clusterName string) (*shipper.Cluster, error) {
@@ -190,10 +185,17 @@ func (c *Cluster) FetchCluster(clusterName string) (*shipper.Cluster, error) {
 }
 
 func (c *Cluster) CopySecret(cluster *shipper.Cluster, newNamespace string, secret *corev1.Secret) error {
+	hash := crc32.NewIEEE()
+	hash.Write(secret.Data["ca.crt"])
+	hash.Write(secret.Data["token"])
+
 	newSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cluster.Name,
 			Namespace: newNamespace,
+			Annotations: map[string]string{
+				shipper.SecretChecksumAnnotation: hex.EncodeToString(hash.Sum(nil)),
+			},
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
 					APIVersion: "shipper.booking.com/v1",
@@ -211,19 +213,30 @@ func (c *Cluster) CopySecret(cluster *shipper.Cluster, newNamespace string, secr
 	return err
 }
 
-func (c *Cluster) CreateOrUpdateCluster(cluster *shipper.Cluster) error {
-	existingCluster, err := c.ShipperClient.ShipperV1alpha1().Clusters().Get(cluster.Name, metav1.GetOptions{})
+func (c *Cluster) CreateOrUpdateClusterWithConfig(configuration *config.ClusterConfiguration) error {
+	existingCluster, err := c.ShipperClient.ShipperV1alpha1().Clusters().Get(configuration.Name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			_, err := c.ShipperClient.ShipperV1alpha1().Clusters().Create(cluster)
-			return err
+			return c.CreateClusterFromConfig(configuration)
 		} else {
 			return err
 		}
 	}
 
-	existingCluster.Spec = cluster.Spec
+	existingCluster.Spec = configuration.ClusterSpec
 	_, err = c.ShipperClient.ShipperV1alpha1().Clusters().Update(existingCluster)
+	return err
+}
+
+func (c *Cluster) CreateClusterFromConfig(configuration *config.ClusterConfiguration) error {
+	cluster := &shipper.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: configuration.Name,
+		},
+		Spec: configuration.ClusterSpec,
+	}
+
+	_, err := c.ShipperClient.ShipperV1alpha1().Clusters().Create(cluster)
 	return err
 }
 
@@ -231,8 +244,7 @@ func (c *Cluster) CreateOrUpdateCRD(crd *apiextensionv1beta1.CustomResourceDefin
 	existingCrd, err := c.ApiExtensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(crd.Name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			_, err := c.ApiExtensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd)
-			return err
+			return c.CreateCrd(crd)
 		} else {
 			return err
 		}
@@ -243,27 +255,35 @@ func (c *Cluster) CreateOrUpdateCRD(crd *apiextensionv1beta1.CustomResourceDefin
 	return err
 }
 
-func NewClusterConfiguratorFromKubeConfig(kubeConfigFile, context string) (*Cluster, error) {
-	restConfig, err := loadKubeConfig(kubeConfigFile, context)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewClusterConfigurator(restConfig)
+func (c *Cluster) CreateCrd(crd *apiextensionv1beta1.CustomResourceDefinition) error {
+	_, err := c.ApiExtensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd)
+	return err
 }
 
-func NewClusterConfigurator(restConfig *rest.Config) (*Cluster, error) {
-	clientset, err := client.NewKubeClient(AgentName, restConfig)
+func NewClusterConfigurator(clusterConfiguration *config.ClusterConfiguration, kubeConfigFile string) (*Cluster, error) {
+	var context string
+	if clusterConfiguration.Context != "" {
+		context = clusterConfiguration.Context
+	} else {
+		context = clusterConfiguration.Name
+	}
+
+	restConfig, err := loadKubeConfig(context, kubeConfigFile)
 	if err != nil {
 		return nil, err
 	}
 
-	shipperClient, err := client.NewShipperClient(AgentName, restConfig)
+	clientset, err := client.NewKubeClient(restConfig, AgentName, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	apiExtensionClient, err := client.NewApiExtensionClient(AgentName, restConfig)
+	shipperClient, err := client.NewShipperClient(restConfig, AgentName, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	apiExtensionClient, err := client.NewApiExtensionClient(restConfig, AgentName, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -276,6 +296,20 @@ func NewClusterConfigurator(restConfig *rest.Config) (*Cluster, error) {
 	}
 
 	return configurator, nil
+}
+
+func loadKubeConfig(context, kubeConfigFile string) (*rest.Config, error) {
+	kubeConfigFilePath, err := homedir.Expand(kubeConfigFile)
+	if err != nil {
+		return nil, err
+	}
+
+	clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeConfigFilePath},
+		&clientcmd.ConfigOverrides{CurrentContext: context},
+	)
+
+	return clientConfig.ClientConfig()
 }
 
 func (c *Cluster) CreateCertificateSigningRequest(csr []byte) error {
@@ -388,13 +422,8 @@ func (c *Cluster) FetchKubernetesCABundle() ([]byte, error) {
 	return []byte(caBundle), nil
 }
 
-func (c *Cluster) CreateOrUpdateValidatingWebhookConfiguration(caBundle []byte, namespace string, setToIgnore bool) error {
+func (c *Cluster) CreateOrUpdateValidatingWebhookConfiguration(caBundle []byte, namespace string) error {
 	path := shipperValidatingWebhookServicePath
-	sideEffectClassNone := admissionregistrationv1beta1.SideEffectClassNone
-	failurePolicy := admissionregistrationv1beta1.Fail
-	if setToIgnore {
-		failurePolicy = admissionregistrationv1beta1.Ignore
-	}
 	validatingWebhookConfiguration := &admissionregistrationv1beta1.ValidatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: shipperValidatingWebhookName,
@@ -423,8 +452,6 @@ func (c *Cluster) CreateOrUpdateValidatingWebhookConfiguration(caBundle []byte, 
 						},
 					},
 				},
-				SideEffects:   &sideEffectClassNone,
-				FailurePolicy: &failurePolicy,
 			},
 		},
 	}
@@ -440,21 +467,6 @@ func (c *Cluster) CreateOrUpdateValidatingWebhookConfiguration(caBundle []byte, 
 	}
 
 	existingConfig.Webhooks = validatingWebhookConfiguration.Webhooks
-	_, err = c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Update(existingConfig)
-	return err
-}
-
-func (c *Cluster) UpdateValidatingWebhookConfigurationFailurePolicy() error {
-	policyTypeFail := admissionregistrationv1beta1.Fail
-	existingConfig, err := c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Get(shipperValidatingWebhookName, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-
-	for i := range existingConfig.Webhooks {
-		existingConfig.Webhooks[i].FailurePolicy = &policyTypeFail
-	}
-
 	_, err = c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Update(existingConfig)
 	return err
 }
@@ -492,21 +504,4 @@ func (c *Cluster) CreateOrUpdateValidatingWebhookService(namespace string) error
 	existingSerivce.Spec.Ports = service.Spec.Ports
 	_, err = c.KubeClient.CoreV1().Services(namespace).Update(existingSerivce)
 	return err
-}
-
-func loadKubeConfig(kubeConfig, context string) (*rest.Config, error) {
-	path, err := homedir.Expand(kubeConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	overrides := &clientcmd.ConfigOverrides{CurrentContext: context}
-	if context != "" {
-		overrides.CurrentContext = context
-	}
-
-	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		&clientcmd.ClientConfigLoadingRules{ExplicitPath: path},
-		overrides,
-	).ClientConfig()
 }

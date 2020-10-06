@@ -11,15 +11,14 @@ const (
 	ShipperNamespace            = "shipper-system"
 	GlobalRolloutBlockNamespace = "rollout-blocks-global"
 
-	ShipperManagementServiceAccount  = "shipper-mgmt-cluster"
-	ShipperApplicationServiceAccount = "shipper-app-cluster"
+	ShipperManagementServiceAccount  = "shipper-management-cluster"
+	ShipperApplicationServiceAccount = "shipper-application-cluster"
 
 	ReleaseLabel                 = "shipper-release"
 	AppLabel                     = "shipper-app"
 	ReleaseEnvironmentHashLabel  = "shipper-release-hash"
 	PodTrafficStatusLabel        = "shipper-traffic-status"
 	InstallationTargetOwnerLabel = "shipper-owned-by"
-	MigrationLabel               = "shipper-target-object-migration-0.9-completed"
 
 	AppHighestObservedGenerationAnnotation = "shipper.booking.com/app.highestObservedGeneration"
 
@@ -31,6 +30,7 @@ const (
 	ReleaseTemplateIterationAnnotation = "shipper.booking.com/release.template.iteration"
 	ReleaseClustersAnnotation          = "shipper.booking.com/release.clusters"
 
+	SecretChecksumAnnotation             = "shipper.booking.com/cluster-secret.checksum"
 	SecretClusterSkipTlsVerifyAnnotation = "shipper.booking.com/cluster-secret.insecure-tls-skip-verify"
 
 	RolloutBlocksOverrideAnnotation = "shipper.booking.com/rollout-block.override"
@@ -207,7 +207,7 @@ type AchievedStep struct {
 type ReleaseConditionType string
 
 const (
-	ReleaseConditionTypeClustersChosen   ReleaseConditionType = "ClustersChosen"
+	ReleaseConditionTypeScheduled        ReleaseConditionType = "Scheduled"
 	ReleaseConditionTypeStrategyExecuted ReleaseConditionType = "StrategyExecuted"
 	ReleaseConditionTypeComplete         ReleaseConditionType = "Complete"
 	ReleaseConditionTypeBlocked          ReleaseConditionType = "Blocked"
@@ -224,9 +224,9 @@ type ReleaseCondition struct {
 type ReleaseEnvironment struct {
 	// Chart spec: name, version, repoURL
 	Chart Chart `json:"chart"`
-
 	// the inlined "values.yaml" to apply to the chart when rendering it
-	Values ChartValues `json:"values"`
+	// XXX pointer here means it's null-able, do we want that?
+	Values *ChartValues `json:"values"`
 
 	// requirements for target clusters for the deployment
 	ClusterRequirements ClusterRequirements `json:"clusterRequirements"`
@@ -299,19 +299,15 @@ type InstallationTargetList struct {
 }
 
 type InstallationTargetStatus struct {
-	Conditions []TargetCondition `json:"conditions,omitempty"`
-
-	// Deprecated
-	Clusters []*ClusterInstallationStatus `json:"clusters,omitempty"`
+	Clusters   []*ClusterInstallationStatus `json:"clusters,omitempty"`
+	Conditions []TargetCondition            `json:"conditions,omitempty"`
 }
 
-// Deprecated
 type ClusterInstallationStatus struct {
 	Name       string                         `json:"name"`
 	Conditions []ClusterInstallationCondition `json:"conditions,omitempty"`
 }
 
-// Deprecated
 type ClusterInstallationCondition struct {
 	Type               ClusterConditionType   `json:"type"`
 	Status             corev1.ConditionStatus `json:"status"`
@@ -321,12 +317,11 @@ type ClusterInstallationCondition struct {
 }
 
 type InstallationTargetSpec struct {
-	CanOverride bool        `json:"canOverride"`
-	Chart       Chart       `json:"chart"`
-	Values      ChartValues `json:"values,omitempty"`
-
-	// Deprecated
-	Clusters []string `json:"clusters,omitempty"`
+	Clusters    []string `json:"clusters"`
+	CanOverride bool     `json:"canOverride"`
+	// XXX these are nullable because of migration
+	Chart  *Chart       `json:"chart"`
+	Values *ChartValues `json:"values,omitempty"`
 }
 
 // +genclient
@@ -352,42 +347,62 @@ type CapacityTargetList struct {
 	Items []CapacityTarget `json:"items"`
 }
 
-type CapacityTargetSpec struct {
-	Percent           int32 `json:"percent"`
-	TotalReplicaCount int32 `json:"totalReplicaCount"`
-
-	// Deprecated
-	Clusters []ClusterCapacityTarget `json:"clusters,omitempty"`
-}
-
-// Deprecated
-type ClusterCapacityTarget struct {
-	Name              string `json:"name"`
-	Percent           int32  `json:"percent"`
-	TotalReplicaCount int32  `json:"totalReplicaCount"`
-}
-
 type CapacityTargetStatus struct {
-	ObservedGeneration int64             `json:"observedGeneration,omitempty"`
-	AvailableReplicas  int32             `json:"availableReplicas"`
-	AchievedPercent    int32             `json:"achievedPercent"`
-	SadPods            []PodStatus       `json:"sadPods,omitempty"`
-	Conditions         []TargetCondition `json:"conditions,omitempty"`
-
-	// Deprecated
-	Clusters []ClusterCapacityStatus `json:"clusters,omitempty"`
+	ObservedGeneration int64                   `json:"observedGeneration,omitempty"`
+	Clusters           []ClusterCapacityStatus `json:"clusters,omitempty"`
+	Conditions         []TargetCondition       `json:"conditions,omitempty"`
 }
 
-// Deprecated
+type ClusterCapacityReportContainerBreakdownExample struct {
+	Pod     string  `json:"pod"`
+	Message *string `json:"message,omitempty"`
+}
+
+type ClusterCapacityReportContainerStateBreakdown struct {
+	Count   uint32                                         `json:"count"`
+	Example ClusterCapacityReportContainerBreakdownExample `json:"example"`
+	Reason  string                                         `json:"reason,omitempty"`
+	Type    string                                         `json:"type"`
+}
+
+type ClusterCapacityReportContainerBreakdown struct {
+	Name   string                                         `json:"name"`
+	States []ClusterCapacityReportContainerStateBreakdown `json:"states"`
+}
+
+type ClusterCapacityReportBreakdown struct {
+	Containers []ClusterCapacityReportContainerBreakdown `json:"containers,omitempty"`
+	Count      uint32                                    `json:"count"`
+	Reason     string                                    `json:"reason,omitempty"`
+	Status     string                                    `json:"status"`
+	Type       string                                    `json:"type"`
+}
+
+type ClusterCapacityReportOwner struct {
+	Name string `json:"name"`
+}
+
+type ClusterCapacityReport struct {
+	Owner     ClusterCapacityReportOwner       `json:"owner"`
+	Breakdown []ClusterCapacityReportBreakdown `json:"breakdown,omitempty"`
+}
+
 type ClusterCapacityStatus struct {
 	Name              string                     `json:"name"`
 	AvailableReplicas int32                      `json:"availableReplicas"`
 	AchievedPercent   int32                      `json:"achievedPercent"`
 	SadPods           []PodStatus                `json:"sadPods,omitempty"`
 	Conditions        []ClusterCapacityCondition `json:"conditions,omitempty"`
+	Reports           []ClusterCapacityReport    `json:"reports,omitempty"`
 }
 
-// Deprecated
+type ClusterConditionType string
+
+const (
+	ClusterConditionTypeOperational ClusterConditionType = "Operational"
+	ClusterConditionTypeReady       ClusterConditionType = "Ready"
+)
+
 type ClusterCapacityCondition struct {
 	Type               ClusterConditionType   `json:"type"`
 	Status             corev1.ConditionStatus `json:"status"`
@@ -401,6 +416,21 @@ type PodStatus struct {
 	Containers     []corev1.ContainerStatus `json:"containers"`
 	InitContainers []corev1.ContainerStatus `json:"initContainers"`
 	Condition      corev1.PodCondition      `json:"condition"`
+}
+
+// the capacity and traffic controllers need context to pick the right
+// things to target for traffic. These labels need to end up on the
+// pods, since that's what service mesh impls will mostly care about.
+//	Selectors []string                `json:"selectors"`
+
+type CapacityTargetSpec struct {
+	Clusters []ClusterCapacityTarget `json:"clusters"`
+}
+
+type ClusterCapacityTarget struct {
+	Name              string `json:"name"`
+	Percent           int32  `json:"percent"`
+	TotalReplicaCount int32  `json:"totalReplicaCount"`
 }
 
 // +genclient
@@ -428,25 +458,17 @@ type TrafficTargetList struct {
 }
 
 type TrafficTargetStatus struct {
-	ObservedGeneration int64             `json:"observedGeneration,omitempty"`
-	AchievedTraffic    uint32            `json:"achievedTraffic"`
-	Conditions         []TargetCondition `json:"conditions"`
-
-	// Deprecated
-	Clusters []*ClusterTrafficStatus `json:"clusters,omitempty"`
+	ObservedGeneration int64                   `json:"observedGeneration,omitempty"`
+	Clusters           []*ClusterTrafficStatus `json:"clusters,omitempty"`
+	Conditions         []TargetCondition       `json:"conditions,omitempty"`
 }
 
-// Deprecated
 type ClusterTrafficStatus struct {
 	Name            string                    `json:"name"`
 	AchievedTraffic uint32                    `json:"achievedTraffic"`
 	Conditions      []ClusterTrafficCondition `json:"conditions"`
 }
 
-// Deprecated
-type ClusterConditionType string
-
-// Deprecated
 type ClusterTrafficCondition struct {
 	Type               ClusterConditionType   `json:"type"`
 	Status             corev1.ConditionStatus `json:"status"`
@@ -456,14 +478,9 @@ type ClusterTrafficCondition struct {
 }
 
 type TrafficTargetSpec struct {
-	// apimachinery intstr for percentages?
-	Weight uint32 `json:"weight"`
-
-	// Deprecated
-	Clusters []ClusterTrafficTarget `json:"clusters,omitempty"`
+	Clusters []ClusterTrafficTarget `json:"clusters"`
 }
 
-// Deprecated
 type ClusterTrafficTarget struct {
 	Name string `json:"name"`
 	// apimachinery intstr for percentages?
@@ -471,16 +488,8 @@ type ClusterTrafficTarget struct {
 }
 
 type ReleaseStrategyStatus struct {
-	State    ReleaseStrategyState    `json:"state,omitempty"`
-	Clusters []ClusterStrategyStatus `json:"clusters,omitempty"`
-
-	// Deprecated
+	State      ReleaseStrategyState       `json:"state,omitempty"`
 	Conditions []ReleaseStrategyCondition `json:"conditions,omitempty"`
-}
-
-type ClusterStrategyStatus struct {
-	Name       string                     `json:"name"`
-	Conditions []ReleaseStrategyCondition `json:"conditions"`
 }
 
 type ReleaseStrategyState struct {
@@ -494,9 +503,9 @@ type ReleaseStrategyCondition struct {
 	Type               StrategyConditionType  `json:"type"`
 	Status             corev1.ConditionStatus `json:"status"`
 	LastTransitionTime metav1.Time            `json:"lastTransitionTime,omitempty"`
-	Reason             string                 `json:"reason"`
-	Message            string                 `json:"message"`
-	Step               int32                  `json:"step"`
+	Reason             string                 `json:"reason,omitempty"`
+	Message            string                 `json:"message,omitempty"`
+	Step               int32                  `json:"step,omitempty"`
 }
 
 type StrategyConditionType string
