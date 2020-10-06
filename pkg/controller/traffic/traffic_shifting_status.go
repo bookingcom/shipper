@@ -9,11 +9,10 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
-	objectutil "github.com/bookingcom/shipper/pkg/util/object"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
 )
 
-type releaseWeights map[string]uint32
+type clusterReleaseWeights map[string]map[string]uint32
 
 type trafficShiftingStatus struct {
 	ready                 bool
@@ -32,11 +31,16 @@ type trafficShiftingStatus struct {
 // desired one, it also returns which pods need to receive which labels to move
 // forward.
 func buildTrafficShiftingStatus(
-	appName, releaseName string,
-	releaseTargetWeights releaseWeights,
+	cluster, appName, releaseName string,
+	clusterReleaseWeights clusterReleaseWeights,
 	endpoints *corev1.Endpoints,
 	appPods []*corev1.Pod,
 ) trafficShiftingStatus {
+	releaseTargetWeights, ok := clusterReleaseWeights[cluster]
+	if !ok {
+		return trafficShiftingStatus{}
+	}
+
 	releaseSelector := labels.Set(map[string]string{
 		shipper.AppLabel:     appName,
 		shipper.ReleaseLabel: releaseName,
@@ -200,29 +204,30 @@ func markAddressReadiness(
 }
 
 /*
-	Transform a list of each release's traffic target object :
+	Transform this (a list of each release's traffic target object in this namespace):
 	[
-		{ tt-reviewsapi-1: 90 },
-		{ tt-reviewsapi-2: 5 },
-		{ tt-reviewsapi-3: 5 },
+		{ tt-reviewsapi-1: { cluster-1: 90 } },
+		{ tt-reviewsapi-2: { cluster-1: 5 } },
+		{ tt-reviewsapi-3: { cluster-1: 5 } },
 	]
 
-	Into a map of weight per release:
+	Into this (a map of release weight per cluster):
 	{
-		reviewsapi-1: 90,
-		reviewsapi-2: 5,
-		reviewsapi-3: 5,
+		cluster-1: {
+			reviewsapi-1: 90,
+			reviewsapi-2: 5,
+			reviewsapi-3: 5,
+		}
 	}
 */
-func buildReleaseWeights(
-	trafficTargets []*shipper.TrafficTarget,
-) (map[string]uint32, error) {
-	clusterReleases := make(releaseWeights)
+func buildClusterReleaseWeights(trafficTargets []*shipper.TrafficTarget) (clusterReleaseWeights, error) {
+	clusterReleases := map[string]map[string]uint32{}
 	releaseTT := map[string]*shipper.TrafficTarget{}
 
 	for _, tt := range trafficTargets {
-		release, err := objectutil.GetReleaseLabel(tt)
-		if err != nil {
+		release, ok := tt.Labels[shipper.ReleaseLabel]
+		if !ok {
+			err := shippererrors.NewMissingShipperLabelError(tt, shipper.ReleaseLabel)
 			return nil, err
 		}
 
@@ -233,10 +238,17 @@ func buildReleaseWeights(
 		}
 		releaseTT[release] = tt
 
-		clusterReleases[release] += tt.Spec.Weight
+		for _, cluster := range tt.Spec.Clusters {
+			weights, ok := clusterReleases[cluster.Name]
+			if !ok {
+				weights = map[string]uint32{}
+				clusterReleases[cluster.Name] = weights
+			}
+			weights[release] += cluster.Weight
+		}
 	}
 
-	return clusterReleases, nil
+	return clusterReleaseWeights(clusterReleases), nil
 }
 
 func calculateReleasePodTarget(releasePods int, releaseWeight uint32, totalPods int, totalWeight uint32) int {

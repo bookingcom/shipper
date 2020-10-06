@@ -1,10 +1,8 @@
 package clusterclientstore
 
 import (
-	"encoding/hex"
 	"fmt"
-	"hash/crc32"
-	"sort"
+	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -20,27 +18,22 @@ import (
 	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	shipperclient "github.com/bookingcom/shipper/pkg/client"
-	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
-	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shipperinformer "github.com/bookingcom/shipper/pkg/client/informers/externalversions/shipper/v1alpha1"
 	"github.com/bookingcom/shipper/pkg/clusterclientstore/cache"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 )
 
-const (
-	AgentName = "clusterclientstore"
-	noTimeout = 0 * time.Second
-)
+const AgentName = "clusterclientstore"
+
+// This enables tests to inject an appropriate fake client, which allows us to
+// use the real cluster client store in unit tests.
+type ClientBuilderFunc func(string, string, *rest.Config) (kubernetes.Interface, error)
 
 type Store struct {
-	ns                 string
-	buildKubeClient    KubeClientBuilderFunc
-	buildShipperClient ShipperClientBuilderFunc
-	restTimeout        *time.Duration
-	cache              cache.CacheServer
-
-	shipperInformerFactory shipperinformers.SharedInformerFactory
+	ns          string
+	buildClient ClientBuilderFunc
+	restTimeout *time.Duration
+	cache       cache.CacheServer
 
 	secretInformer  corev1informer.SecretInformer
 	clusterInformer shipperinformer.ClusterInformer
@@ -57,30 +50,24 @@ type Store struct {
 	subscriptionRegisterFuncs []SubscriptionRegisterFunc
 }
 
-var _ Interface = (*Store)(nil)
-
 // NewStore creates a new client store that will use the specified informers to
 // maintain a cache of clientsets, rest.Configs, and informers for target
 // clusters.
 func NewStore(
-	buildKubeClient KubeClientBuilderFunc,
-	buildShipperClient ShipperClientBuilderFunc,
+	buildClient ClientBuilderFunc,
 	secretInformer corev1informer.SecretInformer,
-	shipperInformerFactory shipperinformers.SharedInformerFactory,
+	clusterInformer shipperinformer.ClusterInformer,
 	ns string,
 	restTimeout *time.Duration,
 ) *Store {
 	s := &Store{
-		ns:                 ns,
-		buildKubeClient:    buildKubeClient,
-		buildShipperClient: buildShipperClient,
-		restTimeout:        restTimeout,
-		cache:              cache.NewServer(),
-
-		shipperInformerFactory: shipperInformerFactory,
+		ns:          ns,
+		buildClient: buildClient,
+		restTimeout: restTimeout,
+		cache:       cache.NewServer(),
 
 		secretInformer:  secretInformer,
-		clusterInformer: shipperInformerFactory.Shipper().V1alpha1().Clusters(),
+		clusterInformer: clusterInformer,
 
 		secretWorkqueue:  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Client Store Secrets"),
 		clusterWorkqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Client Store Clusters"),
@@ -130,44 +117,36 @@ func (s *Store) AddEventHandlerCallback(eventHandler EventHandlerRegisterFunc) {
 	s.eventHandlerRegisterFuncs = append(s.eventHandlerRegisterFuncs, eventHandler)
 }
 
-func (s *Store) GetApplicationClusterClientset(clusterName, userAgent string) (ClientsetInterface, error) {
+// GetClient returns a client for the specified cluster name and user agent
+// pair.
+func (s *Store) GetClient(clusterName string, ua string) (kubernetes.Interface, error) {
 	cluster, ok := s.cache.Fetch(clusterName)
 	if !ok {
 		return nil, shippererrors.NewClusterNotInStoreError(clusterName)
 	}
 
-	config, err := cluster.GetConfig()
-	if err != nil {
-		return nil, err
+	return cluster.GetClient(ua)
+}
+
+// GetConfig returns a rest.Config for the specified cluster name.
+func (s *Store) GetConfig(clusterName string) (*rest.Config, error) {
+	cluster, ok := s.cache.Fetch(clusterName)
+	if !ok {
+		return nil, shippererrors.NewClusterNotInStoreError(clusterName)
 	}
 
-	kubeClient, err := cluster.GetKubeClient(userAgent)
-	if err != nil {
-		return nil, err
+	return cluster.GetConfig()
+}
+
+// GetInformerFactory returns an informer factory for the specified
+// cluster name.
+func (s *Store) GetInformerFactory(clusterName string) (kubeinformers.SharedInformerFactory, error) {
+	cluster, ok := s.cache.Fetch(clusterName)
+	if !ok {
+		return nil, shippererrors.NewClusterNotInStoreError(clusterName)
 	}
 
-	kubeInformerFactory, err := cluster.GetKubeInformerFactory()
-	if err != nil {
-		return nil, err
-	}
-
-	shipperClient, err := cluster.GetShipperClient(userAgent)
-	if err != nil {
-		return nil, err
-	}
-
-	shipperInformerFactory, err := cluster.GetShipperInformerFactory()
-	if err != nil {
-		return nil, err
-	}
-
-	return NewStoreClientset(
-		config,
-		kubeClient,
-		kubeInformerFactory,
-		shipperClient,
-		shipperInformerFactory,
-	), nil
+	return cluster.GetInformerFactory()
 }
 
 func (s *Store) syncCluster(name string) error {
@@ -225,8 +204,7 @@ func (s *Store) syncSecret(key string) error {
 	// Programmer error: secretInformer needs to be namespaced to only
 	// shipper's own namespace.
 	if ns != s.ns {
-		return shippererrors.NewUnrecoverableError(fmt.Errorf(
-			"client store secret workqueue should only contain secrets from the shipper namespace"))
+		panic("client store secret workqueue should only contain secrets from the shipper namespace")
 	}
 
 	secret, err := s.secretInformer.Lister().Secrets(s.ns).Get(name)
@@ -252,17 +230,23 @@ func (s *Store) syncSecret(key string) error {
 			WithShipperKind("Cluster")
 	}
 
-	if cachedCluster, ok := s.cache.Fetch(secret.Name); ok {
-		secretChecksum := computeSecretChecksum(secret)
-		clusterChecksum, err := cachedCluster.GetChecksum()
+	checksum, ok := secret.GetAnnotations()[shipper.SecretChecksumAnnotation]
+	if !ok {
+		err := fmt.Errorf("secret %q looks like a cluster secret but doesn't have a checksum", key)
+		return shippererrors.NewUnrecoverableError(err)
+	}
+
+	cachedCluster, ok := s.cache.Fetch(secret.Name)
+	if ok {
+		existingChecksum, err := cachedCluster.GetChecksum()
+		// We don't want to regenerate the client if we already have one with the
+		// right properties (host or secret checksum) that's either ready (err == nil)
+		// or in the process of getting ready. Otherwise we'll refill the cache
+		// needlessly, or could even end up in a livelock where waiting for informer
+		// cache to fill takes longer than the resync period, and resync resets the
+		// informer.
 		if err == nil || shippererrors.IsClusterNotReadyError(err) {
-			// We don't want to regenerate the client if we already have one with the
-			// right properties (host or secret checksum) that's either ready (err == nil)
-			// or in the process of getting ready. Otherwise we'll refill the cache
-			// needlessly, or could even end up in a livelock where waiting for informer
-			// cache to fill takes longer than the resync period, and resync resets the
-			// informer.
-			if secretChecksum == clusterChecksum {
+			if existingChecksum == checksum {
 				klog.Infof("Secret %q syncing but we already have a client based on the same checksum in the cache", key)
 				return nil
 			}
@@ -273,49 +257,50 @@ func (s *Store) syncSecret(key string) error {
 }
 
 func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
-	config := shipperclient.BuildConfigFromClusterAndSecret(cluster, secret)
-	if s.restTimeout != nil {
-		config.Timeout = *s.restTimeout
+	checksum, ok := secret.GetAnnotations()[shipper.SecretChecksumAnnotation]
+	// Programmer error: this is filtered for at the informer level.
+	if !ok {
+		panic(fmt.Sprintf("Secret %q doesn't have a checksum annotation. this should be checked before calling 'create'", secret.Name))
 	}
 
-	// These are only used in shared informers. Setting HTTP timeout here
-	// would affect watches which is undesirable. Instead, we leave it to
-	// client-go (see k8s.io/client-go/tools/cache) to govern watch
-	// durations.
-	informerConfig := rest.CopyConfig(config)
-	informerConfig.Timeout = noTimeout
-
-	kubeInformerClient, err := s.buildKubeClient(cluster.Name, AgentName, informerConfig)
+	config, err := buildConfig(cluster.Spec.APIMaster, secret, s.restTimeout)
 	if err != nil {
 		return shippererrors.NewClusterClientBuild(cluster.Name, err)
 	}
 
-	shipperInformerClient, err := s.buildShipperClient(cluster.Name, AgentName, informerConfig)
+	// These are only used in shared informers. Setting HTTP timeout here would
+	// affect watches which is undesirable. Instead, we leave it to client-go (see
+	// k8s.io/client-go/tools/cache) to govern watch durations.
+	informerConfig, err := buildConfig(cluster.Spec.APIMaster, secret, nil)
 	if err != nil {
 		return shippererrors.NewClusterClientBuild(cluster.Name, err)
 	}
 
-	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeInformerClient, noTimeout)
-	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(shipperInformerClient, noTimeout)
+	informerClient, err := s.buildClient(cluster.Name, AgentName, informerConfig)
+	if err != nil {
+		return shippererrors.NewClusterClientBuild(cluster.Name, err)
+	}
 
+	informerFactory := kubeinformers.NewSharedInformerFactory(informerClient, 0*time.Second)
 	// Register all the resources that the controllers are interested in, e.g.
 	// informerFactory.Core().V1().Pods().Informer().
 	for _, cb := range s.subscriptionRegisterFuncs {
-		cb(kubeInformerFactory, shipperInformerFactory)
+		cb(informerFactory)
 	}
 
 	clusterName := cluster.Name
-	checksum := computeSecretChecksum(secret)
 	newCachedCluster := cache.NewCluster(
-		clusterName, checksum, config,
-		kubeInformerFactory, shipperInformerFactory,
-		s.buildKubeClient, s.buildShipperClient,
+		clusterName,
+		checksum,
+		config,
+		informerFactory,
+		s.buildClient,
 		func() {
 			// If/when the informer cache finishes syncing, bind all of the event handler
 			// callbacks from the controllers if it does not finish (because the cluster
 			// was Shutdown) this will not be called.
 			for _, cb := range s.eventHandlerRegisterFuncs {
-				cb(kubeInformerFactory, shipperInformerFactory)
+				cb(informerFactory, clusterName)
 			}
 		})
 
@@ -323,68 +308,56 @@ func (s *Store) create(cluster *shipper.Cluster, secret *corev1.Secret) error {
 	return nil
 }
 
-// StoreClientset is supposed to be a short-lived container for a set of
-// client connections. As it is effectively caching clients and factories, it's
-// the caller's responsibility to ensure these objects are not stall.
-type StoreClientset struct {
-	config *rest.Config
-
-	kubeClient          kubernetes.Interface
-	kubeInformerFactory kubeinformers.SharedInformerFactory
-
-	shipperClient          shipperclientset.Interface
-	shipperInformerFactory shipperinformers.SharedInformerFactory
-}
-
-var _ ClientsetInterface = (*StoreClientset)(nil)
-
-// NewStoreClientset is a dummy constructor forcing all components to be
-// present.
-func NewStoreClientset(config *rest.Config, kubeClient kubernetes.Interface,
-	kubeInformerFactory kubeinformers.SharedInformerFactory, shipperClient shipperclientset.Interface,
-	shipperInformerFactory shipperinformers.SharedInformerFactory) *StoreClientset {
-	return &StoreClientset{
-		config:                 config,
-		kubeClient:             kubeClient,
-		kubeInformerFactory:    kubeInformerFactory,
-		shipperClient:          shipperClient,
-		shipperInformerFactory: shipperInformerFactory,
+// TODO(btyler): error here or let any invalid data get picked up by errors from
+// kube.NewForConfig or auth problems at connection time?
+func buildConfig(host string, secret *corev1.Secret, restTimeout *time.Duration) (*rest.Config, error) {
+	config := &rest.Config{
+		Host: host,
 	}
-}
 
-func (c *StoreClientset) GetConfig() *rest.Config {
-	return c.config
-}
-
-func (c *StoreClientset) GetKubeClient() kubernetes.Interface {
-	return c.kubeClient
-}
-
-func (c *StoreClientset) GetKubeInformerFactory() kubeinformers.SharedInformerFactory {
-	return c.kubeInformerFactory
-}
-
-func (c *StoreClientset) GetShipperClient() shipperclientset.Interface {
-	return c.shipperClient
-}
-
-func (c *StoreClientset) GetShipperInformerFactory() shipperinformers.SharedInformerFactory {
-	return c.shipperInformerFactory
-}
-
-func computeSecretChecksum(secret *corev1.Secret) string {
-	hash := crc32.NewIEEE()
-	keys := make([]string, len(secret.Data))
-	for k := range secret.Data {
-		keys = append(keys, k)
+	if restTimeout != nil {
+		config.Timeout = *restTimeout
 	}
-	// in order to compute a reproducible hash, all key-value pairs should come
-	// in a deterministic order
-	sort.Strings(keys)
-	for _, k := range keys {
-		hash.Write([]byte(k))
-		hash.Write(secret.Data[k])
+
+	// Can't use the ServiceAccountToken type because we don't want the service
+	// account controller to touch it.
+	_, tokenOK := secret.Data["token"]
+	if tokenOK {
+		ca := secret.Data["ca.crt"]
+		config.CAData = ca
+
+		token := secret.Data["token"]
+		config.BearerToken = string(token)
+		return config, nil
 	}
-	sum := hex.EncodeToString(hash.Sum(nil))
-	return sum
+
+	// Let's figure it's either a TLS secret or an opaque thing formatted like a
+	// TLS secret.
+
+	// The cluster secret controller does not include the CA in the secret: you end
+	// up using the system CA trust store. However, it's much handier for
+	// integration testing to be able to create a secret that is independent of the
+	// underlying system trust store.
+	if ca, ok := secret.Data["tls.ca"]; ok {
+		config.CAData = ca
+	}
+
+	if crt, ok := secret.Data["tls.crt"]; ok {
+		config.CertData = crt
+	}
+
+	if key, ok := secret.Data["tls.key"]; ok {
+		config.KeyData = key
+	}
+
+	if encodedInsecureSkipTlsVerify, ok := secret.Annotations[shipper.SecretClusterSkipTlsVerifyAnnotation]; ok {
+		if insecureSkipTlsVerify, err := strconv.ParseBool(encodedInsecureSkipTlsVerify); err == nil {
+			klog.Infof("found %q annotation with value %q for host %q", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify, host)
+			config.Insecure = insecureSkipTlsVerify
+		} else {
+			klog.Infof("found %q annotation with value %q for host %q but failed to decode a bool from it, ignoring it", shipper.SecretClusterSkipTlsVerifyAnnotation, encodedInsecureSkipTlsVerify, host)
+		}
+	}
+
+	return config, nil
 }

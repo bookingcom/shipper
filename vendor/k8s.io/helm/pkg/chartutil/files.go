@@ -1,5 +1,5 @@
 /*
-Copyright The Helm Authors.
+Copyright 2016 The Kubernetes Authors All rights reserved.
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -36,8 +36,10 @@ type Files map[string][]byte
 // Given an []*any.Any (the format for files in a chart.Chart), extract a map of files.
 func NewFiles(from []*any.Any) Files {
 	files := map[string][]byte{}
-	for _, f := range from {
-		files[f.TypeUrl] = f.Value
+	if from != nil {
+		for _, f := range from {
+			files[f.TypeUrl] = f.Value
+		}
 	}
 	return files
 }
@@ -209,8 +211,7 @@ func ToToml(v interface{}) string {
 // always return a string, even on marshal error (empty string).
 //
 // This is designed to be called from a template.
-// TODO: change the function signature in Helm 3
-func ToJson(v interface{}) string { // nolint
+func ToJson(v interface{}) string {
 	data, err := json.Marshal(v)
 	if err != nil {
 		// Swallow errors inside of a template.
@@ -219,14 +220,13 @@ func ToJson(v interface{}) string { // nolint
 	return string(data)
 }
 
-// FromJson converts a JSON document into a map[string]interface{}.
+// FromJson converts a YAML document into a map[string]interface{}.
 //
 // This is not a general-purpose JSON parser, and will not parse all valid
-// JSON documents. Additionally, because its intended use is within templates
+// YAML documents. Additionally, because its intended use is within templates
 // it tolerates errors. It will insert the returned error message string into
 // m["Error"] in the returned map.
-// TODO: change the function signature in Helm 3
-func FromJson(str string) map[string]interface{} { // nolint
+func FromJson(str string) map[string]interface{} {
 	m := map[string]interface{}{}
 
 	if err := json.Unmarshal([]byte(str), &m); err != nil {

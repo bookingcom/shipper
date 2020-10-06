@@ -2,6 +2,7 @@ package traffic
 
 import (
 	"fmt"
+	"sort"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
@@ -31,6 +32,15 @@ var (
 	}
 	TargetConditionReady = shipper.TargetCondition{
 		Type:   shipper.TargetConditionTypeReady,
+		Status: corev1.ConditionTrue,
+	}
+
+	ClusterTrafficOperational = shipper.ClusterTrafficCondition{
+		Type:   shipper.ClusterConditionTypeOperational,
+		Status: corev1.ConditionTrue,
+	}
+	ClusterTrafficReady = shipper.ClusterTrafficCondition{
+		Type:   shipper.ClusterConditionTypeReady,
 		Status: corev1.ConditionTrue,
 	}
 )
@@ -89,7 +99,16 @@ func shiftPodInEndpoints(pod *corev1.Pod, endpoints *corev1.Endpoints) *corev1.E
 	return endpoints
 }
 
-func buildTrafficTarget(app, release string, weight uint32) *shipper.TrafficTarget {
+func buildTrafficTarget(app, release string, clusterWeights map[string]uint32) *shipper.TrafficTarget {
+	clusters := make([]shipper.ClusterTrafficTarget, 0, len(clusterWeights))
+
+	for cluster, weight := range clusterWeights {
+		clusters = append(clusters, shipper.ClusterTrafficTarget{
+			Name:   cluster,
+			Weight: weight,
+		})
+	}
+
 	return &shipper.TrafficTarget{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      release,
@@ -100,14 +119,29 @@ func buildTrafficTarget(app, release string, weight uint32) *shipper.TrafficTarg
 			},
 		},
 		Spec: shipper.TrafficTargetSpec{
-			Weight: weight,
+			Clusters: clusters,
 		},
 	}
 }
 
-func buildSuccessStatus(spec shipper.TrafficTargetSpec) shipper.TrafficTargetStatus {
+func buildSuccessStatus(clusters []shipper.ClusterTrafficTarget) shipper.TrafficTargetStatus {
+	clusterStatuses := make([]*shipper.ClusterTrafficStatus, 0, len(clusters))
+
+	for _, cluster := range clusters {
+		clusterStatuses = append(clusterStatuses, &shipper.ClusterTrafficStatus{
+			Name:            cluster.Name,
+			AchievedTraffic: cluster.Weight,
+			Conditions: []shipper.ClusterTrafficCondition{
+				ClusterTrafficOperational,
+				ClusterTrafficReady,
+			},
+		})
+	}
+
+	sort.Sort(byClusterName(clusterStatuses))
+
 	return shipper.TrafficTargetStatus{
-		AchievedTraffic: spec.Weight,
+		Clusters: clusterStatuses,
 		Conditions: []shipper.TargetCondition{
 			TargetConditionOperational,
 			TargetConditionReady,

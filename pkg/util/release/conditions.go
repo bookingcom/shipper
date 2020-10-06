@@ -94,6 +94,11 @@ func RemoveReleaseCondition(status shipper.ReleaseStatus, condType shipper.Relea
 	status.Conditions = filterOutCondition(status.Conditions, condType)
 }
 
+func ReleaseScheduled(release *shipper.Release) bool {
+	scheduledCond := GetReleaseCondition(release.Status, shipper.ReleaseConditionTypeScheduled)
+	return scheduledCond != nil && scheduledCond.Status == corev1.ConditionTrue
+}
+
 func ReleaseStrategyExecuted(release *shipper.Release) bool {
 	strategyExecutedCond := GetReleaseCondition(release.Status, shipper.ReleaseConditionTypeStrategyExecuted)
 	return strategyExecutedCond != nil && strategyExecutedCond.Status == corev1.ConditionTrue

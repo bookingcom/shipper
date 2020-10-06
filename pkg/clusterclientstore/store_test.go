@@ -15,8 +15,6 @@ import (
 	"k8s.io/client-go/rest"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	shipperclient "github.com/bookingcom/shipper/pkg/client"
-	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
@@ -37,7 +35,7 @@ type clusters []string
 type secrets []string
 
 func TestClientCreation(t *testing.T) {
-	clientStoreTestCase(t, "creates application cluster client set",
+	clientStoreTestCase(t, "creates config",
 		clusters{testClusterName},
 		secrets{testClusterName},
 		func(s *Store) (bool, error) {
@@ -45,11 +43,57 @@ func TestClientCreation(t *testing.T) {
 			return ok && cluster.IsReady(), nil
 		},
 		func(s *Store) {
-			_, err := s.GetApplicationClusterClientset(testClusterName, AgentName)
+			config, err := s.GetConfig(testClusterName)
 			if err != nil {
-				t.Errorf("unexpected error getting clientset: %s", err)
+				t.Errorf("unexpected error getting config %v", err)
+			}
+			if config.Host != testClusterHost {
+				t.Errorf("expected config with host %q but got %q", testClusterHost, config.Host)
 			}
 
+			if s.cache.Count() != 1 {
+				t.Errorf("expected exactly one cluster, found %q", s.cache.Count())
+			}
+		})
+
+	clientStoreTestCase(t, "creates client",
+		clusters{testClusterName},
+		secrets{testClusterName},
+		func(s *Store) (bool, error) {
+			cluster, ok := s.cache.Fetch(testClusterName)
+			return ok && cluster.IsReady(), nil
+		},
+		func(s *Store) {
+			ua := "foo"
+			expected, err := s.GetClient(testClusterName, ua)
+			if err != nil {
+				t.Errorf("unexpected error getting client %v", err)
+			}
+			if s.cache.Count() != 1 {
+				t.Errorf("expected exactly one cluster, found %q", s.cache.Count())
+			}
+
+			found, err := s.GetClient(testClusterName, ua)
+			if err != nil {
+				t.Errorf("unexpected error getting client %v", err)
+			}
+			if found != expected {
+				t.Errorf("expected client %v to be reused, but instead got a new client %v", expected, found)
+			}
+		})
+
+	clientStoreTestCase(t, "creates informerFactory",
+		clusters{testClusterName},
+		secrets{testClusterName},
+		func(s *Store) (bool, error) {
+			cluster, ok := s.cache.Fetch(testClusterName)
+			return ok && cluster.IsReady(), nil
+		},
+		func(s *Store) {
+			_, err := s.GetInformerFactory(testClusterName)
+			if err != nil {
+				t.Errorf("unexpected error getting informerFactory %v", err)
+			}
 			if s.cache.Count() != 1 {
 				t.Errorf("expected exactly one cluster, found %q", s.cache.Count())
 			}
@@ -69,9 +113,22 @@ func TestClientCreation(t *testing.T) {
 		},
 		func(s *Store) {
 			for _, name := range clusterList {
-				_, err := s.GetApplicationClusterClientset(name, "foo")
+				_, err := s.GetClient(name, "foo")
 				if err != nil {
-					t.Errorf("unexpected error getting clientset %q: %s", name, err)
+					t.Errorf("unexpected error getting client %q %v", name, err)
+				}
+
+				config, err := s.GetConfig(name)
+				if err != nil {
+					t.Errorf("unexpected error getting config for %q %v", name, err)
+				}
+				if config.Host != testClusterHost {
+					t.Errorf("expected config with host %q but got %q", testClusterHost, config.Host)
+				}
+
+				_, err = s.GetInformerFactory(name)
+				if err != nil {
+					t.Errorf("unexpected error getting informerFactory %q %v", name, err)
 				}
 			}
 
@@ -79,6 +136,7 @@ func TestClientCreation(t *testing.T) {
 				t.Errorf("expected exactly %d clusters, found %d", len(clusterList), s.cache.Count())
 			}
 		})
+
 }
 
 func TestNoClientGeneration(t *testing.T) {
@@ -91,11 +149,11 @@ func TestNoClientGeneration(t *testing.T) {
 			return true, nil
 		},
 		func(s *Store) {
-			_, err := s.GetApplicationClusterClientset("foo", "baz")
+			_, err := s.GetClient("foo", "baz")
 			if !shippererrors.IsClusterNotInStoreError(err) {
 				t.Errorf("expected 'no such cluster' error, but got something else: %v", err)
 			}
-			_, err = s.GetApplicationClusterClientset("bar", "baz")
+			_, err = s.GetClient("bar", "baz")
 			if !shippererrors.IsClusterNotInStoreError(err) {
 				t.Errorf("expected 'no such cluster' error, but got something else: %v", err)
 			}
@@ -135,9 +193,7 @@ func TestInvalidClientCredentials(t *testing.T) {
 	f := newFixture(t)
 
 	f.addCluster(testClusterName)
-	// This secret key is invalid and therefore the cache won't preserve the
-	// cluster
-	f.addSecret(newSecret(testClusterName, []byte("crt"), []byte("key")))
+	f.addSecret(newSecret(testClusterName, []byte("crt"), []byte("key"), []byte("checksum")))
 
 	store := f.run()
 
@@ -147,63 +203,39 @@ func TestInvalidClientCredentials(t *testing.T) {
 		stopAfter(3*time.Second),
 	)
 
-	expErr := fmt.Errorf(
-		"cannot create client for cluster %q: tls: failed to find any PEM data in certificate input",
-		testClusterName)
-	err := store.syncCluster(testClusterName)
-	if !errEqual(err, expErr) {
-		t.Fatalf("unexpected error returned by `store.SyncCluster/0`: got: %s, want: %s",
-			err, expErr)
+	_, err := store.GetConfig(testClusterName)
+	if !shippererrors.IsClusterNotInStoreError(err) {
+		t.Errorf("expected NoSuchCluster for cluster called %q for invalid client credentials; instead got %v", testClusterName, err)
 	}
 }
 
-func TestReCacheClusterOnSecretUpdate(t *testing.T) {
+func TestConfigTimeout(t *testing.T) {
 	f := newFixture(t)
 
-	f.addCluster(testClusterName)
+	sevenSeconds := 7 * time.Second
+	f.restTimeout = &sevenSeconds
 
-	f.addSecret(newSecret(testClusterName, []byte("crt"), []byte("key")))
+	f.addCluster(testClusterName)
+	f.addSecret(newValidSecret(testClusterName))
 
 	store := f.run()
 
 	wait.PollUntil(
 		10*time.Millisecond,
-		func() (bool, error) { return true, nil },
+		func() (bool, error) {
+			cluster, ok := store.cache.Fetch(testClusterName)
+			return ok && cluster.IsReady(), nil
+		},
 		stopAfter(3*time.Second),
 	)
 
-	_, ok := store.cache.Fetch(testClusterName)
-	if ok {
-		t.Fatalf("did not expect to fetch a cluster from the cache")
-	}
-
-	secret, err := store.secretInformer.Lister().Secrets(store.ns).Get(testClusterName)
+	restCfg, err := store.GetConfig(testClusterName)
 	if err != nil {
-		t.Fatalf("failed to fetch secret from lister: %s", err)
-	}
-	validSecret := newValidSecret(testClusterName)
-	secret.Data = validSecret.Data
-
-	client := f.kubeClient
-	_, err = client.CoreV1().Secrets(store.ns).Update(secret)
-	if err != nil {
-		t.Fatalf("failed to update secret: %s", err)
+		t.Fatalf("expected a REST config, but got error: %s", err)
 	}
 
-	key := fmt.Sprintf("%s/%s", store.ns, testClusterName)
-	if err := store.syncSecret(key); err != nil {
-		t.Fatalf("unexpected error returned by `store.syncSecret/1`: %s", err)
-	}
-
-	cluster, ok := store.cache.Fetch(testClusterName)
-	if !ok {
-		t.Fatalf("expected to fetch a cluster from the cache")
-	}
-
-	secretChecksum := computeSecretChecksum(secret)
-	if clusterChecksum, _ := cluster.GetChecksum(); clusterChecksum != secretChecksum {
-		t.Fatalf("inconsistent cluster checksum: got: %s, want: %s",
-			clusterChecksum, secretChecksum)
+	if restCfg.Timeout != sevenSeconds {
+		t.Errorf("expected REST config to have timeout of %s, but got %s", sevenSeconds, restCfg.Timeout)
 	}
 }
 
@@ -248,11 +280,8 @@ func (f *fixture) newStore() (*Store, kubeinformers.SharedInformerFactory, shipp
 		func(_ string, _ string, config *rest.Config) (kubernetes.Interface, error) {
 			return kubernetes.NewForConfig(config)
 		},
-		func(_, userAgent string, config *rest.Config) (shipperclientset.Interface, error) {
-			return shipperclient.NewShipperClient(userAgent, config)
-		},
 		kubeInformerFactory.Core().V1().Secrets(),
-		shipperInformerFactory,
+		shipperInformerFactory.Shipper().V1alpha1().Clusters(),
 		shipper.ShipperNamespace,
 		f.restTimeout,
 	)
@@ -280,18 +309,21 @@ func (f *fixture) addCluster(name string) {
 }
 
 func newValidSecret(name string) *corev1.Secret {
-	crt, key, _, err := tlsPair.GetAll()
+	crt, key, checksum, err := tlsPair.GetAll()
 	if err != nil {
 		panic(fmt.Sprintf("could not read test TLS data from paths: %v: %v", tlsPair, err))
 	}
-	return newSecret(name, crt, key)
+	return newSecret(name, crt, key, checksum)
 }
 
-func newSecret(name string, crt, key []byte) *corev1.Secret {
+func newSecret(name string, crt, key, checksum []byte) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: shipper.ShipperNamespace,
+			Annotations: map[string]string{
+				shipper.SecretChecksumAnnotation: string(checksum),
+			},
 		},
 		Data: map[string][]byte{
 			corev1.TLSCertKey:       crt,
@@ -308,11 +340,4 @@ func stopAfter(t time.Duration) <-chan struct{} {
 		close(stopCh)
 	}()
 	return stopCh
-}
-
-func errEqual(e1, e2 error) bool {
-	if e1 == nil || e2 == nil {
-		return e1 == e2
-	}
-	return e1.Error() == e2.Error()
 }

@@ -1,162 +1,195 @@
 package janitor
 
 import (
-	"fmt"
 	"testing"
-	"time"
 
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	kubetesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/cache"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
+	"github.com/bookingcom/shipper/pkg/util/anchor"
 )
 
-const (
-	clusterA = "cluster-a"
-	clusterB = "cluster-b"
+// TestSuccessfulDeleteInstallationTarget exercises syncInstallationTarget(),
+// which is triggered by deleting an installation target object from the
+// management cluster.
+func TestSuccessfulDeleteInstallationTarget(t *testing.T) {
+	installationTarget := buildInstallationTarget()
 
-	present    = true
-	notPresent = false
-)
+	f := shippertesting.NewControllerTestFixture()
+	cluster := f.AddNamedCluster(shippertesting.TestCluster)
 
-// Release exists, doesn't touch anything
-// Release does not exist, deletes all objects
+	c := runController(f)
 
-// TestReleaseExists tests that a release that's present in a cluster will
-// ensure that the janitor controller does not garbage collect any target
-// objects.
-func TestReleaseExists(t *testing.T) {
-	rel := buildRelease(
-		shippertesting.TestNamespace,
-		shippertesting.TestApp,
-		"release",
-		[]string{clusterA},
-	)
-	it, ct, tt := shippertesting.BuildTargetObjectsForRelease(rel)
-
-	mgmtClusterObjects := []runtime.Object{buildCluster(clusterA), rel}
-	appClusterObjects := map[string][]runtime.Object{
-		clusterA: []runtime.Object{it, ct, tt},
-	}
-	expectations := map[string]bool{
-		clusterA: present,
+	key, err := cache.MetaNamespaceKeyFunc(installationTarget)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	runJanitorControllerTest(t,
-		rel.Namespace,
-		rel.Name,
-		mgmtClusterObjects, appClusterObjects,
-		expectations)
+	item := &InstallationTargetWorkItem{
+		AnchorName: anchor.CreateAnchorName(installationTarget),
+		Clusters:   installationTarget.Spec.Clusters,
+		Key:        key,
+		Name:       installationTarget.Name,
+		Namespace:  installationTarget.Namespace,
+	}
+
+	if err := c.syncInstallationTarget(item); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewDeleteAction(
+			schema.GroupVersionResource{Resource: string(corev1.ResourceConfigMaps), Version: "v1"},
+			item.Namespace,
+			item.AnchorName,
+		),
+	}
+
+	actual := shippertesting.FilterActions(cluster.Client.Actions())
+	shippertesting.CheckActions(expectedActions, actual, t)
 }
 
-// TestReleaseDoesNotExist tests that target objects for a release that does
-// not exist get garbage collected by the janitor controller.
-func TestReleaseDoesNotExist(t *testing.T) {
-	// we build a release only for help generating target objects, it won't
-	// be added to the cluster.
-	rel := buildRelease(
-		shippertesting.TestNamespace,
-		shippertesting.TestApp,
-		"release",
-		[]string{clusterA},
-	)
-	it, ct, tt := shippertesting.BuildTargetObjectsForRelease(rel)
+// TestDeleteConfigMapAnchorInstallationTargetMatch should not delete anything,
+// since the installation target object's UID matches the anchor config map
+// synced from an application cluster.
+func TestDeleteConfigMapAnchorInstallationTargetMatch(t *testing.T) {
+	f := shippertesting.NewControllerTestFixture()
+	cluster := f.AddNamedCluster(shippertesting.TestCluster)
 
-	mgmtClusterObjects := []runtime.Object{buildCluster(clusterA)}
-	appClusterObjects := map[string][]runtime.Object{
-		clusterA: []runtime.Object{it, ct, tt},
-	}
-	expectations := map[string]bool{
-		clusterA: notPresent,
+	installationTarget := buildInstallationTarget()
+	f.ShipperClient.Tracker().Add(installationTarget)
+
+	configMap := anchor.CreateConfigMapAnchor(installationTarget)
+	cluster.AddOne(configMap)
+
+	c := runController(f)
+
+	key, err := cache.MetaNamespaceKeyFunc(configMap)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	runJanitorControllerTest(t,
-		rel.Namespace,
-		rel.Name,
-		mgmtClusterObjects, appClusterObjects,
-		expectations)
+	item := &AnchorWorkItem{
+		ClusterName:           cluster.Name,
+		InstallationTargetUID: configMap.Data[InstallationTargetUID],
+		Key:                   key,
+		Name:                  configMap.Name,
+		Namespace:             configMap.GetNamespace(),
+		ReleaseName:           configMap.GetLabels()[shipper.ReleaseLabel],
+	}
+
+	if err := c.syncAnchor(item); err != nil {
+		t.Fatal(err)
+	}
+
+	// Nothing should happen, ConfigMap's InstallationTargetUID key matches
+	// existing installation target.
+	expectedActions := []kubetesting.Action{}
+
+	actual := shippertesting.FilterActions(cluster.Client.Actions())
+	shippertesting.CheckActions(expectedActions, actual, t)
 }
 
-// TestReleaseNotInAllClusters tests that we only keep the target objects in
-// the clusters selected in the release, and garbage collect the others.
-func TestReleaseNotInAllClusters(t *testing.T) {
-	rel := buildRelease(
-		shippertesting.TestNamespace,
-		shippertesting.TestApp,
-		"release",
-		[]string{clusterA},
-	)
+// TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch exercises
+// syncAnchor() for the case where an existing installation target object's
+// UID differs from the installation target UID present in the anchor config
+// map.
+func TestDeleteConfigMapAnchorInstallationTargetUIDDoNotMatch(t *testing.T) {
+	f := shippertesting.NewControllerTestFixture()
+	cluster := f.AddNamedCluster(shippertesting.TestCluster)
 
-	it, ct, tt := shippertesting.BuildTargetObjectsForRelease(rel)
+	installationTarget := buildInstallationTarget()
+	f.ShipperClient.Tracker().Add(installationTarget)
 
-	mgmtClusterObjects := []runtime.Object{
-		buildCluster(clusterA),
-		buildCluster(clusterB),
-		rel,
-	}
-	appClusterObjects := map[string][]runtime.Object{
-		clusterA: []runtime.Object{it.DeepCopy(), ct.DeepCopy(), tt.DeepCopy()},
-		clusterB: []runtime.Object{it.DeepCopy(), ct.DeepCopy(), tt.DeepCopy()},
-	}
-	expectations := map[string]bool{
-		clusterA: present,
-		clusterB: notPresent,
+	// Change the installation target object's UID present in the config map.
+	configMap := anchor.CreateConfigMapAnchor(installationTarget)
+	configMap.Data[InstallationTargetUID] = "some-other-installation-target-uid"
+
+	c := runController(f)
+
+	key, err := cache.MetaNamespaceKeyFunc(configMap)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	runJanitorControllerTest(t,
-		rel.Namespace,
-		rel.Name,
-		mgmtClusterObjects, appClusterObjects,
-		expectations)
+	item := &AnchorWorkItem{
+		ClusterName:           cluster.Name,
+		InstallationTargetUID: configMap.Data[InstallationTargetUID],
+		Key:                   key,
+		Name:                  configMap.GetName(),
+		Namespace:             configMap.GetNamespace(),
+		ReleaseName:           configMap.GetLabels()[shipper.ReleaseLabel],
+	}
+
+	if err := c.syncAnchor(item); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewDeleteAction(
+			schema.GroupVersionResource{Resource: string(corev1.ResourceConfigMaps), Version: "v1"},
+			configMap.GetNamespace(),
+			configMap.GetName(),
+		),
+	}
+
+	actual := shippertesting.FilterActions(cluster.Client.Actions())
+	shippertesting.CheckActions(expectedActions, actual, t)
 }
 
-func runJanitorControllerTest(
-	t *testing.T,
-	namespace, name string,
-	mgmtClusterObjects []runtime.Object,
-	appClusterObjects map[string][]runtime.Object,
-	expectations map[string]bool,
-) {
-	f := shippertesting.NewManagementControllerTestFixture(
-		mgmtClusterObjects, appClusterObjects)
+// TestDeleteConfigMapAnchorInstallationTargetDoesNotExist exercises
+// syncAnchor() for the case where the installation target present in the
+// anchor config map doesn't exist anymore in the management cluster.
+func TestDeleteConfigMapAnchorInstallationTargetDoesNotExist(t *testing.T) {
+	f := shippertesting.NewControllerTestFixture()
+	cluster := f.AddNamedCluster(shippertesting.TestCluster)
 
-	runController(f)
+	installationTarget := buildInstallationTarget()
+	configMap := anchor.CreateConfigMapAnchor(installationTarget)
+	cluster.AddOne(configMap)
 
-	for clusterName, shouldBePresent := range expectations {
-		client := f.Clusters[clusterName].ShipperClient
+	c := runController(f)
 
-		resources := []string{
-			"installationtargets",
-			"capacitytargets",
-			"traffictargets",
-		}
-
-		for _, resource := range resources {
-			gvr := shipper.SchemeGroupVersion.WithResource(resource)
-			key := fmt.Sprintf("%s/%s", namespace, name)
-
-			_, err := client.Tracker().Get(gvr, namespace, name)
-			if err != nil && !errors.IsNotFound(err) {
-				t.Fatalf("error getting %s: %s", resource, err)
-			}
-
-			found := err == nil
-
-			if found && !shouldBePresent {
-				t.Errorf("expected %s %q to not be present in cluster %s, but it was found", resource, key, clusterName)
-			} else if !found && shouldBePresent {
-				t.Errorf("expected %s %q to be present in cluster %s, but it was not found", resource, key, clusterName)
-			}
-		}
+	key, err := cache.MetaNamespaceKeyFunc(configMap)
+	if err != nil {
+		t.Fatal(err)
 	}
+
+	item := &AnchorWorkItem{
+		ClusterName:           cluster.Name,
+		InstallationTargetUID: configMap.Data[InstallationTargetUID],
+		Key:                   key,
+		Name:                  configMap.Name,
+		Namespace:             configMap.GetNamespace(),
+		ReleaseName:           configMap.GetLabels()[shipper.ReleaseLabel],
+	}
+
+	if err := c.syncAnchor(item); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedActions := []kubetesting.Action{
+		kubetesting.NewDeleteAction(
+			schema.GroupVersionResource{Resource: string(corev1.ResourceConfigMaps), Version: "v1"},
+			configMap.GetNamespace(),
+			configMap.GetName(),
+		),
+	}
+
+	actual := shippertesting.FilterActions(cluster.Client.Actions())
+	shippertesting.CheckActions(expectedActions, actual, t)
 }
 
-func runController(f *shippertesting.ControllerTestFixture) {
-	controller := NewController(
+func runController(f *shippertesting.ControllerTestFixture) *Controller {
+	c := NewController(
 		f.ShipperClient,
-		f.ClusterClientStore,
 		f.ShipperInformerFactory,
+		f.ClusterClientStore,
 		f.Recorder,
 	)
 
@@ -165,12 +198,21 @@ func runController(f *shippertesting.ControllerTestFixture) {
 
 	f.Run(stopCh)
 
-	for controller.processNextWorkItem() {
-		if controller.workqueue.Len() == 0 {
-			time.Sleep(20 * time.Millisecond)
-		}
-		if controller.workqueue.Len() == 0 {
-			return
-		}
+	return c
+}
+
+func buildInstallationTarget() *shipper.InstallationTarget {
+	return &shipper.InstallationTarget{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: shippertesting.TestNamespace,
+			Name:      shippertesting.TestApp,
+			UID:       "deadbeef",
+			Labels: map[string]string{
+				shipper.ReleaseLabel: shippertesting.TestApp,
+			},
+		},
+		Spec: shipper.InstallationTargetSpec{
+			Clusters: []string{shippertesting.TestCluster},
+		},
 	}
 }

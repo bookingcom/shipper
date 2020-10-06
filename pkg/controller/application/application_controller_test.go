@@ -1181,7 +1181,7 @@ func newApplication(name string) *shipper.Application {
 					Version: "0.0.1",
 				},
 				ClusterRequirements: shipper.ClusterRequirements{},
-				Values:              shipper.ChartValues{},
+				Values:              &shipper.ChartValues{},
 				Strategy:            &vanguard,
 			},
 		},

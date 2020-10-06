@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shipper-state-metrics
+  namespace: shipper-system
+  labels:
+    app: shipper-state-metrics
+spec:
+  selector:
+    matchLabels:
+      app: shipper-state-metrics
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: shipper-state-metrics
+    spec:
+      containers:
+      - name: shipper-state-metrics
+        image: <IMAGE>
+        imagePullPolicy: Always
+        args:
+          - "-v"
+          - "2"
+        ports:
+        - name: metrics
+          containerPort: 8890
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 8890
+      serviceAccountName: shipper-management-cluster

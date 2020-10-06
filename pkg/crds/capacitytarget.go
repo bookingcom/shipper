@@ -34,22 +34,11 @@ var CapacityTarget = &apiextensionv1beta1.CustomResourceDefinition{
 					"spec": apiextensionv1beta1.JSONSchemaProps{
 						Type: "object",
 						Required: []string{
-							"percent",
-							"totalReplicaCount",
+							"clusters",
 						},
 						Properties: map[string]apiextensionv1beta1.JSONSchemaProps{
-							"percent": apiextensionv1beta1.JSONSchemaProps{
-								Type:    "integer",
-								Minimum: &zero,
-								Maximum: &hundred,
-							},
-							"totalReplicaCount": apiextensionv1beta1.JSONSchemaProps{
-								Type:    "integer",
-								Minimum: &zero,
-							},
 							"clusters": apiextensionv1beta1.JSONSchemaProps{
-								Type:     "array",
-								Nullable: true,
+								Type: "array",
 								Items: &apiextensionv1beta1.JSONSchemaPropsOrArray{
 									Schema: &apiextensionv1beta1.JSONSchemaProps{
 										Type: "object",
@@ -79,25 +68,25 @@ var CapacityTarget = &apiextensionv1beta1.CustomResourceDefinition{
 			apiextensionv1beta1.CustomResourceColumnDefinition{
 				Name:        "Operational",
 				Type:        "string",
-				Description: "Whether the capacity target is operational.",
+				Description: "Whether the capactiy target is operational.",
 				JSONPath:    `.status.conditions[?(.type=="Operational")].status`,
 			},
 			apiextensionv1beta1.CustomResourceColumnDefinition{
 				Name:        "Ready",
 				Type:        "string",
-				Description: "Whether the capacity target is ready.",
+				Description: "Whether the capactiy target is ready.",
 				JSONPath:    `.status.conditions[?(.type=="Ready")].status`,
 			},
 			apiextensionv1beta1.CustomResourceColumnDefinition{
 				Name:        "Reason",
 				Type:        "string",
-				Description: "Reason for the capacity target to not be ready or operational.",
+				Description: "Reason for the capactiy target to not be ready or operational.",
 				JSONPath:    `.status.conditions[?(.status=="False")].message`,
 			},
 			apiextensionv1beta1.CustomResourceColumnDefinition{
 				Name:        "Age",
 				Type:        "date",
-				Description: "The capacity target's age.",
+				Description: "The capactiy target's age.",
 				JSONPath:    ".metadata.creationTimestamp",
 			},
 		},

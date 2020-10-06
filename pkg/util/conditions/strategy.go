@@ -90,24 +90,24 @@ func (sc StrategyConditionsMap) AsReleaseStrategyConditions() []shipper.ReleaseS
 }
 
 // IsUnknown returns true if all the given conditions have their status Unknown in the receiver.
-func (sc StrategyConditionsMap) IsUnknown(conditionTypes ...shipper.StrategyConditionType) bool {
-	return sc.isState(corev1.ConditionUnknown, conditionTypes...)
+func (sc StrategyConditionsMap) IsUnknown(step int32, conditionTypes ...shipper.StrategyConditionType) bool {
+	return sc.isState(corev1.ConditionUnknown, step, conditionTypes...)
 }
 
 // IsFalse returns true if all the given conditions have their status False in the receiver.
-func (sc StrategyConditionsMap) IsFalse(conditionTypes ...shipper.StrategyConditionType) bool {
-	return sc.isState(corev1.ConditionFalse, conditionTypes...)
+func (sc StrategyConditionsMap) IsFalse(step int32, conditionTypes ...shipper.StrategyConditionType) bool {
+	return sc.isState(corev1.ConditionFalse, step, conditionTypes...)
 }
 
 // IsTrue returns true if all the given conditions have their status True in the receiver.
-func (sc StrategyConditionsMap) IsTrue(conditionTypes ...shipper.StrategyConditionType) bool {
-	return sc.isState(corev1.ConditionTrue, conditionTypes...)
+func (sc StrategyConditionsMap) IsTrue(step int32, conditionTypes ...shipper.StrategyConditionType) bool {
+	return sc.isState(corev1.ConditionTrue, step, conditionTypes...)
 }
 
 // AllTrue returns true if all the existing conditions in the receiver have
 // their status True.
-func (sc StrategyConditionsMap) AllTrue() bool {
-	return sc.isState(corev1.ConditionTrue, sc.allConditionTypes()...)
+func (sc StrategyConditionsMap) AllTrue(step int32) bool {
+	return sc.isState(corev1.ConditionTrue, step, sc.allConditionTypes()...)
 }
 
 func (sc StrategyConditionsMap) IsNotTrue(step int32, conditionTypes ...shipper.StrategyConditionType) bool {
@@ -126,6 +126,100 @@ func (sc StrategyConditionsMap) allConditionTypes() []shipper.StrategyConditionT
 		conditionTypes = append(conditionTypes, v.Type)
 	}
 	return conditionTypes
+}
+
+// AsReleaseStrategyState returns a ReleaseStrategyState computed from the
+// conditions in the receiver.
+func (sc StrategyConditionsMap) AsReleaseStrategyState(
+	step int32,
+	hasIncumbent bool,
+	isLastStep bool,
+) shipper.ReleaseStrategyState {
+
+	// States we don't know just yet are set to Unknown
+	state := shipper.ReleaseStrategyState{
+		WaitingForCapacity:     shipper.StrategyStateUnknown,
+		WaitingForCommand:      shipper.StrategyStateUnknown,
+		WaitingForInstallation: shipper.StrategyStateUnknown,
+		WaitingForTraffic:      shipper.StrategyStateUnknown,
+	}
+
+	// WaitingForCommand
+
+	achievedInstallation := sc.IsTrue(step, shipper.StrategyConditionContenderAchievedInstallation)
+	contenderAchievedCapacity := sc.IsTrue(step, shipper.StrategyConditionContenderAchievedCapacity)
+	contenderAchievedTraffic := sc.IsTrue(step, shipper.StrategyConditionContenderAchievedTraffic)
+	incumbentAchievedCapacity := sc.IsTrue(step, shipper.StrategyConditionIncumbentAchievedCapacity)
+	incumbentAchievedTraffic := sc.IsTrue(step, shipper.StrategyConditionIncumbentAchievedTraffic)
+
+	// WaitingForInstallation
+
+	if !achievedInstallation {
+		state.WaitingForInstallation = shipper.StrategyStateTrue
+	} else {
+		state.WaitingForInstallation = shipper.StrategyStateFalse
+	}
+
+	// WaitingForCapacity
+	//
+	// - ContenderAchievedInstall = True && ContenderAchievedCapacity = False
+	// - ContenderAchievedCapacity = True && IncumbentAchievedCapacity != True
+
+	contenderWaitingForCapacity := achievedInstallation &&
+		!contenderAchievedCapacity
+
+	incumbentWaitingForCapacity := false
+	if hasIncumbent {
+		incumbentWaitingForCapacity = achievedInstallation &&
+			contenderAchievedCapacity &&
+			contenderAchievedTraffic &&
+			incumbentAchievedTraffic &&
+			!incumbentAchievedCapacity
+	}
+
+	waitingForCapacity := contenderWaitingForCapacity || incumbentWaitingForCapacity
+
+	if waitingForCapacity {
+		state.WaitingForCapacity = shipper.StrategyStateTrue
+	} else {
+		state.WaitingForCapacity = shipper.StrategyStateFalse
+	}
+
+	// WaitingForTraffic
+
+	contenderWaitingForTraffic := achievedInstallation &&
+		contenderAchievedCapacity &&
+		!contenderAchievedTraffic
+
+	incumbentWaitingForTraffic := false
+	if hasIncumbent {
+		incumbentWaitingForTraffic = achievedInstallation &&
+			contenderAchievedCapacity &&
+			contenderAchievedTraffic &&
+			!incumbentAchievedTraffic &&
+			!incumbentAchievedCapacity
+	}
+
+	waitingForTraffic := contenderWaitingForTraffic || incumbentWaitingForTraffic
+
+	if waitingForTraffic {
+		state.WaitingForTraffic = shipper.StrategyStateTrue
+	} else {
+		state.WaitingForTraffic = shipper.StrategyStateFalse
+	}
+
+	waitingForCommandFlag := !isLastStep &&
+		!waitingForCapacity &&
+		!waitingForTraffic &&
+		achievedInstallation
+
+	if waitingForCommandFlag {
+		state.WaitingForCommand = shipper.StrategyStateTrue
+	} else {
+		state.WaitingForCommand = shipper.StrategyStateFalse
+	}
+
+	return state
 }
 
 // GetStatus returns the status of condition from the receiver.
@@ -179,10 +273,13 @@ func (sc StrategyConditionsMap) update(
 
 func (sc StrategyConditionsMap) isState(
 	status corev1.ConditionStatus,
+	step int32,
 	conditionTypes ...shipper.StrategyConditionType,
 ) bool {
 	for _, conditionType := range conditionTypes {
 		if c, ok := sc.GetCondition(conditionType); !ok {
+			return false
+		} else if c.Step != step {
 			return false
 		} else if c.Status != status {
 			return false

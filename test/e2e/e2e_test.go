@@ -7,13 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 
-	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
@@ -25,14 +23,13 @@ const (
 )
 
 var (
-	masterURL                = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
-	runEndToEnd              = flag.Bool("e2e", false, "Set this flag to enable E2E tests against the local minikube")
-	testCharts               = flag.String("testcharts", "", "The address of the Helm repository holding the test charts")
-	inspectFailed            = flag.Bool("inspectfailed", false, "Set this flag to skip deleting the namespaces for failed tests. Useful for debugging.")
-	kubeconfig               = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
-	appClusterName           = flag.String("appcluster", "minikube", "The application cluster that E2E tests will check to determine success/failure")
-	timeoutFlag              = flag.String("progresstimeout", "30s", "timeout when waiting for things to change")
-	appClusterFromKubeConfig = flag.Bool("appClusterFromKubeConfig", false, "Set this flag to get application clusters url from kubeconfig")
+	masterURL      = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
+	runEndToEnd    = flag.Bool("e2e", false, "Set this flag to enable E2E tests against the local minikube")
+	testCharts     = flag.String("testcharts", "", "The address of the Helm repository holding the test charts")
+	inspectFailed  = flag.Bool("inspectfailed", false, "Set this flag to skip deleting the namespaces for failed tests. Useful for debugging.")
+	kubeconfig     = flag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
+	appClusterName = flag.String("appcluster", "minikube", "The application cluster that E2E tests will check to determine success/failure")
+	timeoutFlag    = flag.String("progresstimeout", "30s", "timeout when waiting for things to change")
 )
 
 var (
@@ -95,15 +92,6 @@ func TestMain(m *testing.M) {
 
 		testRegion = appCluster.Spec.Region
 
-		if *appClusterFromKubeConfig {
-			kubeCluster, err := configurator.NewClusterConfiguratorFromKubeConfig(*kubeconfig, *appClusterName)
-			if err != nil {
-				klog.Fatalf("could not fetch cluster config from kubeconfig for cluster %q: %q", *appClusterName, err)
-			}
-
-			appCluster.Spec.APIMaster = kubeCluster.Host
-		}
-
 		appKubeClient = buildApplicationClient(appCluster)
 		purgeTestNamespaces()
 	}
@@ -123,10 +111,10 @@ func TestNewAppAllIn(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -135,7 +123,7 @@ func TestNewAppAllIn(t *testing.T) {
 	}()
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
-	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -151,55 +139,6 @@ func TestNewAppAllIn(t *testing.T) {
 	f.waitForComplete(rel.GetName())
 	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
 	f.checkReadyPods(relName, targetReplicas)
-}
-
-func TestRejectModificationToReleaseEnv(t *testing.T) {
-	if !*runEndToEnd {
-		t.Skip("skipping end-to-end tests: --e2e is false")
-	}
-	t.Parallel()
-
-	targetReplicas := 4
-	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
-	f := newFixture(ns.GetName(), t)
-	defer func() {
-		if *inspectFailed && t.Failed() {
-			return
-		}
-		teardownNamespace(ns.GetName())
-	}()
-
-	newApp := newApplication(ns.GetName(), appName, &allIn)
-	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
-	newApp.Spec.Template.Chart.Name = "test-nginx"
-	newApp.Spec.Template.Chart.Version = "0.0.1"
-
-	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
-	if err != nil {
-		t.Fatalf("could not create application %q: %q", appName, err)
-	}
-
-	t.Logf("waiting for a new release for new application %q", appName)
-	rel := f.waitForRelease(appName, 0)
-	relName := rel.GetName()
-	t.Logf("waiting for release %q to complete", relName)
-	f.waitForComplete(rel.GetName())
-	t.Logf("checking that release %q has %d pods (strategy step 0 -- finished)", relName, targetReplicas)
-	f.checkReadyPods(relName, targetReplicas)
-
-	rel, err = shipperClient.ShipperV1alpha1().Releases(ns.GetName()).Get(relName, metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("could not get release %q: %q", relName, err)
-	}
-	rel.Spec.Environment.Chart.Name = "changed name"
-	_, err = shipperClient.ShipperV1alpha1().Releases(ns.GetName()).Update(rel)
-	if err == nil {
-		t.Fatalf("updated release environment %q: %q", relName, err)
-	}
-	t.Logf("successfully failed to update release environment %q", relName)
 }
 
 func TestNewAppAllInWithRolloutBlockOverride(t *testing.T) {
@@ -210,10 +149,10 @@ func TestNewAppAllInWithRolloutBlockOverride(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -228,7 +167,7 @@ func TestNewAppAllInWithRolloutBlockOverride(t *testing.T) {
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
 	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
-	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -255,7 +194,7 @@ func TestBlockNewAppWithRolloutBlock(t *testing.T) {
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
 	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
 	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
@@ -270,7 +209,7 @@ func TestBlockNewAppWithRolloutBlock(t *testing.T) {
 	}
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
-	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -291,10 +230,10 @@ func TestNewAppAllInWithRolloutBlockNonExisting(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	_ = newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -304,7 +243,7 @@ func TestNewAppAllInWithRolloutBlockNonExisting(t *testing.T) {
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
 	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", ns.GetName(), rolloutBlockName)
-	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -325,10 +264,10 @@ func TestBlockNewAppProgressWithRolloutBlock(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -337,7 +276,7 @@ func TestBlockNewAppProgressWithRolloutBlock(t *testing.T) {
 	}()
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
-	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -362,10 +301,10 @@ func TestRolloutAllIn(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -374,7 +313,7 @@ func TestRolloutAllIn(t *testing.T) {
 	}()
 
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -434,10 +373,10 @@ func TestBrokenRolloutAllIn(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -446,7 +385,7 @@ func TestBrokenRolloutAllIn(t *testing.T) {
 	}()
 
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -474,7 +413,7 @@ func TestBrokenRolloutAllIn(t *testing.T) {
 			continue
 		}
 
-		app.Spec.Template.Values = shipper.ChartValues{
+		app.Spec.Template.Values = &shipper.ChartValues{
 			"replicaCount": targetReplicas,
 			"image":        map[string]interface{}{"tag": "broken"},
 		}
@@ -510,10 +449,10 @@ func TestRolloutAllInWithRolloutBlockOverride(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -528,7 +467,7 @@ func TestRolloutAllInWithRolloutBlockOverride(t *testing.T) {
 
 	app := newApplication(ns.GetName(), appName, &allIn)
 	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
-	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -573,10 +512,10 @@ func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
 
 	t.Parallel()
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -585,7 +524,7 @@ func testNewApplicationVanguard(targetReplicas int, t *testing.T) {
 	}()
 
 	newApp := newApplication(ns.GetName(), appName, &vanguard)
-	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -623,10 +562,10 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int, t *t
 
 	t.Parallel()
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -641,7 +580,7 @@ func testNewApplicationVanguardWithRolloutBlockOverride(targetReplicas int, t *t
 
 	newApp := newApplication(ns.GetName(), appName, &vanguard)
 	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
-	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -704,10 +643,10 @@ func testRolloutVanguard(targetReplicas int, t *testing.T) {
 
 	t.Parallel()
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -717,7 +656,7 @@ func testRolloutVanguard(targetReplicas int, t *testing.T) {
 
 	// start with allIn to jump through the first release
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -789,10 +728,10 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 	t.Parallel()
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -801,7 +740,7 @@ func TestNewApplicationMovingStrategyBackwards(t *testing.T) {
 	}()
 
 	app := newApplication(ns.GetName(), appName, &vanguard)
-	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -836,10 +775,10 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 	t.Parallel()
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -848,7 +787,7 @@ func TestNewApplicationBlockStrategyBackwards(t *testing.T) {
 	}()
 
 	app := newApplication(ns.GetName(), appName, &vanguard)
-	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -907,10 +846,10 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 	t.Parallel()
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -920,7 +859,7 @@ func TestRolloutMovingStrategyBackwards(t *testing.T) {
 
 	// start with allIn to jump through the first release
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -982,10 +921,10 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 	t.Parallel()
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -995,7 +934,7 @@ func TestRolloutBlockMovingStrategyBackwards(t *testing.T) {
 
 	// start with allIn to jump through the first release
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -1090,10 +1029,10 @@ func TestNewApplicationAbort(t *testing.T) {
 	t.Parallel()
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1102,7 +1041,7 @@ func TestNewApplicationAbort(t *testing.T) {
 	}()
 
 	app := newApplication(ns.GetName(), appName, &vanguard)
-	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -1150,10 +1089,10 @@ func TestRolloutAbort(t *testing.T) {
 	t.Parallel()
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1163,7 +1102,7 @@ func TestRolloutAbort(t *testing.T) {
 
 	// start with allIn to jump through the first release
 	app := newApplication(ns.GetName(), appName, &allIn)
-	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -1243,11 +1182,11 @@ func TestNewRolloutBlockAddOverrides(t *testing.T) {
 
 	targetReplicas := 1
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	namespace := ns.GetName()
 	f := newFixture(namespace, t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", namespace, err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1271,7 +1210,7 @@ func TestNewRolloutBlockAddOverrides(t *testing.T) {
 
 	newApp := newApplication(namespace, appName, &allIn)
 	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
-	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -1304,10 +1243,10 @@ func TestNewGlobalRolloutBlockAddOverrides(t *testing.T) {
 
 	targetReplicas := 1
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1337,7 +1276,7 @@ func TestNewGlobalRolloutBlockAddOverrides(t *testing.T) {
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
 	newApp.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
-	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -1371,10 +1310,10 @@ func TestNewRolloutBlockRemoveRelease(t *testing.T) {
 
 	targetReplicas := 1
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1398,7 +1337,7 @@ func TestNewRolloutBlockRemoveRelease(t *testing.T) {
 
 	app := newApplication(ns.GetName(), appName, &allIn)
 	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
-	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -1451,11 +1390,11 @@ func TestNewGlobalRolloutBlockRemoveRelease(t *testing.T) {
 
 	targetReplicas := 1
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	testNamespace := ns.GetName()
 	f := newFixture(testNamespace, t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", testNamespace, err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1487,7 +1426,7 @@ func TestNewGlobalRolloutBlockRemoveRelease(t *testing.T) {
 
 	app := newApplication(testNamespace, appName, &allIn)
 	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", rb.GetNamespace(), rb.GetName())
-	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
 
@@ -1542,10 +1481,10 @@ func TestDeletedDeploymentsAreReinstalled(t *testing.T) {
 
 	targetReplicas := 4
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1554,7 +1493,7 @@ func TestDeletedDeploymentsAreReinstalled(t *testing.T) {
 	}()
 
 	newApp := newApplication(ns.GetName(), appName, &allIn)
-	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
+	newApp.Spec.Template.Values = &shipper.ChartValues{"replicaCount": targetReplicas}
 	newApp.Spec.Template.Chart.Name = "test-nginx"
 	newApp.Spec.Template.Chart.Version = "0.0.1"
 
@@ -1591,10 +1530,10 @@ func TestConsistentTrafficBalanceOnStraightFullOn(t *testing.T) {
 	t.Parallel()
 
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1605,7 +1544,7 @@ func TestConsistentTrafficBalanceOnStraightFullOn(t *testing.T) {
 	app := newApplication(ns.GetName(), appName, &allIn)
 	app.Spec.Template.Chart.Name = "test-nginx"
 	app.Spec.Template.Chart.Version = "0.0.1"
-	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": 0}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": 0}
 
 	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(app)
 	if err != nil {
@@ -1626,7 +1565,7 @@ func TestConsistentTrafficBalanceOnStraightFullOn(t *testing.T) {
 	}
 
 	app.Spec.Template.Strategy = &vanguard
-	app.Spec.Template.Values = shipper.ChartValues{"replicaCount": 2}
+	app.Spec.Template.Values = &shipper.ChartValues{"replicaCount": 2}
 	if _, err := shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Update(app); err != nil {
 		t.Fatalf("could not update app %q: %q", app.GetName(), err)
 	}
@@ -1648,10 +1587,10 @@ func TestMultipleAppsInNamespace(t *testing.T) {
 
 	targetReplicas := 1
 	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
 	f := newFixture(ns.GetName(), t)
+	if err != nil {
+		t.Fatalf("could not create namespace %s: %q", ns.GetName(), err)
+	}
 	defer func() {
 		if *inspectFailed && t.Failed() {
 			return
@@ -1666,7 +1605,7 @@ func TestMultipleAppsInNamespace(t *testing.T) {
 
 	for _, appName := range appNames {
 		newApp := newApplication(ns.GetName(), appName, &allIn)
-		newApp.Spec.Template.Values = shipper.ChartValues{
+		newApp.Spec.Template.Values = &shipper.ChartValues{
 			"replicaCount": targetReplicas,
 			"nameOverride": appName,
 		}
@@ -1693,65 +1632,6 @@ func TestMultipleAppsInNamespace(t *testing.T) {
 
 		svcName := fmt.Sprintf("%s-prod", appName)
 		f.checkEndpointActivePods(svcName, pods)
-	}
-}
-
-func TestDeleteRelease(t *testing.T) {
-	if !*runEndToEnd {
-		t.Skip("skipping end-to-end tests: --e2e is false")
-	}
-	t.Parallel()
-
-	targetReplicas := 4
-	ns, err := setupNamespace(t.Name())
-	if err != nil {
-		t.Fatalf("could not create namespace %s: %q", t.Name(), err)
-	}
-	f := newFixture(ns.GetName(), t)
-	defer func() {
-		if *inspectFailed && t.Failed() {
-			return
-		}
-		teardownNamespace(ns.GetName())
-	}()
-
-	newApp := newApplication(ns.GetName(), appName, &allIn)
-	newApp.Spec.Template.Values = shipper.ChartValues{"replicaCount": targetReplicas}
-	newApp.Spec.Template.Chart.Name = "test-nginx"
-	newApp.Spec.Template.Chart.Version = "0.0.1"
-
-	_, err = shipperClient.ShipperV1alpha1().Applications(ns.GetName()).Create(newApp)
-	if err != nil {
-		t.Fatalf("could not create application %q: %q", appName, err)
-	}
-
-	t.Logf("waiting for a new release for new application %q", appName)
-	rel := f.waitForRelease(appName, 0)
-	relName := rel.GetName()
-	t.Logf("waiting for release %q to complete", relName)
-	f.waitForComplete(rel.GetName())
-
-	err = shipperClient.ShipperV1alpha1().Releases(ns.GetName()).Delete(relName, &metav1.DeleteOptions{})
-	if err != nil {
-		t.Fatalf("could not delete release %q: %q", relName, err)
-	}
-
-	deploymentName := fmt.Sprintf("%s-%s", rel.GetName(), newApp.Spec.Template.Chart.Name)
-	err = poll(globalTimeout, func() (bool, error) {
-		_, err := appKubeClient.AppsV1().Deployments(ns.GetName()).Get(deploymentName, metav1.GetOptions{})
-		if err != nil {
-			if errors.IsNotFound(err) {
-				return true, nil
-			}
-
-			return false, err
-		}
-
-		return false, nil
-	})
-
-	if err != nil {
-		t.Fatalf("installed objects were not deleted after deleting release %q: %s", relName, err)
 	}
 }
 

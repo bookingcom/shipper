@@ -3,6 +3,7 @@ package release
 import (
 	"encoding/json"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -62,4 +63,33 @@ func (p *TrafficTargetSpecPatch) Alters(o interface{}) bool {
 
 func (p *TrafficTargetSpecPatch) IsEmpty() bool {
 	return p == nil || p.NewSpec == nil
+}
+
+type ReleaseStrategyStatusPatch struct {
+	Name              string
+	NewStrategyStatus *shipper.ReleaseStrategyStatus
+}
+
+var _ StrategyPatch = (*ReleaseStrategyStatusPatch)(nil)
+
+func (p *ReleaseStrategyStatusPatch) PatchSpec() (string, schema.GroupVersionKind, []byte) {
+	patch := map[string]interface{}{
+		"status": map[string]interface{}{
+			"strategy": p.NewStrategyStatus,
+		},
+	}
+	b, _ := json.Marshal(patch)
+	return p.Name, shipper.SchemeGroupVersion.WithKind("Release"), b
+}
+
+func (p *ReleaseStrategyStatusPatch) Alters(o interface{}) bool {
+	rel, ok := o.(*shipper.Release)
+	if !ok || p.IsEmpty() {
+		return false
+	}
+	return !equality.Semantic.DeepEqual(rel.Status.Strategy, p.NewStrategyStatus)
+}
+
+func (p *ReleaseStrategyStatusPatch) IsEmpty() bool {
+	return p == nil || p.NewStrategyStatus == nil
 }

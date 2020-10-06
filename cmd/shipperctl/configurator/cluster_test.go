@@ -21,7 +21,7 @@ const shipperSystemNamespace = "shipper-system"
 func TestCreateValidatingWebhookConfiguration(t *testing.T) {
 	f := newFixture(t)
 	caBundle := []byte{}
-	if err := f.configurator.CreateOrUpdateValidatingWebhookConfiguration(caBundle, shipperSystemNamespace, true); err != nil {
+	if err := f.configurator.CreateOrUpdateValidatingWebhookConfiguration(caBundle, shipperSystemNamespace); err != nil {
 		t.Fatal(err)
 	}
 
@@ -31,8 +31,9 @@ func TestCreateValidatingWebhookConfiguration(t *testing.T) {
 	}
 	expectedConfiguration := f.newValidatingWebhookConfiguration(caBundle, shipperSystemNamespace, operations)
 	gvr := admissionregistrationv1beta1.SchemeGroupVersion.WithResource("validatingwebhookconfigurations")
+	getAction := kubetesting.NewGetAction(gvr, "", expectedConfiguration.Name)
 	createAction := kubetesting.NewCreateAction(gvr, "", expectedConfiguration)
-	f.actions = append(f.actions, createAction)
+	f.actions = append(f.actions, getAction, createAction)
 
 	clientSet, ok := f.configurator.KubeClient.(*kubefake.Clientset)
 	if !ok {
@@ -57,7 +58,7 @@ func TestUpdateValidatingWebhookConfiguration(t *testing.T) {
 	createAction := kubetesting.NewCreateAction(gvr, "", configuration)
 	f.actions = append(f.actions, createAction)
 
-	if err := f.configurator.CreateOrUpdateValidatingWebhookConfiguration(caBundle, shipperSystemNamespace, true); err != nil {
+	if err := f.configurator.CreateOrUpdateValidatingWebhookConfiguration(caBundle, shipperSystemNamespace); err != nil {
 		t.Fatal(err)
 	}
 
@@ -66,8 +67,9 @@ func TestUpdateValidatingWebhookConfiguration(t *testing.T) {
 		admissionregistrationv1beta1.Update,
 	}
 	expectedConfiguration := f.newValidatingWebhookConfiguration(caBundle, shipperSystemNamespace, operations)
+	getAction := kubetesting.NewGetAction(gvr, "", expectedConfiguration.Name)
 	updateAction := kubetesting.NewUpdateAction(gvr, "", expectedConfiguration)
-	f.actions = append(f.actions, updateAction)
+	f.actions = append(f.actions, getAction, updateAction)
 
 	clientSet, ok := f.configurator.KubeClient.(*kubefake.Clientset)
 	if !ok {
@@ -85,8 +87,9 @@ func TestCreateValidatingWebhookService(t *testing.T) {
 
 	expectedService := f.newValidatingWebhookService("shipper", shipperSystemNamespace)
 	gvr := corev1.SchemeGroupVersion.WithResource("services")
+	getAction := kubetesting.NewGetAction(gvr, shipperSystemNamespace, expectedService.Name)
 	createAction := kubetesting.NewCreateAction(gvr, shipperSystemNamespace, expectedService)
-	f.actions = append(f.actions, createAction)
+	f.actions = append(f.actions, getAction, createAction)
 
 	clientSet, ok := f.configurator.KubeClient.(*kubefake.Clientset)
 	if !ok {
@@ -111,8 +114,9 @@ func TestUpdateValidatingWebhookService(t *testing.T) {
 	}
 
 	expectedService := f.newValidatingWebhookService("shipper", shipperSystemNamespace)
+	getAction := kubetesting.NewGetAction(gvr, shipperSystemNamespace, expectedService.Name)
 	updateAction := kubetesting.NewUpdateAction(gvr, shipperSystemNamespace, expectedService)
-	f.actions = append(f.actions, updateAction)
+	f.actions = append(f.actions, getAction, updateAction)
 
 	clientSet, ok := f.configurator.KubeClient.(*kubefake.Clientset)
 	if !ok {
@@ -147,8 +151,6 @@ func newCluster() *Cluster {
 
 func (f *fixture) newValidatingWebhookConfiguration(caBundle []byte, namespace string, operations []admissionregistrationv1beta1.OperationType) *admissionregistrationv1beta1.ValidatingWebhookConfiguration {
 	path := shipperValidatingWebhookServicePath
-	sideEffectClassNone := admissionregistrationv1beta1.SideEffectClassNone
-	failurPolicy := admissionregistrationv1beta1.Ignore
 	return &admissionregistrationv1beta1.ValidatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: shipperValidatingWebhookName,
@@ -174,8 +176,6 @@ func (f *fixture) newValidatingWebhookConfiguration(caBundle []byte, namespace s
 						},
 					},
 				},
-				SideEffects:   &sideEffectClassNone,
-				FailurePolicy: &failurPolicy,
 			},
 		},
 	}

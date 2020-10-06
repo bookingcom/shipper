@@ -1,0 +1,10 @@
+apiVersion: shipper.booking.com/v1alpha1
+kind: TrafficTarget
+metadata:
+  name: traffic-v0.0.1 # a SHA1 or git tag from the CI/CD pipeline
+  labels:
+    release: reviewsapi-4
+spec:
+  clusters:
+  - name: eu-west-cluster-a
+    targetTraffic: 0

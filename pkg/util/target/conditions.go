@@ -51,7 +51,7 @@ func (d *TargetConditionDiff) String() string {
 func IsReady(conditions []shipper.TargetCondition) (bool, string) {
 	cond := GetTargetCondition(conditions, shipper.TargetConditionTypeReady)
 	if cond == nil {
-		return false, fmt.Sprintf("condition %s not reported yet", shipper.TargetConditionTypeReady)
+		return false, ""
 	}
 
 	return cond.Status == corev1.ConditionTrue, cond.Message

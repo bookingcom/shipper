@@ -1,5 +1,5 @@
 /*
-Copyright The Helm Authors.
+Copyright 2016 The Kubernetes Authors All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,20 +19,16 @@ package engine
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"path"
 	"sort"
 	"strings"
 	"text/template"
 
 	"github.com/Masterminds/sprig"
-	"github.com/pkg/errors"
 
 	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/proto/hapi/chart"
 )
-
-const recursionMaxNums = 1000
 
 // Engine is an implementation of 'cmd/tiller/environment'.Engine that uses Go templates.
 type Engine struct {
@@ -41,9 +37,8 @@ type Engine struct {
 	FuncMap template.FuncMap
 	// If strict is enabled, template rendering will fail if a template references
 	// a value that was not passed in.
-	Strict bool
-	// In LintMode, some 'required' template values may be missing, so don't fail
-	LintMode bool
+	Strict           bool
+	CurrentTemplates map[string]renderable
 }
 
 // New creates a new Go template Engine instance.
@@ -124,6 +119,7 @@ func FuncMap() template.FuncMap {
 func (e *Engine) Render(chrt *chart.Chart, values chartutil.Values) (map[string]string, error) {
 	// Render the charts
 	tmap := allTemplates(chrt, values)
+	e.CurrentTemplates = tmap
 	return e.render(tmap)
 }
 
@@ -133,57 +129,35 @@ type renderable struct {
 	tpl string
 	// vals are the values to be supplied to the template.
 	vals chartutil.Values
-	// basePath namespace prefix to the templates of the current chart
+	// namespace prefix to the templates of the current chart
 	basePath string
 }
 
 // alterFuncMap takes the Engine's FuncMap and adds context-specific functions.
 //
 // The resulting FuncMap is only valid for the passed-in template.
-func (e *Engine) alterFuncMap(t *template.Template, referenceTpls map[string]renderable) template.FuncMap {
+func (e *Engine) alterFuncMap(t *template.Template) template.FuncMap {
 	// Clone the func map because we are adding context-specific functions.
 	var funcMap template.FuncMap = map[string]interface{}{}
 	for k, v := range e.FuncMap {
 		funcMap[k] = v
 	}
 
-	includedNames := make(map[string]int)
-
 	// Add the 'include' function here so we can close over t.
 	funcMap["include"] = func(name string, data interface{}) (string, error) {
 		buf := bytes.NewBuffer(nil)
-		if v, ok := includedNames[name]; ok {
-			if v > recursionMaxNums {
-				return "", errors.Wrapf(fmt.Errorf("unable to execute template"), "rendering template has a nested reference name: %s", name)
-			}
-			includedNames[name]++
-		} else {
-			includedNames[name] = 1
-		}
 		if err := t.ExecuteTemplate(buf, name, data); err != nil {
 			return "", err
 		}
-		includedNames[name]--
 		return buf.String(), nil
 	}
 
 	// Add the 'required' function here
 	funcMap["required"] = func(warn string, val interface{}) (interface{}, error) {
 		if val == nil {
-			if e.LintMode {
-				// Don't fail on missing required values when linting
-				log.Printf("[INFO] Missing required value: %s", warn)
-				return "", nil
-			}
-			// Convert nil to "" in case required is piped into other functions
-			return "", fmt.Errorf(warn)
+			return val, fmt.Errorf(warn)
 		} else if _, ok := val.(string); ok {
 			if val == "" {
-				if e.LintMode {
-					// Don't fail on missing required values when linting
-					log.Printf("[INFO] Missing required value: %s", warn)
-					return val, nil
-				}
 				return val, fmt.Errorf(warn)
 			}
 		}
@@ -211,7 +185,7 @@ func (e *Engine) alterFuncMap(t *template.Template, referenceTpls map[string]ren
 
 		templates[templateName.(string)] = r
 
-		result, err := e.renderWithReferences(templates, referenceTpls)
+		result, err := e.render(templates)
 		if err != nil {
 			return "", fmt.Errorf("Error during tpl function execution for %q: %s", tpl, err.Error())
 		}
@@ -222,13 +196,7 @@ func (e *Engine) alterFuncMap(t *template.Template, referenceTpls map[string]ren
 }
 
 // render takes a map of templates/values and renders them.
-func (e *Engine) render(tpls map[string]renderable) (rendered map[string]string, err error) {
-	return e.renderWithReferences(tpls, tpls)
-}
-
-// renderWithReferences takes a map of templates/values to render, and a map of
-// templates which can be referenced within them.
-func (e *Engine) renderWithReferences(tpls map[string]renderable, referenceTpls map[string]renderable) (rendered map[string]string, err error) {
+func (e *Engine) render(tpls map[string]renderable) (map[string]string, error) {
 	// Basically, what we do here is start with an empty parent template and then
 	// build up a list of templates -- one for each file. Once all of the templates
 	// have been parsed, we loop through again and execute every template.
@@ -236,11 +204,6 @@ func (e *Engine) renderWithReferences(tpls map[string]renderable, referenceTpls 
 	// The idea with this process is to make it possible for more complex templates
 	// to share common blocks, but to make the entire thing feel like a file-based
 	// template engine.
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("rendering template failed: %v", r)
-		}
-	}()
 	t := template.New("gotpl")
 	if e.Strict {
 		t.Option("missingkey=error")
@@ -250,7 +213,7 @@ func (e *Engine) renderWithReferences(tpls map[string]renderable, referenceTpls 
 		t.Option("missingkey=zero")
 	}
 
-	funcMap := e.alterFuncMap(t, referenceTpls)
+	funcMap := e.alterFuncMap(t)
 
 	// We want to parse the templates in a predictable order. The order favors
 	// higher-level (in file system) templates over deeply nested templates.
@@ -267,9 +230,9 @@ func (e *Engine) renderWithReferences(tpls map[string]renderable, referenceTpls 
 		files = append(files, fname)
 	}
 
-	// Adding the reference templates to the template context
+	// Adding the engine's currentTemplates to the template context
 	// so they can be referenced in the tpl function
-	for fname, r := range referenceTpls {
+	for fname, r := range e.CurrentTemplates {
 		if t.Lookup(fname) == nil {
 			t = t.New(fname).Funcs(funcMap)
 			if _, err := t.Parse(r.tpl); err != nil {
@@ -278,10 +241,10 @@ func (e *Engine) renderWithReferences(tpls map[string]renderable, referenceTpls 
 		}
 	}
 
-	rendered = make(map[string]string, len(files))
+	rendered := make(map[string]string, len(files))
 	var buf bytes.Buffer
 	for _, file := range files {
-		// Don't render partials. We don't care about the direct output of partials.
+		// Don't render partials. We don't care out the direct output of partials.
 		// They are only included from other templates.
 		if strings.HasPrefix(path.Base(file), "_") {
 			continue

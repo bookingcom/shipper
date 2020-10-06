@@ -61,18 +61,19 @@ Multi-cluster, multi-region, multi-cloud
 
 Shipper can deploy your application to multiple clusters in different regions.
 
-It expects a Kubernetes API, so it should work with any compliant
-Kubernetes implementation like GKE or AKS.  If you can use ``kubectl``
-with it, chances are, you can use Shipper with it as well.
+It expects a Kubernetes API and requires no agent in the application clusters,
+so it should work with any compliant Kubernetes implementation like GKE or AKS.
+If you can use ``kubectl`` with it, chances are, you can use Shipper with it as
+well.
 
 ******************
 Release Management
 ******************
 
-Shipper doesn't just copy-paste your code onto multiple clusters for
-you -- it allows you to fully customize the rollout strategy. This
-allows you to craft a rollout strategy with the appropriate speed/risk
-balance for your particular situation.
+Shipper doesn't just copy-paste your code onto multiple clusters for you -- it
+allows you to customize the rollout strategy fully. This allows you to craft
+a rollout strategy with the appropriate speed/risk balance for your particular
+situation.
 
 After each step of the rollout strategy, Shipper pauses to wait for another
 update to the *Release* object. This checkpointing approach means that rollouts

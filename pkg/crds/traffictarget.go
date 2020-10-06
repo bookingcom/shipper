@@ -28,48 +28,17 @@ var TrafficTarget = &apiextensionv1beta1.CustomResourceDefinition{
 		Subresources: &apiextensionv1beta1.CustomResourceSubresources{
 			Status: &apiextensionv1beta1.CustomResourceSubresourceStatus{},
 		},
-		AdditionalPrinterColumns: []apiextensionv1beta1.CustomResourceColumnDefinition{
-			apiextensionv1beta1.CustomResourceColumnDefinition{
-				Name:        "Operational",
-				Type:        "string",
-				Description: "Whether the traffic target is operational.",
-				JSONPath:    `.status.conditions[?(.type=="Operational")].status`,
-			},
-			apiextensionv1beta1.CustomResourceColumnDefinition{
-				Name:        "Ready",
-				Type:        "string",
-				Description: "Whether the traffic target is ready.",
-				JSONPath:    `.status.conditions[?(.type=="Ready")].status`,
-			},
-			apiextensionv1beta1.CustomResourceColumnDefinition{
-				Name:        "Reason",
-				Type:        "string",
-				Description: "Reason for the traffic target to not be ready or operational.",
-				JSONPath:    `.status.conditions[?(.status=="False")].message`,
-			},
-			apiextensionv1beta1.CustomResourceColumnDefinition{
-				Name:        "Age",
-				Type:        "date",
-				Description: "The traffic target's age.",
-				JSONPath:    ".metadata.creationTimestamp",
-			},
-		},
 		Validation: &apiextensionv1beta1.CustomResourceValidation{
 			OpenAPIV3Schema: &apiextensionv1beta1.JSONSchemaProps{
 				Properties: map[string]apiextensionv1beta1.JSONSchemaProps{
 					"spec": apiextensionv1beta1.JSONSchemaProps{
 						Type: "object",
 						Required: []string{
-							"weight",
+							"clusters",
 						},
 						Properties: map[string]apiextensionv1beta1.JSONSchemaProps{
-							"weight": apiextensionv1beta1.JSONSchemaProps{
-								Type:    "integer",
-								Minimum: &zero,
-							},
 							"clusters": apiextensionv1beta1.JSONSchemaProps{
-								Type:     "array",
-								Nullable: true,
+								Type: "array",
 								Items: &apiextensionv1beta1.JSONSchemaPropsOrArray{
 									Schema: &apiextensionv1beta1.JSONSchemaProps{
 										Type: "object",

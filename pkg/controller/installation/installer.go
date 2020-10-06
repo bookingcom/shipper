@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"sort"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -13,12 +14,14 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
+	"github.com/bookingcom/shipper/pkg/util/anchor"
 )
 
-type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind) (dynamic.Interface, error)
+type DynamicClientBuilderFunc func(gvk *schema.GroupVersionKind, restConfig *rest.Config, cluster *shipper.Cluster) dynamic.Interface
 
 // Installer is an object that knows how to install objects into Kubernetes
 // clusters.
@@ -41,7 +44,9 @@ func NewInstaller(
 // buildResourceClient returns a ResourceClient suitable to manipulate the kind
 // of resource represented by the given GroupVersionKind at the given Cluster.
 func (i *Installer) buildResourceClient(
+	cluster *shipper.Cluster,
 	client kubernetes.Interface,
+	restConfig *rest.Config,
 	dynamicClientBuilder DynamicClientBuilderFunc,
 	gvk *schema.GroupVersionKind,
 ) (dynamic.ResourceInterface, error) {
@@ -75,11 +80,7 @@ func (i *Installer) buildResourceClient(
 		Resource: resource.Name,
 	}
 
-	dynamicClient, err := dynamicClientBuilder(gvk)
-	if err != nil {
-		return nil, err
-	}
-
+	dynamicClient := dynamicClientBuilder(gvk, restConfig, cluster)
 	resourceClient := dynamicClient.Resource(gvr)
 	if resource.Namespaced {
 		return resourceClient.Namespace(i.installationTarget.Namespace), nil
@@ -90,35 +91,32 @@ func (i *Installer) buildResourceClient(
 
 // install attempts to install the manifests on the specified cluster.
 func (i *Installer) install(
+	cluster *shipper.Cluster,
 	client kubernetes.Interface,
+	restConfig *rest.Config,
 	dynamicClientBuilderFunc DynamicClientBuilderFunc,
 ) error {
 	it := i.installationTarget
 
-	ownerReference := metav1.OwnerReference{
-		APIVersion: shipper.SchemeGroupVersion.String(),
-		Kind:       "InstallationTarget",
-		Name:       it.Name,
-		UID:        it.UID,
-	}
+	var createdConfigMap *corev1.ConfigMap
 
-	anchorName := fmt.Sprintf("%s-anchor", it.Name)
-	anchorConfigMap, err := client.CoreV1().
-		ConfigMaps(it.Namespace).Get(anchorName, metav1.GetOptions{})
+	configMap := anchor.CreateConfigMapAnchor(it)
+	// TODO(jgreff): use a lister insted of a bare client
+	existingConfigMap, err := client.CoreV1().ConfigMaps(it.Namespace).Get(configMap.Name, metav1.GetOptions{})
 	if err != nil && !errors.IsNotFound(err) {
-		return shippererrors.NewKubeclientGetError(it.Namespace, anchorName, err).
+		return shippererrors.NewKubeclientGetError(it.Name, configMap.Name, err).
 			WithCoreV1Kind("ConfigMap")
-	} else if err == nil {
-		anchorConfigMap.SetOwnerReferences([]metav1.OwnerReference{
-			ownerReference})
-
-		_, err := client.CoreV1().ConfigMaps(it.Namespace).Update(anchorConfigMap)
+	} else if err != nil { // errors.IsNotFound(err) == true
+		createdConfigMap, err = client.CoreV1().ConfigMaps(configMap.Namespace).Create(configMap)
 		if err != nil {
-			return shippererrors.NewKubeclientUpdateError(anchorConfigMap, err).
+			return shippererrors.NewKubeclientCreateError(configMap, err).
 				WithCoreV1Kind("ConfigMap")
 		}
+	} else {
+		createdConfigMap = existingConfigMap
 	}
 
+	ownerReference := anchor.ConfigMapAnchorToOwnerReference(createdConfigMap)
 	resourceClients := make(map[string]dynamic.ResourceInterface)
 
 	for _, preparedObj := range i.objects {
@@ -136,7 +134,9 @@ func (i *Installer) install(
 		if !ok {
 			var err error
 			resourceClient, err = i.buildResourceClient(
+				cluster,
 				client,
+				restConfig,
 				dynamicClientBuilderFunc,
 				&gvk,
 			)

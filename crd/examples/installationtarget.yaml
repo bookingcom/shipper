@@ -1,0 +1,10 @@
+apiVersion: shipper.booking.com/v1alpha1
+kind: InstallationTarget
+metadata:
+  name: "0.0.1" # a SHA1 or git tag from the CI/CD pipeline
+  namespace: "reviews-api"
+  labels:
+    release: reviewsapi-4
+spec:
+  clusters:
+  - minikube

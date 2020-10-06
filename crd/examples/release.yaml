@@ -1,0 +1,53 @@
+apiVersion: shipper.booking.com/v1alpha1
+kind: Release
+status:
+  phase: WaitingForStrategy
+  achievedStep: 0
+metadata:
+  name: 0.0.1
+  labels:
+    shipper-app: reviews-api
+    shipper-release: reviewsapi-4
+  environment:
+    clusters: []
+    chart:
+      name: reviews-api
+      version: 0.0.1
+      repoUrl: localhost
+    clusterRequirements:
+      regions:
+      - name: foo
+      - name: bar
+      capabilities:
+      - gpu
+      - pci
+    values:
+      perl:
+        image:
+          name: reviewsapi/app
+          version: 6bbb0da1891646e58eb3e6a63af3a6fc3c8eb5a0d44824cba581d2e14a0450cf
+    strategy:
+      steps:
+      - name: staging
+        capacity:
+          incumbent: 100
+          contender: 1
+        traffic:
+          incumbent: 100
+          contender: 0
+      - name: 50/50
+        capacity:
+          incumbent: 50
+          contender: 50
+        traffic:
+          incumbent: 50
+          contender: 50
+      - name: full on
+        capacity:
+          incumbent: 0
+          contender: 100
+        traffic:
+          incumbent: 0
+          contender: 100
+spec:
+  targetStep: 0

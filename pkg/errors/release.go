@@ -54,7 +54,7 @@ type MissingGenerationAnnotationError struct {
 }
 
 func (e MissingGenerationAnnotationError) Error() string {
-	return fmt.Sprintf("missing annotation %q in release %q", shipper.ReleaseGenerationAnnotation, e.relName)
+	return fmt.Sprintf("missing label %q in release %q", shipper.ReleaseGenerationAnnotation, e.relName)
 }
 
 func (e MissingGenerationAnnotationError) ShouldRetry() bool {
@@ -177,48 +177,20 @@ func NewDuplicateCapabilityRequirementError(capability string) DuplicateCapabili
 	}
 }
 
-type InconsistentReleaseTargetStep struct {
-	relKey         string
-	gotTargetStep  int32
-	wantTargetStep int32
+type NotWorkingOnStrategyError struct {
+	contenderReleaseKey string
 }
 
-func (e InconsistentReleaseTargetStep) Error() string {
-	return fmt.Sprintf("Release %q target step is inconsistent: unexpected value %d (expected: %d)",
-		e.relKey, e.gotTargetStep, e.wantTargetStep)
+func (e NotWorkingOnStrategyError) Error() string {
+	return fmt.Sprintf("found %s as a contender, but it is not currently working on any strategy", e.contenderReleaseKey)
 }
 
-func (e InconsistentReleaseTargetStep) ShouldRetry() bool {
+func (e NotWorkingOnStrategyError) ShouldRetry() bool {
 	return false
 }
 
-func NewInconsistentReleaseTargetStep(relKey string, gotTargetStep, wantTargetStep int32) InconsistentReleaseTargetStep {
-	return InconsistentReleaseTargetStep{
-		relKey:         relKey,
-		gotTargetStep:  gotTargetStep,
-		wantTargetStep: wantTargetStep,
-	}
-}
-
-type MultipleTargetObjectsForReleaseError struct {
-	ns          string
-	kind        string
-	releaseName string
-}
-
-func (e MultipleTargetObjectsForReleaseError) Error() string {
-	return fmt.Sprintf(`multiple Target objects of kind %s for the same release "%s/%s"`,
-		e.kind, e.ns, e.releaseName)
-}
-
-func (e MultipleTargetObjectsForReleaseError) ShouldRetry() bool {
-	return false
-}
-
-func NewMultipleTargetObjectsForReleaseError(kind, ns, releaseName string) MultipleTargetObjectsForReleaseError {
-	return MultipleTargetObjectsForReleaseError{
-		ns:          ns,
-		kind:        kind,
-		releaseName: releaseName,
+func NewNotWorkingOnStrategyError(contenderReleaseKey string) NotWorkingOnStrategyError {
+	return NotWorkingOnStrategyError{
+		contenderReleaseKey: contenderReleaseKey,
 	}
 }

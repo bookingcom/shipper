@@ -1,5 +1,5 @@
 /*
-Copyright The Helm Authors.
+Copyright 2016 The Kubernetes Authors All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -31,8 +31,7 @@ import (
 var ErrRepoOutOfDate = errors.New("repository file is out of date")
 
 // RepoFile represents the repositories.yaml file in $HELM_HOME
-// TODO: change type name to File in Helm 3 to resolve linter warning
-type RepoFile struct { // nolint
+type RepoFile struct {
 	APIVersion   string    `json:"apiVersion"`
 	Generated    time.Time `json:"generated"`
 	Repositories []*Entry  `json:"repositories"`
@@ -117,18 +116,12 @@ func (r *RepoFile) Update(re ...*Entry) {
 
 // Has returns true if the given name is already a repository name.
 func (r *RepoFile) Has(name string) bool {
-	_, ok := r.Get(name)
-	return ok
-}
-
-// Get returns entry by the given name if it exists.
-func (r *RepoFile) Get(name string) (*Entry, bool) {
-	for _, entry := range r.Repositories {
-		if entry.Name == name {
-			return entry, true
+	for _, rf := range r.Repositories {
+		if rf.Name == name {
+			return true
 		}
 	}
-	return nil, false
+	return false
 }
 
 // Remove removes the entry from the list of repositories.

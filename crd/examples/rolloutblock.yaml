@@ -1,0 +1,11 @@
+apiVersion: shipper.booking.com/v1alpha1
+kind: RolloutBlock
+metadata:
+  name: dns-outage
+  namespace: rollout-blocks-global # for global rollout block. for a local one use the correct namespace.
+  creationTimestamp: 2018-05-11T14:23:13Z # This indicates that a rollout block was put in place on May 11th, 14:23.
+spec:
+  message: DNS issues, troubleshooting in progress
+  author:
+    type: user
+    name: jdoe # This indicates that a rollout block was put in place by user 'jdoe'

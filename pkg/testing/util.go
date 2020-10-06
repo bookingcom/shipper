@@ -1,24 +1,18 @@
 package testing
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"path"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/pmezard/go-difflib/difflib"
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	kubetesting "k8s.io/client-go/testing"
-	"k8s.io/helm/pkg/chartutil"
-	"k8s.io/helm/pkg/proto/hapi/chart"
 	"sigs.k8s.io/yaml"
-
-	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
 const (
@@ -33,19 +27,6 @@ const (
 
 	E2ETestNamespaceLabel = "shipper-e2e-test"
 )
-
-func LocalFetchChart(chartspec *shipper.Chart) (*chart.Chart, error) {
-	data, err := ioutil.ReadFile(
-		path.Join(
-			"testdata",
-			fmt.Sprintf("%s-%s.tgz", chartspec.Name, chartspec.Version),
-		))
-	if err != nil {
-		return nil, err
-	}
-	buf := bytes.NewBuffer(data)
-	return chartutil.LoadArchive(buf)
-}
 
 // CheckActions takes a slice of expected actions and a slice of observed
 // actions (typically obtained from fakeClient.Actions()) and compares them.
@@ -123,15 +104,9 @@ func CheckAction(expected, actual kubetesting.Action, t *testing.T) {
 		prettyExpected := prettyPrintAction(expected)
 		prettyActual := prettyPrintAction(actual)
 
-		diff, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
-			A:        difflib.SplitLines(string(prettyExpected)),
-			B:        difflib.SplitLines(string(prettyActual)),
-			FromFile: "Expected",
-			ToFile:   "Actual",
-			Context:  ContextLines,
-		})
+		diff, err := YamlDiff(prettyActual, prettyExpected)
 		if err != nil {
-			panic(fmt.Sprintf("couldn't generate diff: %s", err))
+			panic(fmt.Sprintf("couldn't generate yaml diff: %s", err))
 		}
 
 		t.Errorf("expected action is different from actual:\n%s", diff)
@@ -151,9 +126,25 @@ func PrettyPrintActions(actions []kubetesting.Action, t *testing.T) {
 // tests.
 func FilterActions(actions []kubetesting.Action) []kubetesting.Action {
 	ignore := func(action kubetesting.Action) bool {
-		for _, v := range []string{"get", "list", "watch"} {
-			if action.Matches(v, action.GetResource().Resource) {
-				return true
+		for _, v := range []string{"list", "watch"} {
+			for _, r := range []string{
+				"applications",
+				"capacitytargets",
+				"clusters",
+				"configmaps",
+				"deployments",
+				"endpoints",
+				"installationtargets",
+				"pods",
+				"releases",
+				"rolloutblocks",
+				"secrets",
+				"services",
+				"traffictargets",
+			} {
+				if action.Matches(v, r) {
+					return true
+				}
 			}
 		}
 
@@ -292,4 +283,16 @@ func prettyPrintActionPatch(action kubetesting.PatchActionImpl) string {
 	}
 
 	return ""
+}
+
+func NewDiscoveryAction(_ string) kubetesting.ActionImpl {
+	// FakeDiscovery has a very odd way of generating fake actions for
+	// discovery. We try to paper over that as best we can. The ignored
+	// parameter is trying to be future proof in case FakeDiscovery ever
+	// decides to fix its nasty ways and actually report the resource we're
+	// trying to discover.
+	return kubetesting.ActionImpl{
+		Verb:     "get",
+		Resource: schema.GroupVersionResource{Resource: "resource"},
+	}
 }
