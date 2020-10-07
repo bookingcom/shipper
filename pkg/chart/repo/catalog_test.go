@@ -73,7 +73,7 @@ func TestCreateRepoIfNotExist(t *testing.T) {
 		{
 			name:    "invalid URL",
 			url:     "an invalid url string",
-			err:     fmt.Errorf("internal chart repo client error: parse an invalid url string: invalid URI for request"),
+			err:     fmt.Errorf("internal chart repo client error: parse \"an invalid url string\": invalid URI for request"),
 			factory: testCacheFactory,
 		},
 	}

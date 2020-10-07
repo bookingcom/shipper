@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	homedir "github.com/mitchellh/go-homedir"
+	"github.com/mitchellh/go-homedir"
 	certificatesv1beta1 "k8s.io/api/certificates/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -20,7 +20,7 @@ import (
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	client "github.com/bookingcom/shipper/pkg/client"
+	"github.com/bookingcom/shipper/pkg/client"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
