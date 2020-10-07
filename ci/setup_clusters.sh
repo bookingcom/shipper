@@ -16,7 +16,7 @@ create_cluster () {
 	kind create cluster \
 		--name $CLUSTER \
 		--config ci/kind.yaml \
-		--image kindest/node:v1.15.7 \
+		--image kindest/node:v1.17.2 \
 		--kubeconfig $CONFIG \
 		--quiet
 
