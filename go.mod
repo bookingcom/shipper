@@ -9,6 +9,7 @@ require (
 	github.com/aokoli/goutils v1.0.1 // indirect
 	github.com/cespare/xxhash v1.1.0
 	github.com/cyphar/filepath-securejoin v0.2.2 // indirect
+	github.com/ghodss/yaml v1.0.0
 	github.com/gobwas/glob v0.2.2 // indirect
 	github.com/google/go-cmp v0.4.0
 	github.com/huandu/xstrings v0.0.0-20171208101919-37469d0c81a7 // indirect
@@ -16,6 +17,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/prometheus/client_golang v1.7.1
+	github.com/rodaine/table v1.0.1
 	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/cobra v1.0.0

@@ -235,6 +235,22 @@ func (c *Cluster) CreateOrUpdateCRD(crd *apiextensionv1beta1.CustomResourceDefin
 	return err
 }
 
+func NewKubeClientFromKubeConfig(kubeConfigFile, context string) (kubernetes.Interface, error) {
+	config, err := NewClusterConfiguratorFromKubeConfig(kubeConfigFile, context)
+	if err != nil {
+		return nil, err
+	}
+	return config.KubeClient, nil
+}
+
+func NewShipperClientFromKubeConfig(kubeConfigFile, context string) (shipperclientset.Interface, error) {
+	config, err := NewClusterConfiguratorFromKubeConfig(kubeConfigFile, context)
+	if err != nil {
+		return nil, err
+	}
+	return config.ShipperClient, nil
+}
+
 func NewClusterConfiguratorFromKubeConfig(kubeConfigFile, context string) (*Cluster, error) {
 	restConfig, err := loadKubeConfig(kubeConfigFile, context)
 	if err != nil {
