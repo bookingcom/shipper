@@ -248,7 +248,7 @@ func (c *Controller) processCapacityTargetOnCluster(
 				InProgress,
 				"",
 			)
-			return nil
+			return shippererrors.NewCapacityInProgressError(ct.Name)
 		}
 	}
 
@@ -263,7 +263,7 @@ func (c *Controller) processCapacityTargetOnCluster(
 			"",
 		)
 
-		return nil
+		return shippererrors.NewCapacityInProgressError(ct.Name)
 	}
 
 	// If the number of available replicas matches what we want, the
@@ -329,6 +329,10 @@ func (c *Controller) processCapacityTargetOnCluster(
 		reason,
 		msg,
 	)
+
+	if reason == InProgress {
+		return shippererrors.NewCapacityInProgressError(ct.Name)
+	}
 
 	return nil
 }
