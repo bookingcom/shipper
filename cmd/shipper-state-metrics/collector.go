@@ -167,6 +167,7 @@ func (ssm ShipperStateMetrics) collectReleases(ch chan<- prometheus.Metric) {
 	releasesPerCondition := make(map[string]float64)
 	conditions := []shipper.ReleaseConditionType{
 		shipper.ReleaseConditionTypeScheduled,
+		shipper.ReleaseConditionTypeStrategyExecuted,
 		shipper.ReleaseConditionTypeComplete,
 		shipper.ReleaseConditionTypeBlocked,
 	}
