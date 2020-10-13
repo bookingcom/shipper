@@ -42,7 +42,7 @@ fi
 kubectl config use-context kind-mgmt
 
 # setup clusters
-make clean setup
+SETUP_MGMT_FLAGS="--webhook-ignore" make clean setup
 
 
 INSTALL=${INSTALL:="false"}

@@ -21,7 +21,7 @@ const shipperSystemNamespace = "shipper-system"
 func TestCreateValidatingWebhookConfiguration(t *testing.T) {
 	f := newFixture(t)
 	caBundle := []byte{}
-	if err := f.configurator.CreateOrUpdateValidatingWebhookConfiguration(caBundle, shipperSystemNamespace); err != nil {
+	if err := f.configurator.CreateOrUpdateValidatingWebhookConfiguration(caBundle, shipperSystemNamespace, true); err != nil {
 		t.Fatal(err)
 	}
 
@@ -58,7 +58,7 @@ func TestUpdateValidatingWebhookConfiguration(t *testing.T) {
 	createAction := kubetesting.NewCreateAction(gvr, "", configuration)
 	f.actions = append(f.actions, createAction)
 
-	if err := f.configurator.CreateOrUpdateValidatingWebhookConfiguration(caBundle, shipperSystemNamespace); err != nil {
+	if err := f.configurator.CreateOrUpdateValidatingWebhookConfiguration(caBundle, shipperSystemNamespace, true); err != nil {
 		t.Fatal(err)
 	}
 
@@ -151,6 +151,8 @@ func newCluster() *Cluster {
 
 func (f *fixture) newValidatingWebhookConfiguration(caBundle []byte, namespace string, operations []admissionregistrationv1beta1.OperationType) *admissionregistrationv1beta1.ValidatingWebhookConfiguration {
 	path := shipperValidatingWebhookServicePath
+	sideEffectClassNone := admissionregistrationv1beta1.SideEffectClassNone
+	failurPolicy := admissionregistrationv1beta1.Ignore
 	return &admissionregistrationv1beta1.ValidatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: shipperValidatingWebhookName,
@@ -176,6 +178,8 @@ func (f *fixture) newValidatingWebhookConfiguration(caBundle []byte, namespace s
 						},
 					},
 				},
+				SideEffects:   &sideEffectClassNone,
+				FailurePolicy: &failurPolicy,
 			},
 		},
 	}

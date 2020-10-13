@@ -3,7 +3,7 @@
 kubectl config use-context kind-mgmt
 
 # Setup shipper's clusters
-make setup
+SETUP_MGMT_FLAGS="--webhook-ignore" make setup
 
 # Run the e2e tests, save exit code for later
 make -j e2e \
@@ -21,4 +21,4 @@ rm -f build/*.latest.yaml
 kubectl -n shipper-system logs $(kubectl -n shipper-system get pod -l app=shipper -o jsonpath='{.items[0].metadata.name}')
 
 # Exit with the exit code we got from the e2e tests
-exit $TEST_STATUS
+exit ${TEST_STATUS}
