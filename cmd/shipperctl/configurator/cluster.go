@@ -380,8 +380,13 @@ func (c *Cluster) FetchKubernetesCABundle() ([]byte, error) {
 	return []byte(caBundle), nil
 }
 
-func (c *Cluster) CreateOrUpdateValidatingWebhookConfiguration(caBundle []byte, namespace string) error {
+func (c *Cluster) CreateOrUpdateValidatingWebhookConfiguration(caBundle []byte, namespace string, setToIgnore bool) error {
 	path := shipperValidatingWebhookServicePath
+	sideEffectClassNone := admissionregistrationv1beta1.SideEffectClassNone
+	failurePolicy := admissionregistrationv1beta1.Fail
+	if setToIgnore {
+		failurePolicy = admissionregistrationv1beta1.Ignore
+	}
 	validatingWebhookConfiguration := &admissionregistrationv1beta1.ValidatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: shipperValidatingWebhookName,
@@ -410,6 +415,8 @@ func (c *Cluster) CreateOrUpdateValidatingWebhookConfiguration(caBundle []byte, 
 						},
 					},
 				},
+				SideEffects:   &sideEffectClassNone,
+				FailurePolicy: &failurePolicy,
 			},
 		},
 	}
@@ -425,6 +432,21 @@ func (c *Cluster) CreateOrUpdateValidatingWebhookConfiguration(caBundle []byte, 
 	}
 
 	existingConfig.Webhooks = validatingWebhookConfiguration.Webhooks
+	_, err = c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Update(existingConfig)
+	return err
+}
+
+func (c *Cluster) UpdateValidatingWebhookConfigurationFailurePolicy() error {
+	policyTypeFail := admissionregistrationv1beta1.Fail
+	existingConfig, err := c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Get(shipperValidatingWebhookName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	for i := range existingConfig.Webhooks {
+		existingConfig.Webhooks[i].FailurePolicy = &policyTypeFail
+	}
+
 	_, err = c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Update(existingConfig)
 	return err
 }

@@ -59,6 +59,7 @@ var controllers = []string{
 
 const defaultRESTTimeout time.Duration = 10 * time.Second
 const defaultResync time.Duration = 0 * time.Second
+const defaultHeartbeat time.Duration = 5 * time.Second
 
 var (
 	masterURL           = flag.String("master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
@@ -75,6 +76,7 @@ var (
 	webhookKeyPath      = flag.String("webhook-key", "", "Path to the TLS private key for the webhook controller.")
 	webhookBindAddr     = flag.String("webhook-addr", "0.0.0.0", "Addr to bind the webhook controller.")
 	webhookBindPort     = flag.String("webhook-port", "9443", "Port to bind the webhook controller.")
+	heartbeatPeriod     = flag.Duration("metrics-webhook-heartbeat-period", defaultHeartbeat, "time between two heartbeats of validating webhook")
 )
 
 type metricsCfg struct {
@@ -83,6 +85,7 @@ type metricsCfg struct {
 	wqMetrics   *shippermetrics.PrometheusWorkqueueProvider
 	restLatency *shippermetrics.RESTLatencyMetric
 	restResult  *shippermetrics.RESTResultMetric
+	certExpire  *shippermetrics.WebhookMetric
 }
 
 type cfg struct {
@@ -211,6 +214,7 @@ func main() {
 			wqMetrics:   shippermetrics.NewProvider(),
 			restLatency: shippermetrics.NewRESTLatencyMetric(),
 			restResult:  shippermetrics.NewRESTResultMetric(),
+			certExpire:   shippermetrics.NewTLSCertExpireMetric(),
 		},
 	}
 
@@ -238,6 +242,7 @@ func (klogStdLogger) Println(v ...interface{}) {
 func runMetrics(cfg *metricsCfg) {
 	prometheus.MustRegister(cfg.wqMetrics.GetMetrics()...)
 	prometheus.MustRegister(cfg.restLatency.Summary, cfg.restResult.Counter)
+	prometheus.MustRegister(cfg.certExpire.GetMetrics()...)
 	prometheus.MustRegister(instrumentedclient.GetMetrics()...)
 
 	srv := http.Server{
@@ -519,7 +524,9 @@ func startWebhook(cfg *cfg) (bool, error) {
 		cfg.webhookKeyPath,
 		cfg.webhookCertPath,
 		client.NewShipperClientOrDie(cfg.restCfg, webhook.AgentName, cfg.restTimeout),
-		cfg.shipperInformerFactory)
+		cfg.shipperInformerFactory,
+		*cfg.metrics.certExpire,
+		*heartbeatPeriod)
 
 	cfg.wg.Add(1)
 	go func() {
