@@ -42,3 +42,12 @@ func BelongsToInstallationTarget(obj interface{}) bool {
 
 	return BelongsToRelease(cm) && anchor.BelongsToInstallationTarget(cm)
 }
+
+func SliceContainsString(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
+}

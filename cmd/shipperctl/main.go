@@ -18,7 +18,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(cmd.ClustersCmd)
-	rootCmd.AddCommand(cmd.CountCmd)
+	rootCmd.AddCommand(cmd.ListCmd)
 	rootCmd.AddCommand(cmd.CleanCmd)
 }
 
