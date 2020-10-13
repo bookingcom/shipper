@@ -70,6 +70,7 @@ const (
 )
 
 func init() {
+	// Flags common to all commands under `shipperctl clusters`
 	for _, cmd := range []*cobra.Command{joinCmd, setupMgmtCmd} {
 		cmd.Flags().StringVar(&kubeConfigFile, kubeConfigFlagName, "~/.kube/config", "the path to the Kubernetes configuration file")
 		if err := cmd.MarkFlagFilename(kubeConfigFlagName, "yaml"); err != nil {
@@ -78,11 +79,12 @@ func init() {
 
 		cmd.Flags().StringVarP(&shipperNamespace, "namespace", "n", shipper.ShipperNamespace, "the namespace where Shipper is running")
 		cmd.Flags().StringVar(&managementClusterContext, "management-cluster-context", "", "the name of the context to use to communicate with the management cluster. defaults to the current one")
-		cmd.Flags().StringVarP(&globalRolloutBlockNamespace, "rollout-blocks-global-namespace", "g", shipper.GlobalRolloutBlockNamespace, "the namespace where global RolloutBlocks should be created")
-		cmd.Flags().StringVar(&managementClusterServiceAccount, "management-cluster-service-account", shipper.ShipperManagementServiceAccount, "the name of the service account Shipper will use for the management cluster")
-		cmd.Flags().StringVar(&applicationClusterServiceAccount, "application-cluster-service-account", shipper.ShipperApplicationServiceAccount, "the name of the service account Shipper will use for the application cluster")
 	}
 
+	setupMgmtCmd.Flags().StringVarP(&globalRolloutBlockNamespace, "rollout-blocks-global-namespace", "g", shipper.GlobalRolloutBlockNamespace, "the namespace where global RolloutBlocks should be created")
+	setupMgmtCmd.Flags().StringVar(&managementClusterServiceAccount, "management-cluster-service-account", shipper.ShipperManagementServiceAccount, "the name of the service account Shipper will use for the management cluster")
+
+	joinCmd.Flags().StringVar(&applicationClusterServiceAccount, "application-cluster-service-account", shipper.ShipperApplicationServiceAccount, "the name of the service account Shipper will use for the application cluster")
 	joinCmd.Flags().StringVarP(&clustersYaml, fileFlagName, "f", "clusters.yaml", "the path to an YAML file containing application cluster configuration")
 	err := joinCmd.MarkFlagFilename(fileFlagName, "yaml")
 	if err != nil {
