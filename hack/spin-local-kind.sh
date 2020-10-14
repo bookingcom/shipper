@@ -34,8 +34,8 @@ if [[ ${SPIN_CLUSTERS} == "true" ]]; then
     read -n1 -r -p " =============== Press space to spin kind-app and kind-mgmt clusters..." cluster_key
     if [[ "$cluster_key" = '' ]]; then
         # echo [$key] is empty when SPACE is pressed # uncomment to trace
-        ./ops/kind-with-registry.sh app
-        ./ops/kind-with-registry.sh mgmt
+        ./hack/kind-with-registry.sh app
+        ./hack/kind-with-registry.sh mgmt
     fi
 fi
 
