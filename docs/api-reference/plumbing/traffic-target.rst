@@ -10,7 +10,7 @@ ways: pod labels and Service objects, service mesh manipulation, or something
 else. For the moment only vanilla Kubernetes traffic shifting is supported: pod
 labels and Service objects.
 
-It is manipulated by the Strategy Controller as part of executing a release
+It is manipulated by the Release Controller as part of executing a release
 strategy.
 
 *******

@@ -44,7 +44,7 @@ spec:
         - mountPath: /etc/webhook/certs
           name: webhook-certs
           readOnly: true
-      serviceAccountName: shipper-management-cluster
+      serviceAccountName: shipper-mgmt-cluster
       volumes:
       - name: webhook-certs
         secret:

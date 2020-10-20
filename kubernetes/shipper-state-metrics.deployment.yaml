@@ -33,4 +33,4 @@ spec:
           httpGet:
             path: /metrics
             port: 8890
-      serviceAccountName: shipper-management-cluster
+      serviceAccountName: shipper-mgmt-cluster

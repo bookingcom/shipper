@@ -26,7 +26,7 @@ Here's an example for a RolloutBlock object we'll use:
         type: user
         name: jdoe # This indicates that a rollout block was put in place by user 'jdoe'
 
-Copy this to a file called ``globalRolloutBlock.yaml`` and apply it to our Kubernetes cluster:
+Copy this to a file called ``globalRolloutBlock.yaml`` and apply it to your Kubernetes cluster:
 
 .. code-block:: shell
 
@@ -57,7 +57,7 @@ will reject the creation of new objects and patching of existing releases.
 Overriding a rollout block
 **************************
 
-Rollout blocks can be overriden with an annotation applied to the *Application* or *Release* object which
+Rollout blocks can be overridden with an annotation applied to the *Application* or *Release* object which
 needs to bypass the block. This annotation will list each RolloutBlock object that it overrides with
 a fully-qualified name (namespace + name).
 
@@ -87,7 +87,7 @@ The block override annotation format is CSV.
 
 The override annotation **must** reference specific, fully-qualified *RolloutBlock* objects by name.
 Non-existing blocks enlisted in this annotation are not allowed.
-If there exists a Release object for a specific application, the release should be the one overriding.
+If there exists a Release object for a specific application, the release should be the one overriding it.
 
 **********************************
 Application and Release conditions
