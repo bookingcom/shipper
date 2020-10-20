@@ -11,8 +11,8 @@ const (
 	ShipperNamespace            = "shipper-system"
 	GlobalRolloutBlockNamespace = "rollout-blocks-global"
 
-	ShipperManagementServiceAccount  = "shipper-management-cluster"
-	ShipperApplicationServiceAccount = "shipper-application-cluster"
+	ShipperManagementServiceAccount  = "shipper-mgmt-cluster"
+	ShipperApplicationServiceAccount = "shipper-app-cluster"
 
 	ReleaseLabel                 = "shipper-release"
 	AppLabel                     = "shipper-app"

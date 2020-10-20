@@ -23,7 +23,7 @@ Shipper objects form a hierarchy:
     CapacityTarget
     TrafficTarget
 
-You already know Applications and Releases, but there's more. Below Release you
+You already know Applications and Releases, but there's more. Below Releases you
 have what we call "target objects". Each represents an important chunk of work
 we do when rolling out:
 
@@ -50,7 +50,7 @@ The universal troubleshooting algorithm
 ---------------------------------------
 
 Shipper is a fairly complex system that runs on top of an even more complex one.
-Things can fail in many different way. It's not really feasible for us to list
+Things can fail in many different ways. It's not really feasible for us to list
 all the possible problems and solutions for them. Instead, we'll give you a
 rough algorithm that should help you deal with commonly encountered problems.
 
@@ -74,7 +74,9 @@ Release's status:
     $ kubectl describe rel nginx-vj7sn-7cb440f1-0
     ...
     Status:
-      Achieved Step:  0
+      Achieved Step:
+        Name:  staging
+        Step:  0
       Conditions:
         Last Transition Time:  2018-07-27T07:21:14Z
         Status:                True
@@ -96,7 +98,7 @@ Release's status:
           Waiting For Traffic:       False
     ...
 
-We already looked at `status.strategy.status.waitingForCommand` but there are more fields there: one for every type of target objects. If your rollout isn't finished and not waiting for input, these fields tell you which stage you're at.
+We already looked at `status.strategy.state.waitingForCommand` but there are more fields there: one for every type of target objects. If your rollout isn't finished and not waiting for input, these fields tell you which stage you're at.
 
 .. list-table::
     :widths: 25 75

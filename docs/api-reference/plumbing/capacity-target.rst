@@ -4,11 +4,11 @@
 Capacity Target
 ###############
 
-A *CapacityTarget* is the interface used by the Strategy Controller to change
+A *CapacityTarget* is the interface used by the Release Controller to change
 the target number of replicas for an application in a set of clusters. It is
 acted upon by the Capacity Controller.
 
-The ``status`` resource includes status per-cluster so that the Strategy
+The ``status`` resource includes status per-cluster so that the Release
 Controller can determine when the Capacity Controller is complete and it can
 move to the traffic step.
 

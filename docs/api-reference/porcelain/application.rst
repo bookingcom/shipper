@@ -61,10 +61,10 @@ The ``.spec.template`` is a *Release* template. It has the same schema as the
 :ref:`.spec.environment <api-reference_release_environment>` in a *Release*
 object.
 
-*Application*'s ``.spec.template`` can define either a specific chart version,
+*Application*'s ``.spec.template.chart`` can define either a specific chart version,
 or a SemVer constraint.
 
-Please refer to `Semantic Version Ranges`_ section for more details on supported cosntrtaints.
+Please refer to `Semantic Version Ranges`_ section for more details on supported constraints.
 
 ******
 Status

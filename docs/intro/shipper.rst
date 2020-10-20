@@ -61,10 +61,9 @@ Multi-cluster, multi-region, multi-cloud
 
 Shipper can deploy your application to multiple clusters in different regions.
 
-It expects a Kubernetes API and requires no agent in the application clusters,
-so it should work with any compliant Kubernetes implementation like GKE or AKS.
-If you can use ``kubectl`` with it, chances are, you can use Shipper with it as
-well.
+It expects a Kubernetes API, so it should work with any compliant
+Kubernetes implementation like GKE or AKS.  If you can use ``kubectl``
+with it, chances are, you can use Shipper with it as well.
 
 ******************
 Release Management

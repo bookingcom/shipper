@@ -5,7 +5,7 @@ Installation Target
 ###################
 
 An *InstallationTarget* describes the concrete set of clusters where the release
-should be installed. It is created by the Schedule Controller after the
+should be installed. It is created by the Release Controller's Scheduler after the
 concrete clusters are picked using ``clusterRequirements``.
 
 The Installation Controller acts on InstallationTarget objects by getting the
