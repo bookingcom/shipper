@@ -436,7 +436,7 @@ func (c *Cluster) CreateOrUpdateValidatingWebhookConfiguration(caBundle []byte, 
 	return err
 }
 
-func (c *Cluster) UpdateValidatingWebhookConfigurationFailurePolicy() error {
+func (c *Cluster) UpdateValidatingWebhookConfigurationFailurePolicyToFail() error {
 	policyTypeFail := admissionregistrationv1beta1.Fail
 	existingConfig, err := c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Get(shipperValidatingWebhookName, metav1.GetOptions{})
 	if err != nil {

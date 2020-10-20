@@ -420,7 +420,7 @@ func createValidatingWebhookConfiguration(cmd *cobra.Command, configurator *conf
 
 func updateFailurePolicyForValidatingWebhook(cmd *cobra.Command, configurator *configurator.Cluster) error {
 	cmd.Printf("Updating the failure policy of the ValidatingWebhookConfiguration in %s namespace... ", shipperNamespace)
-	if err := configurator.UpdateValidatingWebhookConfigurationFailurePolicy(); err != nil {
+	if err := configurator.UpdateValidatingWebhookConfigurationFailurePolicyToFail(); err != nil {
 		return err
 	}
 	cmd.Println("done")
