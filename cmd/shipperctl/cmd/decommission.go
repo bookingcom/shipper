@@ -92,7 +92,7 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(errList) > 0 {
-		return fmt.Errorf(strings.Join(errList, ","))
+		return fmt.Errorf(strings.Join(errList, ", "))
 	}
 
 	return nil
@@ -136,14 +136,14 @@ func updateReleases(cmd *cobra.Command, shipperClient shipperclientset.Interface
 	}
 
 	if len(errList) > 0 {
-		return fmt.Errorf(strings.Join(errList, ","))
+		return fmt.Errorf(strings.Join(errList, ", "))
 	}
 
 	return nil
 }
 
 func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclientset.Interface) ([]ReleaseAndFilteredAnnotations, error) {
-	var releaseToUpdate []ReleaseAndFilteredAnnotations
+	var releasesToUpdate []ReleaseAndFilteredAnnotations
 	namespaceList, err := kubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -164,8 +164,8 @@ func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclien
 				if filteredClusterAnnotation == rel.Annotations[shipper.ReleaseClustersAnnotation] {
 					continue
 				}
-				releaseToUpdate = append(
-					releaseToUpdate,
+				releasesToUpdate = append(
+					releasesToUpdate,
 					ReleaseAndFilteredAnnotations{
 						OldClusterAnnotation:      strings.Join(selectedClusters, ","),
 						FilteredClusterAnnotation: filteredClusterAnnotation,
@@ -197,14 +197,14 @@ func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclien
 					Namespace:                 rel.Namespace,
 					Name:                      rel.Name,
 				}
-				releaseToUpdate = append(releaseToUpdate, outputRelease)
+				releasesToUpdate = append(releasesToUpdate, outputRelease)
 			}
 		}
 	}
 	if len(errList) > 0 {
-		return nil, fmt.Errorf(strings.Join(errList, ","))
+		return nil, fmt.Errorf(strings.Join(errList, ", "))
 	}
-	return releaseToUpdate, nil
+	return releasesToUpdate, nil
 }
 
 func reviewActions(cmd *cobra.Command, releasesToUpdate []ReleaseAndFilteredAnnotations) error {
