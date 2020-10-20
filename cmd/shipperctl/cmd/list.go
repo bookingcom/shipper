@@ -124,7 +124,7 @@ func runCountContenderCommand(cmd *cobra.Command, args []string) error {
 	printCountedRelease(cmd.OutOrStdout(), countedReleases)
 
 	if len(errList) > 0 {
-		return fmt.Errorf(strings.Join(errList, ","))
+		return fmt.Errorf(strings.Join(errList, ", "))
 	}
 	return nil
 }
@@ -173,7 +173,7 @@ func runCountReleasesCommand(cmd *cobra.Command, args []string) error {
 	printCountedRelease(cmd.OutOrStdout(), countedReleases)
 
 	if len(errList) > 0 {
-		return fmt.Errorf(strings.Join(errList, ","))
+		return fmt.Errorf(strings.Join(errList, ", "))
 	}
 	return nil
 }
