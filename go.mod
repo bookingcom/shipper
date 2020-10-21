@@ -9,7 +9,6 @@ require (
 	github.com/aokoli/goutils v1.0.1 // indirect
 	github.com/cespare/xxhash v1.1.0
 	github.com/cyphar/filepath-securejoin v0.2.2 // indirect
-	github.com/ghodss/yaml v1.0.0
 	github.com/gobwas/glob v0.2.2 // indirect
 	github.com/google/go-cmp v0.4.0
 	github.com/huandu/xstrings v0.0.0-20171208101919-37469d0c81a7 // indirect

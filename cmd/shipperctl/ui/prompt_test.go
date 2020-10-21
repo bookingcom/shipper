@@ -43,6 +43,20 @@ func TestAskForConfirmation(t *testing.T) {
 			ExpectedConfirm: false,
 			ExpectedErr:     nil,
 		},
+		{
+			Name:            "reject after undefined character",
+			stdin:           bytes.NewBufferString("h\nN\n"),
+			message:         "",
+			ExpectedConfirm: false,
+			ExpectedErr:     nil,
+		},
+		{
+			Name:            "confirm after undefined character",
+			stdin:           bytes.NewBufferString("h\nY\n"),
+			message:         "",
+			ExpectedConfirm: true,
+			ExpectedErr:     nil,
+		},
 	}
 
 	for _, test := range tests {
