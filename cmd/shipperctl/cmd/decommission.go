@@ -40,7 +40,7 @@ var (
 	}
 )
 
-type ReleaseAndFilteredAnnotations struct {
+type releaseAndFilteredAnnotations struct {
 	OldClusterAnnotation      string
 	FilteredClusterAnnotation string
 	Namespace                 string
@@ -98,7 +98,7 @@ func runCleanCommand(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func updateReleases(cmd *cobra.Command, shipperClient shipperclientset.Interface, releasesToUpdate []ReleaseAndFilteredAnnotations) error {
+func updateReleases(cmd *cobra.Command, shipperClient shipperclientset.Interface, releasesToUpdate []releaseAndFilteredAnnotations) error {
 	if len(releasesToUpdate) == 0 {
 		return nil
 	}
@@ -142,8 +142,8 @@ func updateReleases(cmd *cobra.Command, shipperClient shipperclientset.Interface
 	return nil
 }
 
-func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclientset.Interface) ([]ReleaseAndFilteredAnnotations, error) {
-	var releasesToUpdate []ReleaseAndFilteredAnnotations
+func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclientset.Interface) ([]releaseAndFilteredAnnotations, error) {
+	var releasesToUpdate []releaseAndFilteredAnnotations
 	namespaceList, err := kubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -166,7 +166,7 @@ func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclien
 				}
 				releasesToUpdate = append(
 					releasesToUpdate,
-					ReleaseAndFilteredAnnotations{
+					releaseAndFilteredAnnotations{
 						OldClusterAnnotation:      strings.Join(selectedClusters, ","),
 						FilteredClusterAnnotation: filteredClusterAnnotation,
 						Namespace:                 rel.Namespace,
@@ -191,7 +191,7 @@ func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclien
 			// from this release. So we are not touching contenders.
 			// This applies for incumbents in an incomplete rollout.
 			if len(filteredClusters) == 0 && !isContender && !isIncumbent {
-				outputRelease := ReleaseAndFilteredAnnotations{
+				outputRelease := releaseAndFilteredAnnotations{
 					OldClusterAnnotation:      strings.Join(selectedClusters, ","),
 					FilteredClusterAnnotation: "",
 					Namespace:                 rel.Namespace,
@@ -207,7 +207,7 @@ func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclien
 	return releasesToUpdate, nil
 }
 
-func reviewActions(cmd *cobra.Command, releasesToUpdate []ReleaseAndFilteredAnnotations) error {
+func reviewActions(cmd *cobra.Command, releasesToUpdate []releaseAndFilteredAnnotations) error {
 	cmd.Printf("About to edit %d releases\n", len(releasesToUpdate))
 	confirm, err := ui.AskForConfirmation(os.Stdin, "Would you like to see the releases? (This will not edit anything)")
 	if err != nil {

@@ -8,10 +8,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ghodss/yaml"
 	"github.com/rodaine/table"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/yaml"
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
 	"github.com/bookingcom/shipper/cmd/shipperctl/release"
