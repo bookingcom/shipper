@@ -1,4 +1,15 @@
-## Changelog since v0.8.0
+You might notice that there is no version 0.9 of Shipper. This is
+because in version 0.9, we tried to split Shipper into two components
+(`shipper-mgmt` and `shipper-app`) which would run in management and
+application clusters respectively. However, that version was behaving
+erratically in a way that was hard to predict and debug. After
+spending months trying to patch all the holes, we decided to forgo the
+separation for now and move on with the development of other features.
+
+Please note that this means that Shipper is still one component,
+running only in the management cluster.
+
+## Changelog since v0.8.We are skipping version 0.9 because
 
 ### Breaking Changes
 
