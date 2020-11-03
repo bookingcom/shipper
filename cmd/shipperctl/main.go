@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/cmd"
+	"github.com/bookingcom/shipper/cmd/shipperctl/cmd/backup"
 	"github.com/spf13/cobra"
 )
 
@@ -20,6 +21,7 @@ func init() {
 	rootCmd.AddCommand(cmd.ClustersCmd)
 	rootCmd.AddCommand(cmd.ListCmd)
 	rootCmd.AddCommand(cmd.CleanCmd)
+	rootCmd.AddCommand(backup.BackupCmd)
 }
 
 func main() {

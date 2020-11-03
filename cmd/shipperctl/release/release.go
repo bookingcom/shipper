@@ -48,9 +48,7 @@ func IsIncumbent(rel *shipper.Release, shipperClient shipperclientset.Interface)
 }
 
 func GetContender(app *shipper.Application, shipperClient shipperclientset.Interface) (*shipper.Release, error) {
-	appName := app.Name
-	selector := labels.Set{shipper.AppLabel: appName}.AsSelector()
-	releaseList, err := shipperClient.ShipperV1alpha1().Releases(app.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	releaseList, err := ReleasesForApplication(app.Name, app.Namespace, shipperClient)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +57,7 @@ func GetContender(app *shipper.Application, shipperClient shipperclientset.Inter
 		rels[i] = &releaseList.Items[i]
 	}
 	rels = releaseutil.SortByGenerationDescending(rels)
-	contender, err := apputil.GetContender(appName, rels)
+	contender, err := apputil.GetContender(app.Name, rels)
 	if err != nil {
 		return nil, err
 	}
@@ -67,9 +65,7 @@ func GetContender(app *shipper.Application, shipperClient shipperclientset.Inter
 }
 
 func GetIncumbent(app *shipper.Application, shipperClient shipperclientset.Interface) (*shipper.Release, error) {
-	appName := app.Name
-	selector := labels.Set{shipper.AppLabel: appName}.AsSelector()
-	releaseList, err := shipperClient.ShipperV1alpha1().Releases(app.Namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	releaseList, err := ReleasesForApplication(app.Name, app.Namespace, shipperClient)
 	if err != nil {
 		return nil, err
 	}
@@ -78,9 +74,15 @@ func GetIncumbent(app *shipper.Application, shipperClient shipperclientset.Inter
 		rels[i] = &releaseList.Items[i]
 	}
 	rels = releaseutil.SortByGenerationDescending(rels)
-	incumbent, err := apputil.GetIncumbent(appName, rels)
+	incumbent, err := apputil.GetIncumbent(app.Name, rels)
 	if err != nil {
 		return nil, err
 	}
 	return incumbent, nil
+}
+
+func ReleasesForApplication(appName, appNamespace string, shipperClient shipperclientset.Interface) (*shipper.ReleaseList, error) {
+	selector := labels.Set{shipper.AppLabel: appName}.AsSelector()
+	releaseList, err := shipperClient.ShipperV1alpha1().Releases(appNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	return releaseList, err
 }
