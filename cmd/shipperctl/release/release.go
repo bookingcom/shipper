@@ -6,6 +6,7 @@ import (
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	"github.com/bookingcom/shipper/pkg/util/filters"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
@@ -85,4 +86,44 @@ func ReleasesForApplication(appName, appNamespace string, shipperClient shipperc
 	selector := labels.Set{shipper.AppLabel: appName}.AsSelector()
 	releaseList, err := shipperClient.ShipperV1alpha1().Releases(appNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	return releaseList, err
+}
+
+func TargetObjectsForRelease(
+	relName,
+	relNamespace string,
+	shipperClient shipperclientset.Interface,
+) (
+	*shipper.InstallationTarget,
+	*shipper.TrafficTarget,
+	*shipper.CapacityTarget,
+	error,
+) {
+	selector := labels.Set{shipper.ReleaseLabel: relName}.AsSelector()
+	itList, err := shipperClient.ShipperV1alpha1().InstallationTargets(relNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	expectedNumbetOfTargetObjects := 1
+	if len(itList.Items) != expectedNumbetOfTargetObjects {
+		return nil, nil, nil, shippererrors.NewUnexpectedObjectCountFromSelectorError(
+			selector, shipper.SchemeGroupVersion.WithKind("InstallationTarget"), expectedNumbetOfTargetObjects, len(itList.Items))
+	}
+	ttList, err := shipperClient.ShipperV1alpha1().TrafficTargets(relNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if len(ttList.Items) != expectedNumbetOfTargetObjects {
+		return nil, nil, nil, shippererrors.NewUnexpectedObjectCountFromSelectorError(
+			selector, shipper.SchemeGroupVersion.WithKind("TrafficTarget"), expectedNumbetOfTargetObjects, len(itList.Items))
+	}
+	ctList, err := shipperClient.ShipperV1alpha1().CapacityTargets(relNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if len(ctList.Items) != expectedNumbetOfTargetObjects {
+		return nil, nil, nil, shippererrors.NewUnexpectedObjectCountFromSelectorError(
+			selector, shipper.SchemeGroupVersion.WithKind("CapacityTarget"), expectedNumbetOfTargetObjects, len(itList.Items))
+	}
+
+	return &itList.Items[0], &ttList.Items[0], &ctList.Items[0], err
 }

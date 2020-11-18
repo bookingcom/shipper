@@ -44,7 +44,7 @@ func runPrepareCommand(cmd *cobra.Command, args []string) error {
 	}
 	var errList []string
 
-	releasesPerApplications := []shipperBackupObject{}
+	releasesPerApplications := []shipperBackupApplication{}
 	for _, ns := range namespaceList.Items {
 		applicationList, err := shipperClient.ShipperV1alpha1().Applications(ns.Name).List(metav1.ListOptions{})
 		if err != nil {
@@ -58,11 +58,25 @@ func runPrepareCommand(cmd *cobra.Command, args []string) error {
 				errList = append(errList, err.Error())
 				continue
 			}
+			backupReleases := []shipperBackupRelease{}
+			for _, rel := range releaseList.Items {
+				it, tt, ct, err := release.TargetObjectsForRelease(rel.Name, rel.Namespace, shipperClient)
+				if err != nil {
+					errList = append(errList, err.Error())
+					continue
+				}
+				backupReleases = append(backupReleases, shipperBackupRelease{
+					Release:            rel,
+					InstallationTarget: *it,
+					TrafficTarget:      *tt,
+					CapacityTarget:     *ct,
+				})
+			}
 			releasesPerApplications = append(
 				releasesPerApplications,
-				shipperBackupObject{
-					Application: app,
-					Releases:    releaseList.Items,
+				shipperBackupApplication{
+					Application:    app,
+					BackupReleases: backupReleases,
 				},
 			)
 		}

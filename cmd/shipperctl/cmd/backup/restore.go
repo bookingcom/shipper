@@ -25,9 +25,10 @@ var (
 
 	restoreBackupCmd = &cobra.Command{
 		Use:   "restore",
-		Short: "Restore backup that was prepared using `shipperctl prepare` command",
-		Long: "Restore backup that was prepared using `shipperctl prepare` command" +
-			"this will update the owner reference of releases objects",
+		Short: "Restore backup that was prepared using `shipperctl prepare` command. Make sure that Shipper is down (`spec.replicas: 0`) before running this command.",
+		Long: "Restore backup that was prepared using `shipperctl prepare` command." +
+			"Make sure that Shipper is down (`spec.replicas: 0`) before running this command." +
+			"this will update the owner reference of releases and target objects",
 		RunE: runRestoreCommand,
 	}
 )
@@ -88,7 +89,7 @@ func runRestoreCommand(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func restore(releasesPerApplications []shipperBackupObject, kubeClient kubernetes.Interface, shipperClient shipperclientset.Interface) error {
+func restore(releasesPerApplications []shipperBackupApplication, kubeClient kubernetes.Interface, shipperClient shipperclientset.Interface) error {
 	for _, obj := range releasesPerApplications {
 		// apply application
 		if err := applyApplication(kubeClient, shipperClient, obj.Application); err != nil {
@@ -103,8 +104,9 @@ func restore(releasesPerApplications []shipperBackupObject, kubeClient kubernete
 		}
 
 		// update owner ref for all releases and apply them
-		for _, release := range obj.Releases {
-			rel, err := updateOwnerRefUid(release, *uid)
+		for _, backupRelease := range obj.BackupReleases {
+			rel := &backupRelease.Release
+			err := updateOwnerRefUid(&rel.ObjectMeta, *uid)
 			if err != nil {
 				return err
 			}
@@ -115,9 +117,70 @@ func restore(releasesPerApplications []shipperBackupObject, kubeClient kubernete
 				return err
 			}
 			fmt.Printf("release %q created\n", fmt.Sprintf("%s/%s", rel.Namespace, rel.Name))
+
+			// get the new UID
+			relUid, err := uidOfRelease(shipperClient, rel.Name, rel.Namespace)
+			if err != nil {
+				return err
+			}
+
+			if err := restoreTargetObjects(backupRelease, relUid, shipperClient); err != nil {
+				return err
+			}
+
 		}
 
 	}
+	return nil
+}
+
+// update owner ref for all target objects and apply them
+func restoreTargetObjects(backupRelease shipperBackupRelease, relUid *types.UID, shipperClient shipperclientset.Interface) error {
+	// InstallationTarget
+	if err := updateOwnerRefUid(&backupRelease.InstallationTarget.ObjectMeta, *relUid); err != nil {
+		return err
+	}
+	fmt.Printf(
+		"installation target %q owner reference updates with uid %q\n",
+		fmt.Sprintf("%s/%s", backupRelease.InstallationTarget.Namespace, backupRelease.InstallationTarget.Name),
+		*relUid,
+	)
+	backupRelease.InstallationTarget.ResourceVersion = ""
+	if _, err := shipperClient.ShipperV1alpha1().InstallationTargets(backupRelease.InstallationTarget.Namespace).Create(&backupRelease.InstallationTarget); err != nil {
+		return err
+	}
+	fmt.Printf("installation target %q created\n", fmt.Sprintf("%s/%s", backupRelease.InstallationTarget.Namespace, backupRelease.InstallationTarget.Name))
+
+	// TrafficTarget
+	if err := updateOwnerRefUid(&backupRelease.TrafficTarget.ObjectMeta, *relUid); err != nil {
+		return err
+	}
+	fmt.Printf(
+		"traffic target %q owner reference updates with uid %q\n",
+		fmt.Sprintf("%s/%s", backupRelease.TrafficTarget.Namespace, backupRelease.TrafficTarget.Name),
+		*relUid,
+	)
+	backupRelease.TrafficTarget.ResourceVersion = ""
+	if _, err := shipperClient.ShipperV1alpha1().TrafficTargets(backupRelease.TrafficTarget.Namespace).Create(&backupRelease.TrafficTarget); err != nil {
+		return err
+	}
+	fmt.Printf("traffic target %q created\n", fmt.Sprintf("%s/%s", backupRelease.TrafficTarget.Namespace, backupRelease.TrafficTarget.Name))
+
+	// CapacityTarget
+	if err := updateOwnerRefUid(&backupRelease.CapacityTarget.ObjectMeta, *relUid); err != nil {
+		return err
+	}
+	fmt.Printf(
+		"capacity target %q owner reference updates with uid %q\n",
+		fmt.Sprintf("%s/%s", backupRelease.CapacityTarget.Namespace, backupRelease.CapacityTarget.Name),
+		*relUid,
+	)
+	backupRelease.CapacityTarget.ResourceVersion = ""
+	if _, err := shipperClient.ShipperV1alpha1().CapacityTargets(backupRelease.CapacityTarget.Namespace).Create(&backupRelease.CapacityTarget); err != nil {
+		return err
+	}
+	fmt.Printf("capacity target %q created\n", fmt.Sprintf("%s/%s", backupRelease.CapacityTarget.Namespace, backupRelease.CapacityTarget.Name))
+
 	return nil
 }
 
@@ -157,24 +220,33 @@ func uidOfApplication(shipperClient shipperclientset.Interface, appName, appName
 	return &uid, nil
 }
 
-func updateOwnerRefUid(rel shipper.Release, uid types.UID) (*shipper.Release, error) {
-	ownerReferences := rel.GetOwnerReferences()
-	if n := len(rel.OwnerReferences); n != 1 {
-		key, _ := cache.MetaNamespaceKeyFunc(rel)
-		return nil, fmt.Errorf("expected exactly one owner for Release %q but got %d", key, n)
+func uidOfRelease(shipperClient shipperclientset.Interface, relName, relNamespace string) (*types.UID, error) {
+	release, err := shipperClient.ShipperV1alpha1().Releases(relNamespace).Get(relName, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
 	}
-	ownerReferences[0].UID = uid
-	rel.SetOwnerReferences(ownerReferences)
-	return &rel, nil
+	uid := release.GetUID()
+	return &uid, nil
 }
 
-func unmarshalReleasesPerApplicationFromFile() ([]shipperBackupObject, error) {
+func updateOwnerRefUid(obj *metav1.ObjectMeta, uid types.UID) error {
+	ownerReferences := obj.GetOwnerReferences()
+	if n := len(ownerReferences); n != 1 {
+		key, _ := cache.MetaNamespaceKeyFunc(obj)
+		return fmt.Errorf("expected exactly one owner for object %q but got %d", key, n)
+	}
+	ownerReferences[0].UID = uid
+	obj.SetOwnerReferences(ownerReferences)
+	return nil
+}
+
+func unmarshalReleasesPerApplicationFromFile() ([]shipperBackupApplication, error) {
 	backupBytes, err := ioutil.ReadFile(backupFile)
 	if err != nil {
 		return nil, err
 	}
 
-	releasesPerApplications := &[]shipperBackupObject{}
+	releasesPerApplications := &[]shipperBackupApplication{}
 
 	switch outputFormat {
 	case "yaml":
