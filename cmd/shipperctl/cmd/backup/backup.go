@@ -32,9 +32,16 @@ var (
 	}
 )
 
-type shipperBackupObject struct {
-	Application shipper.Application `json:"application"`
-	Releases    []shipper.Release   `json:"releases"`
+type shipperBackupApplication struct {
+	Application    shipper.Application    `json:"application"`
+	BackupReleases []shipperBackupRelease `json:"backup_releases"`
+}
+
+type shipperBackupRelease struct {
+	Release            shipper.Release            `json:"release"`
+	InstallationTarget shipper.InstallationTarget `json:"installation_target"`
+	TrafficTarget      shipper.TrafficTarget      `json:"traffic_target"`
+	CapacityTarget     shipper.CapacityTarget     `json:"capacity_target"`
 }
 
 func init() {
@@ -61,22 +68,22 @@ func init() {
 	}
 }
 
-func marshalReleasesPerApplications(releasesPerApplications []shipperBackupObject) ([]byte, error) {
+func marshalReleasesPerApplications(releasesPerApplications []shipperBackupApplication) ([]byte, error) {
 	if outputFormat == "json" {
 		return json.MarshalIndent(releasesPerApplications, "", "    ")
 	}
 	return yaml.Marshal(releasesPerApplications)
 }
 
-func printReleasesPerApplications(releasesPerApplications []shipperBackupObject) {
+func printReleasesPerApplications(releasesPerApplications []shipperBackupApplication) {
 	tbl := table.New(
 		"NAMESPACE",
 		"RELEASE NAME",
 		"OWNING APPLICATION",
 	)
 	for _, obj := range releasesPerApplications {
-		for _, rel := range obj.Releases {
-
+		for _, backupRelease := range obj.BackupReleases {
+			rel := backupRelease.Release
 			tbl.AddRow(
 				rel.Namespace,
 				rel.Name,
