@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"strings"
 
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -50,6 +51,14 @@ func runRestoreCommand(cmd *cobra.Command, args []string) error {
 
 	shipperBackupApplications, err := unmarshalShipperBackupApplicationFromFile()
 	if err != nil {
+		return err
+	}
+
+	if err := scaleDownShipper(cmd, kubeClient); err != nil {
+		return err
+	}
+
+	if err := makeSureNotShipperObjects(cmd, shipperClient); err != nil {
 		return err
 	}
 
@@ -262,4 +271,75 @@ func unmarshalShipperBackupApplicationFromFile() ([]shipperBackupApplication, er
 	}
 
 	return *shipperBackupApplications, nil
+}
+
+func scaleDownShipper(cmd *cobra.Command, kubeClient kubernetes.Interface) error {
+	cmd.Print("Making sure shipper is down... ")
+	shipperDeployment, err := kubeClient.AppsV1().Deployments(shipper.ShipperNamespace).Get("shipper", metav1.GetOptions{})
+	if err != nil && !kerrors.IsNotFound(err) {
+		return fmt.Errorf("failed to find Shipper deployment: %s", err.Error())
+	}
+	if *shipperDeployment.Spec.Replicas != 0 {
+		return fmt.Errorf(
+			"shipper deployment has %d replicas. " +
+				"Scale it down first with `kubectl -n shipper-system patch deploy shipper --type=merge -p '{\"spec\":{\"replicas\":0}}'`",
+			*shipperDeployment.Spec.Replicas,
+		)
+	}
+	cmd.Println("done")
+	return nil
+}
+
+func makeSureNotShipperObjects(cmd *cobra.Command, shipperClient shipperclientset.Interface) error {
+	cmd.Print("Making sure there are no Shipper objects lying around... ")
+	unexpectedMessage := []string{}
+	// Applications
+	applicationList, err := shipperClient.ShipperV1alpha1().Applications("").List(metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	if n := len(applicationList.Items); n != 0 {
+		unexpectedMessage = append(unexpectedMessage, fmt.Sprintf("Applications: %d", n))
+	}
+	// Releases
+	releaseList, err := shipperClient.ShipperV1alpha1().Releases("").List(metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	if n := len(releaseList.Items); n != 0 {
+		unexpectedMessage = append(unexpectedMessage, fmt.Sprintf("Releases: %d", n))
+	}
+	// Installation targets
+	installationTargetsList, err := shipperClient.ShipperV1alpha1().InstallationTargets("").List(metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	if n := len(installationTargetsList.Items); n != 0 {
+		unexpectedMessage = append(unexpectedMessage, fmt.Sprintf("InstallationTargets: %d", n))
+	}
+	// Traffic targets
+	trafficTargetsList, err := shipperClient.ShipperV1alpha1().TrafficTargets("").List(metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	if n := len(trafficTargetsList.Items); n != 0 {
+		unexpectedMessage = append(unexpectedMessage, fmt.Sprintf("TrafficTargets: %d", n))
+	}
+	// Capacity targets
+	capacityTargetsList, err := shipperClient.ShipperV1alpha1().CapacityTargets("").List(metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	if n := len(capacityTargetsList.Items); n != 0 {
+		unexpectedMessage = append(unexpectedMessage, fmt.Sprintf("CapacityTargets: %d", n))
+	}
+
+	if len(unexpectedMessage) > 0 {
+		return fmt.Errorf(
+			"found Shipper objects:\n - %s\ndelete them first with `kubectl delete app,rel,it,tt,ct --all-namespaces --all`",
+			strings.Join(unexpectedMessage, "\n - "),
+		)
+	}
+	cmd.Println("done")
+	return nil
 }
