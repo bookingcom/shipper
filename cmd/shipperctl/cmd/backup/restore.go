@@ -48,7 +48,7 @@ func runRestoreCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	releasesPerApplications, err := unmarshalReleasesPerApplicationFromFile()
+	shipperBackupApplications, err := unmarshalShipperBackupApplicationFromFile()
 	if err != nil {
 		return err
 	}
@@ -58,13 +58,13 @@ func runRestoreCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if confirm {
-		printReleasesPerApplications(releasesPerApplications)
+		printShipperBackupApplication(shipperBackupApplications)
 		confirm, err = ui.AskForConfirmation(cmd.InOrStdin(), "Would you like to review backup?")
 		if err != nil {
 			return err
 		}
 		if confirm {
-			data, err := marshalReleasesPerApplications(releasesPerApplications)
+			data, err := marshalShipperBackupApplication(shipperBackupApplications)
 			if err != nil {
 				return err
 			}
@@ -82,15 +82,15 @@ func runRestoreCommand(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if err := restore(releasesPerApplications, kubeClient, shipperClient); err != nil {
+	if err := restore(shipperBackupApplications, kubeClient, shipperClient); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func restore(releasesPerApplications []shipperBackupApplication, kubeClient kubernetes.Interface, shipperClient shipperclientset.Interface) error {
-	for _, obj := range releasesPerApplications {
+func restore(shipperBackupApplications []shipperBackupApplication, kubeClient kubernetes.Interface, shipperClient shipperclientset.Interface) error {
+	for _, obj := range shipperBackupApplications {
 		// apply application
 		if err := applyApplication(kubeClient, shipperClient, obj.Application); err != nil {
 			return err
@@ -106,11 +106,11 @@ func restore(releasesPerApplications []shipperBackupApplication, kubeClient kube
 		// update owner ref for all releases and apply them
 		for _, backupRelease := range obj.BackupReleases {
 			rel := &backupRelease.Release
-			err := updateOwnerRefUid(&rel.ObjectMeta, *uid)
+			err := updateOwnerRefUid(&rel.ObjectMeta, uid)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("release %q owner reference updates with uid %q\n", fmt.Sprintf("%s/%s", rel.Namespace, rel.Name), *uid)
+			fmt.Printf("release %q owner reference updates with uid %q\n", fmt.Sprintf("%s/%s", rel.Namespace, rel.Name), uid)
 
 			rel.ResourceVersion = ""
 			if _, err = shipperClient.ShipperV1alpha1().Releases(rel.Namespace).Create(rel); err != nil {
@@ -135,15 +135,15 @@ func restore(releasesPerApplications []shipperBackupApplication, kubeClient kube
 }
 
 // update owner ref for all target objects and apply them
-func restoreTargetObjects(backupRelease shipperBackupRelease, relUid *types.UID, shipperClient shipperclientset.Interface) error {
+func restoreTargetObjects(backupRelease shipperBackupRelease, relUid types.UID, shipperClient shipperclientset.Interface) error {
 	// InstallationTarget
-	if err := updateOwnerRefUid(&backupRelease.InstallationTarget.ObjectMeta, *relUid); err != nil {
+	if err := updateOwnerRefUid(&backupRelease.InstallationTarget.ObjectMeta, relUid); err != nil {
 		return err
 	}
 	fmt.Printf(
 		"installation target %q owner reference updates with uid %q\n",
 		fmt.Sprintf("%s/%s", backupRelease.InstallationTarget.Namespace, backupRelease.InstallationTarget.Name),
-		*relUid,
+		relUid,
 	)
 	backupRelease.InstallationTarget.ResourceVersion = ""
 	if _, err := shipperClient.ShipperV1alpha1().InstallationTargets(backupRelease.InstallationTarget.Namespace).Create(&backupRelease.InstallationTarget); err != nil {
@@ -152,13 +152,13 @@ func restoreTargetObjects(backupRelease shipperBackupRelease, relUid *types.UID,
 	fmt.Printf("installation target %q created\n", fmt.Sprintf("%s/%s", backupRelease.InstallationTarget.Namespace, backupRelease.InstallationTarget.Name))
 
 	// TrafficTarget
-	if err := updateOwnerRefUid(&backupRelease.TrafficTarget.ObjectMeta, *relUid); err != nil {
+	if err := updateOwnerRefUid(&backupRelease.TrafficTarget.ObjectMeta, relUid); err != nil {
 		return err
 	}
 	fmt.Printf(
 		"traffic target %q owner reference updates with uid %q\n",
 		fmt.Sprintf("%s/%s", backupRelease.TrafficTarget.Namespace, backupRelease.TrafficTarget.Name),
-		*relUid,
+		relUid,
 	)
 	backupRelease.TrafficTarget.ResourceVersion = ""
 	if _, err := shipperClient.ShipperV1alpha1().TrafficTargets(backupRelease.TrafficTarget.Namespace).Create(&backupRelease.TrafficTarget); err != nil {
@@ -167,13 +167,13 @@ func restoreTargetObjects(backupRelease shipperBackupRelease, relUid *types.UID,
 	fmt.Printf("traffic target %q created\n", fmt.Sprintf("%s/%s", backupRelease.TrafficTarget.Namespace, backupRelease.TrafficTarget.Name))
 
 	// CapacityTarget
-	if err := updateOwnerRefUid(&backupRelease.CapacityTarget.ObjectMeta, *relUid); err != nil {
+	if err := updateOwnerRefUid(&backupRelease.CapacityTarget.ObjectMeta, relUid); err != nil {
 		return err
 	}
 	fmt.Printf(
 		"capacity target %q owner reference updates with uid %q\n",
 		fmt.Sprintf("%s/%s", backupRelease.CapacityTarget.Namespace, backupRelease.CapacityTarget.Name),
-		*relUid,
+		relUid,
 	)
 	backupRelease.CapacityTarget.ResourceVersion = ""
 	if _, err := shipperClient.ShipperV1alpha1().CapacityTargets(backupRelease.CapacityTarget.Namespace).Create(&backupRelease.CapacityTarget); err != nil {
@@ -211,22 +211,22 @@ func applyApplication(kubeClient kubernetes.Interface, shipperClient shipperclie
 	return nil
 }
 
-func uidOfApplication(shipperClient shipperclientset.Interface, appName, appNamespace string) (*types.UID, error) {
+func uidOfApplication(shipperClient shipperclientset.Interface, appName, appNamespace string) (types.UID, error) {
 	application, err := shipperClient.ShipperV1alpha1().Applications(appNamespace).Get(appName, metav1.GetOptions{})
 	if err != nil {
-		return nil, err
+		return types.UID(""), err
 	}
 	uid := application.GetUID()
-	return &uid, nil
+	return uid, nil
 }
 
-func uidOfRelease(shipperClient shipperclientset.Interface, relName, relNamespace string) (*types.UID, error) {
+func uidOfRelease(shipperClient shipperclientset.Interface, relName, relNamespace string) (types.UID, error) {
 	release, err := shipperClient.ShipperV1alpha1().Releases(relNamespace).Get(relName, metav1.GetOptions{})
 	if err != nil {
-		return nil, err
+		return types.UID(""), err
 	}
 	uid := release.GetUID()
-	return &uid, nil
+	return uid, nil
 }
 
 func updateOwnerRefUid(obj *metav1.ObjectMeta, uid types.UID) error {
@@ -240,26 +240,26 @@ func updateOwnerRefUid(obj *metav1.ObjectMeta, uid types.UID) error {
 	return nil
 }
 
-func unmarshalReleasesPerApplicationFromFile() ([]shipperBackupApplication, error) {
+func unmarshalShipperBackupApplicationFromFile() ([]shipperBackupApplication, error) {
 	backupBytes, err := ioutil.ReadFile(backupFile)
 	if err != nil {
 		return nil, err
 	}
 
-	releasesPerApplications := &[]shipperBackupApplication{}
+	shipperBackupApplications := &[]shipperBackupApplication{}
 
 	switch outputFormat {
 	case "yaml":
-		err = yaml.Unmarshal(backupBytes, releasesPerApplications)
+		err = yaml.Unmarshal(backupBytes, shipperBackupApplications)
 		if err != nil {
 			return nil, err
 		}
 	case "json":
-		err = json.Unmarshal(backupBytes, releasesPerApplications)
+		err = json.Unmarshal(backupBytes, shipperBackupApplications)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	return *releasesPerApplications, nil
+	return *shipperBackupApplications, nil
 }

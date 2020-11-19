@@ -44,7 +44,7 @@ func runPrepareCommand(cmd *cobra.Command, args []string) error {
 	}
 	var errList []string
 
-	releasesPerApplications := []shipperBackupApplication{}
+	shipperBackupApplications := []shipperBackupApplication{}
 	for _, ns := range namespaceList.Items {
 		applicationList, err := shipperClient.ShipperV1alpha1().Applications(ns.Name).List(metav1.ListOptions{})
 		if err != nil {
@@ -72,8 +72,8 @@ func runPrepareCommand(cmd *cobra.Command, args []string) error {
 					CapacityTarget:     *ct,
 				})
 			}
-			releasesPerApplications = append(
-				releasesPerApplications,
+			shipperBackupApplications = append(
+				shipperBackupApplications,
 				shipperBackupApplication{
 					Application:    app,
 					BackupReleases: backupReleases,
@@ -85,8 +85,8 @@ func runPrepareCommand(cmd *cobra.Command, args []string) error {
 		confirm, err := ui.AskForConfirmation(
 			cmd.InOrStdin(),
 			fmt.Sprintf(
-				"Found errors while retreiving objects: %s. Continue anyway?",
-				strings.Join(errList, ", "),
+				"Failed to retrieve some objects:\n - %s\n\nContinue anyway?",
+				strings.Join(errList, "\n - "),
 			),
 		)
 		if err != nil {
@@ -98,16 +98,14 @@ func runPrepareCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	if verboseFlag {
-		printReleasesPerApplications(releasesPerApplications)
+		printShipperBackupApplication(shipperBackupApplications)
 	}
-	data, err := marshalReleasesPerApplications(releasesPerApplications)
+	data, err := marshalShipperBackupApplication(shipperBackupApplications)
 	if err != nil {
 		return err
-	} else {
-		err := ioutil.WriteFile(backupFile, data, 0644)
-		if err != nil {
-			return err
-		}
+	}
+	if err := ioutil.WriteFile(backupFile, data, 0644); err != nil {
+		return err
 	}
 
 	fmt.Printf("Backup objects stored in %q\n", backupFile)

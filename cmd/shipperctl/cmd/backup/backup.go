@@ -68,20 +68,20 @@ func init() {
 	}
 }
 
-func marshalReleasesPerApplications(releasesPerApplications []shipperBackupApplication) ([]byte, error) {
+func marshalShipperBackupApplication(shipperBackupApplication []shipperBackupApplication) ([]byte, error) {
 	if outputFormat == "json" {
-		return json.MarshalIndent(releasesPerApplications, "", "    ")
+		return json.MarshalIndent(shipperBackupApplication, "", "    ")
 	}
-	return yaml.Marshal(releasesPerApplications)
+	return yaml.Marshal(shipperBackupApplication)
 }
 
-func printReleasesPerApplications(releasesPerApplications []shipperBackupApplication) {
+func printShipperBackupApplication(shipperBackupApplication []shipperBackupApplication) {
 	tbl := table.New(
 		"NAMESPACE",
 		"RELEASE NAME",
 		"OWNING APPLICATION",
 	)
-	for _, obj := range releasesPerApplications {
+	for _, obj := range shipperBackupApplication {
 		for _, backupRelease := range obj.BackupReleases {
 			rel := backupRelease.Release
 			tbl.AddRow(
