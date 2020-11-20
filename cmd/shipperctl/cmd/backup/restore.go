@@ -117,7 +117,7 @@ func restore(shipperBackupApplications []shipperBackupApplication, kubeClient ku
 			rel := &backupRelease.Release
 			err := updateOwnerRefUid(&rel.ObjectMeta, uid)
 			if err != nil {
-				return err
+				return fmt.Errorf("faild to update release owner reference: %v", err)
 			}
 			fmt.Printf("release %q owner reference updates with uid %q\n", fmt.Sprintf("%s/%s", rel.Namespace, rel.Name), uid)
 
@@ -147,7 +147,7 @@ func restore(shipperBackupApplications []shipperBackupApplication, kubeClient ku
 func restoreTargetObjects(backupRelease shipperBackupRelease, relUid types.UID, shipperClient shipperclientset.Interface) error {
 	// InstallationTarget
 	if err := updateOwnerRefUid(&backupRelease.InstallationTarget.ObjectMeta, relUid); err != nil {
-		return err
+		return fmt.Errorf("faild to update installation target owner reference: %v", err)
 	}
 	fmt.Printf(
 		"installation target %q owner reference updates with uid %q\n",
@@ -162,7 +162,7 @@ func restoreTargetObjects(backupRelease shipperBackupRelease, relUid types.UID, 
 
 	// TrafficTarget
 	if err := updateOwnerRefUid(&backupRelease.TrafficTarget.ObjectMeta, relUid); err != nil {
-		return err
+		return fmt.Errorf("faild to update traffic target owner reference: %v", err)
 	}
 	fmt.Printf(
 		"traffic target %q owner reference updates with uid %q\n",
@@ -177,7 +177,7 @@ func restoreTargetObjects(backupRelease shipperBackupRelease, relUid types.UID, 
 
 	// CapacityTarget
 	if err := updateOwnerRefUid(&backupRelease.CapacityTarget.ObjectMeta, relUid); err != nil {
-		return err
+		return fmt.Errorf("faild to update capacity target owner reference: %v", err)
 	}
 	fmt.Printf(
 		"capacity target %q owner reference updates with uid %q\n",
@@ -223,7 +223,7 @@ func applyApplication(kubeClient kubernetes.Interface, shipperClient shipperclie
 func uidOfApplication(shipperClient shipperclientset.Interface, appName, appNamespace string) (types.UID, error) {
 	application, err := shipperClient.ShipperV1alpha1().Applications(appNamespace).Get(appName, metav1.GetOptions{})
 	if err != nil {
-		return types.UID(""), err
+		return types.UID(""), fmt.Errorf("failed to get application: %v", err)
 	}
 	uid := application.GetUID()
 	return uid, nil
@@ -232,7 +232,7 @@ func uidOfApplication(shipperClient shipperclientset.Interface, appName, appName
 func uidOfRelease(shipperClient shipperclientset.Interface, relName, relNamespace string) (types.UID, error) {
 	release, err := shipperClient.ShipperV1alpha1().Releases(relNamespace).Get(relName, metav1.GetOptions{})
 	if err != nil {
-		return types.UID(""), err
+		return types.UID(""), fmt.Errorf("failed to get release: %v", err)
 	}
 	uid := release.GetUID()
 	return uid, nil
