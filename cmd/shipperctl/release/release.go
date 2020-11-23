@@ -103,26 +103,26 @@ func TargetObjectsForRelease(
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	expectedNumbetOfTargetObjects := 1
-	if len(itList.Items) != expectedNumbetOfTargetObjects {
+	expectedNumberOfTargetObjects := 1
+	if len(itList.Items) != expectedNumberOfTargetObjects {
 		return nil, nil, nil, shippererrors.NewUnexpectedObjectCountFromSelectorError(
-			selector, shipper.SchemeGroupVersion.WithKind("InstallationTarget"), expectedNumbetOfTargetObjects, len(itList.Items))
+			selector, shipper.SchemeGroupVersion.WithKind("InstallationTarget"), expectedNumberOfTargetObjects, len(itList.Items))
 	}
 	ttList, err := shipperClient.ShipperV1alpha1().TrafficTargets(relNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if len(ttList.Items) != expectedNumbetOfTargetObjects {
+	if len(ttList.Items) != expectedNumberOfTargetObjects {
 		return nil, nil, nil, shippererrors.NewUnexpectedObjectCountFromSelectorError(
-			selector, shipper.SchemeGroupVersion.WithKind("TrafficTarget"), expectedNumbetOfTargetObjects, len(itList.Items))
+			selector, shipper.SchemeGroupVersion.WithKind("TrafficTarget"), expectedNumberOfTargetObjects, len(itList.Items))
 	}
 	ctList, err := shipperClient.ShipperV1alpha1().CapacityTargets(relNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if len(ctList.Items) != expectedNumbetOfTargetObjects {
+	if len(ctList.Items) != expectedNumberOfTargetObjects {
 		return nil, nil, nil, shippererrors.NewUnexpectedObjectCountFromSelectorError(
-			selector, shipper.SchemeGroupVersion.WithKind("CapacityTarget"), expectedNumbetOfTargetObjects, len(itList.Items))
+			selector, shipper.SchemeGroupVersion.WithKind("CapacityTarget"), expectedNumberOfTargetObjects, len(itList.Items))
 	}
 
 	return &itList.Items[0], &ttList.Items[0], &ctList.Items[0], err
