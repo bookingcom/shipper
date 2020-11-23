@@ -7,10 +7,12 @@ import (
 
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
 	"github.com/bookingcom/shipper/cmd/shipperctl/release"
 	"github.com/bookingcom/shipper/cmd/shipperctl/ui"
+	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 )
 
 var (
@@ -38,9 +40,42 @@ func runPrepareCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	namespaceList, err := kubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
+	shipperBackupApplications, err := buildShipperBackupApplication(kubeClient, shipperClient)
+	if err != nil {
+		confirm, err := ui.AskForConfirmation(
+			cmd.InOrStdin(),
+			fmt.Sprintf(
+				"%s\nContinue anyway?",
+				err.Error(),
+			),
+		)
+		if err != nil {
+			return err
+		}
+		if !confirm {
+			return fmt.Errorf(err.Error())
+		}
+	}
+
+	if verboseFlag {
+		printShipperBackupApplication(shipperBackupApplications)
+	}
+	data, err := marshalShipperBackupApplication(shipperBackupApplications)
 	if err != nil {
 		return err
+	}
+	if err := ioutil.WriteFile(backupFile, data, 0644); err != nil {
+		return err
+	}
+
+	cmd.Printf("Backup objects stored in %q\n", backupFile)
+	return nil
+}
+
+func buildShipperBackupApplication(kubeClient kubernetes.Interface, shipperClient shipperclientset.Interface) ([]shipperBackupApplication, error) {
+	namespaceList, err := kubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
+	if err != nil {
+		return nil, err
 	}
 	var errList []string
 
@@ -82,32 +117,7 @@ func runPrepareCommand(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if len(errList) > 0 {
-		confirm, err := ui.AskForConfirmation(
-			cmd.InOrStdin(),
-			fmt.Sprintf(
-				"Failed to retrieve some objects:\n - %s\n\nContinue anyway?",
-				strings.Join(errList, "\n - "),
-			),
-		)
-		if err != nil {
-			return err
-		}
-		if !confirm {
-			return fmt.Errorf(strings.Join(errList, ", "))
-		}
+		return nil, fmt.Errorf("Failed to retrieve some objects:\n - %s\n", strings.Join(errList, "\n - "))
 	}
-
-	if verboseFlag {
-		printShipperBackupApplication(shipperBackupApplications)
-	}
-	data, err := marshalShipperBackupApplication(shipperBackupApplications)
-	if err != nil {
-		return err
-	}
-	if err := ioutil.WriteFile(backupFile, data, 0644); err != nil {
-		return err
-	}
-
-	fmt.Printf("Backup objects stored in %q\n", backupFile)
-	return nil
+	return shipperBackupApplications, nil
 }
