@@ -212,7 +212,7 @@ Acquire a backup file by running
 
     The command's default format is yaml. This will create a file named "bkup-dev-29-10.yaml" and store the backup there in a yaml format.
 
-2. Save the backup file in a storing system to your likings (for example, AWS S3)
+2. Save the backup file in a storage system of your liking (for example, AWS S3)
 
 3. That's it! Repeat steps 1+2 for all management clusters.
 
@@ -272,5 +272,5 @@ Acquire a backup file by running
 
 .. epigraph::
 
-     - The commands default format is yaml. This will apply the backup from file "bkup-dev-29-10-from-s3.yaml" while maintaining owner reference betweenan application and its releases and between release and its target objects.
+     - The command's default format is yaml. This will apply the backup from file "bkup-dev-29-10-from-s3.yaml" while maintaining owner references between an application and its releases and between release and its target objects.
      - The backup file must be created using :ref:`shipperctl backup prepare <create_backup>` command.
