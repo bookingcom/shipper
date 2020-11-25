@@ -24,6 +24,8 @@
   so that each operation can be done separately. For example, this
   allows operators to only set up the application clusters, without
   touching the management cluster ([#358][])
+* It is now possible to create backups and restore backups using 
+  `shipperctl backup` commands ([#372][]).
 * Shipper now rejects all modifications to the `environment` field of
   all releases. This fixes an issue where users would modify this
   field and cause an unsupported behavior ([#357][])
@@ -64,4 +66,5 @@
 [#358]: https://github.com/bookingcom/shipper/pull/358
 [#366]: https://github.com/bookingcom/shipper/pull/366
 [#357]: https://github.com/bookingcom/shipper/pull/357
+[#372]: https://github.com/bookingcom/shipper/pull/372
 [failure policy]: https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#failure-policy

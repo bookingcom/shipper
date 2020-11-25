@@ -183,3 +183,94 @@ underscores in their names. To solve this, specify ``context`` explicitly in ``c
     context: gke_ACCOUNT_ZONE_CLUSTERNAME_APP_2 # and here
     scheduler:
       unschedulable: true
+
+
+Creating backups and restoring Using ``shipperctl backup`` Commands
+----------------------------------------------------------------------
+
+.. _create_backup:
+
+``shipperctl backup prepare``
++++++++++++++++++++++++++++++++
+
+1. The backup must be created by a `shipperctl` command. This guarantees you can restore this backup.
+Acquire a backup file by running
+
+.. code-block:: bash
+
+    $ kubectl config use-context mgmt-dev-cluster ##be sure to switch to correct context of the management cluster before backing up
+    Switched to context "mgmt-dev-cluster"
+    $ shipperctl backup prepare -v -f bkup-dev-29-10.yaml
+    NAMESPACE  RELEASE NAME              OWNING APPLICATION
+    default    super-server-dc5bfc5a-0   super-server
+    default2   super-server2-dc5bfc5a-0  super-server2
+    default3   super-server3-dc5bfc5a-0  super-server3
+    Backup objects stored in "bkup-dev-29-10.yaml"
+
+
+.. epigraph::
+
+    The command's default format is yaml. This will create a file named "bkup-dev-29-10.yaml" and store the backup there in a yaml format.
+
+2. Save the backup file in a storage system of your liking (for example, AWS S3)
+
+3. That's it! Repeat steps 1+2 for all management clusters.
+
+``shipperctl backup restore``
++++++++++++++++++++++++++++++++++
+
+1. Download your latest backup from your selected storing system
+
+2. Make sure that Shipper is down (`spec.replicas: 0`) before applying objects.
+
+3. Use `shipperctl` to restore your backup:
+
+.. code-block:: bash
+
+    $ kubectl config use-context mgmt-dev-cluster ##be sure to switch to correct management context before restoring backing up
+    Switched to context "mgmt-dev-cluster"
+    $ shipperctl backup restore -v -f bkup-dev-29-10-from-s3.yaml
+    Would you like to see an overview of your backup? [y/n]: y
+    NAMESPACE  RELEASE NAME              OWNING APPLICATION
+    default    super-server-dc5bfc5a-0   super-server
+    default2   super-server2-dc5bfc5a-0  super-server2
+    default3   super-server3-dc5bfc5a-0  super-server3
+    Would you like to review backup? [y/n]: y
+    - application:
+        apiVersion: shipper.booking.com/v1alpha1
+        kind: Application
+      ...
+      backup_releases:
+      - capacity_target:
+          apiVersion: shipper.booking.com/v1alpha1
+          kind: CapacityTarget
+        ...
+        installation_target:
+          apiVersion: shipper.booking.com/v1alpha1
+          kind: InstallationTarget
+        ...
+        release:
+          apiVersion: shipper.booking.com/v1alpha1
+          kind: Release
+        ...
+        traffic_target:
+          apiVersion: shipper.booking.com/v1alpha1
+          kind: TrafficTarget
+        ...
+    ...
+    Would you like to restore backup? [y/n]: y
+    application "default/super-server" created
+    release "default/super-server-dc5bfc5a-0" owner reference updates with uid "a6c587cb-624e-44ec-b267-b48630b0ed1c"
+    release "default/super-server-dc5bfc5a-0" created
+    installation target "default/super-server-dc5bfc5a-0" owner reference updates with uid "9ccfd876-7f4f-4b1c-9c10-653d295e21d2"
+    installation target "default/super-server-dc5bfc5a-0" created
+    traffic target "default/super-server-dc5bfc5a-0" owner reference updates with uid "9ccfd876-7f4f-4b1c-9c10-653d295e21d2"
+    traffic target "default/super-server-dc5bfc5a-0" created
+    capacity target "default/super-server-dc5bfc5a-0" owner reference updates with uid "9ccfd876-7f4f-4b1c-9c10-653d295e21d2"
+    capacity target "default/super-server-dc5bfc5a-0" created
+    ...
+
+.. epigraph::
+
+     - The command's default format is yaml. This will apply the backup from file "bkup-dev-29-10-from-s3.yaml" while maintaining owner references between an application and its releases and between release and its target objects.
+     - The backup file must be created using :ref:`shipperctl backup prepare <create_backup>` command.
