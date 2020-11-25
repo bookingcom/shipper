@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
+	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	"github.com/bookingcom/shipper/cmd/shipperctl/release"
 	"github.com/bookingcom/shipper/cmd/shipperctl/ui"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
@@ -30,12 +30,7 @@ func init() {
 }
 
 func runPrepareCommand(cmd *cobra.Command, args []string) error {
-	kubeClient, err := configurator.NewKubeClientFromKubeConfig(kubeConfigFile, managementClusterContext)
-	if err != nil {
-		return err
-	}
-
-	shipperClient, err := configurator.NewShipperClientFromKubeConfig(kubeConfigFile, managementClusterContext)
+	kubeClient, shipperClient, err := config.Load(kubeConfigFile, managementClusterContext)
 	if err != nil {
 		return err
 	}
