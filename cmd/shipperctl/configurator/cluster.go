@@ -508,9 +508,17 @@ func (c *Cluster) CreateOrUpdateValidatingWebhookService(namespace string) error
 }
 
 func loadKubeConfig(kubeConfig, context string) (*rest.Config, error) {
+	clientConfig, config, err := ClientConfig(kubeConfig, context)
+	if err != nil {
+		return config, err
+	}
+	return clientConfig.ClientConfig()
+}
+
+func ClientConfig(kubeConfig string, context string) (clientcmd.ClientConfig, *rest.Config, error) {
 	path, err := homedir.Expand(kubeConfig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	overrides := &clientcmd.ConfigOverrides{CurrentContext: context}
@@ -518,8 +526,9 @@ func loadKubeConfig(kubeConfig, context string) (*rest.Config, error) {
 		overrides.CurrentContext = context
 	}
 
-	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+	clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		&clientcmd.ClientConfigLoadingRules{ExplicitPath: path},
 		overrides,
-	).ClientConfig()
+	)
+	return clientConfig, nil, nil
 }
