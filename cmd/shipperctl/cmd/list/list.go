@@ -1,4 +1,4 @@
-package cmd
+package list
 
 import (
 	"bytes"
@@ -19,11 +19,15 @@ import (
 )
 
 const (
-	clustersFlagName = "clusters"
+	clustersFlagName   = "clusters"
+	kubeConfigFlagName = "kubeconfig"
 )
 
 var (
-	printOption string
+	clusters                 []string
+	printOption              string
+	kubeConfigFile           string
+	managementClusterContext string
 
 	ListCmd = &cobra.Command{
 		Use:   "list",

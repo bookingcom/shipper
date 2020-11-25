@@ -1,4 +1,4 @@
-package cmd
+package clean
 
 import (
 	"fmt"
@@ -20,11 +20,14 @@ import (
 
 const (
 	decommissionedClustersFlagName = "decommissionedClusters"
+	kubeConfigFlagName = "kubeconfig"
 )
 
 var (
-	clusters []string
-	dryrun   bool
+	clusters                 []string
+	dryrun                   bool
+	kubeConfigFile           string
+	managementClusterContext string
 
 	CleanCmd = &cobra.Command{
 		Use:   "clean",
