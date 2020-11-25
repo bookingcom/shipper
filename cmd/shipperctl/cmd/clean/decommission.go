@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
+	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	"github.com/bookingcom/shipper/cmd/shipperctl/release"
 	"github.com/bookingcom/shipper/cmd/shipperctl/ui"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -52,7 +52,7 @@ type releaseAndFilteredAnnotations struct {
 
 func init() {
 	// Flags common to all commands under `shipperctl clean`
-	CleanCmd.PersistentFlags().StringVar(&kubeConfigFile, kubeConfigFlagName, "~/.kube/config", "The path to the Kubernetes configuration file")
+	config.RegisterFlag(CleanCmd.PersistentFlags(), &kubeConfigFile)
 	if err := CleanCmd.MarkPersistentFlagFilename(kubeConfigFlagName, "yaml"); err != nil {
 		CleanCmd.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
 	}
@@ -68,12 +68,7 @@ func init() {
 }
 
 func runCleanCommand(cmd *cobra.Command, args []string) error {
-	kubeClient, err := configurator.NewKubeClientFromKubeConfig(kubeConfigFile, managementClusterContext)
-	if err != nil {
-		return err
-	}
-
-	shipperClient, err := configurator.NewShipperClientFromKubeConfig(kubeConfigFile, managementClusterContext)
+	kubeClient, shipperClient, err := config.Load(kubeConfigFile, managementClusterContext)
 	if err != nil {
 		return err
 	}

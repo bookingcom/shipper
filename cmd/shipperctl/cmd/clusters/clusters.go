@@ -74,7 +74,7 @@ const (
 func init() {
 	// Flags common to all commands under `shipperctl clusters`
 	for _, cmd := range []*cobra.Command{joinCmd, setupMgmtCmd} {
-		cmd.Flags().StringVar(&kubeConfigFile, kubeConfigFlagName, "~/.kube/config", "the path to the Kubernetes configuration file")
+		config.RegisterFlag(cmd.Flags(), &kubeConfigFile)
 		if err := cmd.MarkFlagFilename(kubeConfigFlagName, "yaml"); err != nil {
 			cmd.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
 		}

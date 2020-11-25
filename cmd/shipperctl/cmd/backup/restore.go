@@ -15,7 +15,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/yaml"
 
-	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
+	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	"github.com/bookingcom/shipper/cmd/shipperctl/ui"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
@@ -39,12 +39,7 @@ func init() {
 }
 
 func runRestoreCommand(cmd *cobra.Command, args []string) error {
-	kubeClient, err := configurator.NewKubeClientFromKubeConfig(kubeConfigFile, managementClusterContext)
-	if err != nil {
-		return err
-	}
-
-	shipperClient, err := configurator.NewShipperClientFromKubeConfig(kubeConfigFile, managementClusterContext)
+	kubeClient, shipperClient, err := config.Load(kubeConfigFile, managementClusterContext)
 	if err != nil {
 		return err
 	}

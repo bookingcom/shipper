@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/yaml"
 
+	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
 
@@ -48,7 +49,7 @@ func init() {
 	kubeConfigFlagName := "kubeconfig"
 	fileFlagName := "file"
 
-	BackupCmd.PersistentFlags().StringVar(&kubeConfigFile, kubeConfigFlagName, "~/.kube/config", "The path to the Kubernetes configuration file")
+	config.RegisterFlag(BackupCmd.PersistentFlags(), &kubeConfigFile)
 	if err := BackupCmd.MarkPersistentFlagFilename(kubeConfigFlagName, "yaml"); err != nil {
 		BackupCmd.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
 	}

@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 
-	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
+	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	"github.com/bookingcom/shipper/cmd/shipperctl/release"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
@@ -64,7 +64,7 @@ type outputRelease struct {
 
 func init() {
 	// Flags common to all commands under `shipperctl count`
-	ListCmd.PersistentFlags().StringVar(&kubeConfigFile, kubeConfigFlagName, "~/.kube/config", "The path to the Kubernetes configuration file")
+	config.RegisterFlag(ListCmd.PersistentFlags(), &kubeConfigFile)
 	if err := ListCmd.MarkPersistentFlagFilename(kubeConfigFlagName, "yaml"); err != nil {
 		ListCmd.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
 	}
@@ -82,12 +82,7 @@ func init() {
 
 func runCountContenderCommand(cmd *cobra.Command, args []string) error {
 	counter := 0
-	kubeClient, err := configurator.NewKubeClientFromKubeConfig(kubeConfigFile, managementClusterContext)
-	if err != nil {
-		return err
-	}
-
-	shipperClient, err := configurator.NewShipperClientFromKubeConfig(kubeConfigFile, managementClusterContext)
+	kubeClient, shipperClient, err := config.Load(kubeConfigFile, managementClusterContext)
 	if err != nil {
 		return err
 	}
@@ -136,12 +131,7 @@ func runCountContenderCommand(cmd *cobra.Command, args []string) error {
 func runCountReleasesCommand(cmd *cobra.Command, args []string) error {
 	counter := 0
 
-	kubeClient, err := configurator.NewKubeClientFromKubeConfig(kubeConfigFile, managementClusterContext)
-	if err != nil {
-		return err
-	}
-
-	shipperClient, err := configurator.NewShipperClientFromKubeConfig(kubeConfigFile, managementClusterContext)
+	kubeClient, shipperClient, err := config.Load(kubeConfigFile, managementClusterContext)
 	if err != nil {
 		return err
 	}
