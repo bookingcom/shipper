@@ -1,4 +1,4 @@
-package cmd
+package clusters
 
 import (
 	"crypto/rand"

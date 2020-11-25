@@ -3,9 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/bookingcom/shipper/cmd/shipperctl/cmd/clean"
+	"github.com/bookingcom/shipper/cmd/shipperctl/cmd/clusters"
+	"github.com/bookingcom/shipper/cmd/shipperctl/cmd/list"
 	"os"
 
-	"github.com/bookingcom/shipper/cmd/shipperctl/cmd"
 	"github.com/bookingcom/shipper/cmd/shipperctl/cmd/backup"
 	"github.com/spf13/cobra"
 )
@@ -18,9 +20,9 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(cmd.ClustersCmd)
-	rootCmd.AddCommand(cmd.ListCmd)
-	rootCmd.AddCommand(cmd.CleanCmd)
+	rootCmd.AddCommand(clusters.ClustersCmd)
+	rootCmd.AddCommand(list.ListCmd)
+	rootCmd.AddCommand(clean.CleanCmd)
 	rootCmd.AddCommand(backup.BackupCmd)
 }
 
