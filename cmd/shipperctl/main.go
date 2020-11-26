@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/bookingcom/shipper/cmd/shipperctl/cmd/chart"
 	"github.com/bookingcom/shipper/cmd/shipperctl/cmd/clean"
 	"github.com/bookingcom/shipper/cmd/shipperctl/cmd/clusters"
 	"github.com/bookingcom/shipper/cmd/shipperctl/cmd/list"
@@ -24,6 +25,7 @@ func init() {
 	rootCmd.AddCommand(list.ListCmd)
 	rootCmd.AddCommand(clean.CleanCmd)
 	rootCmd.AddCommand(backup.BackupCmd)
+	rootCmd.AddCommand(chart.Command)
 }
 
 func main() {

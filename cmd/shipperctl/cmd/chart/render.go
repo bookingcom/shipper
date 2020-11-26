@@ -1,12 +1,11 @@
 package chart
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/config"
 	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
@@ -17,8 +16,6 @@ import (
 
 var (
 	namespace                string
-	appName                  string
-	releaseName              string
 	kubeConfigFile           string
 	managementClusterContext string
 
@@ -28,9 +25,8 @@ var (
 	}
 
 	renderCmd = &cobra.Command{
-		Use:   "render --app bikerental",
-		Short: "render Shipper Charts for an Application or Release",
-		RunE:  renderChart,
+		Use:   "render",
+		Short: "render Helm Charts for an Application or Release",
 	}
 )
 
@@ -48,23 +44,16 @@ func init() {
 		Command.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
 	}
 	Command.PersistentFlags().StringVar(&managementClusterContext, "management-cluster-context", "", "The name of the context to use to communicate with the management cluster. defaults to the current one")
-	Command.PersistentFlags().StringVarP(&namespace, "namespace", "n", "", "namespace where the app lives")
-	Command.PersistentFlags().StringVar(&appName, "app", "", "application that will have its chart rendered")
-	Command.PersistentFlags().StringVar(&releaseName, "release", "", "release that will have its chart rendered")
+	Command.PersistentFlags().StringVarP(&namespace, "namespace", "n", "", "The namespace where the app lives")
 
 	Command.AddCommand(renderCmd)
 }
 
-func renderChart(cmd *cobra.Command, args []string) error {
-	c, err := newChartRenderConfig()
-	if err != nil {
-		return err
-	}
-
+func render(c ChartRenderConfig) (string, error) {
 	chartFetcher := newFetchChartFunc()
 	chart, err := chartFetcher(&c.ChartSpec)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	rendered, err := shipperchart.Render(
@@ -74,57 +63,26 @@ func renderChart(cmd *cobra.Command, args []string) error {
 		c.ChartValues,
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	for _, v := range rendered {
-		fmt.Printf("%s\n---\n", v)
-	}
-
-	return nil
+	return strings.Join(rendered, "%s\n---\n"), nil
 }
 
 func newChartRenderConfig() (ChartRenderConfig, error) {
 	c := ChartRenderConfig{
 	}
-	clientConfig, _, err := configurator.ClientConfig(kubeConfigFile, managementClusterContext)
-	if err != nil {
-		return c, err
-	}
 	if namespace == "" {
+		clientConfig, _, err := configurator.ClientConfig(kubeConfigFile, managementClusterContext)
+		if err != nil {
+			return c, err
+		}
 		namespace, _, err = clientConfig.Namespace()
 		if err != nil {
 			return c, err
 		}
 	}
 	c.Namespace = namespace
-
-	_, shipperClient, err := config.Load(kubeConfigFile, managementClusterContext)
-	if err != nil {
-		return c, err
-	}
-
-	getoptions := metav1.GetOptions{}
-
-	if releaseName != "" {
-		rel, err := shipperClient.ShipperV1alpha1().Releases(namespace).Get(releaseName, getoptions)
-		if err != nil {
-			return c, err
-		}
-
-		c.ReleaseName = releaseName
-		c.ChartSpec = rel.Spec.Environment.Chart
-		c.ChartValues = rel.Spec.Environment.Values
-	} else if appName != "" {
-		app, err := shipperClient.ShipperV1alpha1().Applications(namespace).Get(appName, getoptions)
-		if err != nil {
-			return c, err
-		}
-
-		c.ReleaseName = fmt.Sprintf("%s-%s-%d", appName, "foobar", 0)
-		c.ChartSpec = app.Spec.Template.Chart
-		c.ChartValues = app.Spec.Template.Values
-	}
 
 	return c, nil
 }
