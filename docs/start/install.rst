@@ -28,16 +28,20 @@ Setting up kind clusters
 Lets write a ``kind.yaml`` manifest to configure our clusters:
 
 .. code-block:: yaml
+
     :caption: kind.yaml
     kind: Cluster
     apiVersion: kind.x-k8s.io/v1alpha4
     nodes:
     - role: control-plane
+    
 Now we'll use this to create the clusters:
 
 .. code-block:: shell
+
     $ kind create cluster --name app --config kind.yaml --image kindest/node:v1.15.7
     $ kind create cluster --name mgmt --config kind.yaml --image kindest/node:v1.15.7
+    
 Congratulations, you have created your clusters!
 
 **************************
