@@ -85,6 +85,7 @@ Copy the URL of the server.
 Now let's write a ``clusters.yaml`` manifest to configure Shipper here:
 
 .. code-block:: yaml
+
     :caption: clusters.yaml
 
     applicationClusters:
@@ -95,7 +96,7 @@ Now let's write a ``clusters.yaml`` manifest to configure Shipper here:
 Paste your server URL as a string.
 
 **************************
-Step 3: apply the manifest
+Step 3: Setup the Management Cluster
 **************************
 
 Before you run ``shipperctl``, make sure that your ``kubectl`` context
@@ -109,8 +110,7 @@ is set to the management cluster:
     *         kind-mgmt     kind-mgmt                kind-mgmt
 
 
-Now we'll give ``clusters.yaml`` to ``shipperctl`` to configure the cluster for
-Shipper:
+First we'll setup all the needed resources in the management cluster:
 
 .. code-block:: shell
 
@@ -127,19 +127,6 @@ Shipper:
     Creating a Service object for the validating webhook... done
     Finished setting up management cluster
 
-    $ shipperctl clusters join -f clusters.yaml -n shipper-system
-    Creating application cluster accounts in cluster kind-app:
-    Creating a namespace called shipper-system... already exists. Skipping
-    Creating a service account called shipper-application-cluster... already exists. Skipping
-    Creating a ClusterRoleBinding called shipper:application-cluster... already exists. Skipping
-    Finished creating application cluster accounts in cluster kind-app
-
-    Joining management cluster to application cluster kind-app:
-    Creating or updating the cluster object for cluster kind-app on the management cluster... done
-    Checking whether a secret for the kind-app cluster exists in the shipper-system namespace... yes. Skipping
-    Finished joining management cluster to application cluster kind-app
-
-
 .. _deploy-shipper:
 **********************
 Step 4: deploy shipper
@@ -155,8 +142,30 @@ service accounts, and so on, let's create the Shipper *Deployment*:
 
 This will create an instance of Shipper in the ``shipper-system`` namespace.
 
+.. join-clusters:
+**********************
+Step 5: Join the Application cluster to the Management cluster
+**********************
+
+Now we'll give ``clusters.yaml`` to ``shipperctl`` to configure the cluster for
+Shipper:
+
+.. code-block:: shell
+
+    $ shipperctl clusters join -f clusters.yaml -n shipper-system
+    Creating application cluster accounts in cluster kind-app:
+    Creating a namespace called shipper-system... already exists. Skipping
+    Creating a service account called shipper-application-cluster... already exists. Skipping
+    Creating a ClusterRoleBinding called shipper:application-cluster... already exists. Skipping
+    Finished creating application cluster accounts in cluster kind-app
+
+    Joining management cluster to application cluster kind-app:
+    Creating or updating the cluster object for cluster kind-app on the management cluster... done
+    Checking whether a secret for the kind-app cluster exists in the shipper-system namespace... yes. Skipping
+    Finished joining management cluster to application cluster kind-app
+
 *********************
-Step 5: do a rollout!
+Step 6: do a rollout!
 *********************
 
 Now you should have a working Shipper installation. :ref:`Let's roll something out! <user_rolling-out>`
