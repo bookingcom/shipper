@@ -22,6 +22,11 @@ SHIPPER_CLUSTERS_YAML ?= ci/clusters.yaml
 # $(SHIPPER_CLUSTERS_YAML).
 SHIPPER_CLUSTER ?= kind-app
 
+# Cluster where to install shipper
+SHIPPER_MGMT_CLUSTER ?= kind-mgmt
+# User to use when connecting to management cluster
+SHIPPER_MGMT_USER ?= kind-mgmt
+
 # Defines optional flags to pass to `build/e2e.test` when running end-to-end
 # tests. Useful flags are "-inspectfailed" (keep namespaces used for tests that
 # filed) and "--test.v" (outputs information about every test, not only failed
@@ -76,7 +81,7 @@ export CGO_ENABLED := 0
 # These are the targets you are most likely to use directly, either when
 # working on shipper, or via CI scripts.
 
-KUBECTL ?= kubectl -n $(SHIPPER_NAMESPACE)
+KUBECTL ?= kubectl --user $(SHIPPER_MGMT_USER) --cluster $(SHIPPER_MGMT_CLUSTER) -n $(SHIPPER_NAMESPACE)
 .PHONY: setup install install-shipper install-shipper-state-metrics e2e restart logs lint test vendor verify-codegen update-codegen clean
 
 # Set up shipper clusters with `shipperctl`. This is probably the first thing
