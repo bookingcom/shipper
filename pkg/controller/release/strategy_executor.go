@@ -67,14 +67,16 @@ func (p *Pipeline) Process(strategyStep shipper.RolloutStrategyStep, cond condit
 }
 
 type StrategyExecutor struct {
-	strategy *shipper.RolloutStrategy
-	step     int32
+	strategy    *shipper.RolloutStrategy
+	step        int32
+	progressing bool
 }
 
-func NewStrategyExecutor(strategy *shipper.RolloutStrategy, step int32) *StrategyExecutor {
+func NewStrategyExecutor(strategy *shipper.RolloutStrategy, step int32, progressing bool) *StrategyExecutor {
 	return &StrategyExecutor{
-		strategy: strategy,
-		step:     step,
+		strategy:    strategy,
+		step:        step,
+		progressing: progressing,
 	}
 }
 
@@ -147,21 +149,47 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (bool, []Strat
 	pipeline := NewPipeline()
 	pipeline.Enqueue(genInstallationEnforcer(ctx, curr, succ))
 
-	if isHead {
-		pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
-		pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
-		if hasTail {
-			// This is the moment where a contender is performing a look-behind.
-			// Incumbent's context is completely identical to it's successor
-			// except that it's not the head of the chain anymore.
-			prevctx := ctx.Copy()
-			prevctx.isHead = false
-			pipeline.Enqueue(genTrafficEnforcer(prevctx, prev, curr))
-			pipeline.Enqueue(genCapacityEnforcer(prevctx, prev, curr))
+	if e.progressing {
+		// release is progressing (achieved step <= target step):
+			// increase capacity for current release
+			// increase traffic for current release
+			// reduce traffic for previous release
+			// reduce capacity for previous release
+		if isHead {
+			pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
+			pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
+			if hasTail {
+				// This is the moment where a contender is performing a look-behind.
+				// Incumbent's context is completely identical to it's successor
+				// except that it's not the head of the chain anymore.
+				prevctx := ctx.Copy()
+				prevctx.isHead = false
+				pipeline.Enqueue(genTrafficEnforcer(prevctx, prev, curr))
+				pipeline.Enqueue(genCapacityEnforcer(prevctx, prev, curr))
+			}
+		} else {
+			pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
+			pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
 		}
 	} else {
-		pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
-		pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
+		// release is not progressing (achieved step > target step):
+			// increase capacity for previous release
+			// increase traffic for previous release
+			// reduce traffic for current release
+			// reduce capacity for current release
+		if isHead {
+			if hasTail {
+				prevctx := ctx.Copy()
+				prevctx.isHead = false
+				pipeline.Enqueue(genCapacityEnforcer(prevctx, prev, curr))
+				pipeline.Enqueue(genTrafficEnforcer(prevctx, prev, curr))
+			}
+			pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
+			pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
+		} else {
+			pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
+			pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
+		}
 	}
 
 	pipeline.Enqueue(genReleaseStrategyStateEnforcer(ctx, curr, succ))

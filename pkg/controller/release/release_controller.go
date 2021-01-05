@@ -409,11 +409,12 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 	}
 
 	// choose strategy and step and execute
+	progressing := releaseutil.IsReleaseProgressing(rel.Status.AchievedStep, rel.Spec.TargetStep)
 	strategy, targetStep, err := strategyAndStepToExecute(rel, relinfoSucc)
 	if err != nil {
 		return nil, nil, err
 	}
-	executor := NewStrategyExecutor(strategy, targetStep)
+	executor := NewStrategyExecutor(strategy, targetStep, progressing)
 	complete, patches, trans := executor.Execute(relinfoPrev, relinfo, relinfoSucc)
 
 	// update logs, conditions, events
