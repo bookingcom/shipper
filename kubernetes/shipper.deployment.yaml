@@ -24,7 +24,7 @@ spec:
       containers:
       - name: shipper
         image: <IMAGE>
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         args:
           - "-webhook-cert"
           - "/etc/webhook/certs/tls.crt"
