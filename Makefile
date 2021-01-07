@@ -93,11 +93,11 @@ setup: $(SHIPPER_CLUSTERS_YAML) build/shipperctl.$(GOOS)-amd64
 
 # Install shipper in kubernetes, by applying all the required deployment yamls.
 install: install-shipper install-shipper-state-metrics
-install-shipper: build/shipper.image.$(IMAGE_TAG) build/shipper.deployment.$(IMAGE_TAG).yaml
-	$(KUBECTL) apply -f build/shipper.deployment.$(IMAGE_TAG).yaml
+install-shipper: build/shipper.image.$(IMAGE_TAG) build/shipper.deployment.yaml
+	$(KUBECTL) apply -f build/shipper.deployment.yaml
 
-install-shipper-state-metrics: build/shipper-state-metrics.image.$(IMAGE_TAG) build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
-	$(KUBECTL) apply -f build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
+install-shipper-state-metrics: build/shipper-state-metrics.image.$(IMAGE_TAG) build/shipper-state-metrics.deployment.yaml
+	$(KUBECTL) apply -f build/shipper-state-metrics.deployment.yaml
 
 # Run all end-to-end tests. It does all the work necessary to get the current
 # version of shipper on your working directory running in kubernetes, so just
@@ -153,7 +153,7 @@ clean:
 .PHONY: build-bin build-yaml build-images build-all
 SHA = $(if $(shell which sha256sum),sha256sum,shasum -a 256)
 build-bin: $(foreach bin,$(BINARIES),build/$(bin).$(GOOS)-amd64)
-build-yaml:  build/shipper.deployment.$(IMAGE_TAG).yaml build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
+build-yaml:  build/shipper.deployment.yaml build/shipper-state-metrics.deployment.yaml
 build-images: build/shipper.image.$(IMAGE_TAG) build/shipper-state-metrics.image.$(IMAGE_TAG)
 build-all: $(foreach os,$(OS),build/shipperctl.$(os)-amd64.tar.gz) build/sha256sums.txt build-yaml build-images
 
@@ -174,7 +174,7 @@ build/e2e.test: $(PKG) test/e2e/*
 
 IMAGE_NAME_WITH_SHA256 = $(shell cat build/$*.image.$(IMAGE_TAG))
 IMAGE_NAME_TO_USE = $(if $(USE_IMAGE_NAME_WITH_SHA256),$(IMAGE_NAME_WITH_SHA256),$(IMAGE_NAME_WITH_TAG))
-build/%.deployment.$(IMAGE_TAG).yaml: kubernetes/%.deployment.yaml build/%.image.$(IMAGE_TAG) build
+build/%.deployment.yaml: kubernetes/%.deployment.yaml build/%.image.$(IMAGE_TAG) build
 	sed s=\<IMAGE\>=$(IMAGE_NAME_TO_USE)= $< > $@
 
 build/sha256sums.txt: $(foreach os,$(OS),build/shipperctl.$(os)-amd64.tar.gz) 
