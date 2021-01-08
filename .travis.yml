@@ -15,6 +15,9 @@ before_install:
 - curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh |
   sh -s -- -b $(go env GOPATH)/bin v1.31.0
 
+- curl -s "https://raw.githubusercontent.com/\
+  kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"  | bash
+
 - ./ci/setup_clusters.sh
 install: true
 script:

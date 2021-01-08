@@ -1,4 +1,6 @@
-#!/bin/bash -x
+#!/bin/bash
+
+set -ex
 
 kubectl config use-context kind-mgmt
 
@@ -6,7 +8,7 @@ kubectl config use-context kind-mgmt
 SETUP_MGMT_FLAGS="--webhook-ignore" make setup
 
 # Run the e2e tests, save exit code for later
-make -j e2e \
+OVERLAY_PATH=kubernetes/overlays/test make -j e2e \
 	TEST_HELM_REPO_URL=${TEST_HELM_REPO_URL:=https://raw.githubusercontent.com/bookingcom/shipper/${GITHUB_SHA}/test/e2e/testdata} \
 	DOCKER_REGISTRY=${DOCKER_REGISTRY:=localhost:5000} \
 	E2E_FLAGS="--test.v --buildAppClientFromKubeConfig"
