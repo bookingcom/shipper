@@ -1,0 +1,6 @@
+resources:
+  - shipper.deployment.yaml
+  - shipper-state-metrics.deployment.yaml
+images:
+  - name: SHIPPER_IMAGE
+  - name: SHIPPER_STATE_METRICS_IMAGE

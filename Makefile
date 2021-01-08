@@ -7,6 +7,11 @@ IMAGE_TAG ?= latest
 SHIPPER_IMAGE ?= $(DOCKER_REGISTRY)/bookingcom/shipper:$(IMAGE_TAG)
 SHIPPER_STATE_METRICS_IMAGE ?= $(DOCKER_REGISTRY)/bookingcom/shipper-state-metrics:$(IMAGE_TAG)
 
+# Defines the directory of the kustomizable yaml files.
+# Defaults to test directory.
+# When releasing shipper, this should be set to release directory.
+OVERLAY_PATH ?= kubernetes/overlays/test
+
 # Defines the namespace where you want shipper to run.
 SHIPPER_NAMESPACE ?= shipper-system
 
@@ -82,7 +87,7 @@ export CGO_ENABLED := 0
 # working on shipper, or via CI scripts.
 
 KUBECTL ?= kubectl --user $(SHIPPER_MGMT_USER) --cluster $(SHIPPER_MGMT_CLUSTER) -n $(SHIPPER_NAMESPACE)
-.PHONY: setup install install-shipper install-shipper-state-metrics e2e restart logs lint test vendor verify-codegen update-codegen clean
+.PHONY: setup install e2e restart logs lint test vendor verify-codegen update-codegen clean
 
 # Set up shipper clusters with `shipperctl`. This is probably the first thing
 # you should do when starting to work on shipper, as most of everything else
@@ -92,11 +97,12 @@ setup: $(SHIPPER_CLUSTERS_YAML) build/shipperctl.$(GOOS)-amd64
 	./build/shipperctl.$(GOOS)-amd64 clusters join -f $(SHIPPER_CLUSTERS_YAML) -n $(SHIPPER_NAMESPACE) $(SETUP_FLAGS) $(JOIN_FLAGS)
 
 # Install shipper in kubernetes, by applying all the required deployment yamls.
-install: install-shipper install-shipper-state-metrics
-install-shipper: build/shipper.image.$(IMAGE_TAG) build/shipper.deployment.$(IMAGE_TAG).yaml
+install: build-images build-yaml install/shipper install/shipper-state-metrics
+
+install/shipper:
 	$(KUBECTL) apply -f build/shipper.deployment.$(IMAGE_TAG).yaml
 
-install-shipper-state-metrics: build/shipper-state-metrics.image.$(IMAGE_TAG) build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
+install/shipper-state-metrics:
 	$(KUBECTL) apply -f build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
 
 # Run all end-to-end tests. It does all the work necessary to get the current
@@ -155,7 +161,7 @@ clean:
 .PHONY: build-bin build-yaml build-images build-all
 SHA = $(if $(shell which sha256sum),sha256sum,shasum -a 256)
 build-bin: $(foreach bin,$(BINARIES),build/$(bin).$(GOOS)-amd64)
-build-yaml:  build/shipper.deployment.$(IMAGE_TAG).yaml build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
+build-yaml:  build/shipper.deployment.$(IMAGE_TAG).yaml build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml build/yamls
 build-images: build/shipper.image.$(IMAGE_TAG) build/shipper-state-metrics.image.$(IMAGE_TAG)
 build-all: $(foreach os,$(OS),build/shipperctl.$(os)-amd64.tar.gz) build/sha256sums.txt build-yaml build-images
 
@@ -176,8 +182,13 @@ build/e2e.test: $(PKG) test/e2e/*
 
 IMAGE_NAME_WITH_SHA256 = $(shell cat build/$*.image.$(IMAGE_TAG))
 IMAGE_NAME_TO_USE = $(if $(USE_IMAGE_NAME_WITH_SHA256),$(IMAGE_NAME_WITH_SHA256),$(IMAGE_NAME_WITH_TAG))
-build/%.deployment.$(IMAGE_TAG).yaml: kubernetes/%.deployment.yaml build/%.image.$(IMAGE_TAG) build
-	sed s=IMAGE=$(IMAGE_NAME_TO_USE)= $< > $@
+build/%.deployment.$(IMAGE_TAG).yaml: kubernetes/base/%.deployment.yaml build/%.image.$(IMAGE_TAG) build
+	sed --in-place='.bkup' -e 's=IMAGE=$(IMAGE_NAME_TO_USE)=' $<
+
+build/yamls:
+	kustomize build $(OVERLAY_PATH) -o build
+	mv build/apps_v1_deployment_shipper.yaml build/shipper.deployment.$(IMAGE_TAG).yaml
+	mv build/apps_v1_deployment_shipper-state-metrics.yaml build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
 
 build/sha256sums.txt: $(foreach os,$(OS),build/shipperctl.$(os)-amd64.tar.gz) 
 	$(SHA) build/*.tar.gz > $@

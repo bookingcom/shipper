@@ -14,7 +14,7 @@ fi
 
 echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
 
-USE_IMAGE_NAME_WITH_SHA256= IMAGE_TAG=$TRAVIS_TAG make build-all
+OVERLAY_PATH=kubernetes/overlays/release USE_IMAGE_NAME_WITH_SHA256= IMAGE_TAG=$TRAVIS_TAG make build-all
 
 docker logout
 

@@ -1,0 +1,17 @@
+resources:
+- ../../base
+# In test environment we need to removes assignment of resources for shipper pods
+# to allow scheduling of the pods
+patches:
+- patch: |-
+    - op: remove
+      path: /spec/template/spec/containers/0/resources
+  target:
+    kind: Deployment
+    labelSelector: app=shipper
+- patch: |-
+    - op: remove
+      path: /spec/template/spec/containers/0/resources
+  target:
+    kind: Deployment
+    labelSelector: app=shipper-state-metrics
