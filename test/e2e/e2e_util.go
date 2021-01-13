@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,6 +22,7 @@ import (
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	releaseutil "github.com/bookingcom/shipper/pkg/util/release"
+	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
 type fixture struct {
@@ -305,7 +304,12 @@ func setupNamespace(name string) (*corev1.Namespace, error) {
 }
 
 func teardownNamespace(name string) {
-	err := kubeClient.CoreV1().Namespaces().Delete(name, &metav1.DeleteOptions{})
+	teardownNamespaceFromCluster(kubeClient, name)
+	teardownNamespaceFromCluster(appKubeClient, name)
+}
+
+func teardownNamespaceFromCluster(client kubernetes.Interface, name string) {
+	err := client.CoreV1().Namespaces().Delete(name, &metav1.DeleteOptions{})
 	if err != nil {
 		klog.Fatalf("failed to clean up namespace %q: %q", name, err)
 	}
@@ -325,7 +329,12 @@ func purgeTestNamespaces() {
 	selector := labels.NewSelector().Add(*req)
 	listOptions := metav1.ListOptions{LabelSelector: selector.String()}
 
-	list, err := kubeClient.CoreV1().Namespaces().List(listOptions)
+	purgeNamespaceFromCluster(kubeClient, listOptions)
+	purgeNamespaceFromCluster(appKubeClient, listOptions)
+}
+
+func purgeNamespaceFromCluster(client kubernetes.Interface, listOptions metav1.ListOptions) {
+	list, err := client.CoreV1().Namespaces().List(listOptions)
 	if err != nil {
 		klog.Fatalf("failed to list namespaces: %q", err)
 	}
@@ -335,7 +344,7 @@ func purgeTestNamespaces() {
 	}
 
 	for _, namespace := range list.Items {
-		err = kubeClient.CoreV1().Namespaces().Delete(namespace.GetName(), &metav1.DeleteOptions{})
+		err = client.CoreV1().Namespaces().Delete(namespace.GetName(), &metav1.DeleteOptions{})
 		if err != nil {
 			if errors.IsConflict(err) {
 				// this means the namespace is still cleaning up from some other delete, so we should poll and wait
@@ -346,7 +355,7 @@ func purgeTestNamespaces() {
 	}
 
 	err = poll(globalTimeout, func() (bool, error) {
-		list, listErr := kubeClient.CoreV1().Namespaces().List(listOptions)
+		list, listErr := client.CoreV1().Namespaces().List(listOptions)
 		if listErr != nil {
 			klog.Fatalf("failed to list namespaces: %q", listErr)
 		}

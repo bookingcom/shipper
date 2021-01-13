@@ -1,3 +1,4 @@
 applicationClusters:
 - name: kind-app
   region: local
+  apiMaster: https://app-control-plane:6443

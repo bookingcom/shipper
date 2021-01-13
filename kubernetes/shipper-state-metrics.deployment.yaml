@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
       - name: shipper-state-metrics
-        image: <IMAGE>
+        image: IMAGE
         imagePullPolicy: IfNotPresent
         args:
           - "-v"
