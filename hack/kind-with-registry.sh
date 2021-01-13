@@ -3,7 +3,7 @@ set -o errexit
 
 NAME=$1
 
-if [[ -z "$NAME" ]] || [[ "${1}" == "--help" ]]; then
+if [ -z "$NAME" ] || [ "${1}" == "--help" ]; then
     cat <<EOF
 Usage: $(basename "$0") <cluster-name>
 
@@ -19,7 +19,7 @@ fi
 reg_name='kind-registry'
 reg_port='5000'
 running="$(docker inspect -f '{{.State.Running}}' "${reg_name}" 2>/dev/null || true)"
-if [[ "${running}" != 'true' ]]; then
+if [ "${running}" != 'true' ]; then
   docker run \
     -d --restart=always -p "${reg_port}:5000" --name "${reg_name}" \
     registry:2
@@ -40,10 +40,12 @@ EOF
 docker network connect "kind" "${reg_name}" || NET_CONNECT=$?
 echo ${NET_CONNECT}
 
-# tell https://tilt.dev to use the registry
+# To discover the registry
 # https://docs.tilt.dev/choosing_clusters.html#discovering-the-registry
 for node in $(kind get nodes --name ${NAME}); do
-  kubectl annotate node "${node}" "kind.x-k8s.io/registry=localhost:${reg_port}" || ANNOTATE=$?
+  kubectl annotate node "${node}" \
+        tilt.dev/registry=localhost:5000 \
+        tilt.dev/registry-from-cluster=registry:5000 || ANNOTATE=$?
   echo ${ANNOTATE}
   echo "internal ip:"
   cmd="cat /etc/hosts | grep $node"

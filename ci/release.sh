@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/bin/bash -ex
 
 if [ "$TRAVIS_BRANCH" != "master" ] && [ "$TRAVIS_TAG" == "" ]; then
     echo "Not running release for branch '$TRAVIS_BRANCH'"
@@ -18,3 +18,4 @@ docker logout
 
 unset DOCKER_USERNAME
 unset DOCKER_PASSWORD
+

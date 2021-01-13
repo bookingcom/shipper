@@ -21,7 +21,7 @@ create_cluster () {
 		--quiet
 
 	# get a kubeconfig with an actual ip address instead of 127.0.0.1
-	kind get kubeconfig --name $CLUSTER --internal > $CONFIG
+	kind get kubeconfig --name $CLUSTER > $CONFIG
 
 	# add the registry to /etc/hosts on each node
 	ip_fmt='{{.NetworkSettings.IPAddress}}'
@@ -29,6 +29,7 @@ create_cluster () {
 	for node in $(kind get nodes --name "${CLUSTER}"); do
 		docker exec "${node}" sh -c "${cmd}"
 	done
+
 }
 
 for CLUSTER in mgmt app; do
@@ -38,10 +39,13 @@ done
 wait $PIDS
 
 mkdir -p ~/.kube
-KUBECONFIG=$(find /tmp/kind -type f | tr \\n ':') kubectl config view --flatten > ~/.kube/config
+KUBECONFIG=$(find /tmp/kind -type f | tr \\n ':') kubectl config view --flatten >> ~/.kube/config
 
-echo $KUBECONFIG
-cat ~/.kube/config
+kubectl config view
 
+
+# connect the registry to the cluster network
+docker network connect "kind" "${reg_name}" || NET_CONNECT=$?
+echo ${NET_CONNECT}
 # add the registry to /etc/hosts on the host
 echo "127.0.0.1 registry kubernetes.default" | sudo tee -a /etc/hosts

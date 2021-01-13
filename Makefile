@@ -104,6 +104,8 @@ install-shipper-state-metrics: build/shipper-state-metrics.image.$(IMAGE_TAG) bu
 # running `make -j e2e` should get you up and running immediately. Do remember
 # do setup your clusters with `make setup` though.
 e2e: install build/e2e.test
+	$(KUBECTL) wait --for=condition=Progressing deploy/shipper
+	$(KUBECTL) wait --for=condition=Ready pod -l app=shipper
 	./build/e2e.test --e2e --kubeconfig ~/.kube/config \
 		--appcluster $(SHIPPER_CLUSTER) \
 		--testcharts $(TEST_HELM_REPO_URL) \
@@ -175,7 +177,7 @@ build/e2e.test: $(PKG) test/e2e/*
 IMAGE_NAME_WITH_SHA256 = $(shell cat build/$*.image.$(IMAGE_TAG))
 IMAGE_NAME_TO_USE = $(if $(USE_IMAGE_NAME_WITH_SHA256),$(IMAGE_NAME_WITH_SHA256),$(IMAGE_NAME_WITH_TAG))
 build/%.deployment.$(IMAGE_TAG).yaml: kubernetes/%.deployment.yaml build/%.image.$(IMAGE_TAG) build
-	sed s=\<IMAGE\>=$(IMAGE_NAME_TO_USE)= $< > $@
+	sed s=IMAGE=$(IMAGE_NAME_TO_USE)= $< > $@
 
 build/sha256sums.txt: $(foreach os,$(OS),build/shipperctl.$(os)-amd64.tar.gz) 
 	$(SHA) build/*.tar.gz > $@

@@ -1,0 +1,161 @@
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  release:
+    types:
+      - created
+
+jobs:
+  E2E:
+    runs-on: ubuntu-latest
+    name: Install setup build e2e
+    steps:
+      - run: |
+          mkdir "$HOME/bin" && export PATH="$HOME/bin:$PATH"
+        shell: bash
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.15
+      - name: Install Kubectl
+        uses: azure/setup-kubectl@v1
+      - name: Install Kind
+        run: curl -Lo ./kind "https://kind.sigs.k8s.io/dl/v0.9.0/kind-$(uname)-amd64" &&
+          chmod +x ./kind && mv ./kind $HOME/bin/kind
+        shell: bash
+      - name: Install Kustomize
+        run: curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"  | bash
+        shell: bash
+      - name: Setup clusters
+        run: ./hack/spin-local-kind.sh
+        shell: bash
+      - name: E2E
+        run: ./ci/build.sh && ./ci/e2e.sh
+        shell: bash
+  Verify:
+    runs-on: ubuntu-latest
+    name: Verify codegen
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - run: TEST_FLAGS="-v" make verify-codegen
+  GolangCI-Lint:
+    runs-on: ubuntu-latest
+    name: GolangCI-Lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: golangci-lint pkg
+        uses: golangci/golangci-lint-action@v2
+        with:
+          version: v1.31.0
+          working-directory: ./pkg/
+          args: -v --config ../.golangci.yml
+      - name: golangci-lint cmd
+        uses: golangci/golangci-lint-action@v2
+        with:
+          version: v1.31.0
+          working-directory: ./cmd/
+          args: -v --config ../.golangci.yml
+      - name: golangci-lint test
+        uses: golangci/golangci-lint-action@v2
+        with:
+          version: v1.31.0
+          working-directory: ./test/
+          args: -v --config ../.golangci.yml
+  Tests:
+    runs-on: ubuntu-latest
+    name: Tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.15
+      - name: run tests
+        run: TEST_FLAGS="-v" make test
+        shell: bash
+  Publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    name: Publish
+    needs: [Verify, GolangCI-Lint, E2E, Tests]
+    steps:
+      - run: echo SOURCE_TAG=${GITHUB_REF#refs/tags/} >> $GITHUB_ENV
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.15
+      - name: Install Kustomize
+        run: curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"  | bash
+        shell: bash
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Build all
+        run: USE_IMAGE_NAME_WITH_SHA256= IMAGE_TAG=$SOURCE_TAG DOCKER_REGISTRY=docker.io make build-all
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: build
+          path: build/*
+      - name: Upload artifacts - sha256sums
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: build/sha256sums.txt
+          asset_name: sha256sums.txt
+      - name: Upload artifacts - shipper.deployment
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: "build/shipper.deployment.${{ env.SOURCE_TAG }}.yaml"
+          asset_name: "shipper.deployment.${{ env.SOURCE_TAG }}.yaml"
+      - name: Upload artifacts - shipper-state-metrics.deployment
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: "build/shipper-state-metrics.deployment.${{ env.SOURCE_TAG }}.yaml"
+          asset_name: "shipper-state-metrics.deployment.${{ env.SOURCE_TAG }}.yaml"
+      - name: Upload artifacts - shipperctl.darwin
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: build/shipperctl.darwin-amd64.tar.gz
+          asset_name: shipperctl.darwin-amd64.tar.gz
+      - name: Upload artifacts - shipperctl.linux
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: build/shipperctl.linux-amd64.tar.gz
+          asset_name: shipperctl.linux-amd64.tar.gz
+      - name: Upload artifacts - shipperctl.windows
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: build/shipperctl.windows-amd64.tar.gz
+          asset_name: shipperctl.windows-amd64.tar.gz
+

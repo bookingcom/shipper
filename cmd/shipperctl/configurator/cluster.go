@@ -94,6 +94,11 @@ func (c *Cluster) CreateClusterRole(domain, name string) error {
 				APIGroups: []string{""},
 				Resources: []string{"events"},
 			},
+			rbacv1.PolicyRule{
+				Verbs:     []string{"get", "list", "watch"},
+				APIGroups: []string{""},
+				Resources: []string{"namespaces"},
+			},
 		},
 	}
 
