@@ -39,7 +39,7 @@ done
 wait $PIDS
 
 mkdir -p ~/.kube
-KUBECONFIG=$(find /tmp/kind -type f | tr \\n ':') kubectl config view --flatten >> ~/.kube/config
+KUBECONFIG=$(find /tmp/kind -type f | tr \\n ':') kubectl config view --flatten > ~/.kube/config
 
 kubectl config view
 
