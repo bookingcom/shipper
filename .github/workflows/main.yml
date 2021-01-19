@@ -24,7 +24,10 @@ jobs:
         with:
           go-version: 1.15
       - name: Install Kubectl
-        uses: azure/setup-kubectl@v1
+        run: |
+          curl -L https://storage.googleapis.com/kubernetes-release/release/v1.17.2/bin/linux/amd64/kubectl > $HOME/bin/kubectl
+          chmod +x $HOME/bin/kubectl
+        shell: bash
       - name: Install Kind
         run: curl -Lo ./kind "https://kind.sigs.k8s.io/dl/v0.9.0/kind-$(uname)-amd64" &&
           chmod +x ./kind && mv ./kind $HOME/bin/kind
