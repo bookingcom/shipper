@@ -161,7 +161,7 @@ clean:
 .PHONY: build-bin build-yaml build-images build-all
 SHA = $(if $(shell which sha256sum),sha256sum,shasum -a 256)
 build-bin: $(foreach bin,$(BINARIES),build/$(bin).$(GOOS)-amd64)
-build-yaml:  build/shipper.deployment.$(IMAGE_TAG).yaml build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml build/yamls
+build-yaml:  build/kustomize build/shipper.deployment.$(IMAGE_TAG).yaml build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
 build-images: build/shipper.image.$(IMAGE_TAG) build/shipper-state-metrics.image.$(IMAGE_TAG)
 build-all: $(foreach os,$(OS),build/shipperctl.$(os)-amd64.tar.gz) build/sha256sums.txt build-yaml build-images
 
@@ -180,17 +180,24 @@ build/shipperctl.%-amd64: cmd/shipperctl/*.go $(PKG)
 build/e2e.test: $(PKG) test/e2e/*
 	go test -c ./test/e2e/ -o build/e2e.test
 
-IMAGE_NAME_WITH_SHA256 = $(shell cat build/$*.image.$(IMAGE_TAG))
-IMAGE_NAME_TO_USE = $(if $(USE_IMAGE_NAME_WITH_SHA256),$(IMAGE_NAME_WITH_SHA256),$(IMAGE_NAME_WITH_TAG))
-build/%.deployment.$(IMAGE_TAG).yaml: kubernetes/base/%.deployment.yaml build/%.image.$(IMAGE_TAG) build
-	sed --in-place='.bkup' -e 's=IMAGE=$(IMAGE_NAME_TO_USE)=' $<
+SHIPPER_IMAGE_NAME_WITH_SHA256 = $(shell cat build/shipper.image.$(IMAGE_TAG))
+SHIPPER_IMAGE_NAME_TO_USE = $(if $(USE_IMAGE_NAME_WITH_SHA256),$(SHIPPER_IMAGE_NAME_WITH_SHA256),$(SHIPPER_IMAGE_NAME_WITH_TAG))
+.PHONY: build/shipper.deployment.$(IMAGE_TAG).yaml
+build/shipper.deployment.$(IMAGE_TAG).yaml: build/shipper.image.$(IMAGE_TAG) build
+	sed --in-place -e 's=SHIPPER_IMAGE=$(SHIPPER_IMAGE_NAME_TO_USE)=' build/shipper.deployment.$(IMAGE_TAG).yaml
 
-build/yamls:
+SHIPPER_STATE_METRICS_IMAGE_NAME_WITH_SHA256 = $(shell cat build/shipper-state-metrics.image.$(IMAGE_TAG))
+SHIPPER_STATE_METRICS_IMAGE_NAME_TO_USE = $(if $(USE_IMAGE_NAME_WITH_SHA256),$(SHIPPER_STATE_METRICS_IMAGE_NAME_WITH_SHA256),$(SHIPPER_STATE_METRICS_IMAGE_NAME_WITH_TAG))
+.PHONY: build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
+build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml: build/shipper-state-metrics.image.$(IMAGE_TAG) build
+	sed --in-place -e 's=SHIPPER_STATE_METRICS_IMAGE=$(SHIPPER_STATE_METRICS_IMAGE_NAME_TO_USE)=' build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
+
+build/kustomize:
 	kustomize build $(OVERLAY_PATH) -o build
 	mv build/apps_v1_deployment_shipper.yaml build/shipper.deployment.$(IMAGE_TAG).yaml
 	mv build/apps_v1_deployment_shipper-state-metrics.yaml build/shipper-state-metrics.deployment.$(IMAGE_TAG).yaml
 
-build/sha256sums.txt: $(foreach os,$(OS),build/shipperctl.$(os)-amd64.tar.gz) 
+build/sha256sums.txt: $(foreach os,$(OS),build/shipperctl.$(os)-amd64.tar.gz)
 	$(SHA) build/*.tar.gz > $@
 
 build/%.tar.gz: build/%

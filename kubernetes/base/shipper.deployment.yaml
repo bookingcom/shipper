@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: shipper
-          image: IMAGE
+          image: SHIPPER_IMAGE
           imagePullPolicy: IfNotPresent
           args:
             - "-webhook-cert"
