@@ -29,7 +29,7 @@ var (
 	kubeConfigFile           string
 	managementClusterContext string
 
-	ListCmd = &cobra.Command{
+	Cmd = &cobra.Command{
 		Use:   "list",
 		Short: "lists Shipper releases that are scheduled *only* on given clusters",
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
@@ -64,17 +64,17 @@ type outputRelease struct {
 
 func init() {
 	// Flags common to all commands under `shipperctl count`
-	config.RegisterFlag(ListCmd.PersistentFlags(), &kubeConfigFile)
-	if err := ListCmd.MarkPersistentFlagFilename(kubeConfigFlagName, "yaml"); err != nil {
-		ListCmd.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
+	config.RegisterFlag(Cmd.PersistentFlags(), &kubeConfigFile)
+	if err := Cmd.MarkPersistentFlagFilename(kubeConfigFlagName, "yaml"); err != nil {
+		Cmd.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
 	}
 
-	ListCmd.PersistentFlags().StringVar(&managementClusterContext, "management-cluster-context", "", "The name of the context to use to communicate with the management cluster. defaults to the current one")
-	ListCmd.PersistentFlags().StringSliceVar(&clusters, clustersFlagName, clusters, "List of comma separated clusters to list releases that are scheduled *only* on those clusters. If empty, will list without filtering")
-	ListCmd.PersistentFlags().StringVarP(&printOption, "output", "o", "", "Output format. One of: json|yaml. (Optional) defaults to verbose")
+	Cmd.PersistentFlags().StringVar(&managementClusterContext, "management-cluster-context", "", "The name of the context to use to communicate with the management cluster. defaults to the current one")
+	Cmd.PersistentFlags().StringSliceVar(&clusters, clustersFlagName, clusters, "List of comma separated clusters to list releases that are scheduled *only* on those clusters. If empty, will list without filtering")
+	Cmd.PersistentFlags().StringVarP(&printOption, "output", "o", "", "Output format. One of: json|yaml. (Optional) defaults to verbose")
 
-	ListCmd.AddCommand(countContendersCmd)
-	ListCmd.AddCommand(countReleasesCmd)
+	Cmd.AddCommand(countContendersCmd)
+	Cmd.AddCommand(countReleasesCmd)
 	for _, command := range []*cobra.Command{countContendersCmd, countReleasesCmd} {
 		command.SetOutput(os.Stdout)
 	}

@@ -35,7 +35,7 @@ var (
 )
 
 func init() {
-	BackupCmd.AddCommand(restoreBackupCmd)
+	Cmd.AddCommand(restoreBackupCmd)
 }
 
 func runRestoreCommand(cmd *cobra.Command, args []string) error {

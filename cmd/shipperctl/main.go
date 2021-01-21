@@ -21,10 +21,10 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(clusters.ClustersCmd)
-	rootCmd.AddCommand(list.ListCmd)
-	rootCmd.AddCommand(clean.CleanCmd)
-	rootCmd.AddCommand(backup.BackupCmd)
+	rootCmd.AddCommand(clusters.Cmd)
+	rootCmd.AddCommand(list.Cmd)
+	rootCmd.AddCommand(clean.Cmd)
+	rootCmd.AddCommand(backup.Cmd)
 	rootCmd.AddCommand(chart.Command)
 }
 
