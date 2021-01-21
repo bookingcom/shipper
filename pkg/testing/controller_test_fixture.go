@@ -3,6 +3,7 @@ package testing
 import (
 	"fmt"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -23,10 +24,10 @@ type ControllerTestFixture struct {
 	Recorder *record.FakeRecorder
 }
 
-func NewControllerTestFixture() *ControllerTestFixture {
+func NewControllerTestFixture(objects ...runtime.Object) *ControllerTestFixture {
 	const recorderBufSize = 42
 
-	shipperClient := shipperfake.NewSimpleClientset()
+	shipperClient := shipperfake.NewSimpleClientset(objects...)
 	shipperInformerFactory := shipperinformers.NewSharedInformerFactory(
 		shipperClient, NoResyncPeriod)
 

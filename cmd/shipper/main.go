@@ -88,7 +88,6 @@ type metricsCfg struct {
 	restLatency   *shippermetrics.RESTLatencyMetric
 	restResult    *shippermetrics.RESTResultMetric
 	certExpire    *shippermetrics.WebhookMetric
-	stateMetrics  statemetrics.Metrics
 	metricsBundle *metrics.MetricsBundle
 }
 
@@ -219,7 +218,6 @@ func main() {
 			restLatency:   shippermetrics.NewRESTLatencyMetric(),
 			restResult:    shippermetrics.NewRESTResultMetric(),
 			certExpire:    shippermetrics.NewTLSCertExpireMetric(),
-			stateMetrics:  ssm,
 			metricsBundle: metrics.NewMetricsBundle(),
 		},
 	}
@@ -250,7 +248,6 @@ func runMetrics(cfg *metricsCfg) {
 	prometheus.MustRegister(cfg.restLatency.Summary, cfg.restResult.Counter)
 	prometheus.MustRegister(cfg.certExpire.GetMetrics()...)
 	prometheus.MustRegister(instrumentedclient.GetMetrics()...)
-	prometheus.MustRegister(cfg.stateMetrics)
 	prometheus.MustRegister(cfg.metricsBundle.TimeToInstallation)
 
 	srv := http.Server{
@@ -528,9 +525,8 @@ func startMetricsController(cfg *cfg) (bool, error) {
 	}
 
 	c := metrics.NewController(
-		client.NewShipperClientOrDie(metrics.AgentName, cfg.restCfg),
+		client.NewShipperClientOrDie(cfg.restCfg, metrics.AgentName, cfg.restTimeout),
 		cfg.shipperInformerFactory,
-		cfg.recorder(metrics.AgentName),
 		cfg.metrics.metricsBundle,
 	)
 
