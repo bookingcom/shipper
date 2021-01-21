@@ -6,23 +6,21 @@ import (
 	"sync"
 	"time"
 
-	objectutil "github.com/bookingcom/shipper/pkg/util/object"
-
 	corev1 "k8s.io/api/core/v1"
 
-	releaseconditions "github.com/bookingcom/shipper/pkg/util/release"
+	"github.com/bookingcom/shipper/pkg/util/application"
+	"github.com/bookingcom/shipper/pkg/util/release"
 
+	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	listers "github.com/bookingcom/shipper/pkg/client/listers/shipper/v1alpha1"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	clientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 
 	informers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
 
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
 	"k8s.io/klog"
 )
 
@@ -40,12 +38,10 @@ type Controller struct {
 	releaseLister  listers.ReleaseLister
 	releasesSynced cache.InformerSynced
 
-	recorder record.EventRecorder
-
-	shipperClientset clientset.Interface
+	shipperClientset shipperclientset.Interface
 
 	appLastModifiedTimes     map[string]*appLastModifiedTimeEntry
-	appLastModifiedTimesLock sync.Mutex
+	appLastModifiedTimesLock sync.RWMutex
 
 	metricsBundle *MetricsBundle
 }
@@ -60,9 +56,8 @@ type appLastModifiedTimeEntry struct {
 }
 
 func NewController(
-	shipperClientset clientset.Interface,
+	shipperClientset shipperclientset.Interface,
 	shipperInformerFactory informers.SharedInformerFactory,
-	recorder record.EventRecorder,
 	metricsBundle *MetricsBundle,
 ) *Controller {
 	appInformer := shipperInformerFactory.Shipper().V1alpha1().Applications()
@@ -77,8 +72,9 @@ func NewController(
 		releaseLister:  relInformer.Lister(),
 		releasesSynced: relInformer.Informer().HasSynced,
 
-		recorder:      recorder,
 		metricsBundle: metricsBundle,
+
+		appLastModifiedTimes: make(map[string]*appLastModifiedTimeEntry),
 	}
 
 	appInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -150,7 +146,7 @@ func (c *Controller) handleAppUpdates(old, new interface{}) {
 
 	// If the specs are the same, this is not a user modification
 	// and should be ignored
-	if !reflect.DeepEqual(oldApp.Spec, newApp.Spec) {
+	if reflect.DeepEqual(oldApp.Spec, newApp.Spec) {
 		return
 	}
 
@@ -179,24 +175,43 @@ func (c *Controller) handleReleaseUpdates(old, new interface{}) {
 		return
 	}
 
-	// If the chart wasn't installed and now it is, calculate how
-	// long it took. The chart is always installed on step 0, so
-	// return if we've passed that step
+	// metrics-controller cares only when the following conditions apply:
+	// 1. We are at the step 0, because the chart is always installed at step 0
+	// 2. The release that generates the event is a contender
+	// 3. The old release has not achieved installation and the new release has
+	//    achived installation. In other words, we want to keep track of the event
+	//    that updates the "contender achived installation" status to true.
+
+	// See condition (1)
 	if newRelease.Spec.TargetStep > 0 {
 		return
 	}
 
-	oldInstallationCondition := releaseconditions.GetReleaseStrategyConditionByType(oldRelease.Status.Strategy, shipper.StrategyConditionContenderAchievedInstallation)
-	newInstallationCondition := releaseconditions.GetReleaseStrategyConditionByType(newRelease.Status.Strategy, shipper.StrategyConditionContenderAchievedInstallation)
-	if newInstallationCondition != nil {
+	// See condition (2)
+	if !c.isContender(newRelease) {
 		return
 	}
 
-	if oldInstallationCondition != nil && oldInstallationCondition.Status == corev1.ConditionTrue {
-		// This release has already achieved installation, so ignore
+	// See condition (3). If Status.Strategy.Conditions is nil just ignore
+	if oldRelease.Status.Strategy == nil ||
+		oldRelease.Status.Strategy.Conditions == nil ||
+		newRelease.Status.Strategy == nil ||
+		newRelease.Status.Strategy.Conditions == nil {
 		return
 	}
 
+	oldInstallationCondition := release.GetReleaseStrategyConditionByType(oldRelease.Status.Strategy, shipper.StrategyConditionContenderAchievedInstallation)
+	newInstallationCondition := release.GetReleaseStrategyConditionByType(newRelease.Status.Strategy, shipper.StrategyConditionContenderAchievedInstallation)
+
+	if oldInstallationCondition == nil || newInstallationCondition == nil {
+		return
+	}
+
+	// See condition (3). This release has already achieved installation, so ignore
+	if oldInstallationCondition.Status == corev1.ConditionTrue {
+		return
+	}
+	// See condition (3). The new release will not update the installation status, so ignore
 	if newInstallationCondition.Status == corev1.ConditionFalse {
 		return
 	}
@@ -207,14 +222,16 @@ func (c *Controller) handleReleaseUpdates(old, new interface{}) {
 		klog.Errorf("Failed to get release key: %q", err)
 	}
 
-	appName, err := objectutil.GetApplicationLabel(newRelease)
-	if err != nil {
+	appName, ok := newRelease.GetLabels()[shipper.AppLabel]
+	if !ok || len(appName) == 0 {
 		klog.Errorf("Could not find application name for Release %q", releaseName)
 	}
 
+	c.appLastModifiedTimesLock.RLock()
 	lastModifiedTime, ok := c.appLastModifiedTimes[appName]
+	c.appLastModifiedTimesLock.RUnlock()
 	if !ok {
-		// This probably means the 8informer didn't
+		// This probably means the informer didn't
 		// run our application create/update callback,
 		// so silently ignore the error
 		return
@@ -238,4 +255,40 @@ func (c *Controller) cleanCache() {
 			delete(c.appLastModifiedTimes, appName)
 		}
 	}
+}
+
+func (c *Controller) isContender(rel *shipper.Release) bool {
+	// Find the application of this release
+	appName, err := release.ApplicationNameForRelease(rel)
+	if err != nil {
+		klog.Errorf("Failed get application name for release %q: %v", rel.Name, err)
+		return false
+	}
+
+	// Find all the releases of the application and sort them by generation
+	rels, err := c.findReleasesForApplication(appName, rel.Namespace)
+	if err != nil {
+		klog.Errorf("Error getting the releases list for app %q: %v", appName, err)
+		return false
+	}
+
+	// Find the contender
+	contender, err := application.GetContender(appName, rels)
+	if err != nil {
+		klog.Errorf("Error finding the contender for app %q: %v", appName, err)
+		return false
+	}
+
+	if contender.Name == rel.Name {
+		return true
+	}
+	return false
+}
+
+func (c *Controller) findReleasesForApplication(appName, namespace string) ([]*shipper.Release, error) {
+	releases, err := c.releaseLister.Releases(namespace).ReleasesForApplication(appName)
+	if err != nil {
+		return nil, err
+	}
+	return release.SortByGenerationDescending(releases), nil
 }

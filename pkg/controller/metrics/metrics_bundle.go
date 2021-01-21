@@ -9,8 +9,10 @@ type MetricsBundle struct {
 
 func NewMetricsBundle() *MetricsBundle {
 	timeToInstallation := prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name: "Time to installation",
-		Help: "The time it takes for a Release to be installed on all of the clusters it's scheduled on",
+		Namespace: "shipper",
+		Subsystem: "metrics_controller",
+		Name:      "time_to_installation",
+		Help:      "The time it takes for a Release to be installed on all of the clusters it's scheduled on",
 	})
 
 	return &MetricsBundle{
