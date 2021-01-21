@@ -500,7 +500,7 @@ func (c *Controller) recordEvents(rel *shipper.Release, achievedStep int32, prev
 	}
 }
 
-func strategyAndStepToExecute(rel *shipper.Release, relinfoSucc *releaseInfo, ) (*shipper.RolloutStrategy, int32, error) {
+func strategyAndStepToExecute(rel *shipper.Release, relinfoSucc *releaseInfo) (*shipper.RolloutStrategy, int32, error) {
 	var succ *shipper.Release
 	if relinfoSucc != nil {
 		succ = relinfoSucc.release
