@@ -29,7 +29,7 @@ var (
 	kubeConfigFile           string
 	managementClusterContext string
 
-	CleanCmd = &cobra.Command{
+	Cmd = &cobra.Command{
 		Use:   "clean",
 		Short: "clean Shipper objects",
 	}
@@ -52,19 +52,19 @@ type releaseAndFilteredAnnotations struct {
 
 func init() {
 	// Flags common to all commands under `shipperctl clean`
-	config.RegisterFlag(CleanCmd.PersistentFlags(), &kubeConfigFile)
-	if err := CleanCmd.MarkPersistentFlagFilename(kubeConfigFlagName, "yaml"); err != nil {
-		CleanCmd.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
+	config.RegisterFlag(Cmd.PersistentFlags(), &kubeConfigFile)
+	if err := Cmd.MarkPersistentFlagFilename(kubeConfigFlagName, "yaml"); err != nil {
+		Cmd.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
 	}
 
-	CleanCmd.PersistentFlags().BoolVar(&dryrun, "dryrun", false, "If true, only prints the objects that will be modified/deleted")
-	CleanCmd.PersistentFlags().StringVar(&managementClusterContext, "management-cluster-context", "", "The name of the context to use to communicate with the management cluster. defaults to the current one")
-	CleanCmd.PersistentFlags().StringSliceVar(&clusters, decommissionedClustersFlagName, clusters, "List of decommissioned clusters. (Required)")
-	if err := CleanCmd.MarkPersistentFlagRequired(decommissionedClustersFlagName); err != nil {
-		CleanCmd.Printf("warning: could not mark %q as required: %s\n", decommissionedClustersFlagName, err)
+	Cmd.PersistentFlags().BoolVar(&dryrun, "dryrun", false, "If true, only prints the objects that will be modified/deleted")
+	Cmd.PersistentFlags().StringVar(&managementClusterContext, "management-cluster-context", "", "The name of the context to use to communicate with the management cluster. defaults to the current one")
+	Cmd.PersistentFlags().StringSliceVar(&clusters, decommissionedClustersFlagName, clusters, "List of decommissioned clusters. (Required)")
+	if err := Cmd.MarkPersistentFlagRequired(decommissionedClustersFlagName); err != nil {
+		Cmd.Printf("warning: could not mark %q as required: %s\n", decommissionedClustersFlagName, err)
 	}
 
-	CleanCmd.AddCommand(cleanDeadClustersCmd)
+	Cmd.AddCommand(cleanDeadClustersCmd)
 }
 
 func runCleanCommand(cmd *cobra.Command, args []string) error {

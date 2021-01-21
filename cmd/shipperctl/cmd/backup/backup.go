@@ -18,7 +18,7 @@ var (
 	managementClusterContext string
 	verboseFlag              bool
 
-	BackupCmd = &cobra.Command{
+	Cmd = &cobra.Command{
 		Use:   "backup",
 		Short: "Backup and restore Shipper applications and releases",
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
@@ -49,23 +49,23 @@ func init() {
 	kubeConfigFlagName := "kubeconfig"
 	fileFlagName := "file"
 
-	config.RegisterFlag(BackupCmd.PersistentFlags(), &kubeConfigFile)
-	if err := BackupCmd.MarkPersistentFlagFilename(kubeConfigFlagName, "yaml"); err != nil {
-		BackupCmd.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
+	config.RegisterFlag(Cmd.PersistentFlags(), &kubeConfigFile)
+	if err := Cmd.MarkPersistentFlagFilename(kubeConfigFlagName, "yaml"); err != nil {
+		Cmd.Printf("warning: could not mark %q for filename autocompletion: %s\n", kubeConfigFlagName, err)
 	}
 
-	BackupCmd.PersistentFlags().StringVar(&managementClusterContext, "management-cluster-context", "", "The name of the context to use to communicate with the management cluster. defaults to the current one")
-	BackupCmd.PersistentFlags().BoolVarP(&verboseFlag, "verbose", "v", false, "Prints the list of backup items")
-	BackupCmd.PersistentFlags().StringVar(&outputFormat, "format", "yaml", "Output format. One of: json|yaml")
+	Cmd.PersistentFlags().StringVar(&managementClusterContext, "management-cluster-context", "", "The name of the context to use to communicate with the management cluster. defaults to the current one")
+	Cmd.PersistentFlags().BoolVarP(&verboseFlag, "verbose", "v", false, "Prints the list of backup items")
+	Cmd.PersistentFlags().StringVar(&outputFormat, "format", "yaml", "Output format. One of: json|yaml")
 
-	BackupCmd.PersistentFlags().StringVarP(&backupFile, fileFlagName, "f", "backup.yaml", "The path to a backup file")
-	err := BackupCmd.MarkPersistentFlagFilename(fileFlagName, "yaml")
+	Cmd.PersistentFlags().StringVarP(&backupFile, fileFlagName, "f", "backup.yaml", "The path to a backup file")
+	err := Cmd.MarkPersistentFlagFilename(fileFlagName, "yaml")
 	if err != nil {
-		BackupCmd.Printf("warning: could not mark %q for filename yaml autocompletion: %s\n", fileFlagName, err)
+		Cmd.Printf("warning: could not mark %q for filename yaml autocompletion: %s\n", fileFlagName, err)
 	}
-	err = BackupCmd.MarkPersistentFlagFilename(fileFlagName, "json")
+	err = Cmd.MarkPersistentFlagFilename(fileFlagName, "json")
 	if err != nil {
-		BackupCmd.Printf("warning: could not mark %q for filename json autocompletion: %s\n", fileFlagName, err)
+		Cmd.Printf("warning: could not mark %q for filename json autocompletion: %s\n", fileFlagName, err)
 	}
 }
 

@@ -26,7 +26,7 @@ var (
 )
 
 func init() {
-	BackupCmd.AddCommand(prepareBackupCmd)
+	Cmd.AddCommand(prepareBackupCmd)
 }
 
 func runPrepareCommand(cmd *cobra.Command, args []string) error {

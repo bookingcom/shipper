@@ -58,11 +58,11 @@ func renderChartFromApp(cmd *cobra.Command, args []string) error {
 	}
 	var application shipper.Application
 	if appName != "" {
-		applicationP, err := shipperClient.ShipperV1alpha1().Applications(namespace).Get(appName, metav1.GetOptions{})
+		applicationPointer, err := shipperClient.ShipperV1alpha1().Applications(namespace).Get(appName, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
-		application = *applicationP
+		application = *applicationPointer
 	} else {
 		appYaml, err := ioutil.ReadFile(fileName)
 		if err != nil {

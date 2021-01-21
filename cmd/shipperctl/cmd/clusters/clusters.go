@@ -52,7 +52,7 @@ var (
 		RunE:  runJoinClustersCommand,
 	}
 
-	ClustersCmd = &cobra.Command{
+	Cmd = &cobra.Command{
 		Use:   "clusters",
 		Short: "manage Shipper clusters",
 	}
@@ -97,8 +97,8 @@ func init() {
 
 	setupCmd.AddCommand(setupMgmtCmd)
 
-	ClustersCmd.AddCommand(setupCmd)
-	ClustersCmd.AddCommand(joinCmd)
+	Cmd.AddCommand(setupCmd)
+	Cmd.AddCommand(joinCmd)
 }
 
 func runSetupMgmtClusterCommand(cmd *cobra.Command, args []string) error {
