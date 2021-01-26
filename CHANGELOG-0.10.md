@@ -26,6 +26,10 @@
   touching the management cluster ([#358][])
 * It is now possible to create backups and restore backups using 
   `shipperctl backup` commands ([#372][]).
+* It's useful to know what kind of objects shipper is rendering before
+  they reach the api server. For debugging issues with YAML
+  serializing/deserializing, for instance. 
+  It is now possible using `shipperctl chart render` commands ([#374][])
 * Shipper now rejects all modifications to the `environment` field of
   all releases. This fixes an issue where users would modify this
   field and cause an unsupported behavior ([#357][])
@@ -37,6 +41,11 @@
   becomes a very important piece of the user experience, and we
   suggest you monitor the Shipper webhook's health using the metrics
   mentioned above.
+* The manifests now have resources limits and requests. This states 
+  the resources Shipper requires, in case there is a resource manager 
+  of some sort set in place ([#380][])
+* Shipper now exposes metrics that measure time from Application 
+  creation/modification to Chart Installation ([#383][])
 
 ### Migrating to 0.10
 
@@ -67,4 +76,7 @@
 [#366]: https://github.com/bookingcom/shipper/pull/366
 [#357]: https://github.com/bookingcom/shipper/pull/357
 [#372]: https://github.com/bookingcom/shipper/pull/372
+[#374]: https://github.com/bookingcom/shipper/pull/374
+[#380]: https://github.com/bookingcom/shipper/pull/380
+[#383]: https://github.com/bookingcom/shipper/pull/383
 [failure policy]: https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#failure-policy
