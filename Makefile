@@ -211,6 +211,8 @@ build/%.tar.gz: build/%
 # if you have "shipper" in $*, IMAGE_NAME_WITH_TAG will read from
 # $(SHIPPER_IMAGE).
 IMAGE_NAME_WITH_TAG = $($(subst -,_,$(shell echo $* | tr '[:lower:]' '[:upper:]'))_IMAGE)
+SHIPPER_IMAGE_NAME_WITH_TAG = $($(subst -,_,$(shell echo "shipper" | tr '[:lower:]' '[:upper:]'))_IMAGE)
+SHIPPER_STATE_METRICS_IMAGE_NAME_WITH_TAG = $($(subst -,_,$(shell echo "shipper-state-metrics" | tr '[:lower:]' '[:upper:]'))_IMAGE)
 
 # The shipper and shipper-state-metrics targets here are phony and
 # supposed to be used directly, as a shorthand. They call their close cousins
