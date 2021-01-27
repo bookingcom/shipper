@@ -409,12 +409,13 @@ func (c *Controller) executeReleaseStrategy(relinfo *releaseInfo, diff *diffutil
 	}
 
 	// choose strategy and step and execute
-	strategy, targetStep, err := strategyAndStepToExecute(rel, relinfoSucc)
+	strategy, targetStep, isSteppingBackwards, err := strategyAndStepToExecute(rel, relinfoSucc)
 	if err != nil {
 		return nil, nil, err
 	}
-	executor := NewStrategyExecutor(strategy, targetStep)
-	complete, patches, trans := executor.Execute(relinfoPrev, relinfo, relinfoSucc)
+	executor := NewStrategyExecutor(strategy, targetStep, isSteppingBackwards)
+	complete, patches, trans := executor.
+		Execute(relinfoPrev, relinfo, relinfoSucc, NewExecutorPipeline())
 
 	// update logs, conditions, events
 	if len(patches) == 0 {
@@ -500,7 +501,7 @@ func (c *Controller) recordEvents(rel *shipper.Release, achievedStep int32, prev
 	}
 }
 
-func strategyAndStepToExecute(rel *shipper.Release, relinfoSucc *releaseInfo) (*shipper.RolloutStrategy, int32, error) {
+func strategyAndStepToExecute(rel *shipper.Release, relinfoSucc *releaseInfo) (*shipper.RolloutStrategy, int32, bool, error) {
 	var succ *shipper.Release
 	if relinfoSucc != nil {
 		succ = relinfoSucc.release
@@ -508,23 +509,26 @@ func strategyAndStepToExecute(rel *shipper.Release, relinfoSucc *releaseInfo) (*
 	isHead := succ == nil
 	var strategy *shipper.RolloutStrategy
 	var targetStep int32
+	var isSteppingBackwards bool
 	// A head release uses it's local spec-defined strategy, any other release
 	// follows it's successor state, therefore looking into the forecoming spec.
 	if isHead {
 		strategy = rel.Spec.Environment.Strategy
 		targetStep = rel.Spec.TargetStep
+		isSteppingBackwards = releaseutil.IsReleaseSteppingBackwards(rel.Status.AchievedStep, rel.Spec.TargetStep)
 	} else {
 		strategy = succ.Spec.Environment.Strategy
 		targetStep = succ.Spec.TargetStep
+		isSteppingBackwards = releaseutil.IsReleaseSteppingBackwards(succ.Status.AchievedStep, succ.Spec.TargetStep)
 	}
 
 	// Looks like a malformed input. Informing about a problem and bailing out.
 	if targetStep >= int32(len(strategy.Steps)) {
 		err := fmt.Errorf("no step %d in strategy for Release %q",
 			targetStep, controller.MetaKey(rel))
-		return nil, 0, shippererrors.NewUnrecoverableError(err)
+		return nil, 0, true, shippererrors.NewUnrecoverableError(err)
 	}
-	return strategy, targetStep, nil
+	return strategy, targetStep, isSteppingBackwards, nil
 }
 
 func (c *Controller) buildReleasesInfo(relinfo *releaseInfo) (*releaseInfo, *releaseInfo, error) {
