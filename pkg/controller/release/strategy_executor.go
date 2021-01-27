@@ -39,17 +39,32 @@ func (ctx *context) Copy() *context {
 
 type PipelineStep func(shipper.RolloutStrategyStep, conditions.StrategyConditionsMap) (PipelineContinuation, []StrategyPatch, []ReleaseStrategyStateTransition)
 
-type Pipeline []PipelineStep
+type Pipeline interface {
+	Enqueue(step PipelineStep)
+	Process(strategyStep shipper.RolloutStrategyStep, cond conditions.StrategyConditionsMap) (bool, []StrategyPatch, []ReleaseStrategyStateTransition)
 
-func NewPipeline() *Pipeline {
-	return new(Pipeline)
+	/*
+	increase should enqueue capacity and then traffic
+	 */
+	increase(ctx *context, firstRelInfo, secondRelInfo *releaseInfo)
+
+	/*
+	decrease should enqueue traffic and then capacity
+	 */
+	decrease(ctx *context, firstRelInfo, secondRelInfo *releaseInfo)
 }
 
-func (p *Pipeline) Enqueue(step PipelineStep) {
+type ExecutorPipeline []PipelineStep
+
+func NewExecutorPipeline() *ExecutorPipeline {
+	return new(ExecutorPipeline)
+}
+
+func (p *ExecutorPipeline) Enqueue(step PipelineStep) {
 	*p = append(*p, step)
 }
 
-func (p *Pipeline) Process(strategyStep shipper.RolloutStrategyStep, cond conditions.StrategyConditionsMap) (bool, []StrategyPatch, []ReleaseStrategyStateTransition) {
+func (p *ExecutorPipeline) Process(strategyStep shipper.RolloutStrategyStep, cond conditions.StrategyConditionsMap) (bool, []StrategyPatch, []ReleaseStrategyStateTransition) {
 	var patches []StrategyPatch
 	var trans []ReleaseStrategyStateTransition
 	complete := true
@@ -66,21 +81,33 @@ func (p *Pipeline) Process(strategyStep shipper.RolloutStrategyStep, cond condit
 	return complete, patches, trans
 }
 
-type StrategyExecutor struct {
-	strategy *shipper.RolloutStrategy
-	step     int32
+func (p *ExecutorPipeline) increase(ctx *context, firstRelInfo, secondRelInfo *releaseInfo) {
+	p.Enqueue(genCapacityEnforcer(ctx, firstRelInfo, secondRelInfo))
+	p.Enqueue(genTrafficEnforcer(ctx, firstRelInfo, secondRelInfo))
 }
 
-func NewStrategyExecutor(strategy *shipper.RolloutStrategy, step int32) *StrategyExecutor {
+func (p *ExecutorPipeline) decrease(ctx *context, firstRelInfo, secondRelInfo *releaseInfo) {
+	p.Enqueue(genTrafficEnforcer(ctx, firstRelInfo, secondRelInfo))
+	p.Enqueue(genCapacityEnforcer(ctx, firstRelInfo, secondRelInfo))
+}
+
+type StrategyExecutor struct {
+	strategy            *shipper.RolloutStrategy
+	step                int32
+	isSteppingBackwards bool
+}
+
+func NewStrategyExecutor(strategy *shipper.RolloutStrategy, step int32, isSteppingBackwards bool) *StrategyExecutor {
 	return &StrategyExecutor{
-		strategy: strategy,
-		step:     step,
+		strategy:            strategy,
+		step:                step,
+		isSteppingBackwards: isSteppingBackwards,
 	}
 }
 
 // copyStrategyConditions makes a shallow copy of the original condition
 // collection and based on the value of the keepIncumbent flag either keeps or
-// filters out conditions that descibe incumbent's state.
+// filters out conditions that describe incumbent's state.
 func copyStrategyConditions(conditions []shipper.ReleaseStrategyCondition, keepIncumbent bool) []shipper.ReleaseStrategyCondition {
 	res := make([]shipper.ReleaseStrategyCondition, 0, len(conditions))
 	for _, cond := range conditions {
@@ -94,20 +121,20 @@ func copyStrategyConditions(conditions []shipper.ReleaseStrategyCondition, keepI
 	return res
 }
 
-func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (bool, []StrategyPatch, []ReleaseStrategyStateTransition) {
+func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, pipeline Pipeline) (bool, []StrategyPatch, []ReleaseStrategyStateTransition) {
 	isHead := succ == nil
 
 	// hasTail is a flag indicating that the executor should look behind. The
-	// deal is that the executor normaly looks ahead. In the case of contender,
-	// it's completeness state depends on the incumbent state, tehrefore it's
+	// deal is that the executor normally looks ahead. In the case of contender,
+	// it's completeness state depends on the incumbent state, therefore it's
 	// the only case when we look behind.
 	hasTail := isHead && prev != nil
 
 	// There is no really a point in making any changes until the successor
-	// has completed it's transition, therefore we're hoilding off and aborting
+	// has completed it's transition, therefore we're holding off and aborting
 	// the pipeline execution. An alternative to this approach could be to make
 	// an autonomous move purely based on the picture of the world. But due to
-	// the limited visilibility of what's happening to the successor (as it
+	// the limited visibility of what's happening to the successor (as it
 	// might be following it's successor) it could be that a preliminary action
 	// would create more noise than help really.
 	if !isHead {
@@ -144,24 +171,45 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo) (bool, []Strat
 		isHead:     isHead,
 	}
 
-	pipeline := NewPipeline()
 	pipeline.Enqueue(genInstallationEnforcer(ctx, curr, succ))
 
-	if isHead {
-		pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
-		pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
+	// when a release isSteppingBackwards, the strategy executor needs to reverse it's direction.
+	// a release is "not isSteppingBackwards" when the targetStep >= achieved step.
+	// we include the state where the steps are equal because this state does not require
+	// reversing the direction of the strategy executor
+	if e.isSteppingBackwards {
+		// release isSteppingBackwards (achieved step > target step):
+		// increase capacity for previous release
+		// increase traffic for previous release
+		// reduce traffic for current release
+		// reduce capacity for current release
+		if isHead {
+			if hasTail {
+				prevctx := ctx.Copy()
+				prevctx.isHead = false
+				pipeline.increase(prevctx, prev, curr)
+			}
+			pipeline.decrease(ctx, curr, succ)
+		} else {
+			pipeline.increase(ctx, curr, succ)
+		}
+	} else if isHead {
+		// release is *not* isSteppingBackwards (achieved step <= target step):
+		// increase capacity for current release
+		// increase traffic for current release
+		// reduce traffic for previous release
+		// reduce capacity for previous release
+		pipeline.increase(ctx, curr, succ)
 		if hasTail {
 			// This is the moment where a contender is performing a look-behind.
 			// Incumbent's context is completely identical to it's successor
 			// except that it's not the head of the chain anymore.
 			prevctx := ctx.Copy()
 			prevctx.isHead = false
-			pipeline.Enqueue(genTrafficEnforcer(prevctx, prev, curr))
-			pipeline.Enqueue(genCapacityEnforcer(prevctx, prev, curr))
+			pipeline.decrease(prevctx, prev, curr)
 		}
 	} else {
-		pipeline.Enqueue(genTrafficEnforcer(ctx, curr, succ))
-		pipeline.Enqueue(genCapacityEnforcer(ctx, curr, succ))
+		pipeline.decrease(ctx, curr, succ)
 	}
 
 	pipeline.Enqueue(genReleaseStrategyStateEnforcer(ctx, curr, succ))

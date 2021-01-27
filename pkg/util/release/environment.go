@@ -24,3 +24,10 @@ func IsLastStrategyStep(rel *shipper.Release) bool {
 	numSteps := len(rel.Spec.Environment.Strategy.Steps)
 	return targetStep == int32(numSteps-1)
 }
+
+func IsReleaseSteppingBackwards(achievedStep *shipper.AchievedStep, targetStep int32) bool {
+	if achievedStep == nil {
+		return false
+	}
+	return achievedStep.Step > targetStep
+}
