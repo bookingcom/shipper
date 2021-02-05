@@ -40,8 +40,6 @@ func BlocksRollout(rolloutBlockLister shipperlisters.RolloutBlockLister, obj met
 		return true, events, err
 	}
 
-	obj.SetAnnotations(annotations)
-
 	effectiveBlocks := existingBlocks.Diff(overrides)
 
 	if len(effectiveBlocks) == 0 {
