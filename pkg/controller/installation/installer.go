@@ -96,7 +96,27 @@ func (i *Installer) install(
 	restConfig *rest.Config,
 	dynamicClientBuilderFunc DynamicClientBuilderFunc,
 ) error {
+
 	it := i.installationTarget
+	resourceQuota, err := client.CoreV1().ResourceQuotas(it.Namespace).Get("resource-quota", metav1.GetOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return shippererrors.NewKubeclientGetError(it.Name, "resource-quota", err).
+			WithCoreV1Kind("ResourceQuota")
+	} else if err == nil {
+		// check quota
+		if resourceQuota.Status.Hard.Cpu().Cmp(*resourceQuota.Status.Used.Cpu()) == -1 {
+			// hard is lower than used!
+			return shippererrors.NewResourceQuotaError(*resourceQuota.Status.Hard.Cpu(), *resourceQuota.Status.Used.Cpu())
+		}
+		if resourceQuota.Status.Hard.Memory().Cmp(*resourceQuota.Status.Used.Memory()) == -1 {
+			// hard is lower than used!
+			return shippererrors.NewResourceQuotaError(*resourceQuota.Status.Hard.Memory(), *resourceQuota.Status.Used.Memory())
+		}
+		if resourceQuota.Status.Hard.Pods().Cmp(*resourceQuota.Status.Used.Pods()) == -1 {
+			// hard is lower than used!
+			return shippererrors.NewResourceQuotaError(*resourceQuota.Status.Hard.Pods(), *resourceQuota.Status.Used.Pods())
+		}
+	}
 
 	var createdConfigMap *corev1.ConfigMap
 
