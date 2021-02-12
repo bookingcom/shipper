@@ -30,9 +30,6 @@
   they reach the api server. For debugging issues with YAML
   serializing/deserializing, for instance. 
   It is now possible using `shipperctl chart render` commands ([#374][])
-* Shipper now rejects all modifications to the `environment` field of
-  all releases. This fixes an issue where users would modify this
-  field and cause an unsupported behavior ([#357][])
 * Shipper now exposes metrics on the health of the webhook. For now,
   that includes the time that the SSL certificate expires, and a secondly
   heartbeat ([#366][])
@@ -46,6 +43,12 @@
   of some sort set in place ([#380][])
 * Shipper now exposes metrics that measure time from Application 
   creation/modification to Chart Installation ([#383][])
+
+### Bug fixes
+* Shipper now rejects all modifications to the `environment` field of
+  all releases. This fixes an issue where users would modify this
+  field and cause an unsupported behavior ([#357][])
+* Fix dropping pods when moving back in the strategy([#387][])
 
 ### Migrating to 0.10
 
@@ -79,4 +82,5 @@
 [#374]: https://github.com/bookingcom/shipper/pull/374
 [#380]: https://github.com/bookingcom/shipper/pull/380
 [#383]: https://github.com/bookingcom/shipper/pull/383
+[#387]: https://github.com/bookingcom/shipper/pull/387
 [failure policy]: https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#failure-policy
