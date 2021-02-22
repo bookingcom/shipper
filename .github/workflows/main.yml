@@ -8,7 +8,7 @@ on:
       - master
   release:
     types:
-      - created
+      - published
 
 jobs:
   E2E:
@@ -90,7 +90,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     name: Publish
-    needs: [Verify, GolangCI-Lint, E2E, Tests]
+    needs: [ Verify, GolangCI-Lint, E2E, Tests ]
     steps:
       - run: echo SOURCE_TAG=${GITHUB_REF#refs/tags/} >> $GITHUB_ENV
       - name: Checkout code
@@ -122,6 +122,7 @@ jobs:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: build/sha256sums.txt
           asset_name: sha256sums.txt
+          asset_content_type: application/index
       - name: Upload artifacts - shipper.deployment
         uses: actions/upload-release-asset@v1
         env:
@@ -130,6 +131,7 @@ jobs:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: "build/shipper.deployment.${{ env.SOURCE_TAG }}.yaml"
           asset_name: "shipper.deployment.${{ env.SOURCE_TAG }}.yaml"
+          asset_content_type: application/index
       - name: Upload artifacts - shipper-state-metrics.deployment
         uses: actions/upload-release-asset@v1
         env:
@@ -138,6 +140,7 @@ jobs:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: "build/shipper-state-metrics.deployment.${{ env.SOURCE_TAG }}.yaml"
           asset_name: "shipper-state-metrics.deployment.${{ env.SOURCE_TAG }}.yaml"
+          asset_content_type: application/index
       - name: Upload artifacts - shipperctl.darwin
         uses: actions/upload-release-asset@v1
         env:
@@ -146,6 +149,7 @@ jobs:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: build/shipperctl.darwin-amd64.tar.gz
           asset_name: shipperctl.darwin-amd64.tar.gz
+          asset_content_type: application/tar+gzip
       - name: Upload artifacts - shipperctl.linux
         uses: actions/upload-release-asset@v1
         env:
@@ -154,6 +158,7 @@ jobs:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: build/shipperctl.linux-amd64.tar.gz
           asset_name: shipperctl.linux-amd64.tar.gz
+          asset_content_type: application/tar+gzip
       - name: Upload artifacts - shipperctl.windows
         uses: actions/upload-release-asset@v1
         env:
@@ -162,4 +167,5 @@ jobs:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: build/shipperctl.windows-amd64.tar.gz
           asset_name: shipperctl.windows-amd64.tar.gz
+          asset_content_type: application/tar+gzip
 
