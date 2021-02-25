@@ -32,7 +32,7 @@ import (
 
 const (
 	RepoIndexRefreshPeriod = 10 * time.Second
-	RepoFetchIndexTimeout  = 2 * time.Second
+	RepoFetchIndexTimeout  = 4 * time.Second
 )
 
 var ErrFetchNoResponseYet = errors.New("no response from chart repo yet")
