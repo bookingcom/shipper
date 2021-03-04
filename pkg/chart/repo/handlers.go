@@ -1,8 +1,8 @@
 package repo
 
 import (
-	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
-	"k8s.io/helm/pkg/repo"
+	helmchart "helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/repo"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	errors "github.com/bookingcom/shipper/pkg/errors"
