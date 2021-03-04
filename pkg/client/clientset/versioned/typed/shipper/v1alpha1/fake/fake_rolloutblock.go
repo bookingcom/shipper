@@ -3,6 +3,8 @@
 package fake
 
 import (
+	"context"
+
 	v1alpha1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
@@ -23,7 +25,7 @@ var rolloutblocksResource = schema.GroupVersionResource{Group: "shipper.booking.
 var rolloutblocksKind = schema.GroupVersionKind{Group: "shipper.booking.com", Version: "v1alpha1", Kind: "RolloutBlock"}
 
 // Get takes name of the rolloutBlock, and returns the corresponding rolloutBlock object, and an error if there is any.
-func (c *FakeRolloutBlocks) Get(name string, options v1.GetOptions) (result *v1alpha1.RolloutBlock, err error) {
+func (c *FakeRolloutBlocks) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.RolloutBlock, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewGetAction(rolloutblocksResource, c.ns, name), &v1alpha1.RolloutBlock{})
 
@@ -34,7 +36,7 @@ func (c *FakeRolloutBlocks) Get(name string, options v1.GetOptions) (result *v1a
 }
 
 // List takes label and field selectors, and returns the list of RolloutBlocks that match those selectors.
-func (c *FakeRolloutBlocks) List(opts v1.ListOptions) (result *v1alpha1.RolloutBlockList, err error) {
+func (c *FakeRolloutBlocks) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.RolloutBlockList, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewListAction(rolloutblocksResource, rolloutblocksKind, c.ns, opts), &v1alpha1.RolloutBlockList{})
 
@@ -56,14 +58,14 @@ func (c *FakeRolloutBlocks) List(opts v1.ListOptions) (result *v1alpha1.RolloutB
 }
 
 // Watch returns a watch.Interface that watches the requested rolloutBlocks.
-func (c *FakeRolloutBlocks) Watch(opts v1.ListOptions) (watch.Interface, error) {
+func (c *FakeRolloutBlocks) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
 		InvokesWatch(testing.NewWatchAction(rolloutblocksResource, c.ns, opts))
 
 }
 
 // Create takes the representation of a rolloutBlock and creates it.  Returns the server's representation of the rolloutBlock, and an error, if there is any.
-func (c *FakeRolloutBlocks) Create(rolloutBlock *v1alpha1.RolloutBlock) (result *v1alpha1.RolloutBlock, err error) {
+func (c *FakeRolloutBlocks) Create(ctx context.Context, rolloutBlock *v1alpha1.RolloutBlock, opts v1.CreateOptions) (result *v1alpha1.RolloutBlock, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewCreateAction(rolloutblocksResource, c.ns, rolloutBlock), &v1alpha1.RolloutBlock{})
 
@@ -74,7 +76,7 @@ func (c *FakeRolloutBlocks) Create(rolloutBlock *v1alpha1.RolloutBlock) (result 
 }
 
 // Update takes the representation of a rolloutBlock and updates it. Returns the server's representation of the rolloutBlock, and an error, if there is any.
-func (c *FakeRolloutBlocks) Update(rolloutBlock *v1alpha1.RolloutBlock) (result *v1alpha1.RolloutBlock, err error) {
+func (c *FakeRolloutBlocks) Update(ctx context.Context, rolloutBlock *v1alpha1.RolloutBlock, opts v1.UpdateOptions) (result *v1alpha1.RolloutBlock, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewUpdateAction(rolloutblocksResource, c.ns, rolloutBlock), &v1alpha1.RolloutBlock{})
 
@@ -86,7 +88,7 @@ func (c *FakeRolloutBlocks) Update(rolloutBlock *v1alpha1.RolloutBlock) (result 
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeRolloutBlocks) UpdateStatus(rolloutBlock *v1alpha1.RolloutBlock) (*v1alpha1.RolloutBlock, error) {
+func (c *FakeRolloutBlocks) UpdateStatus(ctx context.Context, rolloutBlock *v1alpha1.RolloutBlock, opts v1.UpdateOptions) (*v1alpha1.RolloutBlock, error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewUpdateSubresourceAction(rolloutblocksResource, "status", c.ns, rolloutBlock), &v1alpha1.RolloutBlock{})
 
@@ -97,7 +99,7 @@ func (c *FakeRolloutBlocks) UpdateStatus(rolloutBlock *v1alpha1.RolloutBlock) (*
 }
 
 // Delete takes name of the rolloutBlock and deletes it. Returns an error if one occurs.
-func (c *FakeRolloutBlocks) Delete(name string, options *v1.DeleteOptions) error {
+func (c *FakeRolloutBlocks) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
 		Invokes(testing.NewDeleteAction(rolloutblocksResource, c.ns, name), &v1alpha1.RolloutBlock{})
 
@@ -105,15 +107,15 @@ func (c *FakeRolloutBlocks) Delete(name string, options *v1.DeleteOptions) error
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *FakeRolloutBlocks) DeleteCollection(options *v1.DeleteOptions, listOptions v1.ListOptions) error {
-	action := testing.NewDeleteCollectionAction(rolloutblocksResource, c.ns, listOptions)
+func (c *FakeRolloutBlocks) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
+	action := testing.NewDeleteCollectionAction(rolloutblocksResource, c.ns, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1alpha1.RolloutBlockList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched rolloutBlock.
-func (c *FakeRolloutBlocks) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1alpha1.RolloutBlock, err error) {
+func (c *FakeRolloutBlocks) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.RolloutBlock, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewPatchSubresourceAction(rolloutblocksResource, c.ns, name, pt, data, subresources...), &v1alpha1.RolloutBlock{})
 

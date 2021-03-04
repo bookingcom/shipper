@@ -3,6 +3,7 @@
 package v1alpha1
 
 import (
+	"context"
 	time "time"
 
 	shipperv1alpha1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -44,13 +45,13 @@ func NewFilteredClusterInformer(client versioned.Interface, resyncPeriod time.Du
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.ShipperV1alpha1().Clusters().List(options)
+				return client.ShipperV1alpha1().Clusters().List(context.TODO(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.ShipperV1alpha1().Clusters().Watch(options)
+				return client.ShipperV1alpha1().Clusters().Watch(context.TODO(), options)
 			},
 		},
 		&shipperv1alpha1.Cluster{},

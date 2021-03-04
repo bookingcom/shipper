@@ -3,6 +3,7 @@
 package v1alpha1
 
 import (
+	"context"
 	time "time"
 
 	shipperv1alpha1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -45,13 +46,13 @@ func NewFilteredInstallationTargetInformer(client versioned.Interface, namespace
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.ShipperV1alpha1().InstallationTargets(namespace).List(options)
+				return client.ShipperV1alpha1().InstallationTargets(namespace).List(context.TODO(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.ShipperV1alpha1().InstallationTargets(namespace).Watch(options)
+				return client.ShipperV1alpha1().InstallationTargets(namespace).Watch(context.TODO(), options)
 			},
 		},
 		&shipperv1alpha1.InstallationTarget{},

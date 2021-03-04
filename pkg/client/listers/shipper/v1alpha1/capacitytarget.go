@@ -10,8 +10,10 @@ import (
 )
 
 // CapacityTargetLister helps list CapacityTargets.
+// All objects returned here must be treated as read-only.
 type CapacityTargetLister interface {
 	// List lists all CapacityTargets in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1alpha1.CapacityTarget, err error)
 	// CapacityTargets returns an object that can list and get CapacityTargets.
 	CapacityTargets(namespace string) CapacityTargetNamespaceLister
@@ -42,10 +44,13 @@ func (s *capacityTargetLister) CapacityTargets(namespace string) CapacityTargetN
 }
 
 // CapacityTargetNamespaceLister helps list and get CapacityTargets.
+// All objects returned here must be treated as read-only.
 type CapacityTargetNamespaceLister interface {
 	// List lists all CapacityTargets in the indexer for a given namespace.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1alpha1.CapacityTarget, err error)
 	// Get retrieves the CapacityTarget from the indexer for a given namespace and name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1alpha1.CapacityTarget, error)
 	CapacityTargetNamespaceListerExpansion
 }
