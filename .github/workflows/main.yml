@@ -3,6 +3,7 @@ on:
     branches:
       - master
       - release-*
+      - hilla/*
   pull_request:
     branches:
       - master
