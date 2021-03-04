@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"testing"
@@ -25,6 +26,20 @@ import (
 	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
+const (
+	appName          = "my-test-app"
+	rolloutBlockName = "my-test-rollout-block"
+)
+
+var (
+	appKubeClient kubernetes.Interface
+	kubeClient    kubernetes.Interface
+	shipperClient shipperclientset.Interface
+	chartRepo     string
+	testRegion    string
+	globalTimeout time.Duration
+)
+
 type fixture struct {
 	t         *testing.T
 	namespace string
@@ -47,7 +62,7 @@ func (f *fixture) targetStep(step int, relName string) {
 
 func (f *fixture) checkReadyPods(relName string, expectedCount int) []corev1.Pod {
 	selector := labels.Set{shipper.ReleaseLabel: relName}.AsSelector()
-	podList, err := appKubeClient.CoreV1().Pods(f.namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	podList, err := appKubeClient.CoreV1().Pods(f.namespace).List(context.TODO(), metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		f.t.Fatalf("could not list pods %q: %q", f.namespace, err)
 	}
@@ -74,7 +89,7 @@ func (f *fixture) checkReadyPods(relName string, expectedCount int) []corev1.Pod
 }
 
 func (f *fixture) checkEndpointActivePods(epName string, pods []corev1.Pod) {
-	ep, err := appKubeClient.CoreV1().Endpoints(f.namespace).Get(epName, metav1.GetOptions{})
+	ep, err := appKubeClient.CoreV1().Endpoints(f.namespace).Get(context.TODO(), epName, metav1.GetOptions{})
 	if err != nil {
 		f.t.Fatalf("could not fetch endpoint %q: %q", epName, err)
 	}
@@ -290,12 +305,12 @@ func setupNamespace(name string) (*corev1.Namespace, error) {
 	// it'll error out with "namespace foobar already exists", so if that
 	// happens we'll just ignore it.
 
-	ns, err := appKubeClient.CoreV1().Namespaces().Create(newNs)
+	ns, err := appKubeClient.CoreV1().Namespaces().Create(context.TODO(), newNs)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = kubeClient.CoreV1().Namespaces().Create(newNs)
+	_, err = kubeClient.CoreV1().Namespaces().Create(context.TODO(), newNs)
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return nil, err
 	}

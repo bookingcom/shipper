@@ -10,8 +10,10 @@ import (
 )
 
 // ReleaseLister helps list Releases.
+// All objects returned here must be treated as read-only.
 type ReleaseLister interface {
 	// List lists all Releases in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1alpha1.Release, err error)
 	// Releases returns an object that can list and get Releases.
 	Releases(namespace string) ReleaseNamespaceLister
@@ -42,10 +44,13 @@ func (s *releaseLister) Releases(namespace string) ReleaseNamespaceLister {
 }
 
 // ReleaseNamespaceLister helps list and get Releases.
+// All objects returned here must be treated as read-only.
 type ReleaseNamespaceLister interface {
 	// List lists all Releases in the indexer for a given namespace.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1alpha1.Release, err error)
 	// Get retrieves the Release from the indexer for a given namespace and name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1alpha1.Release, error)
 	ReleaseNamespaceListerExpansion
 }

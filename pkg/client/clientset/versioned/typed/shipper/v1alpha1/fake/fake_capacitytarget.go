@@ -3,6 +3,8 @@
 package fake
 
 import (
+	"context"
+
 	v1alpha1 "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
@@ -23,7 +25,7 @@ var capacitytargetsResource = schema.GroupVersionResource{Group: "shipper.bookin
 var capacitytargetsKind = schema.GroupVersionKind{Group: "shipper.booking.com", Version: "v1alpha1", Kind: "CapacityTarget"}
 
 // Get takes name of the capacityTarget, and returns the corresponding capacityTarget object, and an error if there is any.
-func (c *FakeCapacityTargets) Get(name string, options v1.GetOptions) (result *v1alpha1.CapacityTarget, err error) {
+func (c *FakeCapacityTargets) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.CapacityTarget, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewGetAction(capacitytargetsResource, c.ns, name), &v1alpha1.CapacityTarget{})
 
@@ -34,7 +36,7 @@ func (c *FakeCapacityTargets) Get(name string, options v1.GetOptions) (result *v
 }
 
 // List takes label and field selectors, and returns the list of CapacityTargets that match those selectors.
-func (c *FakeCapacityTargets) List(opts v1.ListOptions) (result *v1alpha1.CapacityTargetList, err error) {
+func (c *FakeCapacityTargets) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.CapacityTargetList, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewListAction(capacitytargetsResource, capacitytargetsKind, c.ns, opts), &v1alpha1.CapacityTargetList{})
 
@@ -56,14 +58,14 @@ func (c *FakeCapacityTargets) List(opts v1.ListOptions) (result *v1alpha1.Capaci
 }
 
 // Watch returns a watch.Interface that watches the requested capacityTargets.
-func (c *FakeCapacityTargets) Watch(opts v1.ListOptions) (watch.Interface, error) {
+func (c *FakeCapacityTargets) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
 		InvokesWatch(testing.NewWatchAction(capacitytargetsResource, c.ns, opts))
 
 }
 
 // Create takes the representation of a capacityTarget and creates it.  Returns the server's representation of the capacityTarget, and an error, if there is any.
-func (c *FakeCapacityTargets) Create(capacityTarget *v1alpha1.CapacityTarget) (result *v1alpha1.CapacityTarget, err error) {
+func (c *FakeCapacityTargets) Create(ctx context.Context, capacityTarget *v1alpha1.CapacityTarget, opts v1.CreateOptions) (result *v1alpha1.CapacityTarget, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewCreateAction(capacitytargetsResource, c.ns, capacityTarget), &v1alpha1.CapacityTarget{})
 
@@ -74,7 +76,7 @@ func (c *FakeCapacityTargets) Create(capacityTarget *v1alpha1.CapacityTarget) (r
 }
 
 // Update takes the representation of a capacityTarget and updates it. Returns the server's representation of the capacityTarget, and an error, if there is any.
-func (c *FakeCapacityTargets) Update(capacityTarget *v1alpha1.CapacityTarget) (result *v1alpha1.CapacityTarget, err error) {
+func (c *FakeCapacityTargets) Update(ctx context.Context, capacityTarget *v1alpha1.CapacityTarget, opts v1.UpdateOptions) (result *v1alpha1.CapacityTarget, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewUpdateAction(capacitytargetsResource, c.ns, capacityTarget), &v1alpha1.CapacityTarget{})
 
@@ -86,7 +88,7 @@ func (c *FakeCapacityTargets) Update(capacityTarget *v1alpha1.CapacityTarget) (r
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeCapacityTargets) UpdateStatus(capacityTarget *v1alpha1.CapacityTarget) (*v1alpha1.CapacityTarget, error) {
+func (c *FakeCapacityTargets) UpdateStatus(ctx context.Context, capacityTarget *v1alpha1.CapacityTarget, opts v1.UpdateOptions) (*v1alpha1.CapacityTarget, error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewUpdateSubresourceAction(capacitytargetsResource, "status", c.ns, capacityTarget), &v1alpha1.CapacityTarget{})
 
@@ -97,7 +99,7 @@ func (c *FakeCapacityTargets) UpdateStatus(capacityTarget *v1alpha1.CapacityTarg
 }
 
 // Delete takes name of the capacityTarget and deletes it. Returns an error if one occurs.
-func (c *FakeCapacityTargets) Delete(name string, options *v1.DeleteOptions) error {
+func (c *FakeCapacityTargets) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
 		Invokes(testing.NewDeleteAction(capacitytargetsResource, c.ns, name), &v1alpha1.CapacityTarget{})
 
@@ -105,15 +107,15 @@ func (c *FakeCapacityTargets) Delete(name string, options *v1.DeleteOptions) err
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *FakeCapacityTargets) DeleteCollection(options *v1.DeleteOptions, listOptions v1.ListOptions) error {
-	action := testing.NewDeleteCollectionAction(capacitytargetsResource, c.ns, listOptions)
+func (c *FakeCapacityTargets) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
+	action := testing.NewDeleteCollectionAction(capacitytargetsResource, c.ns, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1alpha1.CapacityTargetList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched capacityTarget.
-func (c *FakeCapacityTargets) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1alpha1.CapacityTarget, err error) {
+func (c *FakeCapacityTargets) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.CapacityTarget, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewPatchSubresourceAction(capacitytargetsResource, c.ns, name, pt, data, subresources...), &v1alpha1.CapacityTarget{})
 

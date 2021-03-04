@@ -10,8 +10,10 @@ import (
 )
 
 // InstallationTargetLister helps list InstallationTargets.
+// All objects returned here must be treated as read-only.
 type InstallationTargetLister interface {
 	// List lists all InstallationTargets in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1alpha1.InstallationTarget, err error)
 	// InstallationTargets returns an object that can list and get InstallationTargets.
 	InstallationTargets(namespace string) InstallationTargetNamespaceLister
@@ -42,10 +44,13 @@ func (s *installationTargetLister) InstallationTargets(namespace string) Install
 }
 
 // InstallationTargetNamespaceLister helps list and get InstallationTargets.
+// All objects returned here must be treated as read-only.
 type InstallationTargetNamespaceLister interface {
 	// List lists all InstallationTargets in the indexer for a given namespace.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1alpha1.InstallationTarget, err error)
 	// Get retrieves the InstallationTarget from the indexer for a given namespace and name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1alpha1.InstallationTarget, error)
 	InstallationTargetNamespaceListerExpansion
 }

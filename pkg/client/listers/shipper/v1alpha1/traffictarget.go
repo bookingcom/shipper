@@ -10,8 +10,10 @@ import (
 )
 
 // TrafficTargetLister helps list TrafficTargets.
+// All objects returned here must be treated as read-only.
 type TrafficTargetLister interface {
 	// List lists all TrafficTargets in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1alpha1.TrafficTarget, err error)
 	// TrafficTargets returns an object that can list and get TrafficTargets.
 	TrafficTargets(namespace string) TrafficTargetNamespaceLister
@@ -42,10 +44,13 @@ func (s *trafficTargetLister) TrafficTargets(namespace string) TrafficTargetName
 }
 
 // TrafficTargetNamespaceLister helps list and get TrafficTargets.
+// All objects returned here must be treated as read-only.
 type TrafficTargetNamespaceLister interface {
 	// List lists all TrafficTargets in the indexer for a given namespace.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1alpha1.TrafficTarget, err error)
 	// Get retrieves the TrafficTarget from the indexer for a given namespace and name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1alpha1.TrafficTarget, error)
 	TrafficTargetNamespaceListerExpansion
 }

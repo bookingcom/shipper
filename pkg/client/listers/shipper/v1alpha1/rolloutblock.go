@@ -10,8 +10,10 @@ import (
 )
 
 // RolloutBlockLister helps list RolloutBlocks.
+// All objects returned here must be treated as read-only.
 type RolloutBlockLister interface {
 	// List lists all RolloutBlocks in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1alpha1.RolloutBlock, err error)
 	// RolloutBlocks returns an object that can list and get RolloutBlocks.
 	RolloutBlocks(namespace string) RolloutBlockNamespaceLister
@@ -42,10 +44,13 @@ func (s *rolloutBlockLister) RolloutBlocks(namespace string) RolloutBlockNamespa
 }
 
 // RolloutBlockNamespaceLister helps list and get RolloutBlocks.
+// All objects returned here must be treated as read-only.
 type RolloutBlockNamespaceLister interface {
 	// List lists all RolloutBlocks in the indexer for a given namespace.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1alpha1.RolloutBlock, err error)
 	// Get retrieves the RolloutBlock from the indexer for a given namespace and name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1alpha1.RolloutBlock, error)
 	RolloutBlockNamespaceListerExpansion
 }

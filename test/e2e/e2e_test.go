@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -9,18 +10,11 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
-	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 	"github.com/bookingcom/shipper/pkg/util/replicas"
-)
-
-const (
-	appName          = "my-test-app"
-	rolloutBlockName = "my-test-rollout-block"
 )
 
 var (
@@ -32,15 +26,6 @@ var (
 	appClusterName               = flag.String("appcluster", "minikube", "The application cluster that E2E tests will check to determine success/failure")
 	timeoutFlag                  = flag.String("progresstimeout", "90s", "timeout when waiting for things to change")
 	buildAppClientFromKubeConfig = flag.Bool("buildAppClientFromKubeConfig", false, "Set this flag to get application client from kubeconfig.")
-)
-
-var (
-	appKubeClient kubernetes.Interface
-	kubeClient    kubernetes.Interface
-	shipperClient shipperclientset.Interface
-	chartRepo     string
-	testRegion    string
-	globalTimeout time.Duration
 )
 
 var allIn = shipper.RolloutStrategy{
@@ -1567,7 +1552,7 @@ func TestDeletedDeploymentsAreReinstalled(t *testing.T) {
 
 	deploymentName := fmt.Sprintf("%s-%s", rel.GetName(), newApp.Spec.Template.Chart.Name)
 	t.Logf("deleting deployment %q", deploymentName)
-	err = appKubeClient.AppsV1().Deployments(ns.GetName()).Delete(deploymentName, nil)
+	err = appKubeClient.AppsV1().Deployments(ns.GetName()).Delete(context.TODO(), deploymentName, metav1.DeleteOptions{})
 	if err != nil {
 		t.Fatalf("could not delete deployment %q: %q", deploymentName, err)
 	}

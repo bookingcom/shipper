@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -183,7 +184,7 @@ func restoreTargetObjects(backupRelease shipperBackupRelease, relUid types.UID, 
 
 func applyApplication(kubeClient kubernetes.Interface, shipperClient shipperclientset.Interface, app shipper.Application) (types.UID, error) {
 	// make sure namespace exists
-	ns, err := kubeClient.CoreV1().Namespaces().Get(app.Namespace, metav1.GetOptions{})
+	ns, err := kubeClient.CoreV1().Namespaces().Get(context.TODO(), app.Namespace, metav1.GetOptions{})
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			// create ns:
@@ -246,7 +247,7 @@ func unmarshalShipperBackupApplicationFromFile() ([]shipperBackupApplication, er
 
 func scaleDownShipper(cmd *cobra.Command, kubeClient kubernetes.Interface) error {
 	cmd.Print("Making sure shipper is down... ")
-	shipperDeployment, err := kubeClient.AppsV1().Deployments(shipper.ShipperNamespace).Get("shipper", metav1.GetOptions{})
+	shipperDeployment, err := kubeClient.AppsV1().Deployments(shipper.ShipperNamespace).Get(context.TODO(), "shipper", metav1.GetOptions{})
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			cmd.Println("done")
