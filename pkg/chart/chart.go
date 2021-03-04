@@ -6,10 +6,9 @@ import (
 	"sort"
 	"strings"
 
+	helmchart "helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/engine"
-	helmchart "helm.sh/helm/v3/pkg/chart"
-	"k8s.io/helm/pkg/timeconv"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
