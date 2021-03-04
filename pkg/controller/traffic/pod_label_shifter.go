@@ -1,10 +1,12 @@
 package traffic
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 
@@ -36,7 +38,7 @@ func shiftPodLabels(
 
 			patch := patchPodTrafficStatusLabel(pod, value)
 			_, err := clientset.CoreV1().Pods(pod.Namespace).
-				Patch(pod.Name, types.JSONPatchType, patch)
+				Patch(context.TODO(), pod.Name, types.JSONPatchType, patch, metav1.PatchOptions{})
 			if err != nil {
 				return shippererrors.
 					NewKubeclientPatchError(pod.Namespace, pod.Name, err).
