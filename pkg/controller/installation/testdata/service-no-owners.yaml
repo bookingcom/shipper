@@ -6,7 +6,7 @@ metadata:
     app: reviews-api
     chart: reviews-api-0.1.0
     release: 0.0.1
-    heritage: Tiller
+    heritage: Helm
 spec:
   type: ClusterIP
   ports:

@@ -6,7 +6,7 @@ metadata:
     app: reviews-api
     chart: reviews-api-0.0.1
     release: reviews-api
-    heritage: Tiller
+    heritage: Helm
     shipper-lb: production
     shipper-app: reviews-api
     shipper-owned-by: reviews-api

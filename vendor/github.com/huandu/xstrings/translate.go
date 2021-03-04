@@ -26,7 +26,7 @@ type runeMap map[rune]rune
 // If a from/to pattern pair needs to be used more than once, it's recommended
 // to create a Translator and reuse it.
 type Translator struct {
-	quickDict  *runeDict       // A quick dictionary to look up rune by index. Only availabe for latin runes.
+	quickDict  *runeDict       // A quick dictionary to look up rune by index. Only available for latin runes.
 	runeMap    runeMap         // Rune map for translation.
 	ranges     []*runeRangeMap // Ranges of runes.
 	mappedRune rune            // If mappedRune >= 0, all matched runes are translated to the mappedRune.
@@ -492,8 +492,9 @@ func Count(str, pattern string) int {
 // If pattern is not empty, only runes matching the pattern will be squeezed.
 //
 // Samples:
-//     Squeeze("hello", "")    => "helo"
-//     Squeeze("hello", "m-z") => "hello"
+//     Squeeze("hello", "")             => "helo"
+//     Squeeze("hello", "m-z")          => "hello"
+//     Squeeze("hello   world", " ")    => "hello world"
 func Squeeze(str, pattern string) string {
 	var last, r rune
 	var size int
@@ -532,6 +533,7 @@ func Squeeze(str, pattern string) string {
 			}
 
 			last = r
+			skipSqueeze = false
 		}
 
 		str = str[size:]

@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"k8s.io/helm/pkg/chartutil"
-	"k8s.io/helm/pkg/engine"
-	helmchart "k8s.io/helm/pkg/proto/hapi/chart"
+	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v3/pkg/engine"
+	helmchart "helm.sh/helm/v3/pkg/chart"
 	"k8s.io/helm/pkg/timeconv"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -17,39 +17,27 @@ import (
 // Render renders a chart, with the given values. It returns a list of rendered
 // Kubernetes objects.
 func Render(chart *helmchart.Chart, name, ns string, shipperValues *shipper.ChartValues) ([]string, error) {
-	chartConfig := &helmchart.Config{}
+	var values map[string]interface{}
 	if shipperValues != nil {
-		values := chartutil.Values(*shipperValues)
-
-		var yaml string
-		yaml, err := values.YAML()
-		if err != nil {
-			return nil, err
-		}
-		chartConfig = &helmchart.Config{Raw: yaml}
-	}
-
-	if err := chartutil.ProcessRequirementsEnabled(chart, chartConfig); err != nil {
-		return nil, err
-	}
-
-	if err := chartutil.ProcessRequirementsImportValues(chart); err != nil {
-		return nil, err
+		values = *shipperValues
 	}
 
 	chartOptions := chartutil.ReleaseOptions{
 		Name:      name,
-		Time:      timeconv.Now(),
 		Namespace: ns,
 		IsInstall: true,
 	}
 
-	helmValues, err := chartutil.ToRenderValues(chart, chartConfig, chartOptions)
+	helmValues, err := chartutil.ToRenderValues(chart, values, chartOptions, chartutil.DefaultCapabilities)
 	if err != nil {
 		return nil, err
 	}
 
-	rendered, err := engine.New().Render(chart, helmValues)
+	if err := chartutil.ProcessDependencies(chart, helmValues); err != nil {
+		return nil, err
+	}
+
+	rendered, err := engine.Render(chart, helmValues)
 	if err != nil {
 		return nil, fmt.Errorf("could not render the chart: %s", err)
 	}
