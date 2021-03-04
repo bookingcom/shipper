@@ -1,6 +1,7 @@
 package release
 
 import (
+	gocontext "context"
 	"fmt"
 	"sort"
 	"strings"
@@ -268,7 +269,7 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 		}
 		setInstallationTargetClusters(it, clusters)
 
-		updIt, err := s.clientset.ShipperV1alpha1().InstallationTargets(rel.GetNamespace()).Create(it)
+		updIt, err := s.clientset.ShipperV1alpha1().InstallationTargets(rel.GetNamespace()).Create(gocontext.TODO(),it, metav1.CreateOptions{})
 		if err != nil {
 			return nil, shippererrors.NewKubeclientCreateError(it, err)
 		}
@@ -293,7 +294,7 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 			controller.MetaKey(it),
 			strings.Join(clusters, ","))
 		setInstallationTargetClusters(it, clusters)
-		updIt, err := s.clientset.ShipperV1alpha1().InstallationTargets(rel.GetNamespace()).Update(it)
+		updIt, err := s.clientset.ShipperV1alpha1().InstallationTargets(rel.GetNamespace()).Update(gocontext.TODO(), it, metav1.UpdateOptions{})
 		if err != nil {
 			klog.Errorf("Failed to update InstallationTarget %q clusters: %s",
 				controller.MetaKey(it),
@@ -336,7 +337,7 @@ func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalRepl
 		}
 		setCapacityTargetClusters(ct, clusters, totalReplicaCount)
 
-		updCt, err := s.clientset.ShipperV1alpha1().CapacityTargets(rel.GetNamespace()).Create(ct)
+		updCt, err := s.clientset.ShipperV1alpha1().CapacityTargets(rel.GetNamespace()).Create(gocontext.TODO(), ct, metav1.CreateOptions{})
 		if err != nil {
 			return nil, shippererrors.NewKubeclientCreateError(ct, err)
 		}
@@ -361,7 +362,7 @@ func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalRepl
 			controller.MetaKey(ct),
 			strings.Join(clusters, ","))
 		setCapacityTargetClusters(ct, clusters, totalReplicaCount)
-		updCt, err := s.clientset.ShipperV1alpha1().CapacityTargets(rel.GetNamespace()).Update(ct)
+		updCt, err := s.clientset.ShipperV1alpha1().CapacityTargets(rel.GetNamespace()).Update(gocontext.TODO(), ct, metav1.UpdateOptions{})
 		if err != nil {
 			klog.Errorf("Failed to update CapacityTarget %q clusters: %s",
 				controller.MetaKey(ct),
@@ -404,7 +405,7 @@ func (s *Scheduler) CreateOrUpdateTrafficTarget(rel *shipper.Release) (*shipper.
 		}
 		setTrafficTargetClusters(tt, clusters)
 
-		updTt, err := s.clientset.ShipperV1alpha1().TrafficTargets(rel.GetNamespace()).Create(tt)
+		updTt, err := s.clientset.ShipperV1alpha1().TrafficTargets(rel.GetNamespace()).Create(gocontext.TODO(), tt, metav1.CreateOptions{})
 		if err != nil {
 			return nil, shippererrors.NewKubeclientCreateError(tt, err)
 		}
@@ -429,7 +430,7 @@ func (s *Scheduler) CreateOrUpdateTrafficTarget(rel *shipper.Release) (*shipper.
 			controller.MetaKey(tt),
 			strings.Join(clusters, ","))
 		setTrafficTargetClusters(tt, clusters)
-		updTt, err := s.clientset.ShipperV1alpha1().TrafficTargets(rel.GetNamespace()).Update(tt)
+		updTt, err := s.clientset.ShipperV1alpha1().TrafficTargets(rel.GetNamespace()).Update(gocontext.TODO(), tt, metav1.UpdateOptions{})
 		if err != nil {
 			klog.Errorf("Failed to update TrafficTarget %q clusters: %s",
 				controller.MetaKey(tt),

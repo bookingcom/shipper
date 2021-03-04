@@ -1,6 +1,7 @@
 package application
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -61,7 +62,7 @@ func (c *Controller) createReleaseForApplication(app *shipper.Application, relea
 	klog.V(4).Infof("Release %q labels: %v", controller.MetaKey(newRelease), newRelease.Labels)
 	klog.V(4).Infof("Release %q annotations: %v", controller.MetaKey(newRelease), newRelease.Annotations)
 
-	rel, err := c.shipperClientset.ShipperV1alpha1().Releases(app.Namespace).Create(newRelease)
+	rel, err := c.shipperClientset.ShipperV1alpha1().Releases(app.Namespace).Create(context.TODO(), newRelease, metav1.CreateOptions{})
 	if err != nil {
 		return nil, shippererrors.NewKubeclientCreateError(newRelease, err).
 			WithShipperKind("Release")

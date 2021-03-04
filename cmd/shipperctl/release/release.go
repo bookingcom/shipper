@@ -1,6 +1,7 @@
 package release
 
 import (
+	"context"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
@@ -24,7 +25,7 @@ func FilterSelectedClusters(selectedClusters []string, clustersToRemove []string
 
 func IsContender(rel *shipper.Release, shipperClient shipperclientset.Interface) (bool, error) {
 	appName := rel.Labels[shipper.AppLabel]
-	app, err := shipperClient.ShipperV1alpha1().Applications(rel.Namespace).Get(appName, metav1.GetOptions{})
+	app, err := shipperClient.ShipperV1alpha1().Applications(rel.Namespace).Get(context.TODO(), appName, metav1.GetOptions{})
 	if err != nil {
 		return false, err
 	}
@@ -37,7 +38,7 @@ func IsContender(rel *shipper.Release, shipperClient shipperclientset.Interface)
 
 func IsIncumbent(rel *shipper.Release, shipperClient shipperclientset.Interface) (bool, error) {
 	appName := rel.Labels[shipper.AppLabel]
-	app, err := shipperClient.ShipperV1alpha1().Applications(rel.Namespace).Get(appName, metav1.GetOptions{})
+	app, err := shipperClient.ShipperV1alpha1().Applications(rel.Namespace).Get(context.TODO(), appName, metav1.GetOptions{})
 	if err != nil {
 		return false, err
 	}
@@ -84,7 +85,7 @@ func GetIncumbent(app *shipper.Application, shipperClient shipperclientset.Inter
 
 func ReleasesForApplication(appName, appNamespace string, shipperClient shipperclientset.Interface) (*shipper.ReleaseList, error) {
 	selector := labels.Set{shipper.AppLabel: appName}.AsSelector()
-	releaseList, err := shipperClient.ShipperV1alpha1().Releases(appNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	releaseList, err := shipperClient.ShipperV1alpha1().Releases(appNamespace).List(context.TODO(), metav1.ListOptions{LabelSelector: selector.String()})
 	return releaseList, err
 }
 
@@ -99,7 +100,7 @@ func TargetObjectsForRelease(
 	error,
 ) {
 	selector := labels.Set{shipper.ReleaseLabel: relName}.AsSelector()
-	itList, err := shipperClient.ShipperV1alpha1().InstallationTargets(relNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	itList, err := shipperClient.ShipperV1alpha1().InstallationTargets(relNamespace).List(context.TODO(), metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -108,7 +109,7 @@ func TargetObjectsForRelease(
 		return nil, nil, nil, shippererrors.NewUnexpectedObjectCountFromSelectorError(
 			selector, shipper.SchemeGroupVersion.WithKind("InstallationTarget"), expectedNumberOfTargetObjects, len(itList.Items))
 	}
-	ttList, err := shipperClient.ShipperV1alpha1().TrafficTargets(relNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	ttList, err := shipperClient.ShipperV1alpha1().TrafficTargets(relNamespace).List(context.TODO(), metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -116,7 +117,7 @@ func TargetObjectsForRelease(
 		return nil, nil, nil, shippererrors.NewUnexpectedObjectCountFromSelectorError(
 			selector, shipper.SchemeGroupVersion.WithKind("TrafficTarget"), expectedNumberOfTargetObjects, len(itList.Items))
 	}
-	ctList, err := shipperClient.ShipperV1alpha1().CapacityTargets(relNamespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	ctList, err := shipperClient.ShipperV1alpha1().CapacityTargets(relNamespace).List(context.TODO(), metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		return nil, nil, nil, err
 	}

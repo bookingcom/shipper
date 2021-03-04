@@ -1,6 +1,7 @@
 package installation
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sort"
@@ -228,7 +229,7 @@ func (c *Controller) syncHandler(key string) error {
 	if !reflect.DeepEqual(initialIT, it) {
 		// NOTE(jgreff): we can't use .UpdateStatus() because we also
 		// need to update .Spec.CanOverride
-		_, err := c.shipperclientset.ShipperV1alpha1().InstallationTargets(namespace).Update(it)
+		_, err := c.shipperclientset.ShipperV1alpha1().InstallationTargets(namespace).Update(context.TODO(), it, metav1.UpdateOptions{})
 		if err != nil {
 			return shippererrors.NewKubeclientUpdateError(it, err).
 				WithShipperKind("InstallationTarget")

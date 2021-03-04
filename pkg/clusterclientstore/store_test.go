@@ -1,6 +1,7 @@
 package clusterclientstore
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -242,7 +243,7 @@ func TestReCacheClusterOnSecretUpdate(t *testing.T) {
 	secret.Data = validSecret.Data
 
 	client := f.kubeClient
-	_, err = client.CoreV1().Secrets(store.ns).Update(secret)
+	_, err = client.CoreV1().Secrets(store.ns).Update(context.TODO(), secret, metav1.UpdateOptions{})
 	if err != nil {
 		t.Fatalf("failed to update secret: %s", err)
 	}

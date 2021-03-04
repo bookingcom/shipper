@@ -1,6 +1,7 @@
 package configurator
 
 import (
+	"context"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -51,7 +52,7 @@ func TestUpdateValidatingWebhookConfiguration(t *testing.T) {
 		admissionregistrationv1beta1.Create,
 	}
 	configuration := f.newValidatingWebhookConfiguration(caBundle, shipperSystemNamespace, operations)
-	if _, err := f.configurator.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Create(configuration); err != nil {
+	if _, err := f.configurator.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Create(context.TODO(), configuration, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	gvr := admissionregistrationv1beta1.SchemeGroupVersion.WithResource("validatingwebhookconfigurations")
@@ -102,7 +103,7 @@ func TestCreateValidatingWebhookService(t *testing.T) {
 func TestUpdateValidatingWebhookService(t *testing.T) {
 	f := newFixture(t)
 	service := f.newValidatingWebhookService("Hello", shipperSystemNamespace)
-	if _, err := f.configurator.KubeClient.CoreV1().Services(shipperSystemNamespace).Create(service); err != nil {
+	if _, err := f.configurator.KubeClient.CoreV1().Services(shipperSystemNamespace).Create(context.TODO(), service, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	gvr := corev1.SchemeGroupVersion.WithResource("services")

@@ -1,6 +1,7 @@
 package clean
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"sort"
@@ -111,7 +112,7 @@ func updateReleases(cmd *cobra.Command, shipperClient shipperclientset.Interface
 
 	var errList []string
 	for _, rel := range releasesToUpdate {
-		relObject, err := shipperClient.ShipperV1alpha1().Releases(rel.Namespace).Get(rel.Name, metav1.GetOptions{})
+		relObject, err := shipperClient.ShipperV1alpha1().Releases(rel.Namespace).Get(context.TODO(), rel.Name, metav1.GetOptions{})
 		if err != nil {
 			errList = append(errList, fmt.Sprintf("failed to get release: %s", err.Error()))
 			continue
@@ -125,7 +126,7 @@ func updateReleases(cmd *cobra.Command, shipperClient shipperclientset.Interface
 		)
 		relObject.Annotations[shipper.ReleaseClustersAnnotation] = rel.FilteredClusterAnnotation
 
-		if _, err = shipperClient.ShipperV1alpha1().Releases(rel.Namespace).Update(relObject); err != nil {
+		if _, err = shipperClient.ShipperV1alpha1().Releases(rel.Namespace).Update(context.TODO(), relObject, metav1.UpdateOptions{}); err != nil {
 			errList = append(errList, fmt.Sprintf("failed to update release: %s", err.Error()))
 			cmd.Printf("errored: %s\n", err.Error())
 			continue
@@ -142,13 +143,13 @@ func updateReleases(cmd *cobra.Command, shipperClient shipperclientset.Interface
 
 func collectReleases(kubeClient kubernetes.Interface, shipperClient shipperclientset.Interface) ([]releaseAndFilteredAnnotations, error) {
 	var releasesToUpdate []releaseAndFilteredAnnotations
-	namespaceList, err := kubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
+	namespaceList, err := kubeClient.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
 	var errList []string
 	for _, ns := range namespaceList.Items {
-		releaseList, err := shipperClient.ShipperV1alpha1().Releases(ns.Name).List(metav1.ListOptions{})
+		releaseList, err := shipperClient.ShipperV1alpha1().Releases(ns.Name).List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
 			errList = append(errList, err.Error())
 			continue

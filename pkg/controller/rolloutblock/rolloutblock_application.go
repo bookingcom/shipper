@@ -1,7 +1,9 @@
 package rolloutblock
 
 import (
+	"context"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 
@@ -62,7 +64,7 @@ func (c *Controller) syncApplication(key string) error {
 		}
 	}
 	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = overrides.String()
-	_, err = c.shipperClientset.ShipperV1alpha1().Applications(ns).Update(app)
+	_, err = c.shipperClientset.ShipperV1alpha1().Applications(ns).Update(context.TODO(), app, metav1.UpdateOptions{})
 	if err != nil {
 		return shippererrors.NewKubeclientUpdateError(app, err).
 			WithShipperKind("Application")

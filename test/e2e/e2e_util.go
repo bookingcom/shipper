@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"testing"
@@ -25,6 +26,20 @@ import (
 	"github.com/bookingcom/shipper/pkg/util/rolloutblock"
 )
 
+const (
+	appName          = "my-test-app"
+	rolloutBlockName = "my-test-rollout-block"
+)
+
+var (
+	appKubeClient kubernetes.Interface
+	kubeClient    kubernetes.Interface
+	shipperClient shipperclientset.Interface
+	chartRepo     string
+	testRegion    string
+	globalTimeout time.Duration
+)
+
 type fixture struct {
 	t         *testing.T
 	namespace string
@@ -39,7 +54,7 @@ func newFixture(ns string, t *testing.T) *fixture {
 
 func (f *fixture) targetStep(step int, relName string) {
 	patch := fmt.Sprintf(`{"spec": {"targetStep": %d}}`, step)
-	_, err := shipperClient.ShipperV1alpha1().Releases(f.namespace).Patch(relName, types.MergePatchType, []byte(patch))
+	_, err := shipperClient.ShipperV1alpha1().Releases(f.namespace).Patch(context.TODO(), relName, types.MergePatchType, []byte(patch), metav1.PatchOptions{})
 	if err != nil {
 		f.t.Fatalf("could not patch release with targetStep %v: %q", step, err)
 	}
@@ -47,7 +62,7 @@ func (f *fixture) targetStep(step int, relName string) {
 
 func (f *fixture) checkReadyPods(relName string, expectedCount int) []corev1.Pod {
 	selector := labels.Set{shipper.ReleaseLabel: relName}.AsSelector()
-	podList, err := appKubeClient.CoreV1().Pods(f.namespace).List(metav1.ListOptions{LabelSelector: selector.String()})
+	podList, err := appKubeClient.CoreV1().Pods(f.namespace).List(context.TODO(), metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
 		f.t.Fatalf("could not list pods %q: %q", f.namespace, err)
 	}
@@ -74,7 +89,7 @@ func (f *fixture) checkReadyPods(relName string, expectedCount int) []corev1.Pod
 }
 
 func (f *fixture) checkEndpointActivePods(epName string, pods []corev1.Pod) {
-	ep, err := appKubeClient.CoreV1().Endpoints(f.namespace).Get(epName, metav1.GetOptions{})
+	ep, err := appKubeClient.CoreV1().Endpoints(f.namespace).Get(context.TODO(), epName, metav1.GetOptions{})
 	if err != nil {
 		f.t.Fatalf("could not fetch endpoint %q: %q", epName, err)
 	}
@@ -107,7 +122,7 @@ func (f *fixture) waitForRelease(appName string, historyIndex int) *shipper.Rele
 	// read through.
 	var state string
 	err := poll(globalTimeout, func() (bool, error) {
-		app, err := shipperClient.ShipperV1alpha1().Applications(f.namespace).Get(appName, metav1.GetOptions{})
+		app, err := shipperClient.ShipperV1alpha1().Applications(f.namespace).Get(context.TODO(), appName, metav1.GetOptions{})
 		if err != nil {
 			f.t.Fatalf("failed to fetch app: %q", appName)
 		}
@@ -118,7 +133,7 @@ func (f *fixture) waitForRelease(appName string, historyIndex int) *shipper.Rele
 		}
 
 		relName := app.Status.History[historyIndex]
-		rel, err := shipperClient.ShipperV1alpha1().Releases(f.namespace).Get(relName, metav1.GetOptions{})
+		rel, err := shipperClient.ShipperV1alpha1().Releases(f.namespace).Get(context.TODO(), relName, metav1.GetOptions{})
 		if err != nil {
 			f.t.Fatalf("release which was in app history was not fetched: %q: %q", relName, err)
 		}
@@ -148,7 +163,7 @@ func (f *fixture) waitForReleaseStrategyState(waitingFor string, releaseName str
 				state = newState
 			}
 		}()
-		rel, err := shipperClient.ShipperV1alpha1().Releases(f.namespace).Get(releaseName, metav1.GetOptions{})
+		rel, err := shipperClient.ShipperV1alpha1().Releases(f.namespace).Get(context.TODO(), releaseName, metav1.GetOptions{})
 		if err != nil {
 			f.t.Fatalf("failed to fetch release: %q: %q", releaseName, err)
 		}
@@ -208,7 +223,7 @@ func (f *fixture) waitForReleaseStrategyState(waitingFor string, releaseName str
 func (f *fixture) waitForComplete(releaseName string) {
 	start := time.Now()
 	err := poll(globalTimeout, func() (bool, error) {
-		rel, err := shipperClient.ShipperV1alpha1().Releases(f.namespace).Get(releaseName, metav1.GetOptions{})
+		rel, err := shipperClient.ShipperV1alpha1().Releases(f.namespace).Get(context.TODO(), releaseName, metav1.GetOptions{})
 		if err != nil {
 			f.t.Fatalf("failed to fetch release: %q", releaseName)
 		}
@@ -230,7 +245,7 @@ func (f *fixture) waitForStatus(rbName string, rbNamespace string, apps string, 
 	start := time.Now()
 	var state string
 	err := poll(globalTimeout, func() (bool, error) {
-		rb, err := shipperClient.ShipperV1alpha1().RolloutBlocks(rbNamespace).Get(rolloutBlockName, metav1.GetOptions{})
+		rb, err := shipperClient.ShipperV1alpha1().RolloutBlocks(rbNamespace).Get(context.TODO(), rolloutBlockName, metav1.GetOptions{})
 		if err != nil {
 			f.t.Fatalf("could not create rollout block %q: %q", rbName, err)
 		}
@@ -290,12 +305,12 @@ func setupNamespace(name string) (*corev1.Namespace, error) {
 	// it'll error out with "namespace foobar already exists", so if that
 	// happens we'll just ignore it.
 
-	ns, err := appKubeClient.CoreV1().Namespaces().Create(newNs)
+	ns, err := appKubeClient.CoreV1().Namespaces().Create(context.TODO(), newNs, metav1.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = kubeClient.CoreV1().Namespaces().Create(newNs)
+	_, err = kubeClient.CoreV1().Namespaces().Create(context.TODO(), newNs, metav1.CreateOptions{})
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return nil, err
 	}
@@ -309,7 +324,7 @@ func teardownNamespace(name string) {
 }
 
 func teardownNamespaceFromCluster(client kubernetes.Interface, name string) {
-	err := client.CoreV1().Namespaces().Delete(name, &metav1.DeleteOptions{})
+	err := client.CoreV1().Namespaces().Delete(context.TODO(), name, metav1.DeleteOptions{})
 	if err != nil {
 		klog.Fatalf("failed to clean up namespace %q: %q", name, err)
 	}
@@ -334,7 +349,7 @@ func purgeTestNamespaces() {
 }
 
 func purgeNamespaceFromCluster(client kubernetes.Interface, listOptions metav1.ListOptions) {
-	list, err := client.CoreV1().Namespaces().List(listOptions)
+	list, err := client.CoreV1().Namespaces().List(context.TODO(), listOptions)
 	if err != nil {
 		klog.Fatalf("failed to list namespaces: %q", err)
 	}
@@ -344,7 +359,7 @@ func purgeNamespaceFromCluster(client kubernetes.Interface, listOptions metav1.L
 	}
 
 	for _, namespace := range list.Items {
-		err = client.CoreV1().Namespaces().Delete(namespace.GetName(), &metav1.DeleteOptions{})
+		err = client.CoreV1().Namespaces().Delete(context.TODO(), namespace.GetName(), metav1.DeleteOptions{})
 		if err != nil {
 			if errors.IsConflict(err) {
 				// this means the namespace is still cleaning up from some other delete, so we should poll and wait
@@ -355,7 +370,7 @@ func purgeNamespaceFromCluster(client kubernetes.Interface, listOptions metav1.L
 	}
 
 	err = poll(globalTimeout, func() (bool, error) {
-		list, listErr := client.CoreV1().Namespaces().List(listOptions)
+		list, listErr := client.CoreV1().Namespaces().List(context.TODO(), listOptions)
 		if listErr != nil {
 			klog.Fatalf("failed to list namespaces: %q", listErr)
 		}
@@ -404,7 +419,7 @@ func buildManagementClients(masterURL, kubeconfig string) (kubernetes.Interface,
 }
 
 func buildApplicationClient(cluster *shipper.Cluster) kubernetes.Interface {
-	secret, err := kubeClient.CoreV1().Secrets(shipper.ShipperNamespace).Get(cluster.Name, metav1.GetOptions{})
+	secret, err := kubeClient.CoreV1().Secrets(shipper.ShipperNamespace).Get(context.TODO(), cluster.Name, metav1.GetOptions{})
 	if err != nil {
 		klog.Fatalf("could not build target kubeclient for cluster %q: problem fetching secret: %q", cluster.Name, err)
 	}
@@ -473,7 +488,7 @@ func newApplication(namespace, name string, strategy *shipper.RolloutStrategy) *
 }
 
 func createRolloutBlock(namespace, name string) (*shipper.RolloutBlock, error) {
-	rb, err := shipperClient.ShipperV1alpha1().RolloutBlocks(namespace).Get(name, metav1.GetOptions{})
+	rb, err := shipperClient.ShipperV1alpha1().RolloutBlocks(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return nil, err
@@ -493,7 +508,7 @@ func createRolloutBlock(namespace, name string) (*shipper.RolloutBlock, error) {
 			},
 		}
 
-		rb, err = shipperClient.ShipperV1alpha1().RolloutBlocks(namespace).Create(rolloutBlock)
+		rb, err = shipperClient.ShipperV1alpha1().RolloutBlocks(namespace).Create(context.TODO(), rolloutBlock, metav1.CreateOptions{})
 		if err != nil {
 			return nil, err
 		}

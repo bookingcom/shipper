@@ -1,6 +1,7 @@
 package installation
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"testing"
@@ -205,7 +206,7 @@ func assertClusterObjects(
 		_, err := cluster.DynamicClient.
 			Resource(gvr).
 			Namespace(it.Namespace).
-			Get(name, metav1.GetOptions{})
+			Get(context.TODO(), name, metav1.GetOptions{})
 
 		if err != nil {
 			t.Errorf(

@@ -1,6 +1,7 @@
 package chart
 
 import (
+	"context"
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -33,7 +34,7 @@ func renderChartFromRel(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	rel, err := shipperClient.ShipperV1alpha1().Releases(namespace).Get(releaseName, metav1.GetOptions{})
+	rel, err := shipperClient.ShipperV1alpha1().Releases(namespace).Get(context.TODO(), releaseName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}

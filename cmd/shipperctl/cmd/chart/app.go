@@ -1,6 +1,7 @@
 package chart
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -58,7 +59,7 @@ func renderChartFromApp(cmd *cobra.Command, args []string) error {
 	}
 	var application shipper.Application
 	if appName != "" {
-		applicationPointer, err := shipperClient.ShipperV1alpha1().Applications(namespace).Get(appName, metav1.GetOptions{})
+		applicationPointer, err := shipperClient.ShipperV1alpha1().Applications(namespace).Get(context.TODO(), appName, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}

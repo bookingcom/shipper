@@ -1,6 +1,7 @@
 package release
 
 import (
+	gocontext "context"
 	"fmt"
 	"time"
 
@@ -372,7 +373,7 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 ApplyChanges:
 
 	if !equality.Semantic.DeepEqual(rel, baseRel) {
-		if _, updErr := c.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(rel); updErr != nil {
+		if _, updErr := c.clientset.ShipperV1alpha1().Releases(rel.Namespace).Update(gocontext.TODO(), rel, metav1.UpdateOptions{}); updErr != nil {
 			return updErr
 		}
 	}
@@ -574,16 +575,18 @@ func (c *Controller) buildReleasesInfo(relinfo *releaseInfo) (*releaseInfo, *rel
 func (c *Controller) applyPatch(namespace string, patch StrategyPatch) error {
 	name, gvk, b := patch.PatchSpec()
 
+	ctx, cancel := gocontext.WithCancel(gocontext.Background())
+	defer cancel()
 	var err error
 	switch gvk.Kind {
 	case "Release":
-		_, err = c.clientset.ShipperV1alpha1().Releases(namespace).Patch(name, types.MergePatchType, b)
+		_, err = c.clientset.ShipperV1alpha1().Releases(namespace).Patch(ctx, name, types.MergePatchType, b, metav1.PatchOptions{})
 	case "InstallationTarget":
-		_, err = c.clientset.ShipperV1alpha1().InstallationTargets(namespace).Patch(name, types.MergePatchType, b)
+		_, err = c.clientset.ShipperV1alpha1().InstallationTargets(namespace).Patch(ctx, name, types.MergePatchType, b, metav1.PatchOptions{})
 	case "CapacityTarget":
-		_, err = c.clientset.ShipperV1alpha1().CapacityTargets(namespace).Patch(name, types.MergePatchType, b)
+		_, err = c.clientset.ShipperV1alpha1().CapacityTargets(namespace).Patch(ctx, name, types.MergePatchType, b, metav1.PatchOptions{})
 	case "TrafficTarget":
-		_, err = c.clientset.ShipperV1alpha1().TrafficTargets(namespace).Patch(name, types.MergePatchType, b)
+		_, err = c.clientset.ShipperV1alpha1().TrafficTargets(namespace).Patch(ctx, name, types.MergePatchType, b, metav1.PatchOptions{})
 	default:
 		return shippererrors.NewUnrecoverableError(fmt.Errorf("error syncing Release %q (will not retry): unknown GVK resource name: %s", name, gvk.Kind))
 	}

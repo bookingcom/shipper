@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -112,7 +113,7 @@ func restore(shipperBackupApplications []shipperBackupApplication, kubeClient ku
 			cmd.Printf("release %q owner reference updates with uid %q\n", fmt.Sprintf("%s/%s", rel.Namespace, rel.Name), uid)
 
 			rel.ResourceVersion = ""
-			newRel, err := shipperClient.ShipperV1alpha1().Releases(rel.Namespace).Create(rel)
+			newRel, err := shipperClient.ShipperV1alpha1().Releases(rel.Namespace).Create(context.TODO(), rel, metav1.CreateOptions{})
 			if err != nil {
 				return err
 			}
@@ -143,7 +144,7 @@ func restoreTargetObjects(backupRelease shipperBackupRelease, relUid types.UID, 
 		relUid,
 	)
 	backupRelease.InstallationTarget.ResourceVersion = ""
-	if _, err := shipperClient.ShipperV1alpha1().InstallationTargets(backupRelease.InstallationTarget.Namespace).Create(&backupRelease.InstallationTarget); err != nil {
+	if _, err := shipperClient.ShipperV1alpha1().InstallationTargets(backupRelease.InstallationTarget.Namespace).Create(context.TODO(), &backupRelease.InstallationTarget, metav1.CreateOptions{}); err != nil {
 		return err
 	}
 	cmd.Printf("installation target %q created\n", fmt.Sprintf("%s/%s", backupRelease.InstallationTarget.Namespace, backupRelease.InstallationTarget.Name))
@@ -158,7 +159,7 @@ func restoreTargetObjects(backupRelease shipperBackupRelease, relUid types.UID, 
 		relUid,
 	)
 	backupRelease.TrafficTarget.ResourceVersion = ""
-	if _, err := shipperClient.ShipperV1alpha1().TrafficTargets(backupRelease.TrafficTarget.Namespace).Create(&backupRelease.TrafficTarget); err != nil {
+	if _, err := shipperClient.ShipperV1alpha1().TrafficTargets(backupRelease.TrafficTarget.Namespace).Create(context.TODO(), &backupRelease.TrafficTarget, metav1.CreateOptions{}); err != nil {
 		return err
 	}
 	cmd.Printf("traffic target %q created\n", fmt.Sprintf("%s/%s", backupRelease.TrafficTarget.Namespace, backupRelease.TrafficTarget.Name))
@@ -173,7 +174,7 @@ func restoreTargetObjects(backupRelease shipperBackupRelease, relUid types.UID, 
 		relUid,
 	)
 	backupRelease.CapacityTarget.ResourceVersion = ""
-	if _, err := shipperClient.ShipperV1alpha1().CapacityTargets(backupRelease.CapacityTarget.Namespace).Create(&backupRelease.CapacityTarget); err != nil {
+	if _, err := shipperClient.ShipperV1alpha1().CapacityTargets(backupRelease.CapacityTarget.Namespace).Create(context.TODO(), &backupRelease.CapacityTarget, metav1.CreateOptions{}); err != nil {
 		return err
 	}
 	cmd.Printf("capacity target %q created\n", fmt.Sprintf("%s/%s", backupRelease.CapacityTarget.Namespace, backupRelease.CapacityTarget.Name))
@@ -183,7 +184,7 @@ func restoreTargetObjects(backupRelease shipperBackupRelease, relUid types.UID, 
 
 func applyApplication(kubeClient kubernetes.Interface, shipperClient shipperclientset.Interface, app shipper.Application) (types.UID, error) {
 	// make sure namespace exists
-	ns, err := kubeClient.CoreV1().Namespaces().Get(app.Namespace, metav1.GetOptions{})
+	ns, err := kubeClient.CoreV1().Namespaces().Get(context.TODO(), app.Namespace, metav1.GetOptions{})
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			// create ns:
@@ -192,7 +193,7 @@ func applyApplication(kubeClient kubernetes.Interface, shipperClient shipperclie
 					Name: app.Namespace,
 				},
 			}
-			if ns, err = kubeClient.CoreV1().Namespaces().Create(&newNs); err != nil {
+			if ns, err = kubeClient.CoreV1().Namespaces().Create(context.TODO(), &newNs, metav1.CreateOptions{}); err != nil {
 				return types.UID(""), err
 			}
 		} else {
@@ -201,7 +202,7 @@ func applyApplication(kubeClient kubernetes.Interface, shipperClient shipperclie
 	}
 	// apply application
 	app.ResourceVersion = ""
-	createdApp, err := shipperClient.ShipperV1alpha1().Applications(ns.Name).Create(&app)
+	createdApp, err := shipperClient.ShipperV1alpha1().Applications(ns.Name).Create(context.TODO(), &app, metav1.CreateOptions{})
 	if err != nil {
 		return types.UID(""), err
 	}
@@ -246,7 +247,7 @@ func unmarshalShipperBackupApplicationFromFile() ([]shipperBackupApplication, er
 
 func scaleDownShipper(cmd *cobra.Command, kubeClient kubernetes.Interface) error {
 	cmd.Print("Making sure shipper is down... ")
-	shipperDeployment, err := kubeClient.AppsV1().Deployments(shipper.ShipperNamespace).Get("shipper", metav1.GetOptions{})
+	shipperDeployment, err := kubeClient.AppsV1().Deployments(shipper.ShipperNamespace).Get(context.TODO(), "shipper", metav1.GetOptions{})
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			cmd.Println("done")
@@ -271,7 +272,7 @@ func makeSureNotShipperObjects(cmd *cobra.Command, shipperClient shipperclientse
 	cmd.Print("Making sure there are no Shipper objects lying around... ")
 	unexpectedMessage := []string{}
 	// Applications
-	applicationList, err := shipperClient.ShipperV1alpha1().Applications("").List(metav1.ListOptions{})
+	applicationList, err := shipperClient.ShipperV1alpha1().Applications("").List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -279,7 +280,7 @@ func makeSureNotShipperObjects(cmd *cobra.Command, shipperClient shipperclientse
 		unexpectedMessage = append(unexpectedMessage, fmt.Sprintf("Applications: %d", n))
 	}
 	// Releases
-	releaseList, err := shipperClient.ShipperV1alpha1().Releases("").List(metav1.ListOptions{})
+	releaseList, err := shipperClient.ShipperV1alpha1().Releases("").List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -287,7 +288,7 @@ func makeSureNotShipperObjects(cmd *cobra.Command, shipperClient shipperclientse
 		unexpectedMessage = append(unexpectedMessage, fmt.Sprintf("Releases: %d", n))
 	}
 	// Installation targets
-	installationTargetsList, err := shipperClient.ShipperV1alpha1().InstallationTargets("").List(metav1.ListOptions{})
+	installationTargetsList, err := shipperClient.ShipperV1alpha1().InstallationTargets("").List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -295,7 +296,7 @@ func makeSureNotShipperObjects(cmd *cobra.Command, shipperClient shipperclientse
 		unexpectedMessage = append(unexpectedMessage, fmt.Sprintf("InstallationTargets: %d", n))
 	}
 	// Traffic targets
-	trafficTargetsList, err := shipperClient.ShipperV1alpha1().TrafficTargets("").List(metav1.ListOptions{})
+	trafficTargetsList, err := shipperClient.ShipperV1alpha1().TrafficTargets("").List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -303,7 +304,7 @@ func makeSureNotShipperObjects(cmd *cobra.Command, shipperClient shipperclientse
 		unexpectedMessage = append(unexpectedMessage, fmt.Sprintf("TrafficTargets: %d", n))
 	}
 	// Capacity targets
-	capacityTargetsList, err := shipperClient.ShipperV1alpha1().CapacityTargets("").List(metav1.ListOptions{})
+	capacityTargetsList, err := shipperClient.ShipperV1alpha1().CapacityTargets("").List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
 	}

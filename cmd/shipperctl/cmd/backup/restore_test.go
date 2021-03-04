@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -377,7 +378,7 @@ func initialiseFakeEnv(shipperDeployment *appsv1.Deployment) (*kubefake.Clientse
 	if shipperDeployment == nil {
 		return fakeKube, nil
 	}
-	if _, err := fakeKube.AppsV1().Deployments("shipper-system").Create(shipperDeployment); err != nil {
+	if _, err := fakeKube.AppsV1().Deployments("shipper-system").Create(context.TODO(), shipperDeployment, metav1.CreateOptions{}); err != nil {
 		return nil, err
 	}
 	return fakeKube, nil
@@ -429,7 +430,7 @@ func TestMakeSureNotShipperObjects(t *testing.T) {
 func initialiseFakeEnvWithShipperApps(shipperApps []shipper.Application) (*shipperfake.Clientset, error) {
 	shipperFakeClient := shipperfake.NewSimpleClientset()
 	for _, app := range shipperApps {
-		if _, err := shipperFakeClient.ShipperV1alpha1().Applications(app.GetNamespace()).Create(&app); err != nil {
+		if _, err := shipperFakeClient.ShipperV1alpha1().Applications(app.GetNamespace()).Create(context.TODO(), &app, metav1.CreateOptions{}); err != nil {
 			return nil, err
 		}
 	}

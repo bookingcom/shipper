@@ -1,6 +1,7 @@
 package capacity
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sort"
@@ -358,7 +359,7 @@ func (c *Controller) capacityTargetSyncHandler(key string) error {
 
 	if !reflect.DeepEqual(initialCT, ct) {
 		_, err := c.shipperclientset.ShipperV1alpha1().CapacityTargets(namespace).
-			UpdateStatus(ct)
+			UpdateStatus(context.TODO(), ct, metav1.UpdateOptions{})
 		if err != nil {
 			return shippererrors.NewKubeclientUpdateError(ct, err).
 				WithShipperKind("CapacityTarget")
@@ -506,7 +507,7 @@ func (c *Controller) patchDeploymentWithReplicaCount(deployment *appsv1.Deployme
 
 	updatedDeployment, err := targetClusterClient.AppsV1().
 		Deployments(deployment.Namespace).
-		Patch(deployment.Name, types.StrategicMergePatchType, patch)
+		Patch(context.TODO(), deployment.Name, types.StrategicMergePatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return nil, shippererrors.NewKubeclientUpdateError(deployment, err)
 	}

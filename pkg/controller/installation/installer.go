@@ -1,6 +1,7 @@
 package installation
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sort"
@@ -102,12 +103,12 @@ func (i *Installer) install(
 
 	configMap := anchor.CreateConfigMapAnchor(it)
 	// TODO(jgreff): use a lister insted of a bare client
-	existingConfigMap, err := client.CoreV1().ConfigMaps(it.Namespace).Get(configMap.Name, metav1.GetOptions{})
+	existingConfigMap, err := client.CoreV1().ConfigMaps(it.Namespace).Get(context.TODO(), configMap.Name, metav1.GetOptions{})
 	if err != nil && !errors.IsNotFound(err) {
 		return shippererrors.NewKubeclientGetError(it.Name, configMap.Name, err).
 			WithCoreV1Kind("ConfigMap")
 	} else if err != nil { // errors.IsNotFound(err) == true
-		createdConfigMap, err = client.CoreV1().ConfigMaps(configMap.Namespace).Create(configMap)
+		createdConfigMap, err = client.CoreV1().ConfigMaps(configMap.Namespace).Create(context.TODO(), configMap, metav1.CreateOptions{})
 		if err != nil {
 			return shippererrors.NewKubeclientCreateError(configMap, err).
 				WithCoreV1Kind("ConfigMap")
@@ -154,7 +155,7 @@ func (i *Installer) install(
 		// attempts to create the resource, taking some time to re-sync
 		// the quota information when objects can't be created since they
 		// already exist.
-		existingObj, err := resourceClient.Get(name, metav1.GetOptions{})
+		existingObj, err := resourceClient.Get(context.TODO(), name, metav1.GetOptions{})
 
 		// Any error other than NotFound is not recoverable from this point on.
 		if err != nil && !errors.IsNotFound(err) {
@@ -167,7 +168,7 @@ func (i *Installer) install(
 		// create the object on the application cluster.
 		if err != nil {
 			obj.SetOwnerReferences([]metav1.OwnerReference{ownerReference})
-			_, err = resourceClient.Create(obj, metav1.CreateOptions{})
+			_, err = resourceClient.Create(context.TODO(), obj, metav1.CreateOptions{})
 			if err != nil {
 				return shippererrors.
 					NewKubeclientCreateError(obj, err).
@@ -224,7 +225,7 @@ func (i *Installer) install(
 		unstructured.SetNestedField(existingUnstructuredObj, newUnstructuredObj["spec"], "spec")
 		existingObj.SetUnstructuredContent(existingUnstructuredObj)
 
-		if _, err := resourceClient.Update(existingObj, metav1.UpdateOptions{}); err != nil {
+		if _, err := resourceClient.Update(context.TODO(), existingObj, metav1.UpdateOptions{}); err != nil {
 			return shippererrors.NewKubeclientUpdateError(obj, err).
 				WithKind(gvk)
 		}

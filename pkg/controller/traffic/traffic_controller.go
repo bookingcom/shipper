@@ -1,6 +1,7 @@
 package traffic
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sort"
@@ -217,7 +218,7 @@ func (c *Controller) syncHandler(key string) error {
 	tt, err := c.processTrafficTarget(initialTT.DeepCopy())
 
 	if !reflect.DeepEqual(initialTT, tt) {
-		if _, err := c.shipperclientset.ShipperV1alpha1().TrafficTargets(namespace).UpdateStatus(tt); err != nil {
+		if _, err := c.shipperclientset.ShipperV1alpha1().TrafficTargets(namespace).UpdateStatus(context.TODO(), tt, metav1.UpdateOptions{}); err != nil {
 			return shippererrors.NewKubeclientUpdateError(tt, err).
 				WithShipperKind("TrafficTarget")
 		}

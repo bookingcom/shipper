@@ -1,10 +1,12 @@
 package rolloutblock
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -412,7 +414,7 @@ func (c *Controller) syncRolloutBlock(key string) error {
 		return err
 	}
 
-	_, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(rolloutBlock.Namespace).Update(rolloutBlock)
+	_, err = c.shipperClientset.ShipperV1alpha1().RolloutBlocks(rolloutBlock.Namespace).Update(context.TODO(), rolloutBlock, metav1.UpdateOptions{})
 	if err != nil {
 		return shippererrors.NewKubeclientUpdateError(rolloutBlock, err).
 			WithShipperKind("RolloutBlock")

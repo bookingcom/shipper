@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -175,22 +176,22 @@ func TestBuildShipperBackupApplication(t *testing.T) {
 						Name: testNamespaceName,
 					},
 				}
-				if _, err := kubefakeClient.CoreV1().Namespaces().Create(&namespace); err != nil {
+				if _, err := kubefakeClient.CoreV1().Namespaces().Create(context.TODO(), &namespace, metav1.CreateOptions{}); err != nil {
 					return nil, nil, err
 				}
-				if _, err := shipperfakeClient.ShipperV1alpha1().Applications(testNamespaceName).Create(&application); err != nil {
+				if _, err := shipperfakeClient.ShipperV1alpha1().Applications(testNamespaceName).Create(context.TODO(), &application, metav1.CreateOptions{}); err != nil {
 					return nil, nil, err
 				}
-				if _, err := shipperfakeClient.ShipperV1alpha1().Releases(testNamespaceName).Create(&release); err != nil {
+				if _, err := shipperfakeClient.ShipperV1alpha1().Releases(testNamespaceName).Create(context.TODO(), &release, metav1.CreateOptions{}); err != nil {
 					return nil, nil, err
 				}
-				if _, err := shipperfakeClient.ShipperV1alpha1().InstallationTargets(testNamespaceName).Create(&installationTarget); err != nil {
+				if _, err := shipperfakeClient.ShipperV1alpha1().InstallationTargets(testNamespaceName).Create(context.TODO(), &installationTarget, metav1.CreateOptions{}); err != nil {
 					return nil, nil, err
 				}
-				if _, err := shipperfakeClient.ShipperV1alpha1().TrafficTargets(testNamespaceName).Create(&trafficTarget); err != nil {
+				if _, err := shipperfakeClient.ShipperV1alpha1().TrafficTargets(testNamespaceName).Create(context.TODO(), &trafficTarget, metav1.CreateOptions{}); err != nil {
 					return nil, nil, err
 				}
-				if _, err := shipperfakeClient.ShipperV1alpha1().CapacityTargets(testNamespaceName).Create(&capacityTarget); err != nil {
+				if _, err := shipperfakeClient.ShipperV1alpha1().CapacityTargets(testNamespaceName).Create(context.TODO(), &capacityTarget, metav1.CreateOptions{}); err != nil {
 					return nil, nil, err
 				}
 
@@ -215,13 +216,13 @@ func TestBuildShipperBackupApplication(t *testing.T) {
 						Name: testNamespaceName,
 					},
 				}
-				if _, err := kubefakeClient.CoreV1().Namespaces().Create(&namespace); err != nil {
+				if _, err := kubefakeClient.CoreV1().Namespaces().Create(context.TODO(), &namespace, metav1.CreateOptions{}); err != nil {
 					return nil, nil, err
 				}
-				if _, err := shipperfakeClient.ShipperV1alpha1().Applications(testNamespaceName).Create(&application); err != nil {
+				if _, err := shipperfakeClient.ShipperV1alpha1().Applications(testNamespaceName).Create(context.TODO(), &application, metav1.CreateOptions{}); err != nil {
 					return nil, nil, err
 				}
-				if _, err := shipperfakeClient.ShipperV1alpha1().Releases(testNamespaceName).Create(&release); err != nil {
+				if _, err := shipperfakeClient.ShipperV1alpha1().Releases(testNamespaceName).Create(context.TODO(), &release, metav1.CreateOptions{}); err != nil {
 					return nil, nil, err
 				}
 
@@ -245,10 +246,10 @@ func TestBuildShipperBackupApplication(t *testing.T) {
 						Name: testNamespaceName,
 					},
 				}
-				if _, err := kubefakeClient.CoreV1().Namespaces().Create(&namespace); err != nil {
+				if _, err := kubefakeClient.CoreV1().Namespaces().Create(context.TODO(), &namespace, metav1.CreateOptions{}); err != nil {
 					return nil, nil, err
 				}
-				if _, err := shipperfakeClient.ShipperV1alpha1().Applications(testNamespaceName).Create(&application); err != nil {
+				if _, err := shipperfakeClient.ShipperV1alpha1().Applications(testNamespaceName).Create(context.TODO(), &application, metav1.CreateOptions{}); err != nil {
 					return nil, nil, err
 				}
 

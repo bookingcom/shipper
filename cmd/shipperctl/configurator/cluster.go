@@ -1,6 +1,7 @@
 package configurator
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -49,7 +50,7 @@ func (c *Cluster) CreateNamespace(namespace string) error {
 		},
 	}
 
-	_, err := c.KubeClient.CoreV1().Namespaces().Create(namespaceObject)
+	_, err := c.KubeClient.CoreV1().Namespaces().Create(context.TODO(), namespaceObject, metav1.CreateOptions{})
 
 	return err
 }
@@ -65,7 +66,7 @@ func (c *Cluster) CreateServiceAccount(domain, namespace string, name string) er
 		},
 	}
 
-	_, err := c.KubeClient.CoreV1().ServiceAccounts(namespace).Create(serviceAccount)
+	_, err := c.KubeClient.CoreV1().ServiceAccounts(namespace).Create(context.TODO(), serviceAccount, metav1.CreateOptions{})
 
 	return err
 }
@@ -102,7 +103,7 @@ func (c *Cluster) CreateClusterRole(domain, name string) error {
 		},
 	}
 
-	_, err := c.KubeClient.RbacV1().ClusterRoles().Create(clusterRole)
+	_, err := c.KubeClient.RbacV1().ClusterRoles().Create(context.TODO(), clusterRole, metav1.CreateOptions{})
 
 	return err
 }
@@ -129,13 +130,13 @@ func (c *Cluster) CreateClusterRoleBinding(domain, clusterRoleBindingName, clust
 		},
 	}
 
-	_, err := c.KubeClient.RbacV1().ClusterRoleBindings().Create(clusterRoleBinding)
+	_, err := c.KubeClient.RbacV1().ClusterRoleBindings().Create(context.TODO(), clusterRoleBinding, metav1.CreateOptions{})
 
 	return err
 }
 
 func (c *Cluster) ShouldCopySecret(name, namespace string) (bool, error) {
-	_, err := c.KubeClient.CoreV1().Secrets(namespace).Get(name, metav1.GetOptions{})
+	_, err := c.KubeClient.CoreV1().Secrets(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return true, nil
@@ -155,7 +156,7 @@ func (c *Cluster) FetchSecretForServiceAccount(name, namespace string) (*corev1.
 	var err error
 	found := false
 	for i := 0; i < 10; i++ {
-		serviceAccount, err = c.KubeClient.CoreV1().ServiceAccounts(namespace).Get(name, metav1.GetOptions{})
+		serviceAccount, err = c.KubeClient.CoreV1().ServiceAccounts(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
 			return nil, err
 		}
@@ -174,7 +175,7 @@ func (c *Cluster) FetchSecretForServiceAccount(name, namespace string) (*corev1.
 	}
 
 	secretName := serviceAccount.Secrets[0].Name
-	secret, err := c.KubeClient.CoreV1().Secrets(namespace).Get(secretName, metav1.GetOptions{})
+	secret, err := c.KubeClient.CoreV1().Secrets(namespace).Get(context.TODO(), secretName, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +184,7 @@ func (c *Cluster) FetchSecretForServiceAccount(name, namespace string) (*corev1.
 }
 
 func (c *Cluster) FetchCluster(clusterName string) (*shipper.Cluster, error) {
-	return c.ShipperClient.ShipperV1alpha1().Clusters().Get(clusterName, metav1.GetOptions{})
+	return c.ShipperClient.ShipperV1alpha1().Clusters().Get(context.TODO(), clusterName, metav1.GetOptions{})
 }
 
 func (c *Cluster) CopySecret(cluster *shipper.Cluster, newNamespace string, secret *corev1.Secret) error {
@@ -203,16 +204,16 @@ func (c *Cluster) CopySecret(cluster *shipper.Cluster, newNamespace string, secr
 		Data: secret.Data,
 	}
 
-	_, err := c.KubeClient.CoreV1().Secrets(newNamespace).Create(newSecret)
+	_, err := c.KubeClient.CoreV1().Secrets(newNamespace).Create(context.TODO(), newSecret, metav1.CreateOptions{})
 
 	return err
 }
 
 func (c *Cluster) CreateOrUpdateCluster(cluster *shipper.Cluster) error {
-	existingCluster, err := c.ShipperClient.ShipperV1alpha1().Clusters().Get(cluster.Name, metav1.GetOptions{})
+	existingCluster, err := c.ShipperClient.ShipperV1alpha1().Clusters().Get(context.TODO(), cluster.Name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			_, err := c.ShipperClient.ShipperV1alpha1().Clusters().Create(cluster)
+			_, err := c.ShipperClient.ShipperV1alpha1().Clusters().Create(context.TODO(), cluster, metav1.CreateOptions{})
 			return err
 		} else {
 			return err
@@ -220,15 +221,15 @@ func (c *Cluster) CreateOrUpdateCluster(cluster *shipper.Cluster) error {
 	}
 
 	existingCluster.Spec = cluster.Spec
-	_, err = c.ShipperClient.ShipperV1alpha1().Clusters().Update(existingCluster)
+	_, err = c.ShipperClient.ShipperV1alpha1().Clusters().Update(context.TODO(), existingCluster, metav1.UpdateOptions{})
 	return err
 }
 
 func (c *Cluster) CreateOrUpdateCRD(crd *apiextensionv1beta1.CustomResourceDefinition) error {
-	existingCrd, err := c.ApiExtensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(crd.Name, metav1.GetOptions{})
+	existingCrd, err := c.ApiExtensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(context.TODO(), crd.Name, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			_, err := c.ApiExtensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd)
+			_, err := c.ApiExtensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Create(context.TODO(), crd, metav1.CreateOptions{})
 			return err
 		} else {
 			return err
@@ -236,7 +237,7 @@ func (c *Cluster) CreateOrUpdateCRD(crd *apiextensionv1beta1.CustomResourceDefin
 	}
 
 	existingCrd.Spec = crd.Spec
-	_, err = c.ApiExtensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Update(existingCrd)
+	_, err = c.ApiExtensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Update(context.TODO(), existingCrd, metav1.UpdateOptions{})
 	return err
 }
 
@@ -307,12 +308,12 @@ func (c *Cluster) CreateCertificateSigningRequest(csr []byte) error {
 		},
 	}
 
-	_, err := c.KubeClient.CertificatesV1beta1().CertificateSigningRequests().Create(certificateSigningRequest)
+	_, err := c.KubeClient.CertificatesV1beta1().CertificateSigningRequests().Create(context.TODO(), certificateSigningRequest, metav1.CreateOptions{})
 	return err
 }
 
 func (c *Cluster) ApproveShipperCSR() error {
-	csr, err := c.KubeClient.CertificatesV1beta1().CertificateSigningRequests().Get(shipperCSRName, metav1.GetOptions{})
+	csr, err := c.KubeClient.CertificatesV1beta1().CertificateSigningRequests().Get(context.TODO(), shipperCSRName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -324,7 +325,7 @@ func (c *Cluster) ApproveShipperCSR() error {
 	}
 
 	csr.Status.Conditions = append(csr.Status.Conditions, approvedCondition)
-	_, err = c.KubeClient.CertificatesV1beta1().CertificateSigningRequests().UpdateApproval(csr)
+	_, err = c.KubeClient.CertificatesV1beta1().CertificateSigningRequests().UpdateApproval(context.TODO(), csr, metav1.UpdateOptions{})
 
 	return err
 }
@@ -336,7 +337,7 @@ func (c *Cluster) ApproveShipperCSR() error {
 // Note that the returned certificate is already PEM-encoded.
 func (c *Cluster) FetchCertificateFromCSR() ([]byte, error) {
 	for retries := 0; retries < MaximumRetries; retries++ {
-		csr, err := c.KubeClient.CertificatesV1beta1().CertificateSigningRequests().Get(shipperCSRName, metav1.GetOptions{})
+		csr, err := c.KubeClient.CertificatesV1beta1().CertificateSigningRequests().Get(context.TODO(), shipperCSRName, metav1.GetOptions{})
 		if err != nil {
 			return nil, err
 		}
@@ -355,7 +356,7 @@ func (c *Cluster) FetchCertificateFromCSR() ([]byte, error) {
 }
 
 func (c *Cluster) ValidatingWebhookSecretExists(namespace string) (bool, error) {
-	_, err := c.KubeClient.CoreV1().Secrets(namespace).Get(shipperValidatingWebhookSecretName, metav1.GetOptions{})
+	_, err := c.KubeClient.CoreV1().Secrets(namespace).Get(context.TODO(), shipperValidatingWebhookSecretName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return false, nil
@@ -379,7 +380,7 @@ func (c *Cluster) CreateValidatingWebhookSecret(privateKey, certificate []byte, 
 		},
 	}
 
-	_, err := c.KubeClient.CoreV1().Secrets(namespace).Create(secret)
+	_, err := c.KubeClient.CoreV1().Secrets(namespace).Create(context.TODO(), secret, metav1.CreateOptions{})
 	if err != nil {
 		return err
 	}
@@ -388,7 +389,7 @@ func (c *Cluster) CreateValidatingWebhookSecret(privateKey, certificate []byte, 
 }
 
 func (c *Cluster) FetchKubernetesCABundle() ([]byte, error) {
-	configmap, err := c.KubeClient.CoreV1().ConfigMaps("kube-system").Get("extension-apiserver-authentication", metav1.GetOptions{})
+	configmap, err := c.KubeClient.CoreV1().ConfigMaps("kube-system").Get(context.TODO(), "extension-apiserver-authentication", metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -442,10 +443,10 @@ func (c *Cluster) CreateOrUpdateValidatingWebhookConfiguration(caBundle []byte, 
 		},
 	}
 
-	existingConfig, err := c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Get(shipperValidatingWebhookName, metav1.GetOptions{})
+	existingConfig, err := c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Get(context.TODO(), shipperValidatingWebhookName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			_, err = c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Create(validatingWebhookConfiguration)
+			_, err = c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Create(context.TODO(), validatingWebhookConfiguration, metav1.CreateOptions{})
 			return err
 		} else {
 			return err
@@ -453,13 +454,13 @@ func (c *Cluster) CreateOrUpdateValidatingWebhookConfiguration(caBundle []byte, 
 	}
 
 	existingConfig.Webhooks = validatingWebhookConfiguration.Webhooks
-	_, err = c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Update(existingConfig)
+	_, err = c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Update(context.TODO(), existingConfig, metav1.UpdateOptions{})
 	return err
 }
 
 func (c *Cluster) UpdateValidatingWebhookConfigurationFailurePolicyToFail() error {
 	policyTypeFail := admissionregistrationv1beta1.Fail
-	existingConfig, err := c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Get(shipperValidatingWebhookName, metav1.GetOptions{})
+	existingConfig, err := c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Get(context.TODO(), shipperValidatingWebhookName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -468,7 +469,7 @@ func (c *Cluster) UpdateValidatingWebhookConfigurationFailurePolicyToFail() erro
 		existingConfig.Webhooks[i].FailurePolicy = &policyTypeFail
 	}
 
-	_, err = c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Update(existingConfig)
+	_, err = c.KubeClient.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Update(context.TODO(), existingConfig, metav1.UpdateOptions{})
 	return err
 }
 
@@ -491,10 +492,10 @@ func (c *Cluster) CreateOrUpdateValidatingWebhookService(namespace string) error
 		},
 	}
 
-	existingSerivce, err := c.KubeClient.CoreV1().Services(namespace).Get(shipperValidatingWebhookServiceName, metav1.GetOptions{})
+	existingSerivce, err := c.KubeClient.CoreV1().Services(namespace).Get(context.TODO(), shipperValidatingWebhookServiceName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			_, err = c.KubeClient.CoreV1().Services(namespace).Create(service)
+			_, err = c.KubeClient.CoreV1().Services(namespace).Create(context.TODO(), service, metav1.CreateOptions{})
 			return err
 		} else {
 			return err
@@ -503,7 +504,7 @@ func (c *Cluster) CreateOrUpdateValidatingWebhookService(namespace string) error
 
 	existingSerivce.Spec.Selector = service.Spec.Selector
 	existingSerivce.Spec.Ports = service.Spec.Ports
-	_, err = c.KubeClient.CoreV1().Services(namespace).Update(existingSerivce)
+	_, err = c.KubeClient.CoreV1().Services(namespace).Update(context.TODO(), existingSerivce, metav1.UpdateOptions{})
 	return err
 }
 

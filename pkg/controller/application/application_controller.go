@@ -1,6 +1,7 @@
 package application
 
 import (
+	"context"
 	"fmt"
 	"k8s.io/apimachinery/pkg/labels"
 	"math"
@@ -281,7 +282,7 @@ func (c *Controller) syncApplication(key string) error {
 	}
 
 	// TODO(asurikov): change to UpdateStatus when it's available.
-	_, err = c.shipperClientset.ShipperV1alpha1().Applications(app.Namespace).Update(app)
+	_, err = c.shipperClientset.ShipperV1alpha1().Applications(app.Namespace).Update(context.TODO(), app, metav1.UpdateOptions{})
 	if err != nil {
 		return shippererrors.NewKubeclientUpdateError(app, err).
 			WithShipperKind("Application")
@@ -404,7 +405,7 @@ func (c *Controller) processApplication(app *shipper.Application) error {
 
 			diff.Append(apputil.SetApplicationCondition(&app.Status, *cond))
 
-			if _, updErr := c.shipperClientset.ShipperV1alpha1().Applications(app.Namespace).Update(app); updErr != nil {
+			if _, updErr := c.shipperClientset.ShipperV1alpha1().Applications(app.Namespace).Update(context.TODO(), app, metav1.UpdateOptions{}); updErr != nil {
 				return shippererrors.NewKubeclientUpdateError(app, updErr).WithShipperKind("Application")
 			}
 			return err
@@ -587,7 +588,7 @@ func (c *Controller) cleanUpReleasesForApplication(app *shipper.Application, rel
 			continue
 		}
 
-		err := c.shipperClientset.ShipperV1alpha1().Releases(namespace).Delete(rel.GetName(), &metav1.DeleteOptions{})
+		err := c.shipperClientset.ShipperV1alpha1().Releases(namespace).Delete(context.TODO(), rel.GetName(), metav1.DeleteOptions{})
 		if err != nil {
 			if kerrors.IsNotFound(err) {
 				// Skip this release: it's already deleted.
@@ -608,7 +609,7 @@ func (c *Controller) cleanUpReleasesForApplication(app *shipper.Application, rel
 	overhead := len(completedReleases) - int(revisionHistoryLimit)
 	for i := 0; i < overhead; i++ {
 		rel := completedReleases[i]
-		err := c.shipperClientset.ShipperV1alpha1().Releases(namespace).Delete(rel.GetName(), &metav1.DeleteOptions{})
+		err := c.shipperClientset.ShipperV1alpha1().Releases(namespace).Delete(context.TODO(), rel.GetName(), metav1.DeleteOptions{})
 		if err != nil {
 			if kerrors.IsNotFound(err) {
 				// Skip this release: it's already deleted.

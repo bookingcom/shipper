@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"strings"
@@ -68,7 +69,7 @@ func runPrepareCommand(cmd *cobra.Command, args []string) error {
 }
 
 func buildShipperBackupApplication(kubeClient kubernetes.Interface, shipperClient shipperclientset.Interface) ([]shipperBackupApplication, error) {
-	namespaceList, err := kubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
+	namespaceList, err := kubeClient.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +77,7 @@ func buildShipperBackupApplication(kubeClient kubernetes.Interface, shipperClien
 
 	shipperBackupApplications := []shipperBackupApplication{}
 	for _, ns := range namespaceList.Items {
-		applicationList, err := shipperClient.ShipperV1alpha1().Applications(ns.Name).List(metav1.ListOptions{})
+		applicationList, err := shipperClient.ShipperV1alpha1().Applications(ns.Name).List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
 			errList = append(errList, err.Error())
 			continue

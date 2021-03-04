@@ -1,6 +1,7 @@
 package traffic
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"sync"
@@ -399,7 +400,7 @@ func runController(f *shippertesting.ControllerTestFixture) {
 			defer mutex.Unlock()
 
 			endpoints = shiftPodInEndpoints(pod, endpoints)
-			_, err = kubeclient.CoreV1().Endpoints(endpoints.Namespace).Update(endpoints)
+			_, err = kubeclient.CoreV1().Endpoints(endpoints.Namespace).Update(context.TODO(), endpoints, metav1.UpdateOptions{})
 			if err != nil {
 				panic(fmt.Sprintf("can't update endpoints: %s", err))
 			}

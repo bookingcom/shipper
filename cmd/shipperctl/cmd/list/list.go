@@ -2,6 +2,7 @@ package list
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -87,14 +88,14 @@ func runCountContenderCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	namespaceList, err := kubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
+	namespaceList, err := kubeClient.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
 	var errList []string
 	countedReleases := []outputRelease{}
 	for _, ns := range namespaceList.Items {
-		applicationList, err := shipperClient.ShipperV1alpha1().Applications(ns.Name).List(metav1.ListOptions{})
+		applicationList, err := shipperClient.ShipperV1alpha1().Applications(ns.Name).List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
 			errList = append(errList, err.Error())
 			continue
@@ -136,14 +137,14 @@ func runCountReleasesCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	namespaceList, err := kubeClient.CoreV1().Namespaces().List(metav1.ListOptions{})
+	namespaceList, err := kubeClient.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
 	var errList []string
 	countedReleases := []outputRelease{}
 	for _, ns := range namespaceList.Items {
-		releaseList, err := shipperClient.ShipperV1alpha1().Releases(ns.Name).List(metav1.ListOptions{})
+		releaseList, err := shipperClient.ShipperV1alpha1().Releases(ns.Name).List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
 			errList = append(errList, err.Error())
 			continue
