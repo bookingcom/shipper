@@ -3,7 +3,7 @@ package errors
 import (
 	"fmt"
 
-	"k8s.io/helm/pkg/repo"
+	"helm.sh/helm/v3/pkg/repo"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 )
@@ -79,8 +79,8 @@ type BrokenChartVersionError struct {
 func (e BrokenChartVersionError) Error() string {
 	return fmt.Sprintf(
 		"broken helm repo ChartVersion [name: %q, version: %q, repo: %q]: %s",
-		e.cv.GetName(),
-		e.cv.GetVersion(),
+		e.cv.Name,
+		e.cv.Version,
 		e.cv.URLs[0],
 		e.err,
 	)
@@ -181,8 +181,8 @@ func (e ChartDataCorruptionError) ShouldRetry() bool {
 func NewChartDataCorruptionError(cv *repo.ChartVersion, err error) ChartDataCorruptionError {
 	return ChartDataCorruptionError{
 		ChartError: ChartError{
-			chartName:    cv.GetName(),
-			chartVersion: cv.GetVersion(),
+			chartName:    cv.Name,
+			chartVersion: cv.Version,
 			chartRepo:    cv.URLs[0],
 		},
 		err: err,
