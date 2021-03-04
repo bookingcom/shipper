@@ -308,7 +308,11 @@ func runControllers(cfg *cfg) {
 	// This needs to happen before controllers start, so we can start tracking
 	// metrics immediately, even before they're exposed to the world.
 	workqueue.SetProvider(cfg.metrics.wqMetrics)
-	kuberestmetrics.Register(cfg.metrics.restLatency, cfg.metrics.restResult)
+	//kuberestmetrics.Register(cfg.metrics.restLatency, cfg.metrics.restResult)
+	kuberestmetrics.Register(kuberestmetrics.RegisterOpts{
+		RequestLatency: cfg.metrics.restLatency,
+		RequestResult:  cfg.metrics.restResult,
+	})
 
 	for name, initializer := range controllerInitializers {
 		started, err := initializer(cfg)

@@ -48,7 +48,7 @@ func TestRender(t *testing.T) {
 				ReleaseName: "",
 			},
 			ExpectedYaml: "",
-			ExpectedErr:  fmt.Errorf("could not render the chart: render error in \"invalid-chart-template/templates/deployment.yaml\": template: invalid-chart-template/templates/deployment.yaml:4:20: executing \"invalid-chart-template/templates/deployment.yaml\" at <{{template \"some-nonsense.fullname\" .}}>: template \"some-nonsense.fullname\" not defined"),
+			ExpectedErr:  fmt.Errorf("could not render the chart: template: invalid-chart-template/templates/deployment.yaml:4:20: executing \"invalid-chart-template/templates/deployment.yaml\" at <{{template \"some-nonsense.fullname\" .}}>: template \"some-nonsense.fullname\" not defined"),
 		},
 		{
 			Name: "Invalid chart url",
