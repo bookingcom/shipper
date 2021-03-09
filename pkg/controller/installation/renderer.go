@@ -2,6 +2,7 @@ package installation
 
 import (
 	"fmt"
+	"k8s.io/klog"
 	"strings"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
@@ -76,7 +77,7 @@ func prepareObjects(it *shipper.InstallationTarget, manifests []string) ([]runti
 			// immutable" error.
 			deploymentName := obj.Name
 			expectedName := it.Name
-			if !strings.Contains(deploymentName, expectedName) {
+			if it.Spec.StrategyExists && !strings.Contains(deploymentName, expectedName) { // verify only if there's a strategy to enforce
 				return nil, shippererrors.NewInvalidChartError(
 					fmt.Sprintf("Deployment %q has invalid name."+
 						" The name of the Deployment should be"+
@@ -85,7 +86,7 @@ func prepareObjects(it *shipper.InstallationTarget, manifests []string) ([]runti
 				)
 			}
 
-			decodedObj = patchDeployment(obj, shipperLabels)
+			decodedObj = patchDeployment(obj, shipperLabels, it.Spec.StrategyExists)
 		case *corev1.Service:
 			allServices = append(allServices, obj)
 
@@ -113,24 +114,29 @@ func prepareObjects(it *shipper.InstallationTarget, manifests []string) ([]runti
 	// If, after all, we still can not identify a single Service which will
 	// be the production LB, there is nothing else to do rather than bail
 	// out
-	if len(productionLBServices) != 1 {
+	if it.Spec.StrategyExists && len(productionLBServices) != 1 { // verify only if there's a strategy to enforce
 		return nil, shippererrors.NewInvalidChartError(
 			fmt.Sprintf(
 				"one and only one v1.Service object with label %q is required, but %d found instead",
 				shipper.LBLabel, len(productionLBServices)))
 	}
 
-	err := patchService(it, productionLBServices[0])
-	if err != nil {
-		return nil, err
+	if it.Spec.StrategyExists && len(productionLBServices) > 0 {
+		err := patchService(it, productionLBServices[0])
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return preparedObjects, nil
 }
 
-func patchDeployment(d *appsv1.Deployment, labelsToInject map[string]string) runtime.Object {
-	replicas := int32(0)
-	d.Spec.Replicas = &replicas
+func patchDeployment(d *appsv1.Deployment, labelsToInject map[string]string, strategyExists bool) runtime.Object {
+	if strategyExists {
+		klog.Info("HILLA strategy exists! zeroing deployments replica count")
+		replicas := int32(0)
+		d.Spec.Replicas = &replicas
+	}
 
 	var newSelector *metav1.LabelSelector
 	if d.Spec.Selector != nil {

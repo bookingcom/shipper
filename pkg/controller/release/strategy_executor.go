@@ -25,6 +25,7 @@ type context struct {
 	isHead     bool
 	isLastStep bool
 	hasTail    bool
+	strategyExists bool
 }
 
 func (ctx *context) Copy() *context {
@@ -34,6 +35,7 @@ func (ctx *context) Copy() *context {
 		isHead:     ctx.isHead,
 		isLastStep: ctx.isLastStep,
 		hasTail:    ctx.hasTail,
+		strategyExists: ctx.strategyExists,
 	}
 }
 
@@ -161,7 +163,10 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, pipeline Pipel
 
 	// the last step is slightly special from others: at this moment shipper
 	// is no longer waiting for a command but marks a release as complete.
-	isLastStep := int(e.step) == len(e.strategy.Steps)-1
+	isLastStep := true
+	if e.strategy != nil {
+		isLastStep = int(e.step) == len(e.strategy.Steps)-1
+	}
 
 	ctx := &context{
 		release:    curr.release,
@@ -169,9 +174,30 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, pipeline Pipel
 		isLastStep: isLastStep,
 		step:       e.step,
 		isHead:     isHead,
+
 	}
 
 	pipeline.Enqueue(genInstallationEnforcer(ctx, curr, succ))
+
+	// Strategy can be optional. If It is nil, no need to enforce capacity and traffic
+	if e.strategy != nil {
+		e.enqueueCapacityAndTrafficSteps(ctx, pipeline, prev, curr, succ)
+	}
+
+	pipeline.Enqueue(genReleaseStrategyStateEnforcer(ctx, curr, succ))
+
+	strategyStep := shipper.RolloutStrategyStep{}
+	if e.strategy != nil {
+		// This will be used by traffic and capacity enforcers
+		strategyStep = e.strategy.Steps[e.step]
+	}
+
+	return pipeline.Process(strategyStep, cond)
+}
+
+func (e *StrategyExecutor) enqueueCapacityAndTrafficSteps(ctx *context, pipeline Pipeline, prev, curr, succ *releaseInfo) {
+	isHead := succ == nil
+	hasTail := isHead && prev != nil
 
 	// when a release isSteppingBackwards, the strategy executor needs to reverse it's direction.
 	// a release is "not isSteppingBackwards" when the targetStep >= achieved step.
@@ -211,12 +237,6 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, pipeline Pipel
 	} else {
 		pipeline.decrease(ctx, curr, succ)
 	}
-
-	pipeline.Enqueue(genReleaseStrategyStateEnforcer(ctx, curr, succ))
-
-	strategyStep := e.strategy.Steps[e.step]
-
-	return pipeline.Process(strategyStep, cond)
 }
 
 func genInstallationEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
@@ -267,7 +287,9 @@ func genCapacityEnforcer(ctx *context, curr, succ *releaseInfo) PipelineStep {
 		} else {
 			condType = shipper.StrategyConditionIncumbentAchievedCapacity
 		}
-		if isHead {
+		if !ctx.strategyExists {
+			capacityWeight = 100
+		} else if isHead {
 			capacityWeight = strategyStep.Capacity.Contender
 		} else {
 			capacityWeight = strategyStep.Capacity.Incumbent

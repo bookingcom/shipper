@@ -8,7 +8,6 @@ var environmentValidation = apiextensionv1beta1.JSONSchemaProps{
 	Type: "object",
 	Required: []string{
 		"clusterRequirements",
-		"strategy",
 		"chart",
 		"values",
 	},

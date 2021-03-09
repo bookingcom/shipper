@@ -321,6 +321,8 @@ type InstallationTargetSpec struct {
 	// XXX these are nullable because of migration
 	Chart  *Chart       `json:"chart"`
 	Values *ChartValues `json:"values,omitempty"`
+	// Making strategy optional
+	StrategyExists bool `json:"strategyExists,omitempty"`
 }
 
 // +genclient
@@ -424,6 +426,7 @@ type PodStatus struct {
 
 type CapacityTargetSpec struct {
 	Clusters []ClusterCapacityTarget `json:"clusters"`
+	StrategyExists bool `json:"strategyExists,omitEmpty"`
 }
 
 type ClusterCapacityTarget struct {
@@ -478,6 +481,7 @@ type ClusterTrafficCondition struct {
 
 type TrafficTargetSpec struct {
 	Clusters []ClusterTrafficTarget `json:"clusters"`
+	StrategyExists bool `json:"strategyExists,omitEmpty"`
 }
 
 type ClusterTrafficTarget struct {

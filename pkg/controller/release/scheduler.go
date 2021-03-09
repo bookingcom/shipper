@@ -214,13 +214,19 @@ func setInstallationTargetClusters(it *shipper.InstallationTarget, clusters []st
 }
 
 func setCapacityTargetClusters(ct *shipper.CapacityTarget, clusters []string, totalReplicaCount int32) {
+	strategyExists := ct.Spec.StrategyExists
 	capacityTargetClusters := make([]shipper.ClusterCapacityTarget, 0, len(clusters))
+	percent := int32(100)
+	if strategyExists {
+		percent = 0
+	}
+	klog.Infof("HILLA setting ct replica percent to %d", percent)
 	for _, cluster := range clusters {
 		capacityTargetClusters = append(
 			capacityTargetClusters,
 			shipper.ClusterCapacityTarget{
 				Name:              cluster,
-				Percent:           0,
+				Percent:           percent,
 				TotalReplicaCount: totalReplicaCount,
 			})
 	}
@@ -264,8 +270,10 @@ func (s *Scheduler) CreateOrUpdateInstallationTarget(rel *shipper.Release) (*shi
 				Chart:       rel.Spec.Environment.Chart.DeepCopy(),
 				Values:      rel.Spec.Environment.Values,
 				CanOverride: true,
+				StrategyExists: rel.Spec.Environment.Strategy != nil,
 			},
 		}
+		klog.Infof("HILLA creates installation with StrategyExists: %v", it.Spec.StrategyExists)
 		setInstallationTargetClusters(it, clusters)
 
 		updIt, err := s.clientset.ShipperV1alpha1().InstallationTargets(rel.GetNamespace()).Create(it)
@@ -332,6 +340,9 @@ func (s *Scheduler) CreateOrUpdateCapacityTarget(rel *shipper.Release, totalRepl
 				OwnerReferences: []metav1.OwnerReference{
 					createOwnerRefFromRelease(rel),
 				},
+			},
+			Spec: shipper.CapacityTargetSpec{
+				StrategyExists: rel.Spec.Environment.Strategy != nil,
 			},
 		}
 		setCapacityTargetClusters(ct, clusters, totalReplicaCount)
@@ -400,6 +411,9 @@ func (s *Scheduler) CreateOrUpdateTrafficTarget(rel *shipper.Release) (*shipper.
 				OwnerReferences: []metav1.OwnerReference{
 					createOwnerRefFromRelease(rel),
 				},
+			},
+			Spec: shipper.TrafficTargetSpec{
+				StrategyExists: rel.Spec.Environment.Strategy != nil,
 			},
 		}
 		setTrafficTargetClusters(tt, clusters)
@@ -603,11 +617,14 @@ func extractReplicasFromChartForRel(chart *helmchart.Chart, rel *shipper.Release
 	}
 
 	deployments := shipperchart.GetDeployments(rendered)
-	if len(deployments) != 1 {
+	if rel.Spec.Environment.Strategy != nil && len(deployments) != 1 {
 		return 0, shippererrors.NewWrongChartDeploymentsError(
 			&rel.Spec.Environment.Chart,
 			len(deployments),
 		)
+	}
+	if rel.Spec.Environment.Strategy == nil && len(deployments) < 1 {
+		return 0, nil
 	}
 
 	replicas := deployments[0].Spec.Replicas

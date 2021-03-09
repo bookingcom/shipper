@@ -441,17 +441,20 @@ func updateConditions(rel *shipper.Release, diff *diffutil.MultiDiff, targetStep
 	)
 	diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
 
-	isLastStep := int(targetStep) == len(strategy.Steps)-1
+	isLastStep := true
+	if strategy != nil {
+		isLastStep = int(targetStep) == len(strategy.Steps)-1
+	}
 	prevStep := rel.Status.AchievedStep
 
 
 	var achievedStep int32
 	if complete {
-		var achievedStepName string
-		if isHead {
+		achievedStepName := ""
+		if isHead && strategy != nil {
 			achievedStep = targetStep
 			achievedStepName = strategy.Steps[achievedStep].Name
-		} else {
+		} else if rel.Spec.Environment.Strategy != nil {
 			achievedStep = int32(len(rel.Spec.Environment.Strategy.Steps)) - 1
 			achievedStepName = rel.Spec.Environment.Strategy.Steps[achievedStep].Name
 		}
@@ -507,6 +510,18 @@ func strategyAndStepToExecute(rel *shipper.Release, relinfoSucc *releaseInfo) (*
 		succ = relinfoSucc.release
 	}
 	isHead := succ == nil
+
+	// make strategy optional: no strategy to enforce
+	if isHead {
+		if rel.Spec.Environment.Strategy == nil {
+			return nil, 0, false, nil
+		}
+	} else {
+		if succ.Spec.Environment.Strategy == nil {
+			return nil, 0, false, nil
+		}
+	}
+
 	var strategy *shipper.RolloutStrategy
 	var targetStep int32
 	var isSteppingBackwards bool
