@@ -180,9 +180,9 @@ func (e *StrategyExecutor) Execute(prev, curr, succ *releaseInfo, pipeline Pipel
 	pipeline.Enqueue(genInstallationEnforcer(ctx, curr, succ))
 
 	// Strategy can be optional. If It is nil, no need to enforce capacity and traffic
-	if e.strategy != nil {
-		e.enqueueCapacityAndTrafficSteps(ctx, pipeline, prev, curr, succ)
-	}
+	e.enqueueCapacityAndTrafficSteps(ctx, pipeline, prev, curr, succ)
+	//if e.strategy != nil {
+	//}
 
 	pipeline.Enqueue(genReleaseStrategyStateEnforcer(ctx, curr, succ))
 
@@ -414,12 +414,7 @@ func genReleaseStrategyStateEnforcer(ctx *context, curr, succ *releaseInfo) Pipe
 
 		relStatus := curr.release.Status.DeepCopy()
 
-		newReleaseStrategyState := cond.AsReleaseStrategyState(
-			ctx.step,
-			ctx.hasTail,
-			ctx.isLastStep,
-			ctx.isHead,
-		)
+		newReleaseStrategyState := cond.AsReleaseStrategyState(ctx.step, ctx.hasTail, ctx.isLastStep, ctx.isHead, ctx.strategyExists)
 
 		var oldReleaseStrategyState shipper.ReleaseStrategyState
 		if relStatus.Strategy != nil {
@@ -446,12 +441,7 @@ func buildContenderStrategyConditionsPatch(
 ) StrategyPatch {
 	newStrategyStatus := &shipper.ReleaseStrategyStatus{
 		Conditions: cond.AsReleaseStrategyConditions(),
-		State: cond.AsReleaseStrategyState(
-			ctx.step,
-			ctx.hasTail,
-			ctx.isLastStep,
-			ctx.isHead,
-		),
+		State: cond.AsReleaseStrategyState(ctx.step, ctx.hasTail, ctx.isLastStep, ctx.isHead, ctx.strategyExists),
 	}
 	return &ReleaseStrategyStatusPatch{
 		NewStrategyStatus: newStrategyStatus,
@@ -468,10 +458,10 @@ func getReleaseStrategyStateTransitions(
 		stateTransitions = append(stateTransitions, ReleaseStrategyStateTransition{State: "WaitingForCapacity", New: newState.WaitingForCapacity, Previous: valueOrUnknown(oldState.WaitingForCapacity)})
 	}
 	if oldState.WaitingForCommand != newState.WaitingForCommand {
-		stateTransitions = append(stateTransitions, ReleaseStrategyStateTransition{State: "WaitingForCommand", New: newState.WaitingForCommand, Previous: valueOrUnknown(oldState.WaitingForCapacity)})
+		stateTransitions = append(stateTransitions, ReleaseStrategyStateTransition{State: "WaitingForCommand", New: newState.WaitingForCommand, Previous: valueOrUnknown(oldState.WaitingForCommand)})
 	}
 	if oldState.WaitingForInstallation != newState.WaitingForInstallation {
-		stateTransitions = append(stateTransitions, ReleaseStrategyStateTransition{State: "WaitingForInstallation", New: newState.WaitingForInstallation, Previous: valueOrUnknown(oldState.WaitingForCapacity)})
+		stateTransitions = append(stateTransitions, ReleaseStrategyStateTransition{State: "WaitingForInstallation", New: newState.WaitingForInstallation, Previous: valueOrUnknown(oldState.WaitingForInstallation)})
 	}
 	if oldState.WaitingForTraffic != newState.WaitingForTraffic {
 		stateTransitions = append(stateTransitions, ReleaseStrategyStateTransition{State: "WaitingForTraffic", New: newState.WaitingForTraffic, Previous: valueOrUnknown(oldState.WaitingForTraffic)})

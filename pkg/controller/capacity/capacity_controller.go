@@ -393,9 +393,11 @@ func (c *Controller) processCapacityTarget(ct *shipper.CapacityTarget) (*shipper
 			}
 		}
 
-		err := c.processCapacityTargetOnCluster(ct, &clusterSpec, &clusterStatus)
-		if err != nil {
-			clusterErrors.Append(err)
+		if ct.Spec.StrategyExists {
+			err := c.processCapacityTargetOnCluster(ct, &clusterSpec, &clusterStatus)
+			if err != nil {
+				clusterErrors.Append(err)
+			}
 		}
 
 		newClusterStatuses = append(newClusterStatuses, clusterStatus)
@@ -409,6 +411,10 @@ func (c *Controller) processCapacityTarget(ct *shipper.CapacityTarget) (*shipper
 	notReadyReasons := []string{}
 	for _, clusterStatus := range ct.Status.Clusters {
 		ready, reason := clusterstatusutil.IsClusterCapacityReady(clusterStatus.Conditions)
+		if !ct.Spec.StrategyExists {
+			// Optional strategy: if strategy does not exist, there is no traffic to enforce
+			ready = true
+		}
 		if !ready {
 			notReadyReasons = append(notReadyReasons,
 				fmt.Sprintf("%s: %s", clusterStatus.Name, reason))

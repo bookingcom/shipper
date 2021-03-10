@@ -130,12 +130,7 @@ func (sc StrategyConditionsMap) allConditionTypes() []shipper.StrategyConditionT
 
 // AsReleaseStrategyState returns a ReleaseStrategyState computed from the
 // conditions in the receiver.
-func (sc StrategyConditionsMap) AsReleaseStrategyState(
-	step int32,
-	hasIncumbent bool,
-	isLastStep bool,
-	isHead bool,
-) shipper.ReleaseStrategyState {
+func (sc StrategyConditionsMap) AsReleaseStrategyState(step int32, hasIncumbent, isLastStep, isHead, strategyExists bool) shipper.ReleaseStrategyState {
 
 	// States we don't know just yet are set to Unknown
 	state := shipper.ReleaseStrategyState{
@@ -179,6 +174,9 @@ func (sc StrategyConditionsMap) AsReleaseStrategyState(
 	}
 
 	waitingForCapacity := contenderWaitingForCapacity || incumbentWaitingForCapacity
+	if !strategyExists {
+		waitingForCapacity = true
+	}
 
 	if waitingForCapacity {
 		state.WaitingForCapacity = shipper.StrategyStateTrue
@@ -202,6 +200,9 @@ func (sc StrategyConditionsMap) AsReleaseStrategyState(
 	}
 
 	waitingForTraffic := contenderWaitingForTraffic || incumbentWaitingForTraffic
+	if !strategyExists {
+		waitingForCapacity = true
+	}
 
 	if waitingForTraffic {
 		state.WaitingForTraffic = shipper.StrategyStateTrue

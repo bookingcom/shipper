@@ -20,6 +20,9 @@ func ReleaseAchievedTargetStep(rel *shipper.Release) bool {
 }
 
 func IsLastStrategyStep(rel *shipper.Release) bool {
+	if rel.Spec.Environment.Strategy == nil {
+		 return true
+	}
 	targetStep := rel.Spec.TargetStep
 	numSteps := len(rel.Spec.Environment.Strategy.Steps)
 	return targetStep == int32(numSteps-1)

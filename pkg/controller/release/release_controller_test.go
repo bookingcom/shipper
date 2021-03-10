@@ -1021,7 +1021,7 @@ func (f *fixture) expectCapacityStatusPatch(step int32, ct *shipper.CapacityTarg
 		"status": shipper.ReleaseStatus{
 			Strategy: &shipper.ReleaseStrategyStatus{
 				Conditions: strategyConditions.AsReleaseStrategyConditions(),
-				State:      strategyConditions.AsReleaseStrategyState(step, true, false, true),
+				State:      strategyConditions.AsReleaseStrategyState(step, true, false, true, true),
 			},
 		},
 	}
@@ -1120,7 +1120,7 @@ func (f *fixture) expectTrafficStatusPatch(step int32, tt *shipper.TrafficTarget
 		"status": shipper.ReleaseStatus{
 			Strategy: &shipper.ReleaseStrategyStatus{
 				Conditions: strategyConditions.AsReleaseStrategyConditions(),
-				State:      strategyConditions.AsReleaseStrategyState(step, true, false, true),
+				State:      strategyConditions.AsReleaseStrategyState(step, true, false, true, true),
 			},
 		},
 	}
@@ -3152,7 +3152,7 @@ func TestUpdatesHistoricalReleaseStrategyStateConditions(t *testing.T) {
 	)
 	preincumbent.Status.Strategy = &shipper.ReleaseStrategyStatus{
 		Conditions: cond.AsReleaseStrategyConditions(),
-		State:      cond.AsReleaseStrategyState(step, false, true, false),
+		State:      cond.AsReleaseStrategyState(step, false, true, false, true),
 	}
 
 	for _, relinfo := range relinfos {

@@ -236,7 +236,7 @@ func TestContenderStateWaitingForCapacity(t *testing.T) {
 		WaitingForCommand:      shipper.StrategyStateFalse,
 	}
 
-	releaseStrategyState := sc.AsReleaseStrategyState(step1, true, false, true)
+	releaseStrategyState := sc.AsReleaseStrategyState(step1, true, false, true, true)
 	if !reflect.DeepEqual(releaseStrategyState, expected) {
 		t.Fatalf(
 			"Strategy states are different\nDiff:\n %s",
@@ -283,7 +283,7 @@ func TestContenderStateWaitingForTraffic(t *testing.T) {
 		WaitingForCommand:      shipper.StrategyStateFalse,
 	}
 
-	releaseStrategyState := sc.AsReleaseStrategyState(step1, true, false, true)
+	releaseStrategyState := sc.AsReleaseStrategyState(step1, true, false, true, true)
 	if !reflect.DeepEqual(releaseStrategyState, expected) {
 		t.Fatalf(
 			"Strategy states are different\nDiff:\n %s",
@@ -329,7 +329,7 @@ func TestIncumbentStateWaitingForTraffic(t *testing.T) {
 		WaitingForCommand:      shipper.StrategyStateFalse,
 	}
 
-	releaseStrategyState := sc.AsReleaseStrategyState(step1, true, false, true)
+	releaseStrategyState := sc.AsReleaseStrategyState(step1, true, false, true, true)
 	if !reflect.DeepEqual(releaseStrategyState, expected) {
 		t.Fatalf(
 			"Strategy states are different\nDiff:\n %s",
@@ -375,7 +375,7 @@ func TestIncumbentStateWaitingForCapacity(t *testing.T) {
 		WaitingForCommand:      shipper.StrategyStateFalse,
 	}
 
-	releaseStrategyState := sc.AsReleaseStrategyState(step1, true, false, true)
+	releaseStrategyState := sc.AsReleaseStrategyState(step1, true, false, true, true)
 	if !reflect.DeepEqual(releaseStrategyState, expected) {
 		t.Fatalf(
 			"Strategy states are different\nDiff:\n %s",
@@ -420,7 +420,7 @@ func TestStateWaitingForCommand(t *testing.T) {
 		WaitingForCommand:      shipper.StrategyStateTrue,
 	}
 
-	releaseStrategyState := sc.AsReleaseStrategyState(step1, true, false, true)
+	releaseStrategyState := sc.AsReleaseStrategyState(step1, true, false, true, true)
 	if !reflect.DeepEqual(releaseStrategyState, expected) {
 		t.Fatalf(
 			"Strategy states are different\nDiff:\n %s",

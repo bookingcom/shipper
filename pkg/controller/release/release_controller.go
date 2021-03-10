@@ -450,7 +450,7 @@ func updateConditions(rel *shipper.Release, diff *diffutil.MultiDiff, targetStep
 
 	var achievedStep int32
 	if complete {
-		achievedStepName := ""
+		achievedStepName := "Yes"
 		if isHead && strategy != nil {
 			achievedStep = targetStep
 			achievedStepName = strategy.Steps[achievedStep].Name
@@ -538,7 +538,7 @@ func strategyAndStepToExecute(rel *shipper.Release, relinfoSucc *releaseInfo) (*
 	}
 
 	// Looks like a malformed input. Informing about a problem and bailing out.
-	if targetStep >= int32(len(strategy.Steps)) {
+	if strategy != nil && targetStep >= int32(len(strategy.Steps)) {
 		err := fmt.Errorf("no step %d in strategy for Release %q",
 			targetStep, controller.MetaKey(rel))
 		return nil, 0, true, shippererrors.NewUnrecoverableError(err)

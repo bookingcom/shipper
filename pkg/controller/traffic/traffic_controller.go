@@ -278,9 +278,11 @@ func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.T
 			}
 		}
 
-		err := c.processTrafficTargetOnCluster(tt, &clusterSpec, clusterStatus, clusterReleaseWeights)
-		if err != nil {
-			clusterErrors.Append(err)
+		if tt.Spec.StrategyExists {
+			err := c.processTrafficTargetOnCluster(tt, &clusterSpec, clusterStatus, clusterReleaseWeights)
+			if err != nil {
+				clusterErrors.Append(err)
+			}
 		}
 
 		newClusterStatuses = append(newClusterStatuses, clusterStatus)
@@ -294,6 +296,10 @@ func (c *Controller) processTrafficTarget(tt *shipper.TrafficTarget) (*shipper.T
 	notReadyReasons := []string{}
 	for _, clusterStatus := range tt.Status.Clusters {
 		ready, reason := clusterstatusutil.IsClusterTrafficReady(clusterStatus.Conditions)
+		if !tt.Spec.StrategyExists {
+			// Optional strategy: if strategy does not exist, there is no traffic to enforce
+			ready = true
+		}
 		if !ready {
 			notReadyReasons = append(notReadyReasons,
 				fmt.Sprintf("%s: %s", clusterStatus.Name, reason))
