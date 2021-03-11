@@ -2,6 +2,7 @@ package release
 
 import (
 	"fmt"
+	"reflect"
 	"time"
 
 	"k8s.io/klog"
@@ -419,6 +420,19 @@ func genReleaseStrategyStateEnforcer(ctx *context, curr, succ *releaseInfo) Pipe
 		var oldReleaseStrategyState shipper.ReleaseStrategyState
 		if relStatus.Strategy != nil {
 			oldReleaseStrategyState = relStatus.Strategy.State
+		}
+		if !reflect.DeepEqual(newReleaseStrategyState, oldReleaseStrategyState) {
+			klog.Infof("HILLA updating rel state for release %s\n", ctx.release.Name)
+
+			releaseStrategyStateTransitions =
+				getReleaseStrategyStateTransitions(
+					oldReleaseStrategyState,
+					newReleaseStrategyState,
+					releaseStrategyStateTransitions)
+		} else {
+			klog.Infof("HILLA NOTTTT updating rel state for release %s\n", ctx.release.Name)
+			klog.Infof("old: %v", oldReleaseStrategyState)
+			klog.Infof("new: %v", newReleaseStrategyState)
 		}
 
 		relPatch := buildContenderStrategyConditionsPatch(ctx, cond)

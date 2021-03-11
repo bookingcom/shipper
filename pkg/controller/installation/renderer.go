@@ -31,10 +31,13 @@ func FetchAndRenderChart(
 	if err != nil {
 		return nil, err
 	}
-
+	name, ok := it.GetLabels()["shipper-app"]
+	if !ok || it.Spec.StrategyExists {
+		name = it.GetName()
+	}
 	manifests, err := shipperchart.Render(
 		chart,
-		it.GetName(),
+		name,
 		it.GetNamespace(),
 		it.Spec.Values,
 	)
@@ -125,6 +128,14 @@ func prepareObjects(it *shipper.InstallationTarget, manifests []string) ([]runti
 		err := patchService(it, productionLBServices[0])
 		if err != nil {
 			return nil, err
+		}
+	}
+	if !it.Spec.StrategyExists && len(productionLBServices) > 0 {
+		for _, lbService := range productionLBServices {
+			err := patchService(it, lbService)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 

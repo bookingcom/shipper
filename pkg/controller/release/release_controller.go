@@ -454,11 +454,11 @@ func updateConditions(rel *shipper.Release, diff *diffutil.MultiDiff, targetStep
 		if isHead && strategy != nil {
 			achievedStep = targetStep
 			achievedStepName = strategy.Steps[achievedStep].Name
-		} else if rel.Spec.Environment.Strategy != nil {
+		} else if strategy != nil {
 			achievedStep = int32(len(rel.Spec.Environment.Strategy.Steps)) - 1
 			achievedStepName = rel.Spec.Environment.Strategy.Steps[achievedStep].Name
 		}
-		if prevStep == nil || achievedStep != prevStep.Step {
+		if prevStep == nil || achievedStep != prevStep.Step || strategy != nil {
 			rel.Status.AchievedStep = &shipper.AchievedStep{
 				Step: achievedStep,
 				Name: achievedStepName,
@@ -469,6 +469,14 @@ func updateConditions(rel *shipper.Release, diff *diffutil.MultiDiff, targetStep
 			condition := releaseutil.NewReleaseCondition(
 				shipper.ReleaseConditionTypeComplete,
 				corev1.ConditionTrue,
+				"",
+				"",
+			)
+			diff.Append(releaseutil.SetReleaseCondition(&rel.Status, *condition))
+		} else {
+			condition := releaseutil.NewReleaseCondition(
+				shipper.ReleaseConditionTypeComplete,
+				corev1.ConditionFalse,
 				"",
 				"",
 			)

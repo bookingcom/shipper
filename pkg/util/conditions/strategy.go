@@ -1,6 +1,7 @@
 package conditions
 
 import (
+	"k8s.io/klog"
 	"sort"
 	"time"
 
@@ -175,7 +176,9 @@ func (sc StrategyConditionsMap) AsReleaseStrategyState(step int32, hasIncumbent,
 
 	waitingForCapacity := contenderWaitingForCapacity || incumbentWaitingForCapacity
 	if !strategyExists {
-		waitingForCapacity = true
+		klog.Info("HILLA !strategyExists so waitingForCapacity = false")
+
+		waitingForCapacity = false
 	}
 
 	if waitingForCapacity {
@@ -201,7 +204,8 @@ func (sc StrategyConditionsMap) AsReleaseStrategyState(step int32, hasIncumbent,
 
 	waitingForTraffic := contenderWaitingForTraffic || incumbentWaitingForTraffic
 	if !strategyExists {
-		waitingForCapacity = true
+		klog.Info("HILLA !strategyExists so waitingForTraffic = false")
+		waitingForTraffic = false
 	}
 
 	if waitingForTraffic {
