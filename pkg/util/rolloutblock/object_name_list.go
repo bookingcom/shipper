@@ -61,6 +61,12 @@ func (o ObjectNameList) Add(statement string) {
 	o[statement] = struct{}{}
 }
 
+func (o ObjectNameList) AddMultiple(o2 ObjectNameList) {
+	for s := range o2 {
+		o.Add(s)
+	}
+}
+
 func (o ObjectNameList) Diff(o2 ObjectNameList) ObjectNameList {
 	res := make(ObjectNameList)
 	for s := range o {

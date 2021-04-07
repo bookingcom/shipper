@@ -249,9 +249,10 @@ func newRolloutBlock(name string, namespace string) *shipper.RolloutBlock {
 func buildApplication(namespace string, appName string) *shipper.Application {
 	return &shipper.Application{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      appName,
-			Namespace: namespace,
-			UID:       "foobarbaz",
+			Name:        appName,
+			Namespace:   namespace,
+			UID:         "foobarbaz",
+			Annotations: make(map[string]string),
 		},
 		Status: shipper.ApplicationStatus{
 			History: []string{},
