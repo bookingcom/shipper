@@ -220,18 +220,39 @@ func (c *Webhook) validateHandlerFunc(review *admission.AdmissionReview) *admiss
 	request := review.Request
 	var err error
 
+	if request.Operation == kubeclient.Delete {
+		err = c.validateDelete(request)
+	} else {
+		err = c.validateCreateUpdate(request)
+	}
+
+	if err != nil {
+		return &admission.AdmissionResponse{
+			Result: &metav1.Status{
+				Message: err.Error(),
+			},
+		}
+	}
+
+	return &admission.AdmissionResponse{
+		Allowed: true,
+	}
+}
+
+func (c *Webhook) validateCreateUpdate(request *kubeclient.AdmissionRequest) error {
+	var err error
 	switch request.Kind.Kind {
 	case "Application":
 		var application shipper.Application
 		err = json.Unmarshal(request.Object.Raw, &application)
 		if err == nil {
-			err = c.validateApplication(request, application)
+			err = c.validateBlocksForApplication(request, application)
 		}
 	case "Release":
 		var release shipper.Release
 		err = json.Unmarshal(request.Object.Raw, &release)
 		if err == nil {
-			err = c.validateRelease(request, release)
+			err = c.validateBlocksForRelease(request, release)
 		}
 	case "Cluster":
 		var cluster shipper.Cluster
@@ -249,21 +270,31 @@ func (c *Webhook) validateHandlerFunc(review *admission.AdmissionReview) *admiss
 		var rolloutBlock shipper.RolloutBlock
 		err = json.Unmarshal(request.Object.Raw, &rolloutBlock)
 	}
-
-	if err != nil {
-		return &admission.AdmissionResponse{
-			Result: &metav1.Status{
-				Message: err.Error(),
-			},
-		}
-	}
-
-	return &admission.AdmissionResponse{
-		Allowed: true,
-	}
+	return err
 }
 
-func (c *Webhook) validateRelease(request *admission.AdmissionRequest, release shipper.Release) error {
+func (c *Webhook) validateDelete(request *kubeclient.AdmissionRequest) error {
+	var err error
+	var obj metav1.Object
+	switch request.Kind.Kind {
+	case "Application":
+		var application shipper.Application
+		err = json.Unmarshal(request.OldObject.Raw, &application)
+		obj = &application
+	case "Release":
+		var release shipper.Release
+		err = json.Unmarshal(request.OldObject.Raw, &release)
+		obj = &release
+	default:
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return c.validateBlocksForObject(obj)
+}
+
+func (c *Webhook) validateBlocksForRelease(request *admission.AdmissionRequest, release shipper.Release) error {
 	var err error
 	overrides, existingBlocks, err := rolloutblock.GetAllBlocks(c.rolloutBlocksLister, &release)
 	if err != nil {
@@ -296,7 +327,7 @@ func (c *Webhook) validateRelease(request *admission.AdmissionRequest, release s
 	return err
 }
 
-func (c *Webhook) validateApplication(request *admission.AdmissionRequest, application shipper.Application) error {
+func (c *Webhook) validateBlocksForApplication(request *admission.AdmissionRequest, application shipper.Application) error {
 	var err error
 	overrides, existingBlocks, err := rolloutblock.GetAllBlocks(c.rolloutBlocksLister, &application)
 	if err != nil {
@@ -321,4 +352,19 @@ func (c *Webhook) validateApplication(request *admission.AdmissionRequest, appli
 	}
 
 	return err
+}
+
+func (c *Webhook) validateBlocksForObject(obj metav1.Object) error {
+	overrides, existingBlocks, err := rolloutblock.GetAllBlocks(c.rolloutBlocksLister, obj)
+	if err != nil {
+		return err
+	}
+	if err := rolloutblock.ValidateAnnotations(existingBlocks, overrides); err != nil {
+		return err
+	}
+	if err := rolloutblock.ValidateBlocks(existingBlocks, overrides); err != nil {
+		return err
+	}
+
+	return nil
 }

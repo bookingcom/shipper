@@ -428,6 +428,7 @@ func (c *Cluster) CreateOrUpdateValidatingWebhookConfiguration(caBundle []byte, 
 						Operations: []admissionregistrationv1beta1.OperationType{
 							admissionregistrationv1beta1.Create,
 							admissionregistrationv1beta1.Update,
+							admissionregistrationv1beta1.Delete,
 						},
 						Rule: admissionregistrationv1beta1.Rule{
 							APIGroups:   []string{shipper.SchemeGroupVersion.Group},

@@ -1,7 +1,9 @@
 package release
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -301,6 +303,10 @@ func (c *Controller) syncOneReleaseHandler(key string) error {
 		c.recorder,
 	)
 
+	if err := c.updateApplicationOverrides(rel); err != nil {
+		klog.Errorf("failed to update application overrides: %v", err)
+	}
+
 	rolloutBlocked, events, err := rolloutblock.BlocksRollout(c.rolloutBlockLister, rel)
 	for _, ev := range events {
 		c.recorder.Event(rel, ev.Type, ev.Reason, ev.Message)
@@ -388,6 +394,31 @@ ApplyChanges:
 	return err
 }
 
+func (c *Controller) updateApplicationOverrides(rel *shipper.Release) error {
+	namespace := rel.GetNamespace()
+	// update application with same override annotations as release
+	appName, err := releaseutil.ApplicationNameForRelease(rel)
+	if err != nil {
+		return err
+	}
+	application, err := c.applicationLister.Applications(namespace).Get(appName)
+	if err != nil {
+		return err
+	}
+	applicationOverrides := application.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation]
+	newOverrides := rolloutblock.ApplicationOverrides(applicationOverrides, rel.GetAnnotations()[shipper.RolloutBlocksOverrideAnnotation])
+	if strings.EqualFold(applicationOverrides, newOverrides) {
+		return nil
+	}
+	patch := make(map[string]interface{})
+	patch["annotations"] = newOverrides
+	b, _ := json.Marshal(patch)
+	if _, err = c.clientset.ShipperV1alpha1().Applications(namespace).Patch(appName, types.MergePatchType, b); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (c *Controller) applicationReleases(rel *shipper.Release) ([]*shipper.Release, error) {
 	appName, err := releaseutil.ApplicationNameForRelease(rel)
 	if err != nil {
@@ -443,7 +474,6 @@ func updateConditions(rel *shipper.Release, diff *diffutil.MultiDiff, targetStep
 
 	isLastStep := int(targetStep) == len(strategy.Steps)-1
 	prevStep := rel.Status.AchievedStep
-
 
 	var achievedStep int32
 	if complete {

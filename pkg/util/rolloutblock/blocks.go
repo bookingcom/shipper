@@ -90,3 +90,11 @@ func ValidateAnnotations(existing, overrides ObjectNameList) error {
 	}
 	return nil
 }
+
+func ApplicationOverrides(applicationOverrides, releaseOverrides string) string {
+	appOverrides := NewObjectNameList(applicationOverrides)
+	relOverrides := NewObjectNameList(releaseOverrides)
+	diff := relOverrides.Diff(appOverrides)
+	appOverrides.AddMultiple(diff)
+	return appOverrides.String()
+}

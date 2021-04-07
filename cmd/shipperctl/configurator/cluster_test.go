@@ -28,6 +28,7 @@ func TestCreateValidatingWebhookConfiguration(t *testing.T) {
 	operations := []admissionregistrationv1beta1.OperationType{
 		admissionregistrationv1beta1.Create,
 		admissionregistrationv1beta1.Update,
+		admissionregistrationv1beta1.Delete,
 	}
 	expectedConfiguration := f.newValidatingWebhookConfiguration(caBundle, shipperSystemNamespace, operations)
 	gvr := admissionregistrationv1beta1.SchemeGroupVersion.WithResource("validatingwebhookconfigurations")
@@ -65,6 +66,7 @@ func TestUpdateValidatingWebhookConfiguration(t *testing.T) {
 	operations = []admissionregistrationv1beta1.OperationType{
 		admissionregistrationv1beta1.Create,
 		admissionregistrationv1beta1.Update,
+		admissionregistrationv1beta1.Delete,
 	}
 	expectedConfiguration := f.newValidatingWebhookConfiguration(caBundle, shipperSystemNamespace, operations)
 	getAction := kubetesting.NewGetAction(gvr, "", expectedConfiguration.Name)
