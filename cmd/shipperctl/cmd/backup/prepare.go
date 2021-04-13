@@ -8,14 +8,18 @@ import (
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 
 	"github.com/bookingcom/shipper/cmd/shipperctl/config"
+	"github.com/bookingcom/shipper/cmd/shipperctl/configurator"
 	"github.com/bookingcom/shipper/cmd/shipperctl/release"
 	"github.com/bookingcom/shipper/cmd/shipperctl/ui"
 	shipperclientset "github.com/bookingcom/shipper/pkg/client/clientset/versioned"
 )
 
 var (
+	useInClusterConfigFlag bool
+
 	prepareBackupCmd = &cobra.Command{
 		Use:   "prepare",
 		Short: "Get yaml of application and release objects prepared for backup",
@@ -26,13 +30,33 @@ var (
 )
 
 func init() {
+	prepareBackupCmd.Flags().BoolVar(&useInClusterConfigFlag, "use-in-cluster-config",false, "Use this when running inside a pod running on kubernetes. It will use config object which uses the service account kubernetes gives to pods.")
 	Cmd.AddCommand(prepareBackupCmd)
 }
 
 func runPrepareCommand(cmd *cobra.Command, args []string) error {
-	kubeClient, shipperClient, err := config.Load(kubeConfigFile, managementClusterContext)
-	if err != nil {
-		return err
+	var (
+		kubeClient kubernetes.Interface
+		shipperClient shipperclientset.Interface
+		err error
+	)
+
+	if useInClusterConfigFlag {
+		clusterConfig, err := rest.InClusterConfig()
+		if err != nil {
+			return err
+		}
+		clusterConfigurator, err := configurator.NewClusterConfigurator(clusterConfig)
+		if err != nil {
+			return err
+		}
+		kubeClient = clusterConfigurator.KubeClient
+		shipperClient = clusterConfigurator.ShipperClient
+	} else {
+		kubeClient, shipperClient, err = config.Load(kubeConfigFile, managementClusterContext)
+		if err != nil {
+			return err
+		}
 	}
 
 	shipperBackupApplications, err := buildShipperBackupApplication(kubeClient, shipperClient)
