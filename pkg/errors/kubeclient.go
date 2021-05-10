@@ -57,6 +57,17 @@ func (e KubeclientError) ShouldRetry() bool {
 	// reason.
 	statuserr, ok := e.err.(kerrors.APIStatus)
 	if ok {
+		var kind string
+		if details := statuserr.Status().Details; details != nil {
+			kind = details.Kind
+		}
+		if
+		(kerrors.HasStatusCause(e.err, corev1.NamespaceTerminatingCause) && statuserr.Status().Code == 403) ||
+			(kind == "namespaces" && statuserr.Status().Code == 404) {
+			// if the namespace is being terminated, or already deleted (namespace not found)
+			// we should retry until the namespace is recreated
+			return true
+		}
 		switch statuserr.Status().Code {
 		case 400, 403, 404, 405, 410, 422:
 			return false
@@ -64,6 +75,7 @@ func (e KubeclientError) ShouldRetry() bool {
 			return true
 		}
 	}
+
 
 	klog.V(8).Infof("Cannot determine reason for error %#v, will assume it's retriable", e)
 	return true
