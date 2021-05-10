@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/klog"
 
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shippererrors "github.com/bookingcom/shipper/pkg/errors"
@@ -109,6 +110,13 @@ func (i *Installer) install(
 	} else if err != nil { // errors.IsNotFound(err) == true
 		createdConfigMap, err = client.CoreV1().ConfigMaps(configMap.Namespace).Create(configMap)
 		if err != nil {
+			klog.Warningf(
+				"failed to create anchor ConfigMap %s/%s in cluster %s: %+v",
+				configMap.Namespace,
+				configMap.Name,
+				cluster.Name,
+				err,
+				)
 			return shippererrors.NewKubeclientCreateError(configMap, err).
 				WithCoreV1Kind("ConfigMap")
 		}
