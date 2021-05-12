@@ -1,7 +1,7 @@
 .. _start:
 
 ####################
-Shipper in 5 minutes
+Installing Shipper
 ####################
 
 *************************
@@ -169,6 +169,23 @@ Step 6: do a rollout!
 *********************
 
 Now you should have a working Shipper installation. :ref:`Let's roll something out! <user_rolling-out>`
+
+
+*****************
+Namespace manager
+*****************
+By design, Shipper does not create namespaces in the application cluster.
+Shipper requires the existence of a namespace in the application cluster with the same name as the namespace in
+management cluster where the *Application* objects is installed.
+In case the namespace does not exist in the application cluster, and this application cluster is selected for a *Release*,
+Shipper will continue to try and install the charts, and fail.
+This loop will end only when the namespace is created in the application cluster,
+or this application cluster is not selected anymore (by deleting the *Release* or *Application* objects).
+
+To help with this, we recommend having some sort of a namespace manager tool.
+This can be a simple controller that installs a namespace in all the application clusters
+for each namespace existing in the management cluster, or a more complex tool, depending on your needs.
+
 
 .. rubric:: Footnotes
 
