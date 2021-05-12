@@ -51,6 +51,8 @@
 * Fix dropping pods when moving back in the strategy([#387][])
 * Webhook validates deletion. This prevents users to delete release 
   objects when there's a rollout block thus creating an outage for their service ([#392][])
+* Fixed a bug in the installation target where a deleted namespace in application cluster 
+  related error will never be retried ([#396][]))
 
 ### Migrating to 0.10
 
@@ -86,4 +88,5 @@
 [#383]: https://github.com/bookingcom/shipper/pull/383
 [#387]: https://github.com/bookingcom/shipper/pull/387
 [#392]: https://github.com/bookingcom/shipper/pull/392
+[#396]: https://github.com/bookingcom/shipper/pull/396
 [failure policy]: https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#failure-policy
