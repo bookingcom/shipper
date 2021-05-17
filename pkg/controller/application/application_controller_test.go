@@ -273,6 +273,8 @@ func TestCreateFirstReleaseWithNonExistingRolloutBlockOverride(t *testing.T) {
 	f := newFixture(t)
 	app := newApplication(testAppName)
 	app.Annotations[shipper.RolloutBlocksOverrideAnnotation] = fmt.Sprintf("%s/%s", shippertesting.TestNamespace, "test-non-existing-rolloutblock")
+	invalidRolloutBlockKey := "test-namespace/test-non-existing-rolloutblock"
+	invalidRolloutBlockMessage := shippererrors.NewInvalidRolloutBlockOverrideError(invalidRolloutBlockKey).Error()
 
 	f.objects = append(f.objects, app)
 
@@ -291,7 +293,7 @@ func TestCreateFirstReleaseWithNonExistingRolloutBlockOverride(t *testing.T) {
 			Type:    shipper.ApplicationConditionTypeBlocked,
 			Status:  corev1.ConditionTrue,
 			Reason:  shipper.RolloutBlockReason,
-			Message: "rollout block with name test-namespace/test-non-existing-rolloutblock does not exist",
+			Message: invalidRolloutBlockMessage,
 		},
 		{
 			Type:   shipper.ApplicationConditionTypeReleaseSynced,
@@ -312,7 +314,7 @@ func TestCreateFirstReleaseWithNonExistingRolloutBlockOverride(t *testing.T) {
 
 	f.expectedEvents = []string{
 		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut Unknown no contender release found for application "%s"]`, app.Name),
-		`Normal ApplicationConditionChanged [] -> [Blocked True RolloutsBlocked rollout block with name test-namespace/test-non-existing-rolloutblock does not exist]`,
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Blocked True RolloutsBlocked %s]`, invalidRolloutBlockMessage),
 	}
 
 	f.run()
@@ -322,6 +324,8 @@ func TestBlockApplication(t *testing.T) {
 	f := newFixture(t)
 
 	rolloutblock := newRolloutBlock(testRolloutBlockName)
+	rolloutBlockKey := fmt.Sprintf("%s/%s", rolloutblock.Namespace, rolloutblock.Name)
+	rolloutBlockMessage := shippererrors.NewRolloutBlockError(rolloutBlockKey).Error()
 	f.objects = append(f.objects, rolloutblock)
 	app := newApplication(testAppName)
 
@@ -340,7 +344,7 @@ func TestBlockApplication(t *testing.T) {
 		{
 			Type:    shipper.ApplicationConditionTypeBlocked,
 			Reason:  shipper.RolloutBlockReason,
-			Message: fmt.Sprintf("rollout block(s) with name(s) %s/%s exist", rolloutblock.Namespace, rolloutblock.Name),
+			Message: rolloutBlockMessage,
 			Status:  corev1.ConditionTrue,
 		},
 		{
@@ -363,7 +367,7 @@ func TestBlockApplication(t *testing.T) {
 	f.expectedEvents = []string{
 		fmt.Sprintf("Warning RolloutBlocked %s/%s", rolloutblock.Namespace, rolloutblock.Name),
 		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Aborting False], [] -> [ValidHistory True], [] -> [ReleaseSynced True], [] -> [RollingOut Unknown no contender release found for application "%s"]`, app.Name),
-		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Blocked True RolloutsBlocked rollout block(s) with name(s) %s/%s exist]`, rolloutblock.Namespace, rolloutblock.Name),
+		fmt.Sprintf(`Normal ApplicationConditionChanged [] -> [Blocked True RolloutsBlocked %s]`, rolloutBlockMessage),
 	}
 
 	f.run()
