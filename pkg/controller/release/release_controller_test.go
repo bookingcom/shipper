@@ -22,6 +22,7 @@ import (
 	shipper "github.com/bookingcom/shipper/pkg/apis/shipper/v1alpha1"
 	shipperfake "github.com/bookingcom/shipper/pkg/client/clientset/versioned/fake"
 	shipperinformers "github.com/bookingcom/shipper/pkg/client/informers/externalversions"
+	shippererrors "github.com/bookingcom/shipper/pkg/errors"
 	shippertesting "github.com/bookingcom/shipper/pkg/testing"
 	apputil "github.com/bookingcom/shipper/pkg/util/application"
 	"github.com/bookingcom/shipper/pkg/util/conditions"
@@ -1789,7 +1790,7 @@ func TestContenderCapacityShouldNotIncreaseWithRolloutBlock(t *testing.T) {
 	)
 
 	expectedContender := contender.release.DeepCopy()
-	rolloutBlockMessage := fmt.Sprintf("rollout block(s) with name(s) %s exist", rolloutBlockKey)
+	rolloutBlockMessage := shippererrors.NewRolloutBlockError(rolloutBlockKey).Error()
 	condBlocked := releaseutil.NewReleaseCondition(
 		shipper.ReleaseConditionTypeBlocked,
 		corev1.ConditionTrue,
@@ -1921,7 +1922,7 @@ func TestContenderTrafficShouldNotIncreaseWithRolloutBlock(t *testing.T) {
 	)
 
 	expectedContender := contender.release.DeepCopy()
-	rolloutBlockMessage := fmt.Sprintf("rollout block(s) with name(s) %s exist", rolloutBlockKey)
+	rolloutBlockMessage := shippererrors.NewRolloutBlockError(rolloutBlockKey).Error()
 	condBlocked := releaseutil.NewReleaseCondition(
 		shipper.ReleaseConditionTypeBlocked,
 		corev1.ConditionTrue,
@@ -2048,7 +2049,7 @@ func TestIncumbentTrafficShouldNotDecreaseWithRolloutBlock(t *testing.T) {
 	)
 
 	expectedContender := contender.release.DeepCopy()
-	rolloutBlockMessage := fmt.Sprintf("rollout block(s) with name(s) %s exist", rolloutBlockKey)
+	rolloutBlockMessage := shippererrors.NewRolloutBlockError(rolloutBlockKey).Error()
 	condBlocked := releaseutil.NewReleaseCondition(
 		shipper.ReleaseConditionTypeBlocked,
 		corev1.ConditionTrue,
@@ -2179,7 +2180,7 @@ func TestIncumbentCapacityShouldNotDecreaseWithRolloutBlock(t *testing.T) {
 	)
 
 	expectedContender := contender.release.DeepCopy()
-	rolloutBlockMessage := fmt.Sprintf("rollout block(s) with name(s) %s exist", rolloutBlockKey)
+	rolloutBlockMessage := shippererrors.NewRolloutBlockError(rolloutBlockKey).Error()
 	condBlocked := releaseutil.NewReleaseCondition(
 		shipper.ReleaseConditionTypeBlocked,
 		corev1.ConditionTrue,

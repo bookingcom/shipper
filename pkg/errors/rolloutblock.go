@@ -9,7 +9,7 @@ type InvalidRolloutBlockOverrideError struct {
 }
 
 func (e InvalidRolloutBlockOverrideError) Error() string {
-	return fmt.Sprintf("rollout block with name %s does not exist",
+	return fmt.Sprintf("rollout block with name %q does not exist",
 		e.RolloutBlockName)
 }
 
@@ -21,17 +21,19 @@ func NewInvalidRolloutBlockOverrideError(invalidRolloutBlockName string) Invalid
 	return InvalidRolloutBlockOverrideError{invalidRolloutBlockName}
 }
 
-type RolloutBlockError string
+type RolloutBlockError struct {
+	RolloutBlockName string
+}
 
 func (e RolloutBlockError) Error() string {
-	return string(e)
+	return fmt.Sprintf("rollout block(s) with name(s) %q exist",
+		e.RolloutBlockName)
 }
 
 func (e RolloutBlockError) ShouldRetry() bool {
 	return false
 }
 
-func NewRolloutBlockError(invalidRolloutBlockName string) RolloutBlockError {
-	return RolloutBlockError(fmt.Sprintf("rollout block(s) with name(s) %s exist",
-		invalidRolloutBlockName))
+func NewRolloutBlockError(rolloutBlockName string) RolloutBlockError {
+	return RolloutBlockError{rolloutBlockName}
 }
