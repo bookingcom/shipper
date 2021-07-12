@@ -225,6 +225,14 @@ func (c *Controller) syncAnchor(item *AnchorWorkItem) error {
 		return shippererrors.NewKubeclientGetError(item.Namespace, item.ReleaseName, err).
 			WithShipperKind("InstallationTarget")
 	} else if it != nil && string(it.UID) == item.InstallationTargetUID {
+		// Check to see if the anchor was recreated at some point and report it
+		anchorCreationTime := item.ObjectMeta.CreationTimestamp
+		itCreationTime := it.CreationTimestamp
+		timeDiff := itCreationTime.Time.Sub(anchorCreationTime.Time)
+		if timeDiff > 1*time.Minute {
+			klog.V(4).Infof("Achor %q in namespace %q was recreated at some point, as its creationTimestamp differs from its owning InstallationTarget creationTimestamp",
+				item.Name, item.Namespace)
+		}
 		// The anchor config map's installation target UID and the installation
 		// target object in the manage cluster match, so we just bail out here.
 		return nil
@@ -276,6 +284,9 @@ func (c *Controller) syncInstallationTarget(item *InstallationTargetWorkItem) er
 				"ConfigMapDeleted",
 				"Config map %q has been deleted from cluster %q",
 				err.Error())
+			klog.V(4).Infof(
+				"Attempted to remove anchor %q in namespace %q because owner installation target was removed, but error %q occurred",
+				item.AnchorName, item.Namespace, err)
 			return err
 		} else if ok {
 			c.recorder.Eventf(installationTarget,
@@ -283,6 +294,9 @@ func (c *Controller) syncInstallationTarget(item *InstallationTargetWorkItem) er
 				"ConfigMapDeleted",
 				"Config map %q has been deleted from cluster %q",
 				item.Key, clusterName)
+			klog.V(4).Infof(
+				"Removed anchor %q in namespace %q because owner installation target was removed",
+				item.AnchorName, item.Namespace)
 		}
 	}
 
