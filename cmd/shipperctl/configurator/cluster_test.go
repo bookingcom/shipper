@@ -175,7 +175,7 @@ func (f *fixture) newValidatingWebhookConfiguration(caBundle []byte, namespace s
 						Operations: operations,
 						Rule: admissionregistrationv1beta1.Rule{
 							APIGroups:   []string{shipper.SchemeGroupVersion.Group},
-							APIVersions: []string{shipper.SchemeGroupVersion.Version},
+							APIVersions: []string{"*"},
 							Resources:   []string{"*"},
 						},
 					},

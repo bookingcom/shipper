@@ -432,7 +432,7 @@ func (c *Cluster) CreateOrUpdateValidatingWebhookConfiguration(caBundle []byte, 
 						},
 						Rule: admissionregistrationv1beta1.Rule{
 							APIGroups:   []string{shipper.SchemeGroupVersion.Group},
-							APIVersions: []string{shipper.SchemeGroupVersion.Version},
+							APIVersions: []string{"*"},
 							Resources:   []string{"*"},
 						},
 					},
