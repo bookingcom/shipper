@@ -70,40 +70,18 @@ func (c *Cluster) CreateServiceAccount(domain, namespace string, name string) er
 	return err
 }
 
-func (c *Cluster) CreateClusterRole(domain, name string) error {
-	clusterRole := &rbacv1.ClusterRole{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-			Labels: map[string]string{
-				shipper.RBACDomainLabel: domain,
-			},
-		},
-		Rules: []rbacv1.PolicyRule{
-			rbacv1.PolicyRule{
-				Verbs:     []string{rbacv1.VerbAll},
-				APIGroups: []string{shipper.SchemeGroupVersion.Group},
-				Resources: []string{rbacv1.ResourceAll},
-			},
-			rbacv1.PolicyRule{
-				Verbs:     []string{"update", "get", "list", "watch"},
-				APIGroups: []string{""},
-				Resources: []string{"secrets"},
-			},
-			rbacv1.PolicyRule{
-				Verbs:     []string{rbacv1.VerbAll},
-				APIGroups: []string{""},
-				Resources: []string{"events"},
-			},
-			rbacv1.PolicyRule{
-				Verbs:     []string{"get", "list", "watch"},
-				APIGroups: []string{""},
-				Resources: []string{"namespaces"},
-			},
-		},
-	}
+func (c *Cluster) CreateApplicationClusterRole(name, domain string) error {
+	err := c.createClusterRole(getApplicationClusterRole(name, domain))
+	return err
+}
 
-	_, err := c.KubeClient.RbacV1().ClusterRoles().Create(clusterRole)
+func (c *Cluster) CreateManagementClusterRole(name, domain string) error {
+	err := c.createClusterRole(getManagementClusterRole(name, domain))
+	return err
+}
 
+func (c *Cluster) createClusterRole(role *rbacv1.ClusterRole) error {
+	_, err := c.KubeClient.RbacV1().ClusterRoles().Create(role)
 	return err
 }
 

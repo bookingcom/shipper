@@ -67,7 +67,7 @@ const (
 
 	managementClusterRoleName         = "shipper:management-cluster"
 	managementClusterRoleBindingName  = "shipper:management-cluster"
-	applicationClusterRoleName        = "cluster-admin" // needs to be able to install any kind of Helm chart
+	applicationClusterRoleName        = "shipper:application-cluster"
 	applicationClusterRoleBindingName = "shipper:application-cluster"
 )
 
@@ -209,6 +209,10 @@ func setupApplicationCluster(cmd *cobra.Command, configurator *configurator.Clus
 	}
 
 	if err := createApplicationServiceAccount(cmd, configurator); err != nil {
+		return err
+	}
+
+	if err := createApplicationClusterRole(cmd, configurator); err != nil {
 		return err
 	}
 
@@ -465,32 +469,9 @@ func createApplicationServiceAccount(cmd *cobra.Command, configurator *configura
 	return nil
 }
 
-func createManagementClusterRole(cmd *cobra.Command, configurator *configurator.Cluster) error {
-	cmd.Printf("Creating a ClusterRole called %s... ", managementClusterRoleName)
-	if err := configurator.CreateClusterRole(shipper.RBACManagementDomain, managementClusterRoleName); err != nil {
-		if errors.IsAlreadyExists(err) {
-			cmd.Println("already exists. Skipping")
-			return nil
-		} else {
-			return err
-		}
-	}
-
-	cmd.Println("done")
-	return nil
-}
-
-func createManagementClusterRoleBinding(cmd *cobra.Command, configurator *configurator.Cluster) error {
-	cmd.Printf("Creating a ClusterRoleBinding called %s... ", managementClusterRoleBindingName)
-	err := configurator.CreateClusterRoleBinding(
-		shipper.RBACManagementDomain,
-		managementClusterRoleBindingName,
-		managementClusterRoleName,
-		managementClusterServiceAccount,
-		shipperNamespace,
-	)
-
-	if err != nil {
+func createApplicationClusterRole(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	cmd.Printf("Creating a ClusterRole called %s... ", applicationClusterRoleName)
+	if err := configurator.CreateApplicationClusterRole(applicationClusterRoleName, shipper.RBACManagementDomain); err != nil {
 		if errors.IsAlreadyExists(err) {
 			cmd.Println("already exists. Skipping")
 			return nil
@@ -510,6 +491,44 @@ func createApplicationClusterRoleBinding(cmd *cobra.Command, configurator *confi
 		applicationClusterRoleBindingName,
 		applicationClusterRoleName,
 		applicationClusterServiceAccount,
+		shipperNamespace,
+	)
+
+	if err != nil {
+		if errors.IsAlreadyExists(err) {
+			cmd.Println("already exists. Skipping")
+			return nil
+		} else {
+			return err
+		}
+	}
+
+	cmd.Println("done")
+	return nil
+}
+
+func createManagementClusterRole(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	cmd.Printf("Creating a ClusterRole called %s... ", managementClusterRoleName)
+	if err := configurator.CreateManagementClusterRole(managementClusterRoleName, shipper.RBACManagementDomain); err != nil {
+		if errors.IsAlreadyExists(err) {
+			cmd.Println("already exists. Skipping")
+			return nil
+		} else {
+			return err
+		}
+	}
+
+	cmd.Println("done")
+	return nil
+}
+
+func createManagementClusterRoleBinding(cmd *cobra.Command, configurator *configurator.Cluster) error {
+	cmd.Printf("Creating a ClusterRoleBinding called %s... ", managementClusterRoleBindingName)
+	err := configurator.CreateClusterRoleBinding(
+		shipper.RBACManagementDomain,
+		managementClusterRoleBindingName,
+		managementClusterRoleName,
+		managementClusterServiceAccount,
 		shipperNamespace,
 	)
 
