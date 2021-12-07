@@ -24,6 +24,10 @@
   so that each operation can be done separately. For example, this
   allows operators to only set up the application clusters, without
   touching the management cluster ([#358][])
+* `Shipperctl` will now create an explicit service account for the
+  application clusters and not give the management cluster admin rights
+  as before. Note that this service account will not have permissions
+  to create new namespaces in the application clusters. ([#402][])
 * It is now possible to create backups and restore backups using 
   `shipperctl backup` commands ([#372][]).
 * It's useful to know what kind of objects shipper is rendering before
