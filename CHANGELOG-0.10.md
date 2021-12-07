@@ -93,4 +93,5 @@
 [#387]: https://github.com/bookingcom/shipper/pull/387
 [#392]: https://github.com/bookingcom/shipper/pull/392
 [#396]: https://github.com/bookingcom/shipper/pull/396
+[#402]: https://github.com/bookingcom/shipper/pull/402
 [failure policy]: https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#failure-policy
