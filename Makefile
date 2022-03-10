@@ -73,7 +73,7 @@ OS := linux windows darwin
 GOOS ?= $(shell go env GOOS)
 
 VERSION_PKG := github.com/bookingcom/shipper/pkg/version
-LDFLAGS := -ldflags "-X $(VERSION_PKG).Version=$(SHIPPER_VERSION)"
+LDFLAGS := -ldflags "-s -d -w -X $(VERSION_PKG).Version=$(SHIPPER_VERSION)"
 
 # Setup go environment variables that we want for every `go build` and `go
 # test`, to ensure our environment is consistent for all developers.
@@ -169,13 +169,13 @@ build:
 	mkdir -p build
 
 build/shipper-state-metrics.%-amd64: $(PKG) cmd/shipper-state-metrics/*
-	GOOS=$* GOARCH=amd64 go build $(LDFLAGS) -o build/shipper-state-metrics.$*-amd64 cmd/shipper-state-metrics/*.go
+	GOOS=$* GOARCH=amd64 go build -trimpath $(LDFLAGS) -o build/shipper-state-metrics.$*-amd64 cmd/shipper-state-metrics/*.go
 
 build/shipper.%-amd64: $(PKG) cmd/shipper/*
-	GOOS=$* GOARCH=amd64 go build $(LDFLAGS) -o build/shipper.$*-amd64 cmd/shipper/*.go
+	GOOS=$* GOARCH=amd64 go build -trimpath $(LDFLAGS) -o build/shipper.$*-amd64 cmd/shipper/*.go
 
 build/shipperctl.%-amd64: $(PKG) cmd/shipperctl/**/*
-	GOOS=$* GOARCH=amd64 go build $(LDFLAGS) -o build/shipperctl.$*-amd64 cmd/shipperctl/*.go
+	GOOS=$* GOARCH=amd64 go build -trimpath $(LDFLAGS) -o build/shipperctl.$*-amd64 cmd/shipperctl/*.go
 
 build/e2e.test: $(PKG) test/e2e/*
 	go test -c ./test/e2e/ -o build/e2e.test
