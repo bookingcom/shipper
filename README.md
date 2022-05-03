@@ -1,6 +1,13 @@
 [![Build Status](https://travis-ci.com/bookingcom/shipper.svg?branch=master)](https://travis-ci.com/bookingcom/shipper)
 [![Documentation Status](https://readthedocs.org/projects/shipper-k8s/badge/?version=latest)](https://shipper-k8s.readthedocs.io/en/latest/)
 
+# Deprecation notice
+
+**⚠️ Shipper has reached end of life. We are no longer accepting pull requests or providing support for community users.
+The project has been discontinued and the core team will not develop any feature or bug-fix.**
+
+---
+
 # Shipper
 
 Visit [Read the Docs](https://shipper-k8s.readthedocs.io/en/latest/) for the full documentation,
@@ -16,7 +23,7 @@ cluster, or many clusters across the world.
 ## Why does Shipper exist?
 
 Kubernetes is a wonderful platform, but implementing mature rollout strategies
-on top of it requires subtle multi-step orchestration: *Deployment* objects are
+on top of it requires subtle multi-step orchestration: _Deployment_ objects are
 a building block, not a solution.
 
 When implemented as a set of scripts in CI/CD systems like Jenkins, GitLab, or
@@ -48,7 +55,7 @@ a rollout strategy with the appropriate speed/risk balance for your particular
 situation.
 
 After each step of the rollout strategy, Shipper pauses to wait for another
-update to the *Release* object. This checkpointing approach means that rollouts
+update to the _Release_ object. This checkpointing approach means that rollouts
 are fully declarative, scriptable, and resumable. Shipper can keep a rollout on
 a particular step in the strategy for ten seconds or ten hours. At any point
 the rollout can be safely aborted, or moved backwards through the strategy to
